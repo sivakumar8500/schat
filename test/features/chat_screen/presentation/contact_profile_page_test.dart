@@ -1,0 +1,63 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:schat/features/chat_screen/src/presentation/contact_profile_page.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/utils/theme_controller.dart';
+
+void main() {
+  setUp(() async {
+    await getIt.reset();
+    getIt.registerSingleton<ThemeController>(ThemeController());
+  });
+
+  Widget createWidgetUnderTest() {
+    return const MaterialApp(
+      home: ContactProfilePage(
+        contactName: 'Olive Grant',
+        contactColor: Colors.pinkAccent,
+        isOnline: true,
+      ),
+    );
+  }
+
+  testWidgets('renders ContactProfilePage correctly with mockup components', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+
+    // Verify contact name and status quote
+    expect(find.text('Olive Grant'), findsOneWidget);
+    expect(find.text('Pursuing Goals 🤘'), findsOneWidget);
+    expect(find.text('Online'), findsOneWidget);
+
+    // Verify Shared media section
+    expect(find.text('Shared media'), findsOneWidget);
+    expect(find.text('View all'), findsOneWidget);
+
+    // Verify options list
+    expect(find.text('Mute notifications'), findsOneWidget);
+    expect(find.text('Lock Chat'), findsOneWidget);
+    expect(find.text('Auto-delete messages'), findsOneWidget);
+
+    // Verify block/report buttons
+    expect(find.text('Block Olive Grant'), findsOneWidget);
+    expect(find.text('Report the contact'), findsOneWidget);
+  });
+
+  testWidgets('toggling settings switches works correctly', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+
+    // Verify initial switch values
+    final switches = tester.widgetList<Switch>(find.byType(Switch));
+    expect(switches.length, 2);
+    expect(switches.elementAt(0).value, isFalse);
+    expect(switches.elementAt(1).value, isFalse);
+
+    // Toggle Mute Notifications
+    await tester.ensureVisible(find.byType(Switch).at(0));
+    await tester.tap(find.byType(Switch).at(0));
+    await tester.pumpAndSettle();
+
+    final updatedSwitches = tester.widgetList<Switch>(find.byType(Switch));
+    expect(updatedSwitches.elementAt(0).value, isTrue);
+    expect(updatedSwitches.elementAt(1).value, isFalse);
+  });
+}

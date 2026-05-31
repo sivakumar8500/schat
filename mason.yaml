@@ -1,0 +1,18 @@
+bricks:
+  feature:
+    path: ./bricks/feature
+  page:
+    path: ./bricks/page
+  bloc:
+    path: ./bricks/bloc
+  model:
+    path: ./bricks/model
+  usecase:
+    path: ./bricks/usecase
+  repository:
+    path: ./bricks/repository
+  widget:
+    path: ./bricks/widget
+  test:
+    path: ./bricks/test
+
