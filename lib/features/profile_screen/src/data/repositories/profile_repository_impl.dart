@@ -1,34 +1,31 @@
-import 'dart:io';
-import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/core/network/api_service.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/features/profile_screen/src/domain/models/update_profile_request.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: ProfileRepository)
 class ProfileRepositoryImpl implements ProfileRepository {
-  // ignore: unused_field
-  final Dio _dio;
+  final ApiService _apiService;
 
-  ProfileRepositoryImpl(this._dio);
+  ProfileRepositoryImpl(this._apiService);
 
   @override
-  Future<bool> updateProfile(String username, File? image) async {
-    try {
-      /*
+  Future<ApiResult<UserModel>> getProfile() async {
+    return _apiService.get<UserModel>(
+      CommonEndpoints.profileMe,
+      mapper: (json) => UserModel.fromJson(json),
+    );
+  }
 
-      FormData formData = FormData.fromMap({
-        'username': username,
-        if (image != null)
-          'profile_pic': await MultipartFile.fromFile(image.path, filename: 'profile.jpg'),
-      });
-      final response = await _dio.post('/user/profile', data: formData);
-      return response.statusCode == 200;
-      */
-
-      // Simulating network request for now
-      await Future.delayed(const Duration(seconds: 2));
-      return true;
-    } catch (e) {
-      return false;
-    }
+  @override
+  Future<ApiResult<UserModel>> updateProfile(UpdateProfileRequest request) async {
+    return _apiService.put<UserModel>(
+      CommonEndpoints.updateProfile,
+      data: request.toJson(),
+      mapper: (json) => UserModel.fromJson(json),
+    );
   }
 }

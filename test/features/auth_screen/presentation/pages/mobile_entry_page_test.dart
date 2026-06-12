@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/auth_screen/src/presentation/mobile_entry_page.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/injection.dart';
@@ -42,10 +43,13 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pump();
 
-    expect(find.text('Please enter a valid 10-digit mobile number starting with 6, 7, 8 or 9'), findsOneWidget);
+    expect(find.text('Please enter a valid 10-digit number.'), findsOneWidget);
   });
 
   testWidgets('navigates to OtpVerifyPage on valid input directly', (WidgetTester tester) async {
+    when(() => mockAuthRepository.sendOtp(any()))
+        .thenAnswer((_) async => const ApiResult.success(true));
+
     await tester.pumpWidget(createWidgetUnderTest());
 
     // Enter a valid phone number

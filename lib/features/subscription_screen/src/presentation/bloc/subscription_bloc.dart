@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/features/subscription_screen/src/domain/models/enroll_subscription_request.dart';
 import 'package:schat/features/subscription_screen/src/domain/repositories/subscription_repository.dart';
 import 'package:schat/injection.dart';
 import 'subscription_event.dart';
@@ -17,12 +18,16 @@ class SubscriptionBloc extends Bloc<SubscriptionEvent, SubscriptionState> {
 
   Future<void> _onLoadPlans(LoadPlansEvent event, Emitter<SubscriptionState> emit) async {
     emit(const SubscriptionLoading());
-    try {
-      final plans = await _subscriptionRepository.getSubscriptionPlans();
-      emit(SubscriptionLoaded(plans: plans, selectedIndex: -1));
-    } catch (e) {
-      emit(SubscriptionFailure(error: e.toString()));
-    }
+    final result = await _subscriptionRepository.getSubscriptionPlans();
+    
+    result.when(
+      success: (plans) {
+        emit(SubscriptionLoaded(plans: plans, selectedIndex: 0));
+      },
+      failure: (message) {
+        emit(SubscriptionFailure(error: message));
+      },
+    );
   }
 
   void _onSelectPlan(SelectPlanEvent event, Emitter<SubscriptionState> emit) {
@@ -32,10 +37,34 @@ class SubscriptionBloc extends Bloc<SubscriptionEvent, SubscriptionState> {
     }
   }
 
-  void _onConfirmSubscription(ConfirmSubscriptionEvent event, Emitter<SubscriptionState> emit) {
+  Future<void> _onConfirmSubscription(ConfirmSubscriptionEvent event, Emitter<SubscriptionState> emit) async {
     final currentState = state;
     if (currentState is SubscriptionLoaded && currentState.selectedIndex != -1) {
-      emit(const SubscriptionSuccess());
+      final selectedPlan = currentState.plans[currentState.selectedIndex];
+      
+      emit(const SubscriptionLoading());
+
+      final request = EnrollSubscriptionRequest(
+        planId: selectedPlan.id,
+        promoCode: event.promoCode ?? '',
+        paymentRecordId: event.paymentRecordId ?? '',
+      );
+
+      final result = await _subscriptionRepository.enrollSubscription(request);
+      
+      result.when(
+        success: (subscription) {
+          emit(const SubscriptionSuccess());
+        },
+        failure: (message) {
+          // Re-emit loaded state with failure message
+          emit(SubscriptionFailure(error: message));
+          emit(SubscriptionLoaded(
+            plans: currentState.plans,
+            selectedIndex: currentState.selectedIndex,
+          ));
+        },
+      );
     }
   }
 }

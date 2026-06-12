@@ -498,6 +498,7 @@ class StatusPageContent extends StatelessWidget {
 
           // FAB to add status
           floatingActionButton: FloatingActionButton(
+            heroTag: 'status_fab',
             onPressed: () => _showUploadOptions(context),
             backgroundColor: context.colors.primary,
             elevation: 4,

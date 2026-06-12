@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/injection.dart';
 import 'auth_event.dart';
@@ -15,26 +16,35 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   }
 
   Future<void> _onSendOtp(SendOtpEvent event, Emitter<AuthState> emit) async {
-    emit(const AuthLoading());
-    final cleanPhone = event.phoneNumber.trim();
+    // Remove all non-digit characters
+    String cleanPhone = event.phoneNumber.replaceAll(RegExp(r'\D'), '');
+    
+    // If it starts with 91 and has 12 digits, strip the 91
+    if (cleanPhone.length == 12 && cleanPhone.startsWith('91')) {
+      cleanPhone = cleanPhone.substring(2);
+    }
+    
     if (cleanPhone.length != 10) {
       emit(const AuthFailure(errorMessage: 'Please enter a valid 10-digit number.'));
       return;
     }
-    final firstChar = cleanPhone[0];
-    if (!['6', '7', '8', '9'].contains(firstChar)) {
-      emit(const AuthFailure(errorMessage: 'Number must start with 6, 7, 8, or 9.'));
-      return;
-    }
+
+    emit(const AuthLoading());
     
-    final fullMobile = '${event.countryCode}$cleanPhone';
+    final mobileToUse = cleanPhone; 
+    
     try {
-      final success = await _authRepository.sendOtp(fullMobile);
-      if (success) {
-        emit(OtpSent(mobile: fullMobile));
-      } else {
-        emit(const AuthFailure(errorMessage: 'Failed to send OTP. Please try again.'));
-      }
+      final result = await _authRepository.sendOtp(mobileToUse);
+      result.when(
+        success: (success) {
+          if (success) {
+            emit(OtpSent(mobile: mobileToUse));
+          } else {
+            emit(const AuthFailure(errorMessage: 'Failed to send OTP.'));
+          }
+        },
+        failure: (message) => emit(AuthFailure(errorMessage: message)),
+      );
     } catch (e) {
       emit(AuthFailure(errorMessage: e.toString()));
     }
@@ -42,7 +52,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
   Future<void> _onVerifyOtp(VerifyOtpEvent event, Emitter<AuthState> emit) async {
     final currentState = state;
-    if (currentState is! OtpSent) {
+    String? mobile;
+    if (currentState is OtpSent) {
+      mobile = currentState.mobile;
+    }
+
+    if (mobile == null) {
       emit(const AuthFailure(errorMessage: 'Session expired. Please request a new OTP.'));
       return;
     }
@@ -51,21 +66,30 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     final otp = event.otpCode.trim();
     if (otp.length != 6 || int.tryParse(otp) == null) {
       emit(const AuthFailure(errorMessage: 'OTP must be 6 digits.'));
-      emit(OtpSent(mobile: currentState.mobile));
+      // Keep state as OtpSent to allow retry
+      emit(OtpSent(mobile: mobile));
       return;
     }
 
     try {
-      final success = await _authRepository.verifyOtp(currentState.mobile, otp);
-      if (success) {
-        emit(const AuthSuccess());
-      } else {
-        emit(const AuthFailure(errorMessage: 'Invalid OTP.'));
-        emit(OtpSent(mobile: currentState.mobile));
-      }
+      final result = await _authRepository.verifyOtp(mobile, otp, event.deviceId);
+      result.when(
+        success: (success) {
+          if (success) {
+            emit(const AuthSuccess());
+          } else {
+            emit(const AuthFailure(errorMessage: 'Invalid OTP.'));
+            emit(OtpSent(mobile: mobile!));
+          }
+        },
+        failure: (message) {
+          emit(AuthFailure(errorMessage: message));
+          emit(OtpSent(mobile: mobile!));
+        },
+      );
     } catch (e) {
       emit(AuthFailure(errorMessage: e.toString()));
-      emit(OtpSent(mobile: currentState.mobile));
+      emit(OtpSent(mobile: mobile));
     }
   }
 }

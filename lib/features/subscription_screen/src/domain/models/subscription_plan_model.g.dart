@@ -11,12 +11,10 @@ _SubscriptionPlanModel _$SubscriptionPlanModelFromJson(
 ) => _SubscriptionPlanModel(
   id: json['id'] as String,
   name: json['name'] as String,
-  price: json['price'] as String,
-  duration: json['duration'] as String,
-  features: (json['features'] as List<dynamic>)
-      .map((e) => e as String)
-      .toList(),
-  colorHex: (json['colorHex'] as num).toInt(),
+  description: json['description'] as String,
+  price: (json['price'] as num).toInt(),
+  billingCycle: json['billing_cycle'] as String,
+  isActive: json['is_active'] as bool,
 );
 
 Map<String, dynamic> _$SubscriptionPlanModelToJson(
@@ -24,8 +22,8 @@ Map<String, dynamic> _$SubscriptionPlanModelToJson(
 ) => <String, dynamic>{
   'id': instance.id,
   'name': instance.name,
+  'description': instance.description,
   'price': instance.price,
-  'duration': instance.duration,
-  'features': instance.features,
-  'colorHex': instance.colorHex,
+  'billing_cycle': instance.billingCycle,
+  'is_active': instance.isActive,
 };

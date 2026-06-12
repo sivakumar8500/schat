@@ -12,5 +12,11 @@ class SelectPlanEvent extends SubscriptionEvent {
 }
 
 class ConfirmSubscriptionEvent extends SubscriptionEvent {
-  const ConfirmSubscriptionEvent();
+  final String? promoCode;
+  final String? paymentRecordId;
+  
+  const ConfirmSubscriptionEvent({
+    this.promoCode,
+    this.paymentRecordId,
+  });
 }

@@ -8,7 +8,20 @@ class LoadProfileEvent extends ProfileEvent {
 
 class UpdateProfileEvent extends ProfileEvent {
   final String username;
+  final String? firstName;
+  final String? lastName;
+  final String? about;
   final String? imagePath;
 
-  const UpdateProfileEvent({required this.username, this.imagePath});
+  const UpdateProfileEvent({
+    required this.username,
+    this.firstName,
+    this.lastName,
+    this.about,
+    this.imagePath,
+  });
+}
+
+class LogoutEvent extends ProfileEvent {
+  const LogoutEvent();
 }

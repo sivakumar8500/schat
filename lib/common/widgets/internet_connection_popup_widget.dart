@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
+import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_state.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
@@ -20,11 +20,9 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
   late final AnimationController _animationController;
   late final Animation<Offset> _offsetAnimation;
   
-  Timer? _timer;
   bool _isOffline = false;
   bool _wasOffline = false;
   bool _showBanner = false;
-  bool _checking = false;
 
   @override
   void initState() {
@@ -40,45 +38,31 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
       parent: _animationController,
       curve: Curves.easeOutBack,
     ));
-
-    _checkConnection();
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _checkConnection());
   }
 
-  Future<void> _checkConnection() async {
-    if (_checking) return;
-    _checking = true;
-    
-    bool isConnected = false;
-    try {
-      if (kIsWeb) {
-        final response = await Dio()
-            .get('https://clients3.google.com/generate_204')
-            .timeout(const Duration(seconds: 2));
-        isConnected = response.statusCode == 204 || response.statusCode == 200;
-      } else {
-        final result = await InternetAddress.lookup('google.com')
-            .timeout(const Duration(seconds: 2));
-        isConnected = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-      }
-    } catch (_) {
-      isConnected = false;
-    }
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
-    _checking = false;
-    if (!mounted) return;
-
-    final isOfflineNow = !isConnected;
-    if (_isOffline != isOfflineNow) {
-      setState(() {
-        _isOffline = isOfflineNow;
-        if (_isOffline) {
-          _wasOffline = true;
-          _showBanner = true;
-          _animationController.forward();
-        } else {
-          if (_wasOffline) {
+  @override
+  Widget build(BuildContext context) {
+    return BlocListener<ConnectivityBloc, ConnectivityState>(
+      listener: (context, state) {
+        if (state is ConnectivityDisconnected) {
+          setState(() {
+            _isOffline = true;
+            _wasOffline = true;
             _showBanner = true;
+          });
+          _animationController.forward();
+        } else if (state is ConnectivityConnected) {
+          if (_wasOffline) {
+            setState(() {
+              _isOffline = false;
+              _showBanner = true;
+            });
             _animationController.forward();
             Timer(const Duration(seconds: 3), () {
               if (mounted && !_isOffline) {
@@ -92,24 +76,17 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
               }
             });
           } else {
-            _showBanner = false;
+            setState(() {
+              _showBanner = false;
+            });
           }
         }
-      });
-    }
+      },
+      child: _showBanner ? _buildBanner() : const SizedBox.shrink(),
+    );
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_showBanner) return const SizedBox.shrink();
-
+  Widget _buildBanner() {
     final backgroundColor = _isOffline ? context.colors.error : context.colors.success;
     final message = _isOffline ? 'No Internet Connection' : 'Back Online';
     final icon = _isOffline ? CommonIcons.wifiOff : CommonIcons.wifi;
@@ -134,7 +111,7 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
                     borderRadius: BorderRadius.circular(16.0),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.15),
+                        color: Colors.black.withOpacity(0.15),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),

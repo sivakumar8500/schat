@@ -1,14 +1,19 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
+import 'package:schat/utils/common_endpoints.dart';
+import 'api_interceptor.dart';
 
 @module
 abstract class NetworkModule {
   @lazySingleton
-  Dio get dio {
+  Connectivity get connectivity => Connectivity();
+
+  @lazySingleton
+  Dio getDio(ApiInterceptor apiInterceptor) {
     final dio = Dio(
       BaseOptions(
-        baseUrl: 'https://api.example.com/v1',
-
+        baseUrl: CommonEndpoints.baseUrl,
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
         headers: {
@@ -18,7 +23,8 @@ abstract class NetworkModule {
       ),
     );
 
-    // Optional: Add Interceptors for logging, auth tokens, etc.
+    dio.interceptors.add(apiInterceptor);
+
     dio.interceptors.add(LogInterceptor(
       request: true,
       requestHeader: true,

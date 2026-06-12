@@ -1,3 +1,8 @@
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/profile_screen/profile_screen.dart';
+import 'package:schat/features/subscription_screen/subscription_screen.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
@@ -5,8 +10,8 @@ import 'package:schat/utils/common_spaces.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
-import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/features/auth_screen/auth_screen.dart';
+import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -23,33 +28,92 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   Future<void> _navigateToNextScreen() async {
-    // Wait for 2 seconds
+    // Wait for 2 seconds for branding
     await Future.delayed(const Duration(seconds: 2));
 
     if (!mounted) return;
 
-    // Check shared preferences
-    final prefs = await SharedPreferences.getInstance();
-    final hasSeenIntro = prefs.getBool('hasSeenIntro') ?? false;
-    final isAuthenticated = prefs.getBool('isAuthenticated') ?? false;
+    final storage = getIt<StorageService>();
+    final hasToken = await storage.hasToken();
 
-    if (!mounted) return;
+    if (!hasToken) {
+      final prefs = await SharedPreferences.getInstance();
+      final hasSeenIntro = prefs.getBool('hasSeenIntro') ?? false;
 
-    if (!hasSeenIntro) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const IntroPage()),
+      if (!mounted) return;
+
+      if (!hasSeenIntro) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const IntroPage()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MobileEntryPage()),
+        );
+      }
+      return;
+    }
+
+    // Has token, check profile status
+    try {
+      final profileRepo = getIt<ProfileRepository>();
+      final result = await profileRepo.getProfile();
+
+      if (!mounted) return;
+
+      result.when(
+        success: (user) {
+          // Store username in shared preferences for Dashboard
+          _saveUsernameToPrefs(user.username);
+          
+          if (user.username == null || user.username!.isEmpty) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfilePage()),
+            );
+          } else if (!user.isSubscribed) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DashboardPage()),
+            );
+          }
+        },
+        failure: (message) {
+          // Token might be invalid/expired or unauthorized (401)
+          if (message.contains('401') || message.toLowerCase().contains('unauthorized')) {
+             storage.clearTokens();
+             Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MobileEntryPage()),
+            );
+          } else {
+            // Network error but token exists, try to proceed to dashboard
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const DashboardPage()),
+            );
+          }
+        },
       );
-    } else if (!isAuthenticated) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MobileEntryPage()),
-      );
-    } else {
+    } catch (e) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardPage()),
       );
+    }
+  }
+
+  Future<void> _saveUsernameToPrefs(String? username) async {
+    if (username != null && username.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', username);
     }
   }
 

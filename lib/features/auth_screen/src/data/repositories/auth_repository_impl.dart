@@ -1,40 +1,64 @@
-import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/core/network/api_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/auth_screen/src/data/models/send_otp_request.dart';
+import 'package:schat/features/auth_screen/src/data/models/verify_otp_request.dart';
+import 'package:schat/features/auth_screen/src/data/models/verify_otp_response.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
+import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: AuthRepository)
 class AuthRepositoryImpl implements AuthRepository {
-  // ignore: unused_field
-  final Dio _dio;
+  final ApiService _apiService;
+  final StorageService _storageService;
 
-  AuthRepositoryImpl(this._dio);
+  AuthRepositoryImpl(this._apiService, this._storageService);
 
   @override
-  Future<bool> sendOtp(String mobile) async {
-    try {
-      // final response = await _dio.post('/auth/send-otp', data: {'mobile': mobile});
-      // return response.statusCode == 200;
-
-      // Simulating network request for now
-      await Future.delayed(const Duration(seconds: 2));
-      return true;
-    } catch (e) {
-      // Handle DioException here
-      return false;
-    }
+  Future<ApiResult<bool>> sendOtp(String mobile) async {
+    final request = SendOtpRequest(phoneNumber: mobile);
+    return _apiService.post<bool>(
+      CommonEndpoints.sendOtp,
+      data: request.toJson(),
+      mapper: (json) {
+        if (json is Map<String, dynamic>) {
+          return json['success'] == true;
+        }
+        return false;
+      },
+    );
   }
 
   @override
-  Future<bool> verifyOtp(String mobile, String otp) async {
-    try {
-      // final response = await _dio.post('/auth/verify-otp', data: {'mobile': mobile, 'otp': otp});
-      // return response.statusCode == 200;
+  Future<ApiResult<bool>> verifyOtp(String mobile, String otp, String deviceId) async {
+    final request = VerifyOtpRequest(
+      phoneNumber: mobile,
+      otp: otp,
+      deviceId: deviceId,
+    );
 
-      // Simulating network request for now
-      await Future.delayed(const Duration(seconds: 2));
-      return true;
-    } catch (e) {
-      return false;
-    }
+    final result = await _apiService.post<VerifyOtpResponse>(
+      CommonEndpoints.verifyOtp,
+      data: request.toJson(),
+      mapper: (json) => VerifyOtpResponse.fromJson(json),
+    );
+
+    return result.when(
+      success: (response) async {
+        await _storageService.saveTokens(
+          accessToken: response.accessToken,
+          refreshToken: response.refreshToken,
+        );
+        return ApiResult.success(true);
+      },
+      failure: (message) => ApiResult.failure(message),
+    );
+  }
+
+  @override
+  Future<void> logout() async {
+    await _storageService.clearTokens();
+    await Future.delayed(const Duration(milliseconds: 500));
   }
 }

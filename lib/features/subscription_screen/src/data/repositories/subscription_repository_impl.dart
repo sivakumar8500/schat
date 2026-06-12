@@ -1,37 +1,37 @@
 import 'package:injectable/injectable.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/subscription_screen/src/domain/models/subscription_plan_model.dart';
+import 'package:schat/features/subscription_screen/src/domain/models/enroll_subscription_request.dart';
+import 'package:schat/features/subscription_screen/src/domain/models/subscription_model.dart';
 import 'package:schat/features/subscription_screen/src/domain/repositories/subscription_repository.dart';
+import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: SubscriptionRepository)
 class SubscriptionRepositoryImpl implements SubscriptionRepository {
+  final ApiService _apiService;
+
+  SubscriptionRepositoryImpl(this._apiService);
+
   @override
-  Future<List<SubscriptionPlanModel>> getSubscriptionPlans() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    return const [
-      SubscriptionPlanModel(
-        id: '1',
-        name: 'Basic',
-        price: '\$4.99',
-        duration: '/ month',
-        features: ['100 Messages per day', 'Standard Support', 'Ads Included'],
-        colorHex: 0xFF607D8B, // context.colors.primaryGrey
-      ),
-      SubscriptionPlanModel(
-        id: '2',
-        name: 'Pro',
-        price: '\$9.99',
-        duration: '/ month',
-        features: ['Unlimited Messages', 'Priority Support', 'No Ads', 'HD Media'],
-        colorHex: 0xFF448AFF, // context.colors.primary
-      ),
-      SubscriptionPlanModel(
-        id: '3',
-        name: 'Premium',
-        price: '\$19.99',
-        duration: '/ month',
-        features: ['Everything in Pro', 'Custom Themes', 'Cloud Backup', 'Exclusive Badges'],
-        colorHex: 0xFF7C4DFF, // Colors.deepPurpleAccent
-      ),
-    ];
+  Future<ApiResult<List<SubscriptionPlanModel>>> getSubscriptionPlans() async {
+    return _apiService.get<List<SubscriptionPlanModel>>(
+      CommonEndpoints.getPlans,
+      mapper: (json) {
+        if (json is List) {
+          return json.map((e) => SubscriptionPlanModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+        return [];
+      },
+    );
+  }
+
+  @override
+  Future<ApiResult<SubscriptionModel>> enrollSubscription(EnrollSubscriptionRequest request) async {
+    return _apiService.post<SubscriptionModel>(
+      CommonEndpoints.enrollSubscription,
+      data: request.toJson(),
+      mapper: (json) => SubscriptionModel.fromJson(json as Map<String, dynamic>),
+    );
   }
 }

@@ -4,13 +4,13 @@ abstract class AuthEvent {
 
 class SendOtpEvent extends AuthEvent {
   final String phoneNumber;
-  final String countryCode;
 
-  const SendOtpEvent({required this.phoneNumber, required this.countryCode});
+  const SendOtpEvent({required this.phoneNumber});
 }
 
 class VerifyOtpEvent extends AuthEvent {
   final String otpCode;
+  final String deviceId;
 
-  const VerifyOtpEvent({required this.otpCode});
+  const VerifyOtpEvent({required this.otpCode, required this.deviceId});
 }

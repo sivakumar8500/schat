@@ -6,6 +6,10 @@ class CommonIcons {
   // Asset paths
   static const String logo = 'assets/icons/logo.png';
   static const String defaultAvatar = 'assets/icons/default_avatar.png';
+  static const String home = 'assets/home_page/home.png';
+  static const String statusIcon = 'assets/home_page/status.png';
+  static const String call = 'assets/home_page/call.png';
+  static const String newChat = 'assets/home_page/new_chat.png';
 
   // Material IconData mappings
   static const IconData edit = Icons.edit;
@@ -52,4 +56,7 @@ class CommonIcons {
   static const IconData personOutline = Icons.person_outline_rounded;
   static const IconData wifi = Icons.wifi_rounded;
   static const IconData wifiOff = Icons.wifi_off_rounded;
+  static const IconData logout = Icons.logout_rounded;
+  static const IconData grid = Icons.grid_view_rounded;
+  static const IconData status = Icons.auto_awesome_mosaic_rounded;
 }

@@ -1,18 +1,29 @@
-import 'package:schat/utils/common_fontstyles.dart';
-
-import 'package:schat/utils/common_sizes.dart';
-
-import 'package:schat/utils/common_spaces.dart';
 import 'package:flutter/material.dart';
-import 'package:schat/features/chat_screen/chat_screen.dart';
-import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/theme_controller.dart';
-import 'package:schat/injection.dart';
-import 'package:schat/features/profile_screen/src/presentation/profile_page.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/common/widgets/primary_button.dart';
-import 'package:schat/features/status_screen/src/presentation/status_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
+import 'package:schat/features/chat_search/src/presentation/chat_search_page.dart';
+import 'package:schat/features/chat_screen/chat_screen.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_chats_view.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
+import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/features/intro_screen/intro_screen.dart';
+import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
+import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
+import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
+import 'package:schat/features/profile_screen/src/presentation/profile_page.dart';
+import 'package:schat/features/status_screen/src/presentation/status_page.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_sizes.dart';
+import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/theme_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -38,84 +49,6 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
-  // Dummy chat data matching the mockup names, unreads, status indicators, and tests
-  List<Map<String, dynamic>> get _chats => [
-    // Retaining Alice Smith and Bob Johnson at the beginning to ensure lazy list rendering in widget tests finds them
-    {
-      'name': 'Alice Smith',
-      'message': 'Hey, are we still on for tomorrow?',
-      'time': '10:30 AM',
-      'unread': 2,
-      'isOnline': true,
-      'color': Colors.pinkAccent,
-      'status': 'unread',
-    },
-    {
-      'name': 'Bob Johnson',
-      'message': 'Check out this new feature! It looks amazing.',
-      'time': 'Yesterday',
-      'unread': 0,
-      'isOnline': false,
-      'color': context.colors.primary,
-      'status': 'sent_double_grey',
-    },
-    {
-      'name': 'Olivia Grant',
-      'message': 'Olivia is typing...',
-      'time': '12:30',
-      'unread': 3,
-      'isOnline': true,
-      'color': Colors.pinkAccent,
-      'status': 'typing',
-    },
-    {
-      'name': 'Product design',
-      'message': 'When is the meeting scheduled ?',
-      'time': '12:34',
-      'unread': 3,
-      'isOnline': false,
-      'color': context.colors.primary,
-      'status': 'unread',
-      'isGroup': true,
-    },
-    {
-      'name': 'John Alfaro',
-      'message': 'Nice work, i love it 👍',
-      'time': '12:30',
-      'unread': 3,
-      'isOnline': true,
-      'color': Colors.redAccent,
-      'status': 'unread',
-    },
-    {
-      'name': 'Travis Colwell',
-      'message': 'Unfortunaly, I won\'t be here today...',
-      'time': '12:30',
-      'unread': 0,
-      'isOnline': false,
-      'color': Colors.teal,
-      'status': 'read_double_green',
-    },
-    {
-      'name': 'Darcy Hooper',
-      'message': 'Hi! How are you doing ?',
-      'time': '12:30',
-      'unread': 0,
-      'isOnline': true,
-      'color': Colors.orangeAccent,
-      'status': 'read_double_green',
-    },
-    {
-      'name': 'Emaly Cooper',
-      'message': 'Emaly is typing...',
-      'time': '12:30',
-      'unread': 0,
-      'isOnline': false,
-      'color': Colors.indigo,
-      'status': 'sent_double_grey',
-    },
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -127,12 +60,13 @@ class _DashboardPageState extends State<DashboardPage> {
             _buildChatsTab(),
             const StatusPage(),
             const CallHistoryPage(),
-            _buildProfileTab(),
+            const UserListPage(),
           ],
         ),
       ),
       floatingActionButton: _currentIndex == 0 || _currentIndex == 2
           ? FloatingActionButton(
+              heroTag: 'dashboard_fab',
               onPressed: () {},
               backgroundColor: context.colors.primary,
               elevation: 4,
@@ -140,7 +74,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Icon(
-                _currentIndex == 0 ? Icons.edit : Icons.add_ic_call,
+                _currentIndex == 0 ? CommonIcons.edit : CommonIcons.addCall,
                 color: context.colors.textLight,
               ),
             )
@@ -150,106 +84,36 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatsTab() {
-    return Column(
-      children: [
-        _buildHeader(),
-        _buildSearchBar(),
-        Expanded(
-          child: _buildChatList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProfileTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          CommonSpaces.h40,
-          CircleAvatar(
-            radius: 60,
-            backgroundColor: context.colors.primary.withValues(alpha: 0.2),
-            child: Icon(Icons.person, size: 60, color: context.colors.primary),
-          ),
-          CommonSpaces.h20,
-          Text(
-            _username,
-            style: context.h2,
-          ),
-          CommonSpaces.h40,
-          PrimaryButton(
-            text: 'Edit Profile',
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage(isEditing: true)),
-              );
-              _loadProfile(); // reload in case username changed
-            },
-          ),
-          CommonSpaces.h20,
-          Material(
-            color: context.colors.lightBackground,
-            borderRadius: BorderRadius.circular(16),
-            clipBehavior: Clip.antiAlias,
-            child: ListTile(
-              leading: Icon(
-                getIt<ThemeController>().themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
-                color: context.colors.textPrimary,
+    return BlocProvider(
+      create: (context) => getIt<ChatsBloc>()..add(const FetchChats()),
+      child: BlocBuilder<ChatsBloc, ChatsState>(
+        builder: (context, state) {
+          return Column(
+            children: [
+              _buildHeader(),
+              _buildSearchBar(),
+              Expanded(
+                child: state.when(
+                  initial: () => const Center(child: CircularProgressIndicator()),
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (message) => Center(child: Text(message)),
+                  loaded: (chatList) {
+                    if (chatList.isEmpty) {
+                      return EmptyChatsView(
+                        onChatNowPressed: () {
+                          setState(() {
+                            _currentIndex = 3; // Switch to New Chat tab
+                          });
+                        },
+                      );
+                    }
+                    return _buildChatList(chatList);
+                  },
+                ),
               ),
-              title: Text(
-                getIt<ThemeController>().themeMode == ThemeMode.dark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
-              ),
-              trailing: Switch(
-                value: getIt<ThemeController>().themeMode == ThemeMode.dark,
-                activeThumbColor: context.colors.primary,
-                onChanged: (val) {
-                  getIt<ThemeController>().toggleTheme();
-                },
-              ),
-              onTap: () {
-                getIt<ThemeController>().toggleTheme();
-              },
-            ),
-          ),
-          CommonSpaces.h16,
-          Material(
-            color: context.colors.lightBackground,
-            borderRadius: BorderRadius.circular(16),
-            clipBehavior: Clip.antiAlias,
-            child: ListTile(
-              leading: Icon(
-                Icons.format_size_rounded,
-                color: context.colors.textPrimary,
-              ),
-              title: Text(
-                'Font Size',
-                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
-              ),
-              trailing: DropdownButton<String>(
-                value: getIt<ThemeController>().fontSizeName,
-                dropdownColor: context.colors.lightBackground,
-                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(value: 'Small', child: Text('Small')),
-                  DropdownMenuItem(value: 'Medium', child: Text('Medium')),
-                  DropdownMenuItem(value: 'Large', child: Text('Large')),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() {
-                      getIt<ThemeController>().setFontSize(val);
-                    });
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -260,27 +124,197 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text.rich(
-            TextSpan(
-              text: "Hello ",
-              children: [
-                TextSpan(
-                  text: _username,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-                const TextSpan(text: " 👋"),
-              ],
-            ),
-            style: TextStyle(
-              fontSize: 26,
-              color: context.colors.textPrimary,
+          GestureDetector(
+            onTap: () async {
+              // Navigate to a dedicated Profile/Settings view
+              await _showProfileSettings();
+              _loadProfile();
+            },
+            child: Text.rich(
+              TextSpan(
+                text: "Hello ",
+                children: [
+                  TextSpan(
+                    text: _username,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const TextSpan(text: " 👋"),
+                ],
+              ),
+              style: TextStyle(
+                fontSize: 26,
+                color: context.colors.textPrimary,
+              ),
             ),
           ),
           IconButton(
-            icon: Icon(Icons.more_vert_rounded, color: context.colors.textPrimary, size: 28),
-            onPressed: () {},
+            icon: Icon(CommonIcons.moreVert, color: context.colors.textPrimary, size: 28),
+            onPressed: () => _showProfileSettings(),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showProfileSettings() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: _buildProfileContent(),
+      ),
+    );
+  }
+
+  Widget _buildProfileContent() {
+    return BlocProvider<ProfileBloc>(
+      create: (context) => ProfileBloc(),
+      child: BlocListener<ProfileBloc, ProfileState>(
+        listener: (context, state) {
+          if (state is ProfileLogoutSuccess) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const IntroPage()),
+              (Route<dynamic> route) => false,
+            );
+          }
+        },
+        child: Builder(builder: (context) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: context.colors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text('Profile Settings', style: context.h2),
+                CommonSpaces.h32,
+                CircleAvatar(
+                  radius: 60,
+                  backgroundColor: context.colors.primary.withValues(alpha: 0.2),
+                  child: Icon(CommonIcons.person, size: 60, color: context.colors.primary),
+                ),
+                CommonSpaces.h20,
+                Text(
+                  _username,
+                  style: context.h2,
+                ),
+                CommonSpaces.h40,
+                PrimaryButton(
+                  text: 'Edit Profile',
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ProfilePage(isEditing: true)),
+                    );
+                    if (mounted) Navigator.pop(context);
+                  },
+                ),
+                CommonSpaces.h16,
+                TextButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        backgroundColor: context.colors.pureBlack,
+                        title: Text('Logout', style: context.titleMedium.copyWith(color: Colors.white)),
+                        content: Text('Are you sure you want to logout?',
+                            style: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.7))),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: Text('Cancel', style: context.bodyMedium.copyWith(color: Colors.white)),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(dialogContext);
+                              context.read<ProfileBloc>().add(const LogoutEvent());
+                            },
+                            child: Text('Logout',
+                                style: context.bodyMedium
+                                    .copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: Icon(CommonIcons.logout, color: context.colors.error, size: 20),
+                  label: Text(
+                    'Logout from account',
+                    style: context.bodyMedium.copyWith(
+                      color: context.colors.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                CommonSpaces.h32,
+                _buildSettingsTile(
+                  icon: getIt<ThemeController>().themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
+                  title: getIt<ThemeController>().themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+                  trailing: Switch(
+                    value: getIt<ThemeController>().themeMode == ThemeMode.dark,
+                    activeThumbColor: context.colors.primary,
+                    onChanged: (val) {
+                      setState(() {
+                        getIt<ThemeController>().toggleTheme();
+                      });
+                    },
+                  ),
+                ),
+                CommonSpaces.h12,
+                _buildSettingsTile(
+                  icon: Icons.format_size_rounded,
+                  title: 'Font Size',
+                  trailing: DropdownButton<String>(
+                    value: getIt<ThemeController>().fontSizeName,
+                    dropdownColor: context.colors.lightBackground,
+                    style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
+                    underline: const SizedBox(),
+                    items: const [
+                      DropdownMenuItem(value: 'Small', child: Text('Small')),
+                      DropdownMenuItem(value: 'Medium', child: Text('Medium')),
+                      DropdownMenuItem(value: 'Large', child: Text('Large')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          getIt<ThemeController>().setFontSize(val);
+                        });
+                      }
+                    },
+                  ),
+                ),
+                CommonSpaces.h40,
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildSettingsTile({required IconData icon, required String title, required Widget trailing}) {
+    return Material(
+      color: context.colors.lightBackground,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(icon, color: context.colors.textPrimary),
+        title: Text(title, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold)),
+        trailing: trailing,
       ),
     );
   }
@@ -289,34 +323,42 @@ class _DashboardPageState extends State<DashboardPage> {
     final searchBgColor = context.colors.searchBackground;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      child: Container(
-        height: 52,
-        decoration: BoxDecoration(
-          color: searchBgColor,
-          borderRadius: BorderRadius.circular(26),
-        ),
-        child: TextField(
-          style: TextStyle(color: context.colors.textPrimary),
-          decoration: InputDecoration(
-            prefixIcon: Icon(Icons.search_rounded, color: context.colors.textHint.withValues(alpha: 0.7)),
-            hintText: 'Search',
-            hintStyle: TextStyle(
-              color: context.colors.textHint.withValues(alpha: 0.7),
-              fontSize: 16,
-              fontWeight: FontWeight.normal,
-            ),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ChatSearchPage()),
+          );
+        },
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: searchBgColor,
+            borderRadius: BorderRadius.circular(26),
+          ),
+          child: Row(
+            children: [
+              CommonSpaces.w16,
+              Icon(CommonIcons.search, color: context.colors.textHint.withValues(alpha: 0.7)),
+              CommonSpaces.w12,
+              Text(
+                'Search',
+                style: TextStyle(
+                  color: context.colors.textHint.withValues(alpha: 0.7),
+                  fontSize: 16,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildAvatar(Map<String, dynamic> chat) {
-    final isGroup = chat['isGroup'] == true;
-    final isOnline = chat['isOnline'] == true;
-    final color = chat['color'] as Color;
+  Widget _buildAvatar(ChatModel chat) {
+    final isGroup = chat.isGroup;
+    final color = context.colors.primary; // Default color for API results
 
     if (isGroup) {
       return SizedBox(
@@ -325,26 +367,36 @@ class _DashboardPageState extends State<DashboardPage> {
         child: Stack(
           children: [
             Positioned(
-              left: 0,
-              top: 0,
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: color.withValues(alpha: 0.25),
-                child: const Text(
-                  '👥',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
+              left: 2,
+              top: 2,
+              child: _buildSmallAvatar(context.colors.primary.withValues(alpha: 0.4), '👨🏻‍💻'),
             ),
             Positioned(
-              right: 0,
-              bottom: 0,
-              child: CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.pinkAccent.withValues(alpha: 0.25),
-                child: const Text(
-                  '👩‍💻',
-                  style: TextStyle(fontSize: 16),
+              right: 2,
+              top: 2,
+              child: _buildSmallAvatar(Colors.pinkAccent.withValues(alpha: 0.4), '👩🏼‍💻'),
+            ),
+            Positioned(
+              left: 2,
+              bottom: 2,
+              child: _buildSmallAvatar(Colors.orangeAccent.withValues(alpha: 0.4), '👨🏽‍💻'),
+            ),
+            Positioned(
+              right: 2,
+              bottom: 2,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: context.colors.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.colors.scaffoldBackground, width: 2),
+                ),
+                child: const Center(
+                  child: Text(
+                    '+3',
+                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ),
@@ -353,13 +405,14 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
 
+    final name = chat.groupName ?? 'User';
     return Stack(
       children: [
         CircleAvatar(
           radius: 28,
           backgroundColor: color.withValues(alpha: 0.15),
           child: Text(
-            chat['name'].substring(0, 1),
+            name.isNotEmpty ? name.substring(0, 1) : 'U',
             style: TextStyle(
               color: color,
               fontSize: 20,
@@ -367,100 +420,53 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ),
         ),
-        if (isOnline)
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: context.colors.primary,
-                shape: BoxShape.circle,
-                border: Border.all(color: context.colors.scaffoldBackground, width: 2),
-              ),
-            ),
-          ),
       ],
     );
   }
 
-  Widget _buildChatStatus(Map<String, dynamic> chat) {
-    final unread = chat['unread'] as int;
-    final status = chat['status'] as String?;
-
-    if (unread > 0) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            chat['time'],
-            style: TextStyle(
-              fontSize: 12,
-              color: context.colors.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: CommonSizes.p6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            decoration: BoxDecoration(
-              color: context.colors.primary,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            constraints: const BoxConstraints(
-              minWidth: 20,
-              minHeight: 20,
-            ),
-            child: Center(
-              child: Text(
-                unread.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      Widget statusIcon;
-      if (status == 'read_double_green') {
-        statusIcon = Icon(Icons.done_all_rounded, color: context.colors.primary, size: 18);
-      } else if (status == 'sent_double_grey') {
-        statusIcon = Icon(Icons.done_all_rounded, color: context.colors.textHint.withValues(alpha: 0.6), size: 18);
-      } else {
-        statusIcon = Icon(Icons.done_rounded, color: context.colors.textHint.withValues(alpha: 0.6), size: 18);
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            chat['time'],
-            style: TextStyle(
-              fontSize: 12,
-              color: context.colors.textHint,
-            ),
-          ),
-          const SizedBox(height: CommonSizes.p6),
-          statusIcon,
-        ],
-      );
-    }
+  Widget _buildSmallAvatar(Color bgColor, String emoji) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(emoji, style: const TextStyle(fontSize: 12)),
+      ),
+    );
   }
 
-  Widget _buildChatList() {
+  Widget _buildChatStatus(ChatModel chat) {
+    final time = DateTime.parse(chat.updatedAt);
+    final timeStr = "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          timeStr,
+          style: TextStyle(
+            fontSize: 12,
+            color: context.colors.textHint,
+          ),
+        ),
+        const SizedBox(height: CommonSizes.p6),
+        Icon(CommonIcons.doneAll, color: context.colors.primary, size: 18),
+      ],
+    );
+  }
+
+  Widget _buildChatList(List<ChatModel> chatList) {
     return ListView.builder(
       padding: const EdgeInsets.only(top: 12, bottom: 80),
-      itemCount: _chats.length,
+      itemCount: chatList.length,
       itemBuilder: (context, index) {
-        final chat = _chats[index];
-        final isTyping = chat['status'] == 'typing';
+        final chat = chatList[index];
+        final name = chat.groupName ?? 'Unknown Chat';
+        final message = chat.groupDescription ?? 'No description';
 
         return InkWell(
           onTap: () {
@@ -468,9 +474,9 @@ class _DashboardPageState extends State<DashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (context) => ChatPage(
-                  contactName: chat['name'],
-                  contactColor: chat['color'],
-                  isOnline: chat['isOnline'],
+                  contactName: name,
+                  contactColor: context.colors.primary,
+                  isOnline: false,
                 ),
               ),
             );
@@ -481,15 +487,13 @@ class _DashboardPageState extends State<DashboardPage> {
               children: [
                 _buildAvatar(chat),
                 CommonSpaces.w16,
-                
-                // Name and Message
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        chat['name'],
+                        name,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
@@ -498,15 +502,12 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                       CommonSpaces.h4,
                       Text(
-                        chat['message'],
+                        message,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isTyping
-                              ? context.colors.primary
-                              : (chat['unread'] > 0 ? context.colors.textPrimary : context.colors.textSecondary),
-                          fontWeight: (chat['unread'] > 0 || isTyping) ? FontWeight.w600 : FontWeight.normal,
-                          fontStyle: isTyping ? FontStyle.italic : FontStyle.normal,
+                          color: context.colors.textSecondary.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.normal,
                           fontSize: 14,
                         ),
                       ),
@@ -514,7 +515,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 CommonSpaces.w12,
-                
                 _buildChatStatus(chat),
               ],
             ),
@@ -553,54 +553,54 @@ class _DashboardPageState extends State<DashboardPage> {
           showSelectedLabels: true,
           showUnselectedLabels: true,
           elevation: 0,
-          selectedLabelStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: context.colors.primary,
-          ),
-          unselectedLabelStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.normal,
-            color: context.colors.textHint,
-          ),
-          items: const [
+          selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+          items: [
             BottomNavigationBarItem(
               icon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.chat_bubble_outline_rounded, size: 24),
-              ),
-              activeIcon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.chat_bubble_rounded, size: 24),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Image.asset(
+                  CommonIcons.home,
+                  width: 24,
+                  height: 24,
+                  color: _currentIndex == 0 ? context.colors.primary : context.colors.textHint,
+                ),
               ),
               label: 'Messages',
             ),
             BottomNavigationBarItem(
               icon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.auto_awesome_mosaic_rounded, size: 24),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Image.asset(
+                  CommonIcons.statusIcon,
+                  width: 24,
+                  height: 24,
+                  color: _currentIndex == 1 ? context.colors.primary : context.colors.textHint,
+                ),
               ),
               label: 'Status',
             ),
             BottomNavigationBarItem(
               icon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.phone_outlined, size: 24),
-              ),
-              activeIcon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.phone, size: 24),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Image.asset(
+                  CommonIcons.call,
+                  width: 24,
+                  height: 24,
+                  color: _currentIndex == 2 ? context.colors.primary : context.colors.textHint,
+                ),
               ),
               label: 'Calls',
             ),
             BottomNavigationBarItem(
               icon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.person_outline_rounded, size: 24),
-              ),
-              activeIcon: Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Icon(Icons.person_rounded, size: 24),
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Image.asset(
+                  CommonIcons.newChat,
+                  width: 24,
+                  height: 24,
+                  color: _currentIndex == 3 ? context.colors.primary : context.colors.textHint,
+                ),
               ),
               label: 'New Chat',
             ),

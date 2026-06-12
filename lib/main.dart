@@ -2,13 +2,15 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/splash_screen/splash_screen.dart';
 import 'package:schat/utils/theme_controller.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:schat/common/widgets/internet_connection_popup_widget.dart';
+import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
+import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_event.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'injection.dart';
-
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,9 +29,11 @@ class MyApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: getIt<ThemeController>(),
       builder: (context, _) {
-        return MaterialApp(
-          title: 'sChat',
-          themeMode: getIt<ThemeController>().themeMode,
+        return BlocProvider<ConnectivityBloc>(
+          create: (context) => getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
+          child: MaterialApp(
+            title: 'sChat',
+            themeMode: getIt<ThemeController>().themeMode,
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: context.colors.primary, brightness: Brightness.light),
             useMaterial3: true,
@@ -54,6 +58,7 @@ class MyApp extends StatelessWidget {
             );
           },
           home: const SplashPage(),
+          ),
         );
       },
     );
@@ -138,6 +143,7 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'main_fab',
         onPressed: _incrementCounter,
         tooltip: 'Increment',
         child: const Icon(Icons.add),
