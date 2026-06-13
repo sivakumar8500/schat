@@ -2,16 +2,22 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'chats_event.dart';
 import 'chats_state.dart';
 
-@injectable
+@lazySingleton
 class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   final GetChatsUseCase _getChatsUseCase;
   final ChatRepository _chatRepository;
+  final ContactsRepository _contactsRepository;
 
-  ChatsBloc(this._getChatsUseCase, this._chatRepository) : super(const ChatsInitial()) {
+  ChatsBloc(
+    this._getChatsUseCase,
+    this._chatRepository,
+    this._contactsRepository,
+  ) : super(const ChatsInitial()) {
     on<FetchChats>(_onFetchChats);
     on<CreateChat>(_onCreateChat);
   }
@@ -32,9 +38,14 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       participantIds: [event.participantId],
     );
 
-    result.when(
-      success: (chat) => emit(ChatsState.chatCreated(chat, event.contactName)),
-      failure: (error) => emit(ChatsError(error)),
+    await result.when(
+      success: (chat) async {
+        await _contactsRepository.removeContactFromCache(event.participantId);
+        emit(ChatsState.chatCreated(chat, event.contactName));
+      },
+      failure: (error) {
+        emit(ChatsError(error));
+      },
     );
   }
 }

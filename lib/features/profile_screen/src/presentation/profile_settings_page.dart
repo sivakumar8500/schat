@@ -82,7 +82,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                                 colors: [
-                                  context.colors.scaffoldBackground.withOpacity(0),
+                                  context.colors.scaffoldBackground.withValues(alpha: 0),
                                   context.colors.scaffoldBackground,
                                 ],
                               ),
@@ -249,7 +249,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     required Widget trailing,
   }) {
     return Material(
-      color: context.colors.textPrimary.withOpacity(0.05),
+      color: context.colors.textPrimary.withValues(alpha:0.05),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
@@ -273,7 +273,7 @@ class _LogoutButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: context.colors.error.withOpacity(0.1),
+      color: context.colors.error.withValues(alpha:0.1),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
@@ -332,3 +332,23 @@ class _LogoutButton extends StatelessWidget {
     );
   }
 }
+
+
+// will star socket.io intigration
+//
+// when user come to dashboard try to estabilish socket.io connection
+//
+// ## 🔌 1. Connection Lifecycle
+//
+// ### Connection URL
+// Connect to the WebSocket gateway passing the JWT access token in the query parameters:
+// ```http
+// ws://YOUR_SERVER_IP:8000/ws?token=<JWT_ACCESS_TOKEN>
+// ```
+//
+// ### Handshake & Security Gating
+// The server performs two checks during the connection phase:
+// 1. **JWT Verification**: If the token is expired or invalid, the connection is rejected with HTTP `403 Forbidden`.
+// 2. **Subscription Check**: If the user does not have an active subscription, the socket accepts the connection but immediately closes it with **Code `1008` (Policy Violation)** and logs:
+// ```
+// WebSocket rejected: User <UUID> does not have an active subscription

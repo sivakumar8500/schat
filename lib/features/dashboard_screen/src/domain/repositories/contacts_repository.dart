@@ -12,6 +12,9 @@ abstract class ContactsRepository {
   Future<ApiResult<List<UserModel>>> syncContacts(List<String> phoneNumbers);
   Future<List<UserModel>> getCachedContacts();
   Future<void> cacheContacts(List<UserModel> contacts);
+  Future<void> removeContactFromCache(String userId);
+  Future<void> hidePhoneNumber(String phoneNumber);
+  Future<List<String>> getHiddenPhoneNumbers();
 }
 
 @LazySingleton(as: ContactsRepository)
@@ -19,6 +22,7 @@ class ContactsRepositoryImpl implements ContactsRepository {
   final ApiService _apiService;
   static const String _contactsBox = 'contacts_box';
   static const String _contactsKey = 'cached_contacts';
+  static const String _hiddenKey = 'hidden_phone_numbers';
 
   ContactsRepositoryImpl(this._apiService);
 
@@ -74,6 +78,45 @@ class ContactsRepositoryImpl implements ContactsRepository {
       await box.put(_contactsKey, jsonString);
     } catch (e) {
       // Log error or handle
+    }
+  }
+
+  @override
+  Future<void> removeContactFromCache(String userId) async {
+    try {
+      final contacts = await getCachedContacts();
+      final user = contacts.where((u) => u.id == userId).firstOrNull;
+      if (user != null) {
+        await hidePhoneNumber(user.phoneNumber);
+      }
+      contacts.removeWhere((u) => u.id == userId);
+      await cacheContacts(contacts);
+    } catch (e) {
+      // Log error or handle
+    }
+  }
+
+  @override
+  Future<void> hidePhoneNumber(String phoneNumber) async {
+    try {
+      final box = await Hive.openBox(_contactsBox);
+      final List<String> hidden = List<String>.from(box.get(_hiddenKey, defaultValue: <String>[]));
+      if (!hidden.contains(phoneNumber)) {
+        hidden.add(phoneNumber);
+        await box.put(_hiddenKey, hidden);
+      }
+    } catch (e) {
+      //
+    }
+  }
+
+  @override
+  Future<List<String>> getHiddenPhoneNumbers() async {
+    try {
+      final box = await Hive.openBox(_contactsBox);
+      return List<String>.from(box.get(_hiddenKey, defaultValue: <String>[]));
+    } catch (e) {
+      return [];
     }
   }
 }

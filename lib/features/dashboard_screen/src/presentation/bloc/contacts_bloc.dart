@@ -15,36 +15,57 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         super(const ContactsInitial()) {
     on<LoadContacts>(_onLoadContacts);
     on<SyncContactsEvent>(_onSyncContacts);
+    on<RemoveContact>(_onRemoveContact);
+  }
+
+  Future<void> _onRemoveContact(RemoveContact event, Emitter<ContactsState> emit) async {
+    final currentState = state;
+    if (currentState is ContactsLoaded) {
+      final user = currentState.syncedContacts.where((u) => u.id == event.userId).firstOrNull;
+      
+      final updatedSynced = currentState.syncedContacts
+          .where((u) => u.id != event.userId)
+          .toList();
+      
+      List<String> updatedHidden = List.from(currentState.hiddenPhoneNumbers);
+      if (user != null && !updatedHidden.contains(user.phoneNumber)) {
+        updatedHidden.add(user.phoneNumber);
+      }
+
+      emit(ContactsLoaded(
+        contacts: currentState.contacts,
+        syncedContacts: updatedSynced,
+        hiddenPhoneNumbers: updatedHidden,
+      ));
+      
+      await _contactsRepository.removeContactFromCache(event.userId);
+    }
   }
 
   Future<void> _onLoadContacts(LoadContacts event, Emitter<ContactsState> emit) async {
     emit(const ContactsLoading());
     try {
-      // 1. Check permission first
       final status = await Permission.contacts.status;
       
       if (status.isGranted) {
         await _loadAndSync(emit);
       } else {
-        // Try to load from cache first even without permission
         final cachedUsers = await _contactsRepository.getCachedContacts();
+        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
         if (cachedUsers.isNotEmpty) {
           emit(ContactsLoaded(
             contacts: const [],
             syncedContacts: cachedUsers,
+            hiddenPhoneNumbers: hidden,
           ));
-          // Still request permission in background to refresh if possible
           final requestStatus = await Permission.contacts.request();
           if (requestStatus.isGranted) {
             await _loadAndSync(emit);
           }
         } else {
-          // No cache, must request permission
           final requestStatus = await Permission.contacts.request();
           if (requestStatus.isGranted) {
             await _loadAndSync(emit);
-          } else if (requestStatus.isPermanentlyDenied) {
-            emit(const ContactsPermissionDenied());
           } else {
             emit(const ContactsPermissionDenied());
           }
@@ -59,26 +80,29 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     try {
       final contacts = await _contactsRepository.getContacts();
       final cachedUsers = await _contactsRepository.getCachedContacts();
+      final hidden = await _contactsRepository.getHiddenPhoneNumbers();
 
-      // Show cached or current contacts
+      final filteredCached = cachedUsers.where((u) => !hidden.contains(u.phoneNumber)).toList();
+
       emit(ContactsLoaded(
         contacts: contacts,
-        syncedContacts: cachedUsers,
+        syncedContacts: filteredCached,
+        hiddenPhoneNumbers: hidden,
       ));
 
-      // Background sync
       final List<String> phoneNumbers = _extractPhoneNumbers(contacts);
       if (phoneNumbers.isNotEmpty) {
         final result = await _contactsRepository.syncContacts(phoneNumbers);
         if (result is Success<List<UserModel>>) {
+          final filteredResult = result.data.where((u) => !hidden.contains(u.phoneNumber)).toList();
           emit(ContactsLoaded(
             contacts: contacts,
-            syncedContacts: result.data,
+            syncedContacts: filteredResult,
+            hiddenPhoneNumbers: hidden,
           ));
         }
       }
     } catch (e) {
-      // Don't fail the whole load if sync fails
     }
   }
 
@@ -95,20 +119,33 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
         final contacts = await _contactsRepository.getContacts();
         final List<String> phoneNumbers = _extractPhoneNumbers(contacts);
+        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
 
         if (phoneNumbers.isNotEmpty) {
           final result = await _contactsRepository.syncContacts(phoneNumbers);
           
           if (result is Success<List<UserModel>>) {
+            final filteredResult = result.data.where((u) => !hidden.contains(u.phoneNumber)).toList();
             emit(ContactsLoaded(
               contacts: contacts,
-              syncedContacts: result.data,
+              syncedContacts: filteredResult,
+              hiddenPhoneNumbers: hidden,
             ));
           } else {
-            emit(ContactsLoaded(contacts: contacts, syncedContacts: currentState.syncedContacts));
+            final filteredSynced = currentState.syncedContacts.where((u) => !hidden.contains(u.phoneNumber)).toList();
+            emit(ContactsLoaded(
+              contacts: contacts, 
+              syncedContacts: filteredSynced,
+              hiddenPhoneNumbers: hidden,
+            ));
           }
         } else {
-          emit(ContactsLoaded(contacts: contacts, syncedContacts: currentState.syncedContacts));
+          final filteredSynced = currentState.syncedContacts.where((u) => !hidden.contains(u.phoneNumber)).toList();
+          emit(ContactsLoaded(
+            contacts: contacts, 
+            syncedContacts: filteredSynced,
+            hiddenPhoneNumbers: hidden,
+          ));
         }
       } catch (e) {
         emit(ContactsFailure(errorMessage: e.toString()));

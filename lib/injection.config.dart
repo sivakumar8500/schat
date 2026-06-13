@@ -93,7 +93,10 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i127.GetChatsUseCase>(
         (() => _i127.GetChatsUseCase(gh<_i908.ChatRepository>())));
     gh.factory<_i236.ChatsBloc>((() => _i236.ChatsBloc(
-        gh<_i127.GetChatsUseCase>(), gh<_i908.ChatRepository>())));
+          gh<_i127.GetChatsUseCase>(),
+          gh<_i908.ChatRepository>(),
+          gh<_i1069.ContactsRepository>(),
+        )));
     return this;
   }
 }

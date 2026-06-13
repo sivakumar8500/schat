@@ -9,3 +9,8 @@ class LoadContacts extends ContactsEvent {
 class SyncContactsEvent extends ContactsEvent {
   const SyncContactsEvent();
 }
+
+class RemoveContact extends ContactsEvent {
+  final String userId;
+  const RemoveContact(this.userId);
+}

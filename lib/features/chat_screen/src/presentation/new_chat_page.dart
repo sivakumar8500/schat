@@ -17,8 +17,15 @@ import 'package:schat/utils/common_spaces.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/injection.dart';
 
-class NewChatPage extends StatelessWidget {
+class NewChatPage extends StatefulWidget {
   const NewChatPage({super.key});
+
+  @override
+  State<NewChatPage> createState() => _NewChatPageState();
+}
+
+class _NewChatPageState extends State<NewChatPage> {
+  String? _pendingParticipantId;
 
   @override
   Widget build(BuildContext context) {
@@ -35,18 +42,23 @@ class NewChatPage extends StatelessWidget {
         listener: (context, state) {
           state.maybeWhen(
             chatCreated: (chat, contactName) {
+              if (_pendingParticipantId != null) {
+                context.read<ContactsBloc>().add(RemoveContact(_pendingParticipantId!));
+                _pendingParticipantId = null;
+              }
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatPage(
                     contactName: contactName,
                     contactColor: context.colors.primary,
-                    isOnline: false, // You can derive this from chat participants if available
+                    isOnline: false,
                   ),
                 ),
               );
             },
             error: (message) {
+              _pendingParticipantId = null;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(message)),
               );
@@ -88,8 +100,19 @@ class NewChatPage extends StatelessWidget {
 
       final syncedUsers = state.syncedContacts;
       final allContacts = state.contacts;
+      final hiddenPhones = state.hiddenPhoneNumbers;
 
       final inviteContacts = allContacts.where((contact) {
+        // Exclude if phone number is in hidden list
+        bool isHidden = contact.phones.any((phone) {
+          String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
+          if (normalized.length > 10) {
+            normalized = normalized.substring(normalized.length - 10);
+          }
+          return hiddenPhones.contains(normalized);
+        });
+        if (isHidden) return false;
+
         return !syncedUsers.any((user) {
           return contact.phones.any((phone) {
             String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
@@ -208,6 +231,7 @@ class NewChatPage extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       onTap: () {
+        _pendingParticipantId = user.id;
         context.read<ChatsBloc>().add(CreateChat(
           participantId: user.id,
           contactName: name,

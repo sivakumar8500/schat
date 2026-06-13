@@ -16,10 +16,12 @@ class ContactsLoading extends ContactsState {
 class ContactsLoaded extends ContactsState {
   final List<Contact> contacts;
   final List<UserModel> syncedContacts;
+  final List<String> hiddenPhoneNumbers;
 
   const ContactsLoaded({
     required this.contacts,
     this.syncedContacts = const [],
+    this.hiddenPhoneNumbers = const [],
   });
 }
 
