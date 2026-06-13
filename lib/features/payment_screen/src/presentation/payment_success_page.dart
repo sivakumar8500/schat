@@ -67,7 +67,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: context.colors.scaffoldBackground,
+      backgroundColor: const Color(0xFF00873C), // Solid Green Theme
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -75,30 +75,30 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
             ScaleTransition(
               scale: _scaleAnimation,
               child: Container(
-                width: 120,
-                height: 120,
+                width: 140,
+                height: 140,
                 decoration: BoxDecoration(
-                  color: context.colors.success.withValues(alpha: 0.1),
+                  color: Colors.white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  Icons.check_circle,
-                  color: context.colors.success,
-                  size: 80,
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Colors.white,
+                  size: 100,
                 ),
               ),
             ),
             CommonSpaces.h32,
             Text(
               'Payment Successful!',
-              style: context.h2,
+              style: context.h2.copyWith(color: Colors.white),
             ),
             CommonSpaces.h16,
             Text(
               'Your subscription is now active.',
               style: TextStyle(
                 fontSize: 16,
-                color: context.colors.textSecondary,
+                color: Colors.white.withValues(alpha: 0.9),
               ),
             ),
             CommonSpaces.h60,
@@ -106,17 +106,17 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
               'Redirecting to dashboard in $_countdown...',
               style: TextStyle(
                 fontSize: 14,
-                color: context.colors.textHint,
+                color: Colors.white.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w600,
               ),
             ),
             CommonSpaces.h24,
-            SizedBox(
+            const SizedBox(
               width: 40,
               height: 40,
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(context.colors.success),
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
             ),
           ],

@@ -10,6 +10,7 @@ class CommonEndpoints {
   // Profile
   static const String profileMe = '/users/me';
   static const String updateProfile = '/users/me';
+  static const String syncContacts = '/users/sync-contacts';
 
   // Subscriptions
   static const String getPlans = '/subscriptions/plans';
@@ -17,4 +18,5 @@ class CommonEndpoints {
 
   // Chats
   static const String getChats = '/chats/';
+  static const String getMessages = '/messages/';
 }

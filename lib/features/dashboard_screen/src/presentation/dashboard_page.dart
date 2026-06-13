@@ -10,15 +10,10 @@ import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
-import 'package:schat/features/intro_screen/intro_screen.dart';
-import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
-import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
-import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
-import 'package:schat/features/profile_screen/src/presentation/profile_page.dart';
+import 'package:schat/features/profile_screen/src/presentation/profile_settings_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
@@ -64,21 +59,6 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
       ),
-      floatingActionButton: _currentIndex == 0 || _currentIndex == 2
-          ? FloatingActionButton(
-              heroTag: 'dashboard_fab',
-              onPressed: () {},
-              backgroundColor: context.colors.primary,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: Icon(
-                _currentIndex == 0 ? CommonIcons.edit : CommonIcons.addCall,
-                color: context.colors.textLight,
-              ),
-            )
-          : null,
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
@@ -93,8 +73,7 @@ class _DashboardPageState extends State<DashboardPage> {
               _buildHeader(),
               _buildSearchBar(),
               Expanded(
-                child: state.when(
-                  initial: () => const Center(child: CircularProgressIndicator()),
+                child: state.maybeWhen(
                   loading: () => const Center(child: CircularProgressIndicator()),
                   error: (message) => Center(child: Text(message)),
                   loaded: (chatList) {
@@ -109,6 +88,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     }
                     return _buildChatList(chatList);
                   },
+                  orElse: () => const Center(child: CircularProgressIndicator()),
                 ),
               ),
             ],
@@ -126,8 +106,12 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           GestureDetector(
             onTap: () async {
-              // Navigate to a dedicated Profile/Settings view
-              await _showProfileSettings();
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileSettingsPage(username: _username),
+                ),
+              );
               _loadProfile();
             },
             child: Text.rich(
@@ -149,172 +133,17 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           IconButton(
             icon: Icon(CommonIcons.moreVert, color: context.colors.textPrimary, size: 28),
-            onPressed: () => _showProfileSettings(),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileSettingsPage(username: _username),
+                ),
+              );
+              _loadProfile();
+            },
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _showProfileSettings() async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        decoration: BoxDecoration(
-          color: context.colors.scaffoldBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        child: _buildProfileContent(),
-      ),
-    );
-  }
-
-  Widget _buildProfileContent() {
-    return BlocProvider<ProfileBloc>(
-      create: (context) => ProfileBloc(),
-      child: BlocListener<ProfileBloc, ProfileState>(
-        listener: (context, state) {
-          if (state is ProfileLogoutSuccess) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const IntroPage()),
-              (Route<dynamic> route) => false,
-            );
-          }
-        },
-        child: Builder(builder: (context) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 24),
-                  decoration: BoxDecoration(
-                    color: context.colors.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Text('Profile Settings', style: context.h2),
-                CommonSpaces.h32,
-                CircleAvatar(
-                  radius: 60,
-                  backgroundColor: context.colors.primary.withValues(alpha: 0.2),
-                  child: Icon(CommonIcons.person, size: 60, color: context.colors.primary),
-                ),
-                CommonSpaces.h20,
-                Text(
-                  _username,
-                  style: context.h2,
-                ),
-                CommonSpaces.h40,
-                PrimaryButton(
-                  text: 'Edit Profile',
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ProfilePage(isEditing: true)),
-                    );
-                    if (mounted) Navigator.pop(context);
-                  },
-                ),
-                CommonSpaces.h16,
-                TextButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (dialogContext) => AlertDialog(
-                        backgroundColor: context.colors.pureBlack,
-                        title: Text('Logout', style: context.titleMedium.copyWith(color: Colors.white)),
-                        content: Text('Are you sure you want to logout?',
-                            style: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.7))),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(dialogContext),
-                            child: Text('Cancel', style: context.bodyMedium.copyWith(color: Colors.white)),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(dialogContext);
-                              context.read<ProfileBloc>().add(const LogoutEvent());
-                            },
-                            child: Text('Logout',
-                                style: context.bodyMedium
-                                    .copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                  icon: Icon(CommonIcons.logout, color: context.colors.error, size: 20),
-                  label: Text(
-                    'Logout from account',
-                    style: context.bodyMedium.copyWith(
-                      color: context.colors.error,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                CommonSpaces.h32,
-                _buildSettingsTile(
-                  icon: getIt<ThemeController>().themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
-                  title: getIt<ThemeController>().themeMode == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-                  trailing: Switch(
-                    value: getIt<ThemeController>().themeMode == ThemeMode.dark,
-                    activeThumbColor: context.colors.primary,
-                    onChanged: (val) {
-                      setState(() {
-                        getIt<ThemeController>().toggleTheme();
-                      });
-                    },
-                  ),
-                ),
-                CommonSpaces.h12,
-                _buildSettingsTile(
-                  icon: Icons.format_size_rounded,
-                  title: 'Font Size',
-                  trailing: DropdownButton<String>(
-                    value: getIt<ThemeController>().fontSizeName,
-                    dropdownColor: context.colors.lightBackground,
-                    style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
-                    underline: const SizedBox(),
-                    items: const [
-                      DropdownMenuItem(value: 'Small', child: Text('Small')),
-                      DropdownMenuItem(value: 'Medium', child: Text('Medium')),
-                      DropdownMenuItem(value: 'Large', child: Text('Large')),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          getIt<ThemeController>().setFontSize(val);
-                        });
-                      }
-                    },
-                  ),
-                ),
-                CommonSpaces.h40,
-              ],
-            ),
-          );
-        }),
-      ),
-    );
-  }
-
-  Widget _buildSettingsTile({required IconData icon, required String title, required Widget trailing}) {
-    return Material(
-      color: context.colors.lightBackground,
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: Icon(icon, color: context.colors.textPrimary),
-        title: Text(title, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold)),
-        trailing: trailing,
       ),
     );
   }
@@ -527,6 +356,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildBottomNavigationBar() {
     return Container(
       decoration: BoxDecoration(
+        color: context.colors.scaffoldBackground,
         boxShadow: [
           BoxShadow(
             color: context.colors.textPrimary.withValues(
@@ -537,76 +367,57 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: context.colors.scaffoldBackground,
-          selectedItemColor: context.colors.primary,
-          unselectedItemColor: context.colors.textHint,
-          showSelectedLabels: true,
-          showUnselectedLabels: true,
-          elevation: 0,
-          selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-          items: [
-            BottomNavigationBarItem(
-              icon: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Image.asset(
-                  CommonIcons.home,
-                  width: 24,
-                  height: 24,
-                  color: _currentIndex == 0 ? context.colors.primary : context.colors.textHint,
-                ),
-              ),
-              label: 'Messages',
-            ),
-            BottomNavigationBarItem(
-              icon: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Image.asset(
-                  CommonIcons.statusIcon,
-                  width: 24,
-                  height: 24,
-                  color: _currentIndex == 1 ? context.colors.primary : context.colors.textHint,
-                ),
-              ),
-              label: 'Status',
-            ),
-            BottomNavigationBarItem(
-              icon: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Image.asset(
-                  CommonIcons.call,
-                  width: 24,
-                  height: 24,
-                  color: _currentIndex == 2 ? context.colors.primary : context.colors.textHint,
-                ),
-              ),
-              label: 'Calls',
-            ),
-            BottomNavigationBarItem(
-              icon: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Image.asset(
-                  CommonIcons.newChat,
-                  width: 24,
-                  height: 24,
-                  color: _currentIndex == 3 ? context.colors.primary : context.colors.textHint,
-                ),
-              ),
-              label: 'New Chat',
-            ),
-          ],
-        ),
+      child: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.transparent,
+        selectedItemColor: context.colors.primary,
+        unselectedItemColor: context.colors.textHint,
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
+        elevation: 0,
+        selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+        items: [
+          _buildBottomNavItem(CommonIcons.home, 'Messages', 0),
+          _buildBottomNavItem(CommonIcons.statusIcon, 'Status', 1),
+          _buildBottomNavItem(CommonIcons.call, 'Calls', 2),
+          _buildBottomNavItem(CommonIcons.newChat, 'New Chat', 3),
+        ],
       ),
+    );
+  }
+
+  BottomNavigationBarItem _buildBottomNavItem(String iconPath, String label, int index) {
+    final isActive = _currentIndex == index;
+    return BottomNavigationBarItem(
+      icon: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: isActive ? 30 : 0,
+            height: 3,
+            decoration: BoxDecoration(
+              color: context.colors.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          CommonSpaces.h6,
+          Image.asset(
+            iconPath,
+            width: 24,
+            height: 24,
+            color: isActive ? context.colors.primary : context.colors.textHint,
+          ),
+        ],
+      ),
+      label: label,
     );
   }
 }

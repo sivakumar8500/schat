@@ -5,4 +5,8 @@ part 'chats_event.freezed.dart';
 @freezed
 class ChatsEvent with _$ChatsEvent {
   const factory ChatsEvent.fetchChats() = FetchChats;
+  const factory ChatsEvent.createChat({
+    required String participantId,
+    required String contactName,
+  }) = CreateChat;
 }

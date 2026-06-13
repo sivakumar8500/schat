@@ -5,15 +5,15 @@ import 'package:schat/features/chat_screen/src/domain/repositories/chat_reposito
 @LazySingleton(as: ChatRepository)
 class ChatRepositoryImpl implements ChatRepository {
   @override
-  Future<List<MessageModel>> getMessages(String contactId) async {
+  Future<List<MessageModel>> getMessages(String chatId) async {
     // Mock network delay
     await Future.delayed(const Duration(milliseconds: 500));
     return [
-      const MessageModel(id: '1', text: 'Hey! How are you doing today?', time: '10:00 AM', isMe: false),
-      const MessageModel(id: '2', text: 'I am doing great! Working on the new app design.', time: '10:05 AM', isMe: true, isRead: true),
-      const MessageModel(id: '3', text: 'Same here. Just finishing up some meetings.', time: '10:10 AM', isMe: false),
-      const MessageModel(id: '4', text: 'Are we still on for lunch later?', time: '10:12 AM', isMe: false),
-      const MessageModel(id: '5', text: 'Absolutely! See you at 1PM.', time: '10:15 AM', isMe: true, isRead: false),
+      _createMockMessage('1', chatId, 'Hey! How are you doing today?', false),
+      _createMockMessage('2', chatId, 'I am doing great! Working on the new app design.', true),
+      _createMockMessage('3', chatId, 'Same here. Just finishing up some meetings.', false),
+      _createMockMessage('4', chatId, 'Are we still on for lunch later?', false),
+      _createMockMessage('5', chatId, 'Absolutely! See you at 1PM.', true),
     ];
   }
 
@@ -22,5 +22,34 @@ class ChatRepositoryImpl implements ChatRepository {
     // Mock network delay
     await Future.delayed(const Duration(milliseconds: 300));
     return true; // Assume success
+  }
+
+  MessageModel _createMockMessage(String id, String chatId, String text, bool isMe) {
+    return MessageModel(
+      id: id,
+      chatId: chatId,
+      type: 'text',
+      senderId: isMe ? 'me' : 'other',
+      receiverId: isMe ? 'other' : 'me',
+      content: MessageContent(text: text),
+      security: const MessageSecurity(
+        isLocked: false,
+        accessUsers: [],
+        allowDownload: true,
+        allowShare: true,
+      ),
+      viewControl: const MessageViewControl(
+        type: 'standard',
+        maxViews: 0,
+        viewedBy: [],
+        isOpened: true,
+      ),
+      expiry: const MessageExpiry(
+        isEnabled: false,
+        expireAt: 0,
+      ),
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
   }
 }

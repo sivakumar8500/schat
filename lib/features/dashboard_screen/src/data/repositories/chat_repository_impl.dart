@@ -23,4 +23,23 @@ class ChatRepositoryImpl implements ChatRepository {
       },
     );
   }
+
+  @override
+  Future<ApiResult<ChatModel>> createChat({
+    required bool isGroup,
+    String? groupName,
+    String? groupDescription,
+    required List<String> participantIds,
+  }) async {
+    return _apiService.post<ChatModel>(
+      CommonEndpoints.getChats, // Assuming POST to /chats/ is the endpoint
+      data: {
+        'is_group': isGroup,
+        'group_name': groupName ?? 'string',
+        'group_description': groupDescription ?? 'string',
+        'participant_ids': participantIds,
+      },
+      mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
+    );
+  }
 }

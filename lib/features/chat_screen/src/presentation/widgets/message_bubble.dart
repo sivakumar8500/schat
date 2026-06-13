@@ -119,13 +119,23 @@ class MessageBubble extends StatelessWidget {
           fit: BoxFit.cover,
         );
       } else if (!kIsWeb && attachmentPath != null) {
-        imageWidget = Image.file(
-          File(attachmentPath!),
-          height: 200,
-          width: 220,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _fileChip(context, Icons.image_not_supported, 'Image error'),
-        );
+        if (attachmentPath!.startsWith('http') || attachmentPath!.startsWith('https')) {
+          imageWidget = Image.network(
+            attachmentPath!,
+            height: 200,
+            width: 220,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _fileChip(context, Icons.broken_image, 'Image error'),
+          );
+        } else {
+          imageWidget = Image.file(
+            File(attachmentPath!),
+            height: 200,
+            width: 220,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _fileChip(context, Icons.image_not_supported, 'Image error'),
+          );
+        }
       } else {
         return const SizedBox.shrink();
       }

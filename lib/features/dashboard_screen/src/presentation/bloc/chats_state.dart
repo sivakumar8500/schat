@@ -8,5 +8,6 @@ class ChatsState with _$ChatsState {
   const factory ChatsState.initial() = ChatsInitial;
   const factory ChatsState.loading() = ChatsLoading;
   const factory ChatsState.loaded(List<ChatModel> chats) = ChatsLoaded;
+  const factory ChatsState.chatCreated(ChatModel chat, String contactName) = ChatCreated;
   const factory ChatsState.error(String message) = ChatsError;
 }

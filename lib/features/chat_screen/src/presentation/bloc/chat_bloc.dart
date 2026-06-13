@@ -20,6 +20,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> _onLoadMessages(LoadMessagesEvent event, Emitter<ChatState> emit) async {
     emit(const ChatLoading());
     try {
+      // Assuming event.contactName is being used as chatId for now
       final messages = await _chatRepository.getMessages(event.contactName);
       emit(ChatLoaded(messages: messages));
     } catch (e) {
@@ -30,16 +31,35 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> _onSendMessage(SendMessageEvent event, Emitter<ChatState> emit) async {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final now = DateTime.now().millisecondsSinceEpoch;
       final newMessage = MessageModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        text: event.text,
-        time: 'Just now',
-        isMe: true,
-        isRead: false,
+        id: now.toString(),
+        chatId: 'temp_chat_id', // This should come from the current chat context
         type: event.type,
-        attachmentPath: event.attachmentPath,
-        attachmentName: event.attachmentName,
-        attachmentBytes: event.attachmentBytes,
+        senderId: 'me',
+        receiverId: 'other',
+        content: MessageContent(
+          text: event.text,
+          fileName: event.attachmentName,
+        ),
+        security: const MessageSecurity(
+          isLocked: false,
+          accessUsers: [],
+          allowDownload: true,
+          allowShare: true,
+        ),
+        viewControl: const MessageViewControl(
+          type: 'standard',
+          maxViews: 0,
+          viewedBy: [],
+          isOpened: false,
+        ),
+        expiry: const MessageExpiry(
+          isEnabled: false,
+          expireAt: 0,
+        ),
+        createdAt: now,
+        updatedAt: now,
       );
 
       final updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);

@@ -15,9 +15,9 @@ class ThemeColors {
   Color get secondary => Colors.pink;
   
   // Backgrounds
-  Color get scaffoldBackground => isDark ? Colors.black : Colors.white;
+  Color get scaffoldBackground => isDark ? Colors.black : const Color(0xFFF0FDF4);
   Color get pureBlack => Colors.black;
-  Color get lightBackground => isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF3F8FF);
+  Color get lightBackground => isDark ? const Color(0xFF1E1E1E) : const Color(0xFFE8F5E9);
   
   // Text Colors
   Color get textPrimary => isDark ? Colors.white : Colors.black87;

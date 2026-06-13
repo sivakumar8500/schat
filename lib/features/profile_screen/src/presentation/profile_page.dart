@@ -22,9 +22,6 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _aboutController = TextEditingController();
   
   File? _localImageFile;
   String? _remoteImageUrl;
@@ -34,9 +31,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void dispose() {
     _usernameController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _aboutController.dispose();
     super.dispose();
   }
 
@@ -60,9 +54,6 @@ class _ProfilePageState extends State<ProfilePage> {
   void _saveProfile(BuildContext context) {
     context.read<ProfileBloc>().add(UpdateProfileEvent(
           username: _usernameController.text,
-          firstName: _firstNameController.text,
-          lastName: _lastNameController.text,
-          about: _aboutController.text,
           // If we have a local file, we'd normally upload it first and get a URL.
           // For now using the existing URL or local path as mock.
           imagePath: _localImageFile?.path ?? _remoteImageUrl,
@@ -82,9 +73,6 @@ class _ProfilePageState extends State<ProfilePage> {
               if (state is ProfileLoaded) {
                 setState(() {
                   _usernameController.text = state.username;
-                  _firstNameController.text = state.user?.firstName ?? '';
-                  _lastNameController.text = state.user?.lastName ?? '';
-                  _aboutController.text = state.user?.about ?? '';
                   _remoteImageUrl = state.user?.profilePictureUrl;
                 });
               } else if (state is ProfileSuccess) {
@@ -224,21 +212,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             _buildLabel('Username'),
                             CommonSpaces.h8,
                             _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline),
-                            CommonSpaces.h16,
-
-                            _buildLabel('First Name'),
-                            CommonSpaces.h8,
-                            _buildTextField(_firstNameController, 'Enter your first name'),
-                            CommonSpaces.h16,
-
-                            _buildLabel('Last Name'),
-                            CommonSpaces.h8,
-                            _buildTextField(_lastNameController, 'Enter your last name'),
-                            CommonSpaces.h16,
-
-                            _buildLabel('About'),
-                            CommonSpaces.h8,
-                            _buildTextField(_aboutController, 'Hi! how was the day', maxLines: 3),
                             CommonSpaces.h32,
 
                             if (_errorText != null) ...[
@@ -276,16 +249,6 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                               ),
                             ),
-                            CommonSpaces.h24,
-
-                            if (widget.isEditing)
-                              Center(
-                                child: TextButton.icon(
-                                  onPressed: () => _showLogoutDialog(context),
-                                  icon: Icon(CommonIcons.logout, color: context.colors.error, size: 20),
-                                  label: Text('Logout from account', style: context.bodyMedium.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-                                ),
-                              ),
                             CommonSpaces.h40,
                           ],
                         ),
@@ -319,27 +282,6 @@ class _ProfilePageState extends State<ProfilePage> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.colors.pureBlack,
-        title: Text('Logout', style: context.titleMedium.copyWith(color: Colors.white)),
-        content: Text('Are you sure you want to logout?', style: context.bodyMedium.copyWith(color: Colors.white.withOpacity(0.7))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text('Cancel', style: context.bodyMedium.copyWith(color: Colors.white))),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              context.read<ProfileBloc>().add(const LogoutEvent());
-            },
-            child: Text('Logout', style: context.bodyMedium.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }

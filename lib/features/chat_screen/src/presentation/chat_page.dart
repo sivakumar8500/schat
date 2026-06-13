@@ -82,14 +82,14 @@ class _ChatPageState extends State<ChatPage> {
                                 itemBuilder: (context, index) {
                                   final msg = messages[index];
                                   return MessageBubble(
-                                    message: msg.text,
-                                    time: msg.time,
-                                    isMe: msg.isMe,
-                                    isRead: msg.isRead,
+                                    message: msg.content.text ?? '',
+                                    time: _formatTime(msg.createdAt),
+                                    isMe: msg.senderId == 'me',
+                                    isRead: msg.viewControl.isOpened,
                                     type: msg.type,
-                                    attachmentPath: msg.attachmentPath,
-                                    attachmentName: msg.attachmentName,
-                                    attachmentBytes: msg.attachmentBytes,
+                                    attachmentPath: msg.content.fileUrl,
+                                    attachmentName: msg.content.fileName,
+                                    attachmentBytes: null,
                                   );
                                 },
                               ),
@@ -104,6 +104,13 @@ class _ChatPageState extends State<ChatPage> {
         },
       ),
     );
+  }
+
+  String _formatTime(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '${hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $period';
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {

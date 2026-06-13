@@ -55,11 +55,12 @@ extension ChatsEventPatterns on ChatsEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FetchChats value)?  fetchChats,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FetchChats value)?  fetchChats,TResult Function( CreateChat value)?  createChat,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
-return fetchChats(_that);case _:
+return fetchChats(_that);case CreateChat() when createChat != null:
+return createChat(_that);case _:
   return orElse();
 
 }
@@ -77,11 +78,12 @@ return fetchChats(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FetchChats value)  fetchChats,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FetchChats value)  fetchChats,required TResult Function( CreateChat value)  createChat,}){
 final _that = this;
 switch (_that) {
 case FetchChats():
-return fetchChats(_that);case _:
+return fetchChats(_that);case CreateChat():
+return createChat(_that);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -98,11 +100,12 @@ return fetchChats(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FetchChats value)?  fetchChats,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FetchChats value)?  fetchChats,TResult? Function( CreateChat value)?  createChat,}){
 final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
-return fetchChats(_that);case _:
+return fetchChats(_that);case CreateChat() when createChat != null:
+return createChat(_that);case _:
   return null;
 
 }
@@ -119,10 +122,11 @@ return fetchChats(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,TResult Function( String participantId,  String contactName)?  createChat,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
-return fetchChats();case _:
+return fetchChats();case CreateChat() when createChat != null:
+return createChat(_that.participantId,_that.contactName);case _:
   return orElse();
 
 }
@@ -140,10 +144,11 @@ return fetchChats();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,required TResult Function( String participantId,  String contactName)  createChat,}) {final _that = this;
 switch (_that) {
 case FetchChats():
-return fetchChats();case _:
+return fetchChats();case CreateChat():
+return createChat(_that.participantId,_that.contactName);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -160,10 +165,11 @@ return fetchChats();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,TResult? Function( String participantId,  String contactName)?  createChat,}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
-return fetchChats();case _:
+return fetchChats();case CreateChat() when createChat != null:
+return createChat(_that.participantId,_that.contactName);case _:
   return null;
 
 }
@@ -202,5 +208,73 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class CreateChat implements ChatsEvent {
+  const CreateChat({required this.participantId, required this.contactName});
+  
+
+ final  String participantId;
+ final  String contactName;
+
+/// Create a copy of ChatsEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CreateChatCopyWith<CreateChat> get copyWith => _$CreateChatCopyWithImpl<CreateChat>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CreateChat&&(identical(other.participantId, participantId) || other.participantId == participantId)&&(identical(other.contactName, contactName) || other.contactName == contactName));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,participantId,contactName);
+
+@override
+String toString() {
+  return 'ChatsEvent.createChat(participantId: $participantId, contactName: $contactName)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CreateChatCopyWith<$Res> implements $ChatsEventCopyWith<$Res> {
+  factory $CreateChatCopyWith(CreateChat value, $Res Function(CreateChat) _then) = _$CreateChatCopyWithImpl;
+@useResult
+$Res call({
+ String participantId, String contactName
+});
+
+
+
+
+}
+/// @nodoc
+class _$CreateChatCopyWithImpl<$Res>
+    implements $CreateChatCopyWith<$Res> {
+  _$CreateChatCopyWithImpl(this._self, this._then);
+
+  final CreateChat _self;
+  final $Res Function(CreateChat) _then;
+
+/// Create a copy of ChatsEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? participantId = null,Object? contactName = null,}) {
+  return _then(CreateChat(
+participantId: null == participantId ? _self.participantId : participantId // ignore: cast_nullable_to_non_nullable
+as String,contactName: null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
 
 // dart format on

@@ -100,6 +100,20 @@ extension ApiServiceExtensions on ApiService {
         mapper: mapper,
       );
 
+  Future<ApiResult<T>> patch<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    T Function(dynamic)? mapper,
+  }) =>
+      call(
+        path: path,
+        method: 'PATCH',
+        data: data,
+        queryParameters: queryParameters,
+        mapper: mapper,
+      );
+
   Future<ApiResult<T>> delete<T>(
     String path, {
     dynamic data,

@@ -46,7 +46,7 @@ import 'features/payment_screen/src/domain/repositories/payment_repository.dart'
 import 'features/profile_screen/src/data/repositories/profile_repository_impl.dart'
     as _i67;
 import 'features/profile_screen/src/domain/repositories/profile_repository.dart'
-    as _i649;
+    as _i651;
 import 'features/status_screen/src/data/repositories/status_repository_impl.dart'
     as _i769;
 import 'features/status_screen/src/domain/repositories/status_repository.dart'
@@ -64,52 +64,36 @@ extension GetItInjectableX on _i174.GetIt {
   }) {
     final gh = _i526.GetItHelper(this, environment, environmentFilter);
     final networkModule = _$NetworkModule();
-    gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
-    gh.lazySingleton<_i263.StorageService>(() => _i263.StorageService());
+    gh.lazySingleton<_i895.Connectivity>((() => networkModule.connectivity));
+    gh.lazySingleton<_i263.StorageService>((() => _i263.StorageService()));
     gh.lazySingleton<_i466.PaymentRepository>(
-      () => _i39.PaymentRepositoryImpl(),
-    );
-    gh.lazySingleton<_i1069.ContactsRepository>(
-      () => _i1069.ContactsRepositoryImpl(),
-    );
+        (() => _i39.PaymentRepositoryImpl()));
     gh.lazySingleton<_i906.StatusRepository>(
-      () => _i769.StatusRepositoryImpl(),
-    );
-    gh.lazySingleton<_i649.ChatRepository>(() => _i715.ChatRepositoryImpl());
+        (() => _i769.StatusRepositoryImpl()));
+    gh.lazySingleton<_i649.ChatRepository>((() => _i715.ChatRepositoryImpl()));
     gh.lazySingleton<_i232.ConnectivityRepository>(
-      () => _i232.ConnectivityRepositoryImpl(gh<_i895.Connectivity>()),
-    );
+        (() => _i232.ConnectivityRepositoryImpl(gh<_i895.Connectivity>())));
     gh.factory<_i729.ApiInterceptor>(
-      () => _i729.ApiInterceptor(gh<_i263.StorageService>()),
-    );
+        (() => _i729.ApiInterceptor(gh<_i263.StorageService>())));
     gh.lazySingleton<_i361.Dio>(
-      () => networkModule.getDio(gh<_i729.ApiInterceptor>()),
-    );
+        (() => networkModule.getDio(gh<_i729.ApiInterceptor>())));
     gh.factory<_i201.ConnectivityBloc>(
-      () => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>()),
-    );
-    gh.lazySingleton<_i374.ApiService>(() => _i374.ApiService(gh<_i361.Dio>()));
-    gh.lazySingleton<_i939.AuthRepository>(
-      () => _i299.AuthRepositoryImpl(
-        gh<_i374.ApiService>(),
-        gh<_i263.StorageService>(),
-      ),
-    );
-    gh.lazySingleton<_i649.ProfileRepository>(
-      () => _i67.ProfileRepositoryImpl(gh<_i374.ApiService>()),
-    );
+        (() => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>())));
+    gh.lazySingleton<_i374.ApiService>((() => _i374.ApiService(gh<_i361.Dio>())));
+    gh.lazySingleton<_i939.AuthRepository>((() => _i299.AuthRepositoryImpl(
+        gh<_i374.ApiService>(), gh<_i263.StorageService>())));
+    gh.lazySingleton<_i651.ProfileRepository>(
+        (() => _i67.ProfileRepositoryImpl(gh<_i374.ApiService>())));
     gh.lazySingleton<_i702.SubscriptionRepository>(
-      () => _i819.SubscriptionRepositoryImpl(gh<_i374.ApiService>()),
-    );
+        (() => _i819.SubscriptionRepositoryImpl(gh<_i374.ApiService>())));
+    gh.lazySingleton<_i1069.ContactsRepository>(
+        (() => _i1069.ContactsRepositoryImpl(gh<_i374.ApiService>())));
     gh.lazySingleton<_i908.ChatRepository>(
-      () => _i599.ChatRepositoryImpl(gh<_i374.ApiService>()),
-    );
+        (() => _i599.ChatRepositoryImpl(gh<_i374.ApiService>())));
     gh.lazySingleton<_i127.GetChatsUseCase>(
-      () => _i127.GetChatsUseCase(gh<_i908.ChatRepository>()),
-    );
-    gh.factory<_i236.ChatsBloc>(
-      () => _i236.ChatsBloc(gh<_i127.GetChatsUseCase>()),
-    );
+        (() => _i127.GetChatsUseCase(gh<_i908.ChatRepository>())));
+    gh.factory<_i236.ChatsBloc>((() => _i236.ChatsBloc(
+        gh<_i127.GetChatsUseCase>(), gh<_i908.ChatRepository>())));
     return this;
   }
 }

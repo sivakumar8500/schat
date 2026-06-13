@@ -1,4 +1,5 @@
 import 'package:fast_contacts/fast_contacts.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 
 abstract class ContactsState {
   const ContactsState();
@@ -14,8 +15,12 @@ class ContactsLoading extends ContactsState {
 
 class ContactsLoaded extends ContactsState {
   final List<Contact> contacts;
+  final List<UserModel> syncedContacts;
 
-  const ContactsLoaded({required this.contacts});
+  const ContactsLoaded({
+    required this.contacts,
+    this.syncedContacts = const [],
+  });
 }
 
 class ContactsPermissionDenied extends ContactsState {

@@ -8,6 +8,7 @@ class CommonFontStyles {
   static TextStyle h1(BuildContext context) => TextStyle(
         fontSize: 38,
         fontWeight: FontWeight.w900,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
         height: 1.1,
         letterSpacing: -0.5,
@@ -23,51 +24,60 @@ class CommonFontStyles {
   static TextStyle h2(BuildContext context) => TextStyle(
         fontSize: 28,
         fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle h3(BuildContext context) => TextStyle(
         fontSize: 22,
         fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle titleMedium(BuildContext context) => TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle titleSmall(BuildContext context) => TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w700,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle bodyLarge(BuildContext context) => TextStyle(
         fontSize: 16,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle bodyMedium(BuildContext context) => TextStyle(
         fontSize: 14,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
         height: 1.4,
       );
 
   static TextStyle bodySmall(BuildContext context) => TextStyle(
         fontSize: 13,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );
 
-  static TextStyle buttonText(BuildContext context) => const TextStyle(
+  static TextStyle buttonText(BuildContext context) => TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
         color: Colors.white,
       );
 
   static TextStyle caption(BuildContext context) => TextStyle(
         fontSize: 12,
+        fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );
 }

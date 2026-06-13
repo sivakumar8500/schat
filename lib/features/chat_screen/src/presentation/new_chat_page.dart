@@ -17,8 +17,8 @@ import 'package:schat/utils/common_spaces.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/injection.dart';
 
-class UserListPage extends StatelessWidget {
-  const UserListPage({super.key});
+class NewChatPage extends StatelessWidget {
+  const NewChatPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -35,13 +35,13 @@ class UserListPage extends StatelessWidget {
         listener: (context, state) {
           state.maybeWhen(
             chatCreated: (chat, contactName) {
-              Navigator.push(
+              Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatPage(
                     contactName: contactName,
                     contactColor: context.colors.primary,
-                    isOnline: false,
+                    isOnline: false, // You can derive this from chat participants if available
                   ),
                 ),
               );
@@ -56,20 +56,21 @@ class UserListPage extends StatelessWidget {
         },
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBackground,
+          appBar: AppBar(
+            backgroundColor: context.colors.scaffoldBackground,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text(
+              'New Chat',
+              style: context.h1.copyWith(fontSize: 22),
+            ),
+          ),
           body: BlocBuilder<ContactsBloc, ContactsState>(
             builder: (context, state) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                    child: Text('New Chat', style: context.h1.copyWith(fontSize: 26)),
-                  ),
-                  Expanded(
-                    child: _buildBody(context, state),
-                  ),
-                ],
-              );
+              return _buildBody(context, state);
             },
           ),
         ),

@@ -22,7 +22,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
 
   @override
   Future<ApiResult<UserModel>> updateProfile(UpdateProfileRequest request) async {
-    return _apiService.put<UserModel>(
+    return _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,
       data: request.toJson(),
       mapper: (json) => UserModel.fromJson(json),
