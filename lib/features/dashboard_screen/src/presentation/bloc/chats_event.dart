@@ -8,5 +8,6 @@ class ChatsEvent with _$ChatsEvent {
   const factory ChatsEvent.createChat({
     required String participantId,
     required String contactName,
+    String? profilePictureUrl,
   }) = CreateChat;
 }

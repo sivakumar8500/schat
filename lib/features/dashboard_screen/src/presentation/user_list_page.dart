@@ -41,7 +41,7 @@ class _UserListPageState extends State<UserListPage> {
       child: BlocListener<ChatsBloc, ChatsState>(
         listener: (context, state) {
           state.maybeWhen(
-            chatCreated: (chat, contactName) {
+            chatCreated: (chat, contactName, profilePictureUrl) {
               if (_pendingParticipantId != null) {
                 context.read<ContactsBloc>().add(RemoveContact(_pendingParticipantId!));
                 _pendingParticipantId = null;
@@ -50,9 +50,11 @@ class _UserListPageState extends State<UserListPage> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatPage(
+                    conversationId: chat.id,
                     contactName: contactName,
                     contactColor: context.colors.primary,
                     isOnline: false,
+                    profilePictureUrl: profilePictureUrl,
                   ),
                 ),
               );
@@ -234,6 +236,7 @@ class _UserListPageState extends State<UserListPage> {
         context.read<ChatsBloc>().add(CreateChat(
           participantId: user.id,
           contactName: name,
+          profilePictureUrl: user.profilePictureUrl,
         ));
       },
       leading: CircleAvatar(

@@ -12,6 +12,13 @@ class SubscriptionLoading extends SubscriptionState {
   const SubscriptionLoading();
 }
 
+class SubscriptionConfirming extends SubscriptionState {
+  final List<SubscriptionPlanModel> plans;
+  final int selectedIndex;
+
+  const SubscriptionConfirming({required this.plans, required this.selectedIndex});
+}
+
 class SubscriptionLoaded extends SubscriptionState {
   final List<SubscriptionPlanModel> plans;
   final int selectedIndex;

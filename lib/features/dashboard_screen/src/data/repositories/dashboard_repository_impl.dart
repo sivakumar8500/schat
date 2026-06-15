@@ -2,14 +2,14 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
-@LazySingleton(as: ChatRepository)
-class ChatRepositoryImpl implements ChatRepository {
+@LazySingleton(as: DashboardRepository)
+class DashboardRepositoryImpl implements DashboardRepository {
   final ApiService _apiService;
 
-  ChatRepositoryImpl(this._apiService);
+  DashboardRepositoryImpl(this._apiService);
 
   @override
   Future<ApiResult<List<ChatModel>>> getChats() async {
@@ -32,7 +32,7 @@ class ChatRepositoryImpl implements ChatRepository {
     required List<String> participantIds,
   }) async {
     return _apiService.post<ChatModel>(
-      CommonEndpoints.getChats, // Assuming POST to /chats/ is the endpoint
+      CommonEndpoints.getChats,
       data: {
         'is_group': isGroup,
         'group_name': groupName ?? 'string',

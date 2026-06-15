@@ -16,11 +16,13 @@ class ChatLoaded extends ChatState {
   final List<MessageModel> messages;
   final bool isMuted;
   final bool isLocked;
+  final String myId;
 
   const ChatLoaded({
     required this.messages,
     this.isMuted = false,
     this.isLocked = false,
+    this.myId = '',
   });
 }
 

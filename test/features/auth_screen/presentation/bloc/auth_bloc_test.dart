@@ -29,7 +29,7 @@ void main() {
       'emits [AuthLoading, OtpSent] when successful',
       build: () {
         when(() => mockAuthRepository.sendOtp(mobile))
-            .thenAnswer((_) async => const ApiResult.success(true));
+            .thenAnswer((_) async => const Success(true));
         return authBloc;
       },
       act: (bloc) => bloc.add(const SendOtpEvent(phoneNumber: mobile)),
@@ -52,7 +52,7 @@ void main() {
       'emits [AuthLoading, AuthFailure] when API fails',
       build: () {
         when(() => mockAuthRepository.sendOtp(mobile))
-            .thenAnswer((_) async => const ApiResult.failure('Server Error'));
+            .thenAnswer((_) async => const Failure('Server Error'));
         return authBloc;
       },
       act: (bloc) => bloc.add(const SendOtpEvent(phoneNumber: mobile)),
@@ -72,7 +72,7 @@ void main() {
       'emits [AuthLoading, AuthSuccess] when successful',
       build: () {
         when(() => mockAuthRepository.verifyOtp(mobile, otp, deviceId))
-            .thenAnswer((_) async => const ApiResult.success(true));
+            .thenAnswer((_) async => const Success(true));
         return authBloc;
       },
       seed: () => const OtpSent(mobile: mobile),
@@ -87,7 +87,7 @@ void main() {
       'emits [AuthLoading, AuthFailure, OtpSent] when OTP is invalid',
       build: () {
         when(() => mockAuthRepository.verifyOtp(mobile, otp, deviceId))
-            .thenAnswer((_) async => const ApiResult.failure('Invalid OTP'));
+            .thenAnswer((_) async => const Failure('Invalid OTP'));
         return authBloc;
       },
       seed: () => const OtpSent(mobile: mobile),

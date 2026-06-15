@@ -122,11 +122,11 @@ return createChat(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,TResult Function( String participantId,  String contactName)?  createChat,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,TResult Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats();case CreateChat() when createChat != null:
-return createChat(_that.participantId,_that.contactName);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
   return orElse();
 
 }
@@ -144,11 +144,11 @@ return createChat(_that.participantId,_that.contactName);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,required TResult Function( String participantId,  String contactName)  createChat,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,required TResult Function( String participantId,  String contactName,  String? profilePictureUrl)  createChat,}) {final _that = this;
 switch (_that) {
 case FetchChats():
 return fetchChats();case CreateChat():
-return createChat(_that.participantId,_that.contactName);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -165,11 +165,11 @@ return createChat(_that.participantId,_that.contactName);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,TResult? Function( String participantId,  String contactName)?  createChat,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,TResult? Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats();case CreateChat() when createChat != null:
-return createChat(_that.participantId,_that.contactName);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
   return null;
 
 }
@@ -213,11 +213,12 @@ String toString() {
 
 
 class CreateChat implements ChatsEvent {
-  const CreateChat({required this.participantId, required this.contactName});
+  const CreateChat({required this.participantId, required this.contactName, this.profilePictureUrl});
   
 
  final  String participantId;
  final  String contactName;
+ final  String? profilePictureUrl;
 
 /// Create a copy of ChatsEvent
 /// with the given fields replaced by the non-null parameter values.
@@ -229,16 +230,16 @@ $CreateChatCopyWith<CreateChat> get copyWith => _$CreateChatCopyWithImpl<CreateC
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CreateChat&&(identical(other.participantId, participantId) || other.participantId == participantId)&&(identical(other.contactName, contactName) || other.contactName == contactName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CreateChat&&(identical(other.participantId, participantId) || other.participantId == participantId)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,participantId,contactName);
+int get hashCode => Object.hash(runtimeType,participantId,contactName,profilePictureUrl);
 
 @override
 String toString() {
-  return 'ChatsEvent.createChat(participantId: $participantId, contactName: $contactName)';
+  return 'ChatsEvent.createChat(participantId: $participantId, contactName: $contactName, profilePictureUrl: $profilePictureUrl)';
 }
 
 
@@ -249,7 +250,7 @@ abstract mixin class $CreateChatCopyWith<$Res> implements $ChatsEventCopyWith<$R
   factory $CreateChatCopyWith(CreateChat value, $Res Function(CreateChat) _then) = _$CreateChatCopyWithImpl;
 @useResult
 $Res call({
- String participantId, String contactName
+ String participantId, String contactName, String? profilePictureUrl
 });
 
 
@@ -266,11 +267,12 @@ class _$CreateChatCopyWithImpl<$Res>
 
 /// Create a copy of ChatsEvent
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? participantId = null,Object? contactName = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? participantId = null,Object? contactName = null,Object? profilePictureUrl = freezed,}) {
   return _then(CreateChat(
 participantId: null == participantId ? _self.participantId : participantId // ignore: cast_nullable_to_non_nullable
 as String,contactName: null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String,
+as String,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

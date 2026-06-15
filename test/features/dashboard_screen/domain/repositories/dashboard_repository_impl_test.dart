@@ -2,19 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
-import 'package:schat/features/dashboard_screen/src/data/repositories/chat_repository_impl.dart';
+import 'package:schat/features/dashboard_screen/src/data/repositories/dashboard_repository_impl.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 class MockApiService extends Mock implements ApiService {}
 
 void main() {
-  late ChatRepositoryImpl repository;
+  late DashboardRepositoryImpl repository;
   late MockApiService mockApiService;
 
   setUp(() {
     mockApiService = MockApiService();
-    repository = ChatRepositoryImpl(mockApiService);
+    repository = DashboardRepositoryImpl(mockApiService);
   });
 
   group('getChats', () {
@@ -24,6 +24,15 @@ void main() {
         'is_group': false,
         'created_at': 'now',
         'updated_at': 'now',
+        'recipient': {
+          'id': 'r1',
+          'phone_number': '1234567890',
+          'is_active': true,
+          'is_online': false,
+          'is_subscribed': true,
+          'created_at': 'now',
+          'updated_at': 'now',
+        }
       }
     ];
 

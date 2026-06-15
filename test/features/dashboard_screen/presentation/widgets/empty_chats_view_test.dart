@@ -5,17 +5,12 @@ import 'package:schat/utils/theme_controller.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class MockThemeController extends ThemeController {
-  MockThemeController(super.prefs);
-}
-
 void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
     final getIt = GetIt.instance;
     if (!getIt.isRegistered<ThemeController>()) {
-      getIt.registerSingleton<ThemeController>(ThemeController(prefs));
+      getIt.registerSingleton<ThemeController>(ThemeController());
     }
   });
 

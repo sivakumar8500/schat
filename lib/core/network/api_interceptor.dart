@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
@@ -15,19 +16,27 @@ class ApiInterceptor extends Interceptor {
       options.headers['Authorization'] = 'Bearer $token';
     }
     
-    print('REQUEST[${options.method}] => PATH: ${options.path}');
+    print('--------------------------');
+    print('API Request: ${options.method}');
+    print('---------------------------');
+    print('api --->: ${options.baseUrl}${options.path}');
+    print('body ---->: ${jsonEncode(options.data ?? {})}');
+    
     super.onRequest(options, handler);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print('RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}');
+    print('responce ----->: ${jsonEncode(response.data ?? {})}');
+    print('----------------------------------');
     super.onResponse(response, handler);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    print('ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}');
+    print('ERROR[${err.response?.statusCode}]');
+    print('responce ----->: ${jsonEncode(err.response?.data ?? {})}');
+    print('----------------------------------');
     super.onError(err, handler);
   }
 }

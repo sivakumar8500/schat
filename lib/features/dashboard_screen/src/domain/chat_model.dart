@@ -1,4 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'recipient_model.dart';
+import 'last_message_model.dart';
 
 part 'chat_model.freezed.dart';
 part 'chat_model.g.dart';
@@ -12,6 +14,8 @@ abstract class ChatModel with _$ChatModel {
     @JsonKey(name: 'group_description') String? groupDescription,
     @JsonKey(name: 'created_at') required String createdAt,
     @JsonKey(name: 'updated_at') required String updatedAt,
+    required RecipientModel recipient,
+    @JsonKey(name: 'last_message') LastMessageModel? lastMessage,
   }) = _ChatModel;
 
   factory ChatModel.fromJson(Map<String, dynamic> json) => _$ChatModelFromJson(json);

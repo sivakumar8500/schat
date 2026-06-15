@@ -9,6 +9,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:schat/common/widgets/internet_connection_popup_widget.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_event.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'injection.dart';
@@ -53,8 +55,15 @@ class MyApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: getIt<ThemeController>(),
       builder: (context, _) {
-        return BlocProvider<ConnectivityBloc>(
-          create: (context) => getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
+        return MultiBlocProvider(
+          providers: [
+            BlocProvider<ConnectivityBloc>(
+              create: (context) => getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
+            ),
+            BlocProvider<ChatSocketBloc>(
+              create: (context) => getIt<ChatSocketBloc>()..add(const ConnectSocket()),
+            ),
+          ],
           child: MaterialApp(
             title: 'sChat',
             themeMode: getIt<ThemeController>().themeMode,

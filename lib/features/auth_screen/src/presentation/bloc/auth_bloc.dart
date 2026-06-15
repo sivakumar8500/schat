@@ -79,17 +79,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             emit(const AuthSuccess());
           } else {
             emit(const AuthFailure(errorMessage: 'Invalid OTP.'));
-            emit(OtpSent(mobile: mobile!));
           }
         },
         failure: (message) {
           emit(AuthFailure(errorMessage: message));
-          emit(OtpSent(mobile: mobile!));
         },
       );
     } catch (e) {
       emit(AuthFailure(errorMessage: e.toString()));
-      emit(OtpSent(mobile: mobile));
     }
   }
 }

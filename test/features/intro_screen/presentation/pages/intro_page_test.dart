@@ -42,34 +42,54 @@ void main() {
   });
 
   testWidgets('IntroPage navigates to MobileEntryPage on Get started button tap', (WidgetTester tester) async {
+    // Increase surface size to ensure widgets are on-screen
+    final testerView = tester.view;
+    testerView.physicalSize = const Size(1080, 2400);
+    testerView.devicePixelRatio = 1.0;
+
     await tester.pumpWidget(createWidgetUnderTest());
 
     // Tap Get started
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
 
-    // Verify MobileEntryPage renders
+    // Verify MobileEntryPage renders (using exact text from mobile_entry_page.dart)
     expect(find.text("Let's "), findsOneWidget);
+    expect(find.text("get "), findsOneWidget);
     expect(find.text("you in."), findsOneWidget);
 
     // Verify shared preferences is updated
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('hasSeenIntro'), true);
+
+    // Reset surface size
+    testerView.resetPhysicalSize();
+    testerView.resetDevicePixelRatio();
   });
 
   testWidgets('IntroPage navigates to MobileEntryPage on Sign in tap', (WidgetTester tester) async {
+    // Increase surface size to ensure widgets are on-screen
+    final testerView = tester.view;
+    testerView.physicalSize = const Size(1080, 2400);
+    testerView.devicePixelRatio = 1.0;
+
     await tester.pumpWidget(createWidgetUnderTest());
 
     // Tap Sign in
     await tester.tap(find.text('Sign in'));
     await tester.pumpAndSettle();
 
-    // Verify MobileEntryPage renders
+    // Verify MobileEntryPage renders (using exact text from mobile_entry_page.dart)
     expect(find.text("Let's "), findsOneWidget);
+    expect(find.text("get "), findsOneWidget);
     expect(find.text("you in."), findsOneWidget);
 
     // Verify shared preferences is updated
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('hasSeenIntro'), true);
+
+    // Reset surface size
+    testerView.resetPhysicalSize();
+    testerView.resetDevicePixelRatio();
   });
 }

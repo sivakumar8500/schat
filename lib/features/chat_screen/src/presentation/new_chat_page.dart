@@ -50,6 +50,7 @@ class _NewChatPageState extends State<NewChatPage> {
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatPage(
+                    conversationId: chat.id,
                     contactName: contactName,
                     contactColor: context.colors.primary,
                     isOnline: false,

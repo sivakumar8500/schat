@@ -2,6 +2,7 @@ class CommonEndpoints {
   CommonEndpoints._();
 
   static const String baseUrl = 'http://13.201.205.176:8000/api/v1';
+  static const String socketUrl = 'ws://13.201.205.176:8000/ws';
 
   // Auth
   static const String sendOtp = '/auth/send-otp';

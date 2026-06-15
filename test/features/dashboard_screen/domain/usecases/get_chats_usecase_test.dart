@@ -2,32 +2,44 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/recipient_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
 
-class MockChatRepository extends Mock implements ChatRepository {}
+class MockDashboardRepository extends Mock implements DashboardRepository {}
 
 void main() {
   late GetChatsUseCase useCase;
-  late MockChatRepository mockChatRepository;
+  late MockDashboardRepository mockDashboardRepository;
 
   setUp(() {
-    mockChatRepository = MockChatRepository();
-    useCase = GetChatsUseCase(mockChatRepository);
+    mockDashboardRepository = MockDashboardRepository();
+    useCase = GetChatsUseCase(mockDashboardRepository);
   });
 
-  const chatList = [
-    ChatModel(
+  const recipient = RecipientModel(
+    id: 'r1',
+    phoneNumber: '1234567890',
+    isActive: true,
+    isOnline: false,
+    isSubscribed: true,
+    createdAt: 'now',
+    updatedAt: 'now',
+  );
+
+  final chatList = [
+    const ChatModel(
       id: '1',
       isGroup: false,
       createdAt: 'now',
       updatedAt: 'now',
+      recipient: recipient,
     ),
   ];
 
   test('should get chats from repository', () async {
     // arrange
-    when(() => mockChatRepository.getChats())
+    when(() => mockDashboardRepository.getChats())
         .thenAnswer((_) async => ApiResult.success(chatList));
 
     // act
@@ -35,8 +47,8 @@ void main() {
 
     // assert
     expect(result, isA<Success<List<ChatModel>>>());
-    expect((result as Success).data, chatList);
-    verify(() => mockChatRepository.getChats());
-    verifyNoMoreInteractions(mockChatRepository);
+    expect((result as Success<List<ChatModel>>).data, chatList);
+    verify(() => mockDashboardRepository.getChats());
+    verifyNoMoreInteractions(mockDashboardRepository);
   });
 }

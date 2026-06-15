@@ -42,7 +42,10 @@ class SubscriptionBloc extends Bloc<SubscriptionEvent, SubscriptionState> {
     if (currentState is SubscriptionLoaded && currentState.selectedIndex != -1) {
       final selectedPlan = currentState.plans[currentState.selectedIndex];
       
-      emit(const SubscriptionLoading());
+      emit(SubscriptionConfirming(
+        plans: currentState.plans,
+        selectedIndex: currentState.selectedIndex,
+      ));
 
       final request = EnrollSubscriptionRequest(
         planId: selectedPlan.id,

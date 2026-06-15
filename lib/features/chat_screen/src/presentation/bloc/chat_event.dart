@@ -5,12 +5,12 @@ abstract class ChatEvent {
 }
 
 class LoadMessagesEvent extends ChatEvent {
-  final String contactName;
-  const LoadMessagesEvent({required this.contactName});
+  final String conversationId;
+  const LoadMessagesEvent({required this.conversationId});
 }
 
 class SendMessageEvent extends ChatEvent {
-  final String contactName;
+  final String conversationId;
   final String text;
   final String type;
   final String? attachmentPath;
@@ -18,13 +18,18 @@ class SendMessageEvent extends ChatEvent {
   final Uint8List? attachmentBytes;
 
   const SendMessageEvent({
-    required this.contactName,
+    required this.conversationId,
     required this.text,
     this.type = 'text',
     this.attachmentPath,
     this.attachmentName,
     this.attachmentBytes,
   });
+}
+
+class ReceiveMessageEvent extends ChatEvent {
+  final Map<String, dynamic> messageData;
+  const ReceiveMessageEvent({required this.messageData});
 }
 
 class ToggleMuteEvent extends ChatEvent {

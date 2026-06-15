@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'package:schat/injection.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_state.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_sizes.dart';
 
@@ -17,18 +21,24 @@ import 'package:schat/features/chat_screen/src/domain/models/message_model.dart'
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 
 
 class ChatPage extends StatefulWidget {
+  final String conversationId;
   final String contactName;
   final Color contactColor;
   final bool isOnline;
+  final String? profilePictureUrl;
 
   const ChatPage({
     super.key,
+    required this.conversationId,
     required this.contactName,
     required this.contactColor,
     required this.isOnline,
+    this.profilePictureUrl,
   });
 
   @override
@@ -38,10 +48,32 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   bool _isTyping = false;
+  StreamSubscription? _socketSubscription;
+
+  late ChatBloc _chatBloc;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatBloc = ChatBloc()..add(LoadMessagesEvent(conversationId: widget.conversationId));
+    
+    _socketSubscription = getIt<ChatSocketRepository>().onMessage.listen((data) {
+      if (mounted && data is Map<String, dynamic>) {
+        if (data['type'] == 'new_message') {
+          final message = data['message'] as Map<String, dynamic>?;
+          if (message != null && message['conversation_id'] == widget.conversationId) {
+            _chatBloc.add(ReceiveMessageEvent(messageData: message));
+          }
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _socketSubscription?.cancel();
+    _chatBloc.close();
     super.dispose();
   }
 
@@ -49,7 +81,18 @@ class _ChatPageState extends State<ChatPage> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    context.read<ChatBloc>().add(SendMessageEvent(contactName: widget.contactName, text: text));
+    // Send via socket
+    context.read<ChatSocketBloc>().add(SendMessage(
+      conversationId: widget.conversationId,
+      content: text,
+    ));
+
+    // Optimistically update UI
+    _chatBloc.add(SendMessageEvent(
+      conversationId: widget.conversationId,
+      text: text,
+    ));
+
     _messageController.clear();
     setState(() {
       _isTyping = false;
@@ -58,59 +101,88 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider<ChatBloc>(
-      create: (context) => ChatBloc()..add(LoadMessagesEvent(contactName: widget.contactName)),
-      child: Builder(
-        builder: (context) {
-          return BlocBuilder<ChatBloc, ChatState>(
-            builder: (context, state) {
-              final isLoading = state is ChatLoading || state is ChatInitial;
-              final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
+    return BlocProvider<ChatBloc>.value(
+      value: _chatBloc,
+      child: BlocBuilder<ChatBloc, ChatState>(
+        builder: (context, state) {
+          final isLoading = state is ChatLoading || state is ChatInitial;
+          final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
 
-              return Scaffold(
-                backgroundColor: context.colors.scaffoldBackground,
-                appBar: _buildAppBar(context),
-                body: SafeArea(
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: isLoading
-                            ? Center(child: CircularProgressIndicator(color: context.colors.primary))
+          return Scaffold(
+            backgroundColor: context.colors.scaffoldBackground,
+            appBar: _buildAppBar(context),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: isLoading
+                        ? Center(child: CircularProgressIndicator(color: context.colors.primary))
+                        : messages.isEmpty 
+                            ? _buildEmptyScreen(context)
                             : ListView.builder(
-                                padding: const EdgeInsets.only(top: 16, bottom: 16),
+                                reverse: true,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                                 itemCount: messages.length,
                                 itemBuilder: (context, index) {
-                                  final msg = messages[index];
+                                  // Since reverse is true, index 0 is the bottom-most item.
+                                  // Assuming the 'messages' list is ordered oldest-to-newest,
+                                  // we access it from the end.
+                                  final msg = messages[messages.length - 1 - index];
+                                  final isMe = state is ChatLoaded && msg.senderId == state.myId;
                                   return MessageBubble(
-                                    message: msg.content.text ?? '',
+                                    message: msg.content,
                                     time: _formatTime(msg.createdAt),
-                                    isMe: msg.senderId == 'me',
-                                    isRead: msg.viewControl.isOpened,
-                                    type: msg.type,
-                                    attachmentPath: msg.content.fileUrl,
-                                    attachmentName: msg.content.fileName,
+                                    isMe: isMe,
+                                    isRead: true, // TODO: actual logic
+                                    type: msg.mediaType ?? 'text',
+                                    attachmentPath: msg.mediaUrl,
+                                    attachmentName: '',
                                     attachmentBytes: null,
                                   );
                                 },
                               ),
-                      ),
-                      _buildInputBar(context),
-                    ],
                   ),
-                ),
-              );
-            },
+                  _buildInputBar(context),
+                ],
+              ),
+            ),
           );
         },
       ),
     );
   }
 
-  String _formatTime(int timestamp) {
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
-    final period = date.hour >= 12 ? 'PM' : 'AM';
-    return '${hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')} $period';
+  Widget _buildEmptyScreen(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 80, color: context.colors.textHint.withValues(alpha: 0.5)),
+          CommonSpaces.h16,
+          Text(
+            'No messages yet',
+            style: context.titleMedium.copyWith(color: context.colors.textSecondary),
+          ),
+          CommonSpaces.h8,
+          Text(
+            'Send a message to start the conversation',
+            style: context.bodySmall.copyWith(color: context.colors.textHint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(String createdAt) {
+    try {
+      final date = DateTime.parse(createdAt).toLocal();
+      final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+      final minute = date.minute.toString().padLeft(2, '0');
+      final period = date.hour >= 12 ? 'PM' : 'AM';
+      return '$hour:$minute $period';
+    } catch (e) {
+      return '';
+    }
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
@@ -121,12 +193,11 @@ class _ChatPageState extends State<ChatPage> {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: () {
-          final chatBloc = context.read<ChatBloc>();
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => BlocProvider.value(
-                value: chatBloc,
+                value: _chatBloc,
                 child: ContactProfilePage(
                   contactName: widget.contactName,
                   contactColor: widget.contactColor,
@@ -143,12 +214,17 @@ class _ChatPageState extends State<ChatPage> {
                 CircleAvatar(
                   radius: 20,
                   backgroundColor: widget.contactColor.withValues(alpha: 0.2),
-                  child: Text(
-                    widget.contactName.substring(0, 1),
-                    style: context.titleMedium.copyWith(
-                      color: widget.contactColor,
-                    ),
-                  ),
+                  backgroundImage: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
+                      ? NetworkImage(widget.profilePictureUrl!)
+                      : null,
+                  child: (widget.profilePictureUrl == null || widget.profilePictureUrl!.isEmpty)
+                      ? Text(
+                          widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
+                          style: context.titleMedium.copyWith(
+                            color: widget.contactColor,
+                          ),
+                        )
+                      : null,
                 ),
                 if (widget.isOnline)
                   Positioned(
@@ -167,22 +243,27 @@ class _ChatPageState extends State<ChatPage> {
               ],
             ),
             CommonSpaces.w12,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.contactName,
-                  style: context.titleMedium,
-                ),
-                Text(
-                  widget.isOnline ? 'Online' : 'Offline',
-                  style: TextStyle(
-                    color: widget.isOnline ? context.colors.success : context.colors.textHint,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.contactName,
+                    style: context.titleMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                  Text(
+                    widget.isOnline ? 'Online' : 'Offline',
+                    style: TextStyle(
+                      color: widget.isOnline ? context.colors.success : context.colors.textHint,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -421,21 +502,35 @@ class _ChatPageState extends State<ChatPage> {
 
   void _sendAttachmentWithBytes(BuildContext context, Uint8List bytes, String name, String type) {
     context.read<ChatBloc>().add(SendMessageEvent(
-      contactName: widget.contactName,
+      conversationId: widget.conversationId,
       text: type == 'image' ? '' : name,
       type: type,
       attachmentName: name,
       attachmentBytes: bytes,
     ));
+    // Send via socket
+    context.read<ChatSocketBloc>().add(SendMessage(
+      conversationId: widget.conversationId,
+      content: type == 'image' ? '' : name,
+      mediaType: type,
+      // mediaUrl: // upload first?
+    ));
   }
 
   Future<void> _sendAttachment(BuildContext context, String path, String name, String type) async {
     context.read<ChatBloc>().add(SendMessageEvent(
-      contactName: widget.contactName,
+      conversationId: widget.conversationId,
       text: type == 'image' ? '' : name,
       type: type,
       attachmentPath: path,
       attachmentName: name,
+    ));
+    // Send via socket
+    context.read<ChatSocketBloc>().add(SendMessage(
+      conversationId: widget.conversationId,
+      content: type == 'image' ? '' : name,
+      mediaType: type,
+      mediaUrl: path,
     ));
   }
 

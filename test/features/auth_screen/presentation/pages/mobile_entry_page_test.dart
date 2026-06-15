@@ -48,7 +48,7 @@ void main() {
 
   testWidgets('navigates to OtpVerifyPage on valid input directly', (WidgetTester tester) async {
     when(() => mockAuthRepository.sendOtp(any()))
-        .thenAnswer((_) async => const ApiResult.success(true));
+        .thenAnswer((_) async => const Success(true));
 
     await tester.pumpWidget(createWidgetUnderTest());
 

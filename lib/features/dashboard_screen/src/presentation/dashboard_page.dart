@@ -6,10 +6,13 @@ import 'package:schat/features/chat_search/src/presentation/chat_search_page.dar
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_chats_view.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/features/profile_screen/src/presentation/profile_settings_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_page.dart';
 import 'package:schat/injection.dart';
@@ -38,6 +41,20 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadProfile() async {
+    // Background sync user ID and profile info
+    getIt<ProfileRepository>().getProfile().then((result) {
+      result.when(
+        success: (user) {
+          if (mounted) {
+            setState(() {
+              _username = user.username ?? 'David';
+            });
+          }
+        },
+        failure: (_) {},
+      );
+    });
+
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _username = prefs.getString('username') ?? 'David';
@@ -46,6 +63,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('DEBUG: Building DashboardPage');
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
       body: SafeArea(
@@ -187,7 +205,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildAvatar(ChatModel chat) {
     final isGroup = chat.isGroup;
-    final color = context.colors.primary; // Default color for API results
+    final color = context.colors.primary;
 
     if (isGroup) {
       return SizedBox(
@@ -234,22 +252,25 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
 
-    final name = chat.groupName ?? 'User';
-    return Stack(
-      children: [
-        CircleAvatar(
-          radius: 28,
-          backgroundColor: color.withValues(alpha: 0.15),
-          child: Text(
-            name.isNotEmpty ? name.substring(0, 1) : 'U',
-            style: TextStyle(
-              color: color,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ],
+    final imageUrl = chat.recipient.profilePictureUrl;
+    final name = chat.recipient.username ?? chat.recipient.phoneNumber;
+
+    return CircleAvatar(
+      radius: 28,
+      backgroundColor: color.withValues(alpha: 0.15),
+      backgroundImage: (imageUrl != null && imageUrl.isNotEmpty)
+          ? NetworkImage(imageUrl)
+          : null,
+      child: (imageUrl == null || imageUrl.isEmpty)
+          ? Text(
+              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+              style: TextStyle(
+                color: color,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          : null,
     );
   }
 
@@ -268,7 +289,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatStatus(ChatModel chat) {
-    final time = DateTime.parse(chat.updatedAt);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final time = DateTime.parse(timestamp);
     final timeStr = "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
 
     return Column(
@@ -294,8 +316,10 @@ class _DashboardPageState extends State<DashboardPage> {
       itemCount: chatList.length,
       itemBuilder: (context, index) {
         final chat = chatList[index];
-        final name = chat.groupName ?? 'Unknown Chat';
-        final message = chat.groupDescription ?? 'No description';
+        final name = chat.isGroup
+            ? (chat.groupName ?? 'Group')
+            : (chat.recipient.username ?? chat.recipient.phoneNumber);
+        final message = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
 
         return InkWell(
           onTap: () {
@@ -303,9 +327,11 @@ class _DashboardPageState extends State<DashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (context) => ChatPage(
+                  conversationId: chat.id,
                   contactName: name,
                   contactColor: context.colors.primary,
-                  isOnline: false,
+                  isOnline: chat.recipient.isOnline,
+                  profilePictureUrl: chat.recipient.profilePictureUrl,
                 ),
               ),
             );
@@ -323,6 +349,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     children: [
                       Text(
                         name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 16,

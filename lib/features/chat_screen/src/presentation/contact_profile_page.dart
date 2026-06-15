@@ -103,6 +103,9 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                   Text(
                     widget.contactName,
                     style: context.h3,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: CommonSizes.p4),
 

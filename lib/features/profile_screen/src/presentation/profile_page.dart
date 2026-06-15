@@ -10,6 +10,7 @@ import 'package:schat/features/intro_screen/intro_screen.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -62,7 +63,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final fieldBgColor = Colors.white.withOpacity(0.1);
+    final fieldBgColor = Colors.white.withValues(alpha: 0.1);
 
     return BlocProvider<ProfileBloc>(
       create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
@@ -103,157 +104,167 @@ class _ProfilePageState extends State<ProfilePage> {
 
               return Scaffold(
                 backgroundColor: context.colors.pureBlack,
-                body: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Top illustration area
-                      SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.4,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Image.asset(
-                                'assets/main_bg_img.png',
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            Positioned(
-                              bottom: -1,
-                              left: 0,
-                              right: 0,
-                              height: 150,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      context.colors.pureBlack.withOpacity(0),
-                                      context.colors.pureBlack,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Content Area
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (widget.isEditing || Navigator.canPop(context)) ...[
-                              InkWell(
-                                onTap: () => Navigator.pop(context),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(4.0),
-                                  child: Icon(CommonIcons.arrowBack, color: Colors.white, size: 24),
-                                ),
-                              ),
-                              CommonSpaces.h16,
-                            ],
-
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                Text("Complete ", style: context.h1.copyWith(fontSize: 36, color: Colors.white)),
-                                Text("Profile", style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white)),
-                              ],
-                            ),
-                            CommonSpaces.h24,
-
-                            // Profile Image Selector
-                            Center(
-                              child: GestureDetector(
-                                onTap: _pickImage,
+                body: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            children: [
+                              // Top illustration area
+                              Expanded(
                                 child: Stack(
                                   children: [
-                                    Container(
-                                      width: 110,
-                                      height: 110,
-                                      decoration: BoxDecoration(
-                                        color: fieldBgColor,
-                                        shape: BoxShape.circle,
-                                        image: _localImageFile != null
-                                            ? DecorationImage(image: FileImage(_localImageFile!), fit: BoxFit.cover)
-                                            : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
-                                                ? DecorationImage(image: NetworkImage(_remoteImageUrl!), fit: BoxFit.cover)
-                                                : null),
+                                    Positioned.fill(
+                                      child: Image.asset(
+                                        'assets/main_bg_img.png',
+                                        fit: BoxFit.cover,
                                       ),
-                                      child: (_localImageFile == null && (_remoteImageUrl == null || _remoteImageUrl!.isEmpty))
-                                          ? Icon(CommonIcons.person, size: 64, color: Colors.white.withOpacity(0.2))
-                                          : null,
                                     ),
                                     Positioned(
-                                      bottom: 0,
+                                      bottom: -1,
+                                      left: 0,
                                       right: 0,
+                                      height: 150,
                                       child: Container(
-                                        padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: context.colors.primary,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(color: context.colors.pureBlack, width: 2),
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              context.colors.pureBlack.withValues(alpha: 0),
+                                              context.colors.pureBlack,
+                                            ],
+                                          ),
                                         ),
-                                        child: Icon(CommonIcons.camera, color: Colors.white, size: 18),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
-                            CommonSpaces.h24,
 
-                            _buildLabel('Username'),
-                            CommonSpaces.h8,
-                            _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline),
-                            CommonSpaces.h32,
 
-                            if (_errorText != null) ...[
                               Padding(
-                                padding: const EdgeInsets.only(bottom: 16.0),
-                                child: Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-                              ),
-                            ],
+                                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
 
-                            // Save Profile Button
-                            SizedBox(
-                              width: double.infinity,
-                              height: 64,
-                              child: ElevatedButton(
-                                onPressed: isLoading ? null : () => _saveProfile(context),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: context.colors.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                                  elevation: 0,
-                                ),
-                                child: isLoading 
-                                  ? const CircularProgressIndicator(color: Colors.white)
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                                      textBaseline: TextBaseline.alphabetic,
                                       children: [
-                                        Text('Save Profile', style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
-                                        CommonSpaces.w8,
-                                        Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                          child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
-                                        ),
+                                        if (widget.isEditing || Navigator.canPop(context)) ...[
+                                          InkWell(
+                                            onTap: () => Navigator.pop(context),
+                                            borderRadius: BorderRadius.circular(12),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(4.0),
+                                              child: Icon(CommonIcons.arrowBack, color: Colors.white, size: 24),
+                                            ),
+                                          ),
+                                          CommonSpaces.h16,
+                                        ],
+                                        CommonSpaces.w20,
+                                        Text("Complete ", style: context.h1.copyWith(fontSize: 36, color: Colors.white)),
+                                        Text("Profile", style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white)),
                                       ],
                                     ),
+                                    CommonSpaces.h20,
+                                    Center(
+                                      child: GestureDetector(
+                                        onTap: _pickImage,
+                                        child: Stack(
+                                          children: [
+                                            Container(
+                                              width: CommonSizes.p100,
+                                              height:  CommonSizes.p100,
+                                              decoration: BoxDecoration(
+                                                color: fieldBgColor,
+                                                shape: BoxShape.circle,
+                                                image: _localImageFile != null
+                                                    ? DecorationImage(image: FileImage(_localImageFile!), fit: BoxFit.cover)
+                                                    : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
+                                                        ? DecorationImage(image: NetworkImage(_remoteImageUrl!), fit: BoxFit.cover)
+                                                        : null),
+                                              ),
+                                              child: (_localImageFile == null && (_remoteImageUrl == null || _remoteImageUrl!.isEmpty))
+                                                  ? Icon(CommonIcons.person, size: 64, color: Colors.white.withValues(alpha: 0.2))
+                                                  : null,
+                                            ),
+                                            Positioned(
+                                              bottom: 0,
+                                              right: 0,
+                                              child: Container(
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: context.colors.primary,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: context.colors.pureBlack, width: 2),
+                                                ),
+                                                child: Icon(CommonIcons.camera, color: Colors.white, size: 18),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    CommonSpaces.h16,
+
+                                    _buildLabel('Username'),
+                                    CommonSpaces.h10,
+                                    _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline),
+
+                                    if (_errorText != null) ...[
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 16.0),
+                                        child: Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
-                            ),
-                            CommonSpaces.h40,
-                          ],
+                              CommonSpaces.h14,
+                            ],
+                          ),
                         ),
                       ),
-                    ],
+                    );
+                  }
+                ),
+                bottomNavigationBar: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: SafeArea(
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: isLoading ? null : () => _saveProfile(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: context.colors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                          elevation: 0,
+                        ),
+                        child: isLoading 
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Save Profile', style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                                CommonSpaces.w8,
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
+                                ),
+                              ],
+                            ),
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -270,15 +281,15 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildTextField(TextEditingController controller, String hint, {IconData? prefixIcon, int maxLines = 1}) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
         style: context.titleSmall.copyWith(color: Colors.white),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: context.bodyMedium.copyWith(color: Colors.white.withOpacity(0.4)),
-          prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: Colors.white.withOpacity(0.5)) : null,
+          hintStyle: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.4)),
+          prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: Colors.white.withValues(alpha: 0.5)) : null,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         ),

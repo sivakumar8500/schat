@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'chats_event.dart';
@@ -10,7 +10,7 @@ import 'chats_state.dart';
 @lazySingleton
 class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   final GetChatsUseCase _getChatsUseCase;
-  final ChatRepository _chatRepository;
+  final DashboardRepository _chatRepository;
   final ContactsRepository _contactsRepository;
 
   ChatsBloc(
@@ -41,7 +41,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     await result.when(
       success: (chat) async {
         await _contactsRepository.removeContactFromCache(event.participantId);
-        emit(ChatsState.chatCreated(chat, event.contactName));
+        emit(ChatsState.chatCreated(
+          chat,
+          event.contactName,
+          profilePictureUrl: event.profilePictureUrl,
+        ));
       },
       failure: (error) {
         emit(ChatsError(error));

@@ -13,6 +13,10 @@ _ChatModel _$ChatModelFromJson(Map<String, dynamic> json) => _ChatModel(
   groupDescription: json['group_description'] as String?,
   createdAt: json['created_at'] as String,
   updatedAt: json['updated_at'] as String,
+  recipient: RecipientModel.fromJson(json['recipient'] as Map<String, dynamic>),
+  lastMessage: json['last_message'] == null
+      ? null
+      : LastMessageModel.fromJson(json['last_message'] as Map<String, dynamic>),
 );
 
 Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
@@ -23,4 +27,6 @@ Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
       'group_description': instance.groupDescription,
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
+      'recipient': instance.recipient,
+      'last_message': instance.lastMessage,
     };

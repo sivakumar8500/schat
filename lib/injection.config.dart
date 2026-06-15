@@ -27,14 +27,20 @@ import 'features/chat_screen/src/data/repositories/chat_repository_impl.dart'
     as _i715;
 import 'features/chat_screen/src/domain/repositories/chat_repository.dart'
     as _i649;
+import 'features/chat_socket_screen/src/domain/chat_socket_repository.dart'
+    as _i411;
+import 'features/chat_socket_screen/src/domain/usecases/connect_socket_usecase.dart'
+    as _i515;
+import 'features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart'
+    as _i992;
 import 'features/connectivity/src/presentation/bloc/connectivity_bloc.dart'
     as _i201;
-import 'features/dashboard_screen/src/data/repositories/chat_repository_impl.dart'
-    as _i599;
-import 'features/dashboard_screen/src/domain/repositories/chat_repository.dart'
-    as _i908;
+import 'features/dashboard_screen/src/data/repositories/dashboard_repository_impl.dart'
+    as _i986;
 import 'features/dashboard_screen/src/domain/repositories/contacts_repository.dart'
     as _i1069;
+import 'features/dashboard_screen/src/domain/repositories/dashboard_repository.dart'
+    as _i198;
 import 'features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart'
     as _i127;
 import 'features/dashboard_screen/src/presentation/bloc/chats_bloc.dart'
@@ -46,7 +52,19 @@ import 'features/payment_screen/src/domain/repositories/payment_repository.dart'
 import 'features/profile_screen/src/data/repositories/profile_repository_impl.dart'
     as _i67;
 import 'features/profile_screen/src/domain/repositories/profile_repository.dart'
-    as _i651;
+    as _i649;
+import 'features/security_scanner/data/repositories/security_repository_impl.dart'
+    as _i568;
+import 'features/security_scanner/domain/repositories/security_repository.dart'
+    as _i229;
+import 'features/security_scanner/domain/usecases/check_device_integrity_usecase.dart'
+    as _i628;
+import 'features/security_scanner/domain/usecases/scan_file_usecase.dart'
+    as _i70;
+import 'features/security_scanner/domain/usecases/scan_url_usecase.dart'
+    as _i874;
+import 'features/security_scanner/presentation/bloc/security_scanner_bloc.dart'
+    as _i530;
 import 'features/status_screen/src/data/repositories/status_repository_impl.dart'
     as _i769;
 import 'features/status_screen/src/domain/repositories/status_repository.dart'
@@ -64,39 +82,92 @@ extension GetItInjectableX on _i174.GetIt {
   }) {
     final gh = _i526.GetItHelper(this, environment, environmentFilter);
     final networkModule = _$NetworkModule();
-    gh.lazySingleton<_i895.Connectivity>((() => networkModule.connectivity));
-    gh.lazySingleton<_i263.StorageService>((() => _i263.StorageService()));
+    gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
+    gh.lazySingleton<_i263.StorageService>(() => _i263.StorageService());
     gh.lazySingleton<_i466.PaymentRepository>(
-        (() => _i39.PaymentRepositoryImpl()));
+      () => _i39.PaymentRepositoryImpl(),
+    );
     gh.lazySingleton<_i906.StatusRepository>(
-        (() => _i769.StatusRepositoryImpl()));
-    gh.lazySingleton<_i649.ChatRepository>((() => _i715.ChatRepositoryImpl()));
+      () => _i769.StatusRepositoryImpl(),
+    );
+    gh.lazySingleton<_i229.SecurityRepository>(
+      () => _i568.SecurityRepositoryImpl(),
+    );
     gh.lazySingleton<_i232.ConnectivityRepository>(
-        (() => _i232.ConnectivityRepositoryImpl(gh<_i895.Connectivity>())));
+      () => _i232.ConnectivityRepositoryImpl(gh<_i895.Connectivity>()),
+    );
     gh.factory<_i729.ApiInterceptor>(
-        (() => _i729.ApiInterceptor(gh<_i263.StorageService>())));
+      () => _i729.ApiInterceptor(gh<_i263.StorageService>()),
+    );
+    gh.lazySingleton<_i628.CheckDeviceIntegrityUseCase>(
+      () => _i628.CheckDeviceIntegrityUseCase(gh<_i229.SecurityRepository>()),
+    );
+    gh.lazySingleton<_i70.ScanFileUseCase>(
+      () => _i70.ScanFileUseCase(gh<_i229.SecurityRepository>()),
+    );
+    gh.lazySingleton<_i874.ScanUrlUseCase>(
+      () => _i874.ScanUrlUseCase(gh<_i229.SecurityRepository>()),
+    );
+    gh.lazySingleton<_i411.ChatSocketRepository>(
+      () => _i411.ChatSocketRepositoryImpl(gh<_i263.StorageService>()),
+    );
+    gh.factory<_i530.SecurityScannerBloc>(
+      () => _i530.SecurityScannerBloc(
+        gh<_i628.CheckDeviceIntegrityUseCase>(),
+        gh<_i874.ScanUrlUseCase>(),
+        gh<_i70.ScanFileUseCase>(),
+      ),
+    );
     gh.lazySingleton<_i361.Dio>(
-        (() => networkModule.getDio(gh<_i729.ApiInterceptor>())));
+      () => networkModule.getDio(gh<_i729.ApiInterceptor>()),
+    );
+    gh.factory<_i515.ConnectSocketUseCase>(
+      () => _i515.ConnectSocketUseCase(gh<_i411.ChatSocketRepository>()),
+    );
     gh.factory<_i201.ConnectivityBloc>(
-        (() => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>())));
-    gh.lazySingleton<_i374.ApiService>((() => _i374.ApiService(gh<_i361.Dio>())));
-    gh.lazySingleton<_i939.AuthRepository>((() => _i299.AuthRepositoryImpl(
-        gh<_i374.ApiService>(), gh<_i263.StorageService>())));
-    gh.lazySingleton<_i651.ProfileRepository>(
-        (() => _i67.ProfileRepositoryImpl(gh<_i374.ApiService>())));
+      () => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>()),
+    );
+    gh.lazySingleton<_i374.ApiService>(() => _i374.ApiService(gh<_i361.Dio>()));
+    gh.lazySingleton<_i939.AuthRepository>(
+      () => _i299.AuthRepositoryImpl(
+        gh<_i374.ApiService>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
+    gh.lazySingleton<_i649.ProfileRepository>(
+      () => _i67.ProfileRepositoryImpl(
+        gh<_i374.ApiService>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
+    gh.lazySingleton<_i649.ChatRepository>(
+      () => _i715.ChatRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.factory<_i992.ChatSocketBloc>(
+      () => _i992.ChatSocketBloc(
+        gh<_i515.ConnectSocketUseCase>(),
+        gh<_i411.ChatSocketRepository>(),
+      ),
+    );
     gh.lazySingleton<_i702.SubscriptionRepository>(
-        (() => _i819.SubscriptionRepositoryImpl(gh<_i374.ApiService>())));
+      () => _i819.SubscriptionRepositoryImpl(gh<_i374.ApiService>()),
+    );
     gh.lazySingleton<_i1069.ContactsRepository>(
-        (() => _i1069.ContactsRepositoryImpl(gh<_i374.ApiService>())));
-    gh.lazySingleton<_i908.ChatRepository>(
-        (() => _i599.ChatRepositoryImpl(gh<_i374.ApiService>())));
+      () => _i1069.ContactsRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.lazySingleton<_i198.DashboardRepository>(
+      () => _i986.DashboardRepositoryImpl(gh<_i374.ApiService>()),
+    );
     gh.lazySingleton<_i127.GetChatsUseCase>(
-        (() => _i127.GetChatsUseCase(gh<_i908.ChatRepository>())));
-    gh.factory<_i236.ChatsBloc>((() => _i236.ChatsBloc(
-          gh<_i127.GetChatsUseCase>(),
-          gh<_i908.ChatRepository>(),
-          gh<_i1069.ContactsRepository>(),
-        )));
+      () => _i127.GetChatsUseCase(gh<_i198.DashboardRepository>()),
+    );
+    gh.lazySingleton<_i236.ChatsBloc>(
+      () => _i236.ChatsBloc(
+        gh<_i127.GetChatsUseCase>(),
+        gh<_i198.DashboardRepository>(),
+        gh<_i1069.ContactsRepository>(),
+      ),
+    );
     return this;
   }
 }

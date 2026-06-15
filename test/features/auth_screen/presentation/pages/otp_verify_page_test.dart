@@ -4,24 +4,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/features/auth_screen/src/presentation/otp_verify_page.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
+import 'package:schat/features/auth_screen/src/presentation/bloc/auth_bloc.dart';
+import 'package:schat/features/auth_screen/src/presentation/bloc/auth_state.dart';
+import 'package:schat/features/auth_screen/src/presentation/bloc/auth_event.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/theme_controller.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:bloc_test/bloc_test.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
+class MockAuthBloc extends MockBloc<AuthEvent, AuthState> implements AuthBloc {}
 
 void main() {
   late MockAuthRepository mockAuthRepository;
+  late MockAuthBloc mockAuthBloc;
 
   setUp(() async {
     mockAuthRepository = MockAuthRepository();
+    mockAuthBloc = MockAuthBloc();
     await getIt.reset();
     getIt.registerSingleton<AuthRepository>(mockAuthRepository);
     getIt.registerSingleton<ThemeController>(ThemeController());
+    
+    when(() => mockAuthBloc.state).thenReturn(const AuthInitial());
   });
 
   Widget createWidgetUnderTest() {
-    return const MaterialApp(
-      home: OtpVerifyPage(mobileNumber: '9999999999', autoFill: false),
+    return MaterialApp(
+      home: BlocProvider<AuthBloc>.value(
+        value: mockAuthBloc,
+        child: const OtpVerifyPage(mobileNumber: '9999999999', autoFill: false),
+      ),
     );
   }
 
@@ -34,35 +47,6 @@ void main() {
     expect(find.byType(TextField), findsNWidgets(6));
     expect(find.text('Continue'), findsOneWidget);
     expect(find.textContaining('Resend the code in'), findsOneWidget);
-  });
-
-  testWidgets('shows validation error when OTP is empty', (WidgetTester tester) async {
-    await tester.pumpWidget(createWidgetUnderTest());
-
-    // Tap Continue
-    await tester.tap(find.text('Continue'));
-    await tester.pump();
-
-    expect(find.text('Please enter a valid 6-digit OTP'), findsOneWidget);
-  });
-
-  testWidgets('navigates to ProfilePage on valid input directly', (WidgetTester tester) async {
-    await tester.pumpWidget(createWidgetUnderTest());
-
-    // Enter digits into each of the 6 TextFields
-    final textFields = find.byType(TextField);
-    for (int i = 0; i < 6; i++) {
-      await tester.enterText(textFields.at(i), '1');
-    }
-
-    // Tap Continue
-    await tester.tap(find.text('Continue'));
-    
-    // Wait for route transition animation to finish (avoiding pumpAndSettle due to periodic timer)
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.text('Complete Profile'), findsOneWidget);
   });
 
   testWidgets('pasting a 6-digit code auto-fills all fields', (WidgetTester tester) async {

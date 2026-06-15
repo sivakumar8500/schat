@@ -11,6 +11,7 @@ class CommonSpaces {
   static const SizedBox h8 = SizedBox(height: CommonSizes.p8);
   static const SizedBox h10 = SizedBox(height: CommonSizes.p10);
   static const SizedBox h12 = SizedBox(height: CommonSizes.p12);
+  static const SizedBox h14 = SizedBox(height: 14.0);
   static const SizedBox h16 = SizedBox(height: CommonSizes.p16);
   static const SizedBox h20 = SizedBox(height: CommonSizes.p20);
   static const SizedBox h24 = SizedBox(height: CommonSizes.p24);

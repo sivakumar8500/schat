@@ -1,11 +1,11 @@
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 
 @lazySingleton
 class GetChatsUseCase {
-  final ChatRepository _repository;
+  final DashboardRepository _repository;
 
   GetChatsUseCase(this._repository);
 

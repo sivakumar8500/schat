@@ -131,13 +131,13 @@ return error(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<ChatModel> chats)?  loaded,TResult Function( ChatModel chat,  String contactName)?  chatCreated,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  initial,TResult Function()?  loading,TResult Function( List<ChatModel> chats)?  loaded,TResult Function( ChatModel chat,  String contactName,  String? profilePictureUrl)?  chatCreated,TResult Function( String message)?  error,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ChatsInitial() when initial != null:
 return initial();case ChatsLoading() when loading != null:
 return loading();case ChatsLoaded() when loaded != null:
 return loaded(_that.chats);case ChatCreated() when chatCreated != null:
-return chatCreated(_that.chat,_that.contactName);case ChatsError() when error != null:
+return chatCreated(_that.chat,_that.contactName,_that.profilePictureUrl);case ChatsError() when error != null:
 return error(_that.message);case _:
   return orElse();
 
@@ -156,13 +156,13 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<ChatModel> chats)  loaded,required TResult Function( ChatModel chat,  String contactName)  chatCreated,required TResult Function( String message)  error,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  initial,required TResult Function()  loading,required TResult Function( List<ChatModel> chats)  loaded,required TResult Function( ChatModel chat,  String contactName,  String? profilePictureUrl)  chatCreated,required TResult Function( String message)  error,}) {final _that = this;
 switch (_that) {
 case ChatsInitial():
 return initial();case ChatsLoading():
 return loading();case ChatsLoaded():
 return loaded(_that.chats);case ChatCreated():
-return chatCreated(_that.chat,_that.contactName);case ChatsError():
+return chatCreated(_that.chat,_that.contactName,_that.profilePictureUrl);case ChatsError():
 return error(_that.message);case _:
   throw StateError('Unexpected subclass');
 
@@ -180,13 +180,13 @@ return error(_that.message);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<ChatModel> chats)?  loaded,TResult? Function( ChatModel chat,  String contactName)?  chatCreated,TResult? Function( String message)?  error,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  initial,TResult? Function()?  loading,TResult? Function( List<ChatModel> chats)?  loaded,TResult? Function( ChatModel chat,  String contactName,  String? profilePictureUrl)?  chatCreated,TResult? Function( String message)?  error,}) {final _that = this;
 switch (_that) {
 case ChatsInitial() when initial != null:
 return initial();case ChatsLoading() when loading != null:
 return loading();case ChatsLoaded() when loaded != null:
 return loaded(_that.chats);case ChatCreated() when chatCreated != null:
-return chatCreated(_that.chat,_that.contactName);case ChatsError() when error != null:
+return chatCreated(_that.chat,_that.contactName,_that.profilePictureUrl);case ChatsError() when error != null:
 return error(_that.message);case _:
   return null;
 
@@ -335,11 +335,12 @@ as List<ChatModel>,
 
 
 class ChatCreated implements ChatsState {
-  const ChatCreated(this.chat, this.contactName);
+  const ChatCreated(this.chat, this.contactName, {this.profilePictureUrl});
   
 
  final  ChatModel chat;
  final  String contactName;
+ final  String? profilePictureUrl;
 
 /// Create a copy of ChatsState
 /// with the given fields replaced by the non-null parameter values.
@@ -351,16 +352,16 @@ $ChatCreatedCopyWith<ChatCreated> get copyWith => _$ChatCreatedCopyWithImpl<Chat
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatCreated&&(identical(other.chat, chat) || other.chat == chat)&&(identical(other.contactName, contactName) || other.contactName == contactName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatCreated&&(identical(other.chat, chat) || other.chat == chat)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,chat,contactName);
+int get hashCode => Object.hash(runtimeType,chat,contactName,profilePictureUrl);
 
 @override
 String toString() {
-  return 'ChatsState.chatCreated(chat: $chat, contactName: $contactName)';
+  return 'ChatsState.chatCreated(chat: $chat, contactName: $contactName, profilePictureUrl: $profilePictureUrl)';
 }
 
 
@@ -371,7 +372,7 @@ abstract mixin class $ChatCreatedCopyWith<$Res> implements $ChatsStateCopyWith<$
   factory $ChatCreatedCopyWith(ChatCreated value, $Res Function(ChatCreated) _then) = _$ChatCreatedCopyWithImpl;
 @useResult
 $Res call({
- ChatModel chat, String contactName
+ ChatModel chat, String contactName, String? profilePictureUrl
 });
 
 
@@ -388,11 +389,12 @@ class _$ChatCreatedCopyWithImpl<$Res>
 
 /// Create a copy of ChatsState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') $Res call({Object? chat = null,Object? contactName = null,}) {
+@pragma('vm:prefer-inline') $Res call({Object? chat = null,Object? contactName = null,Object? profilePictureUrl = freezed,}) {
   return _then(ChatCreated(
 null == chat ? _self.chat : chat // ignore: cast_nullable_to_non_nullable
 as ChatModel,null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String,
+as String,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
