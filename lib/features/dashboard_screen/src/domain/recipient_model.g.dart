@@ -19,6 +19,7 @@ _RecipientModel _$RecipientModelFromJson(Map<String, dynamic> json) =>
       isOnline: json['is_online'] as bool,
       lastSeen: json['last_seen'] as String?,
       isSubscribed: json['is_subscribed'] as bool,
+      subscriptionType: json['subscription_type'] as String?,
       createdAt: json['created_at'] as String,
       updatedAt: json['updated_at'] as String,
     );
@@ -36,6 +37,7 @@ Map<String, dynamic> _$RecipientModelToJson(_RecipientModel instance) =>
       'is_online': instance.isOnline,
       'last_seen': instance.lastSeen,
       'is_subscribed': instance.isSubscribed,
+      'subscription_type': instance.subscriptionType,
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
     };

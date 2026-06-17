@@ -52,7 +52,7 @@ class AuthRepositoryImpl implements AuthRepository {
         );
         return ApiResult.success(true);
       },
-      failure: (message) => ApiResult.failure(message),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 

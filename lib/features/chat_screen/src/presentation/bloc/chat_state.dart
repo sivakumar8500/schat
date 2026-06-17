@@ -17,13 +17,35 @@ class ChatLoaded extends ChatState {
   final bool isMuted;
   final bool isLocked;
   final String myId;
+  final bool isRecipientOnline;
+  final bool isRecipientTyping;
 
   const ChatLoaded({
     required this.messages,
     this.isMuted = false,
     this.isLocked = false,
     this.myId = '',
+    this.isRecipientOnline = false,
+    this.isRecipientTyping = false,
   });
+
+  ChatLoaded copyWith({
+    List<MessageModel>? messages,
+    bool? isMuted,
+    bool? isLocked,
+    String? myId,
+    bool? isRecipientOnline,
+    bool? isRecipientTyping,
+  }) {
+    return ChatLoaded(
+      messages: messages ?? this.messages,
+      isMuted: isMuted ?? this.isMuted,
+      isLocked: isLocked ?? this.isLocked,
+      myId: myId ?? this.myId,
+      isRecipientOnline: isRecipientOnline ?? this.isRecipientOnline,
+      isRecipientTyping: isRecipientTyping ?? this.isRecipientTyping,
+    );
+  }
 }
 
 class ChatError extends ChatState {

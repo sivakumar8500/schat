@@ -11,9 +11,9 @@ class ThemeController extends ChangeNotifier {
   double get textScaleFactor {
     switch (_fontSizeName) {
       case 'Small':
-        return 0.85;
+        return 10 / 12; // Results in 10 for base 12
       case 'Large':
-        return 1.2;
+        return 14 / 12; // Results in 14 for base 12
       case 'Medium':
       default:
         return 1.0;

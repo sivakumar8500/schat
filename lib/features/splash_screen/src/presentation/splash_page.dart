@@ -34,7 +34,7 @@ class _SplashPageState extends State<SplashPage> {
     if (!mounted) return;
 
     final storage = getIt<StorageService>();
-    final hasToken = await storage.hasToken();
+    final hasToken = storage.hasToken();
 
     if (!hasToken) {
       final prefs = await SharedPreferences.getInstance();
@@ -85,16 +85,18 @@ class _SplashPageState extends State<SplashPage> {
             );
           }
         },
-        failure: (message) {
+        failure: (message, statusCode) async {
           // Token might be invalid/expired or unauthorized (401)
-          if (message.contains('401') || message.toLowerCase().contains('unauthorized')) {
-             storage.clearTokens();
+          if (statusCode == 401 || message.contains('401') || message.toLowerCase().contains('unauthorized')) {
+             await storage.clearTokens();
+             if (!mounted) return;
              Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const MobileEntryPage()),
             );
           } else {
             // Network error but token exists, try to proceed to dashboard
+            if (!mounted) return;
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const DashboardPage()),

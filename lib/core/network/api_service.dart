@@ -34,6 +34,7 @@ class ApiService {
       }
     } on DioException catch (e) {
       String errorMessage = 'Something went wrong';
+      final statusCode = e.response?.statusCode;
       
       if (e.response?.data != null) {
         final data = e.response?.data;
@@ -52,7 +53,7 @@ class ApiService {
         errorMessage = e.message ?? 'Something went wrong';
       }
       
-      return ApiResult.failure(errorMessage);
+      return ApiResult.failure(errorMessage, statusCode: statusCode);
     } catch (e) {
       return ApiResult.failure(e.toString());
     }

@@ -13,7 +13,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ApiResult<List<ChatModel>>> getChats() async {
-    return _apiService.get<List<ChatModel>>(
+    final result = await _apiService.get<List<ChatModel>>(
       CommonEndpoints.getChats,
       mapper: (json) {
         if (json is List) {
@@ -21,6 +21,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
         }
         return [];
       },
+    );
+    return result.when(
+      success: (chats) => ApiResult.success(chats),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 
@@ -31,7 +35,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     String? groupDescription,
     required List<String> participantIds,
   }) async {
-    return _apiService.post<ChatModel>(
+    final result = await _apiService.post<ChatModel>(
       CommonEndpoints.getChats,
       data: {
         'is_group': isGroup,
@@ -40,6 +44,28 @@ class DashboardRepositoryImpl implements DashboardRepository {
         'participant_ids': participantIds,
       },
       mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result.when(
+      success: (chat) => ApiResult.success(chat),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+    );
+  }
+
+  @override
+  Future<ApiResult<ChatModel>> startDirectChat(String participantId) async {
+    final result = await _apiService.post<ChatModel>(
+      CommonEndpoints.getChats,
+      data: {
+        'is_group': false,
+        'group_name': 'string',
+        'group_description': 'string',
+        'participant_ids': [participantId],
+      },
+      mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result.when(
+      success: (chat) => ApiResult.success(chat),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 }

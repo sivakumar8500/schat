@@ -11,7 +11,7 @@ final getIt = GetIt.instance;
   preferRelativeImports: true, 
   asExtension: true, 
 )
-void configureDependencies() {
+Future<void> configureDependencies() async {
   getIt.registerSingleton<ThemeController>(ThemeController()..loadTheme());
-  getIt.init();
+  await getIt.init();
 }

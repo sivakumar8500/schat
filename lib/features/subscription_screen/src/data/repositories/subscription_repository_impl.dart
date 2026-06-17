@@ -15,7 +15,7 @@ class SubscriptionRepositoryImpl implements SubscriptionRepository {
 
   @override
   Future<ApiResult<List<SubscriptionPlanModel>>> getSubscriptionPlans() async {
-    return _apiService.get<List<SubscriptionPlanModel>>(
+    final result = await _apiService.get<List<SubscriptionPlanModel>>(
       CommonEndpoints.getPlans,
       mapper: (json) {
         if (json is List) {
@@ -24,14 +24,22 @@ class SubscriptionRepositoryImpl implements SubscriptionRepository {
         return [];
       },
     );
+    return result.when(
+      success: (plans) => ApiResult.success(plans),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+    );
   }
 
   @override
   Future<ApiResult<SubscriptionModel>> enrollSubscription(EnrollSubscriptionRequest request) async {
-    return _apiService.post<SubscriptionModel>(
+    final result = await _apiService.post<SubscriptionModel>(
       CommonEndpoints.enrollSubscription,
       data: request.toJson(),
       mapper: (json) => SubscriptionModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result.when(
+      success: (subscription) => ApiResult.success(subscription),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 }

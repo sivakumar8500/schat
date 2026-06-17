@@ -27,16 +27,13 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final result = await _getChatsUseCase.execute();
     result.when(
       success: (chats) => emit(ChatsLoaded(chats)),
-      failure: (error) => emit(ChatsError(error)),
+      failure: (error, statusCode) => emit(ChatsError(error)),
     );
   }
 
   Future<void> _onCreateChat(CreateChat event, Emitter<ChatsState> emit) async {
     emit(const ChatsLoading());
-    final result = await _chatRepository.createChat(
-      isGroup: false,
-      participantIds: [event.participantId],
-    );
+    final result = await _chatRepository.startDirectChat(event.participantId);
 
     await result.when(
       success: (chat) async {
@@ -47,7 +44,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           profilePictureUrl: event.profilePictureUrl,
         ));
       },
-      failure: (error) {
+      failure: (error, statusCode) {
         emit(ChatsError(error));
       },
     );

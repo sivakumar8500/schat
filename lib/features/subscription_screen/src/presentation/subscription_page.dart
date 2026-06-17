@@ -107,43 +107,6 @@ class SubscriptionPage extends StatelessWidget {
 
                               const Spacer(),
 
-                              // Description / Features
-                              if (plans.isNotEmpty && selectedPlanIndex >= 0 && selectedPlanIndex < plans.length)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(20),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.5),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.info_outline, color: Color(0xFF008E46), size: 20),
-                                            CommonSpaces.w8,
-                                            Text(
-                                              'Plan Details',
-                                              style: context.titleMedium.copyWith(color: Colors.black),
-                                            ),
-                                          ],
-                                        ),
-                                        CommonSpaces.h12,
-                                        Text(
-                                          plans[selectedPlanIndex].description,
-                                          style: context.bodyMedium.copyWith(
-                                            color: Colors.black87,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              
                               CommonSpaces.h32,
 
                               // Plans Horizontal Scroll
@@ -151,10 +114,10 @@ class SubscriptionPage extends StatelessWidget {
                                 const Center(child: CircularProgressIndicator())
                               else
                                 SizedBox(
-                                  height: 200,
+                                  height: 280,
                                   child: PageView.builder(
                                     controller: PageController(
-                                      viewportFraction: 0.7,
+                                      viewportFraction: 0.75,
                                       initialPage: selectedPlanIndex,
                                     ),
                                     onPageChanged: (index) {
@@ -165,6 +128,7 @@ class SubscriptionPage extends StatelessWidget {
                                     itemBuilder: (context, index) {
                                       final plan = plans[index];
                                       final isSelected = selectedPlanIndex == index;
+                                      final isPreferred = plan.name.toLowerCase() == 'business';
                                       
                                       return AnimatedScale(
                                         duration: const Duration(milliseconds: 300),
@@ -176,54 +140,96 @@ class SubscriptionPage extends StatelessWidget {
                                             onTap: () {
                                               context.read<SubscriptionBloc>().add(SelectPlanEvent(planIndex: index));
                                             },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(20),
-                                              decoration: BoxDecoration(
-                                                color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
-                                                borderRadius: BorderRadius.circular(24),
-                                                boxShadow: isSelected ? [
-                                                  BoxShadow(
-                                                    color: const Color(0xFF008E46).withOpacity(0.1),
-                                                    blurRadius: 10,
-                                                    spreadRadius: 2,
-                                                  )
-                                                ] : [],
-                                                border: Border.all(
-                                                  color: isSelected ? const Color(0xFF008E46) : Colors.transparent,
-                                                  width: 2.0,
+                                            child: Stack(
+                                              children: [
+                                                Container(
+                                                  width: double.infinity,
+                                                  margin: const EdgeInsets.only(top: 12),
+                                                  padding: const EdgeInsets.all(24),
+                                                  decoration: BoxDecoration(
+                                                    color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
+                                                    borderRadius: BorderRadius.circular(24),
+                                                    boxShadow: isSelected ? [
+                                                      BoxShadow(
+                                                        color: const Color(0xFF008E46).withOpacity(0.15),
+                                                        blurRadius: 20,
+                                                        spreadRadius: 5,
+                                                      )
+                                                    ] : [],
+                                                    border: Border.all(
+                                                      color: isSelected ? const Color(0xFF008E46) : Colors.transparent,
+                                                      width: 2.5,
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        plan.name,
+                                                        style: context.titleMedium.copyWith(
+                                                          color: const Color(0xFF008E46),
+                                                          fontWeight: FontWeight.w900,
+                                                          fontSize: 20,
+                                                        ),
+                                                      ),
+                                                      CommonSpaces.h8,
+                                                      Text(
+                                                        plan.description,
+                                                        maxLines: 3,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: context.bodyMedium.copyWith(
+                                                          color: Colors.black.withOpacity(0.6),
+                                                          fontSize: 14,
+                                                          height: 1.3,
+                                                        ),
+                                                      ),
+                                                      const Spacer(),
+                                                      Row(
+                                                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                                                        textBaseline: TextBaseline.alphabetic,
+                                                        children: [
+                                                          Text(
+                                                            '₹${plan.price}',
+                                                            style: context.h1.copyWith(
+                                                              color: Colors.black,
+                                                              fontSize: 32,
+                                                              fontWeight: FontWeight.w900,
+                                                            ),
+                                                          ),
+                                                          CommonSpaces.w4,
+                                                          Text(
+                                                            '/${plan.billingCycle == 'monthly' ? 'mo' : plan.billingCycle}',
+                                                            style: context.bodySmall.copyWith(
+                                                              color: Colors.black.withOpacity(0.5),
+                                                              fontWeight: FontWeight.w600,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Text(
-                                                    plan.name,
-                                                    style: context.titleMedium.copyWith(
-                                                      color: const Color(0xFF008E46),
-                                                      fontWeight: FontWeight.bold,
+                                                if (isPreferred)
+                                                  Positioned(
+                                                    top: 0,
+                                                    right: 20,
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFF008E46),
+                                                        borderRadius: BorderRadius.circular(12),
+                                                      ),
+                                                      child: Text(
+                                                        'MOST POPULAR',
+                                                        style: context.bodySmall.copyWith(
+                                                          color: Colors.white,
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w900,
+                                                        ),
+                                                      ),
                                                     ),
                                                   ),
-                                                  CommonSpaces.h4,
-                                                  Text(
-                                                    '₹${plan.price}',
-                                                    style: context.h1.copyWith(
-                                                      color: Colors.black,
-                                                      fontSize: 28,
-                                                      fontWeight: FontWeight.w800,
-                                                    ),
-                                                  ),
-                                                  const Spacer(),
-                                                  Text(
-                                                    plan.billingCycle.toUpperCase(),
-                                                    style: context.bodySmall.copyWith(
-                                                      color: Colors.black.withOpacity(0.6),
-                                                      fontWeight: FontWeight.w700,
-                                                      letterSpacing: 1.1,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                              ],
                                             ),
                                           ),
                                         ),
@@ -244,7 +250,7 @@ class SubscriptionPage extends StatelessWidget {
                   child: SafeArea(
                     child: SizedBox(
                       width: double.infinity,
-                      height: 64,
+                      height: 46,
                       child: ElevatedButton(
                         onPressed: (selectedPlanIndex != -1 && !isLoading)
                             ? () => context.read<SubscriptionBloc>().add(const ConfirmSubscriptionEvent())
@@ -259,32 +265,14 @@ class SubscriptionPage extends StatelessWidget {
                         ),
                         child: isLoading 
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : Row(
-                              children: [
-                                const Spacer(flex: 3),
-                                Text(
-                                  'Get started',
-                                  style: context.titleMedium.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Spacer(flex: 2),
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_forward,
-                                    color: Color(0xFF008E46),
-                                    size: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          :  Text(
+                          'Get started',
+                          style: context.titleMedium.copyWith(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                     ),
                   ),

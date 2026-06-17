@@ -43,7 +43,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             emit(const AuthFailure(errorMessage: 'Failed to send OTP.'));
           }
         },
-        failure: (message) => emit(AuthFailure(errorMessage: message)),
+        failure: (message, statusCode) => emit(AuthFailure(errorMessage: message)),
       );
     } catch (e) {
       emit(AuthFailure(errorMessage: e.toString()));
@@ -81,7 +81,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             emit(const AuthFailure(errorMessage: 'Invalid OTP.'));
           }
         },
-        failure: (message) {
+        failure: (message, statusCode) {
           emit(AuthFailure(errorMessage: message));
         },
       );

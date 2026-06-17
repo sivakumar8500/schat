@@ -54,6 +54,7 @@ class _UserListPageState extends State<UserListPage> {
                     contactName: contactName,
                     contactColor: context.colors.primary,
                     isOnline: false,
+                    recipientId: chat.recipient.id,
                     profilePictureUrl: profilePictureUrl,
                   ),
                 ),
@@ -244,6 +245,11 @@ class _UserListPageState extends State<UserListPage> {
         backgroundColor: context.colors.primary.withOpacity(0.15),
         backgroundImage: user.profilePictureUrl != null 
             ? NetworkImage(user.profilePictureUrl!) 
+            : null,
+        onBackgroundImageError: user.profilePictureUrl != null
+            ? (exception, stackTrace) {
+                debugPrint('Error loading user list image: $exception');
+              }
             : null,
         child: user.profilePictureUrl == null
             ? Text(

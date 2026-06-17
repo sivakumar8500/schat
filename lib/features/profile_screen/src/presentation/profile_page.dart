@@ -7,6 +7,7 @@ import 'package:schat/features/profile_screen/src/presentation/bloc/profile_even
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
+import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
@@ -76,16 +77,43 @@ class _ProfilePageState extends State<ProfilePage> {
                   _usernameController.text = state.username;
                   _remoteImageUrl = state.user?.profilePictureUrl;
                 });
+
+                if (!widget.isEditing && state.user != null) {
+                  final user = state.user!;
+                  if (user.username != null && user.username!.isNotEmpty) {
+                    if (user.isSubscribed) {
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (context) => const DashboardPage()),
+                        (Route<dynamic> route) => false,
+                      );
+                    } else {
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+                        (Route<dynamic> route) => false,
+                      );
+                    }
+                  }
+                }
               } else if (state is ProfileSuccess) {
                 _errorText = null;
                 if (widget.isEditing) {
                   Navigator.pop(context);
                 } else {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const SubscriptionPage()),
-                    (Route<dynamic> route) => false,
-                  );
+                  if (state.user.isSubscribed) {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => const DashboardPage()),
+                      (Route<dynamic> route) => false,
+                    );
+                  } else {
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+                      (Route<dynamic> route) => false,
+                    );
+                  }
                 }
               } else if (state is ProfileLogoutSuccess) {
                 Navigator.pushAndRemoveUntil(
@@ -188,7 +216,13 @@ class _ProfilePageState extends State<ProfilePage> {
                                                 image: _localImageFile != null
                                                     ? DecorationImage(image: FileImage(_localImageFile!), fit: BoxFit.cover)
                                                     : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
-                                                        ? DecorationImage(image: NetworkImage(_remoteImageUrl!), fit: BoxFit.cover)
+                                                        ? DecorationImage(
+                                                            image: NetworkImage(_remoteImageUrl!), 
+                                                            fit: BoxFit.cover,
+                                                            onError: (exception, stackTrace) {
+                                                              debugPrint('Error loading profile image: $exception');
+                                                            },
+                                                          )
                                                         : null),
                                               ),
                                               child: (_localImageFile == null && (_remoteImageUrl == null || _remoteImageUrl!.isEmpty))

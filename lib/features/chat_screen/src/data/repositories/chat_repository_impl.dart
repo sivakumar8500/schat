@@ -25,7 +25,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
     return result.when(
       success: (messages) => messages,
-      failure: (error) => throw Exception(error),
+      failure: (error, statusCode) => throw Exception(error),
     );
   }
 

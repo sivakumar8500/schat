@@ -41,7 +41,7 @@ class _NewChatPageState extends State<NewChatPage> {
       child: BlocListener<ChatsBloc, ChatsState>(
         listener: (context, state) {
           state.maybeWhen(
-            chatCreated: (chat, contactName) {
+            chatCreated: (chat, contactName, {profilePictureUrl}) {
               if (_pendingParticipantId != null) {
                 context.read<ContactsBloc>().add(RemoveContact(_pendingParticipantId!));
                 _pendingParticipantId = null;
@@ -54,6 +54,8 @@ class _NewChatPageState extends State<NewChatPage> {
                     contactName: contactName,
                     contactColor: context.colors.primary,
                     isOnline: false,
+                    recipientId: chat.recipient.id,
+                    profilePictureUrl: profilePictureUrl,
                   ),
                 ),
               );

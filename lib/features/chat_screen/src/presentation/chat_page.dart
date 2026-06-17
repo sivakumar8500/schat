@@ -31,6 +31,7 @@ class ChatPage extends StatefulWidget {
   final Color contactColor;
   final bool isOnline;
   final String? profilePictureUrl;
+  final String recipientId;
 
   const ChatPage({
     super.key,
@@ -38,6 +39,7 @@ class ChatPage extends StatefulWidget {
     required this.contactName,
     required this.contactColor,
     required this.isOnline,
+    required this.recipientId,
     this.profilePictureUrl,
   });
 
@@ -48,31 +50,24 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   bool _isTyping = false;
-  StreamSubscription? _socketSubscription;
 
   late ChatBloc _chatBloc;
+  DateTime? _lastTypingSent;
 
   @override
   void initState() {
     super.initState();
-    _chatBloc = ChatBloc()..add(LoadMessagesEvent(conversationId: widget.conversationId));
-    
-    _socketSubscription = getIt<ChatSocketRepository>().onMessage.listen((data) {
-      if (mounted && data is Map<String, dynamic>) {
-        if (data['type'] == 'new_message') {
-          final message = data['message'] as Map<String, dynamic>?;
-          if (message != null && message['conversation_id'] == widget.conversationId) {
-            _chatBloc.add(ReceiveMessageEvent(messageData: message));
-          }
-        }
-      }
-    });
+    debugPrint('DEBUG: ChatPage Initializing for conv: ${widget.conversationId}, recipient: ${widget.recipientId}, initialOnline: ${widget.isOnline}');
+    _chatBloc = ChatBloc()..add(LoadMessagesEvent(
+      conversationId: widget.conversationId,
+      recipientId: widget.recipientId,
+      initialIsOnline: widget.isOnline,
+    ));
   }
 
   @override
   void dispose() {
     _messageController.dispose();
-    _socketSubscription?.cancel();
     _chatBloc.close();
     super.dispose();
   }
@@ -107,10 +102,11 @@ class _ChatPageState extends State<ChatPage> {
         builder: (context, state) {
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
+          final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
 
           return Scaffold(
             backgroundColor: context.colors.scaffoldBackground,
-            appBar: _buildAppBar(context),
+            appBar: _buildAppBar(context, state),
             body: SafeArea(
               child: Column(
                 children: [
@@ -122,12 +118,18 @@ class _ChatPageState extends State<ChatPage> {
                             : ListView.builder(
                                 reverse: true,
                                 padding: const EdgeInsets.symmetric(vertical: 16),
-                                itemCount: messages.length,
+                                itemCount: messages.length + (isOtherUserTyping ? 1 : 0),
                                 itemBuilder: (context, index) {
+                                  if (isOtherUserTyping && index == 0) {
+                                    return _buildTypingIndicator();
+                                  }
+
+                                  final adjustedIndex = isOtherUserTyping ? index - 1 : index;
+                                  
                                   // Since reverse is true, index 0 is the bottom-most item.
                                   // Assuming the 'messages' list is ordered oldest-to-newest,
                                   // we access it from the end.
-                                  final msg = messages[messages.length - 1 - index];
+                                  final msg = messages[messages.length - 1 - adjustedIndex];
                                   final isMe = state is ChatLoaded && msg.senderId == state.myId;
                                   return MessageBubble(
                                     message: msg.content,
@@ -148,6 +150,30 @@ class _ChatPageState extends State<ChatPage> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.colors.lightBackground,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (index) {
+                return _TypingDot(index: index);
+              }),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -185,7 +211,10 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, ChatState state) {
+    final isOnline = state is ChatLoaded ? state.isRecipientOnline : widget.isOnline;
+    final isTyping = state is ChatLoaded && state.isRecipientTyping;
+
     return AppBar(
       backgroundColor: context.colors.scaffoldBackground,
       elevation: 0,
@@ -201,7 +230,7 @@ class _ChatPageState extends State<ChatPage> {
                 child: ContactProfilePage(
                   contactName: widget.contactName,
                   contactColor: widget.contactColor,
-                  isOnline: widget.isOnline,
+                  isOnline: isOnline,
                 ),
               ),
             ),
@@ -217,6 +246,11 @@ class _ChatPageState extends State<ChatPage> {
                   backgroundImage: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
                       ? NetworkImage(widget.profilePictureUrl!)
                       : null,
+                  onBackgroundImageError: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
+                      ? (exception, stackTrace) {
+                          debugPrint('Error loading chat appbar image: $exception');
+                        }
+                      : null,
                   child: (widget.profilePictureUrl == null || widget.profilePictureUrl!.isEmpty)
                       ? Text(
                           widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
@@ -226,7 +260,7 @@ class _ChatPageState extends State<ChatPage> {
                         )
                       : null,
                 ),
-                if (widget.isOnline)
+                if (isOnline)
                   Positioned(
                     right: 0,
                     bottom: 0,
@@ -255,9 +289,13 @@ class _ChatPageState extends State<ChatPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    widget.isOnline ? 'Online' : 'Offline',
+                    isTyping 
+                        ? 'Typing...' 
+                        : (isOnline ? 'Online' : 'Offline'),
                     style: TextStyle(
-                      color: widget.isOnline ? context.colors.success : context.colors.textHint,
+                      color: (isTyping || isOnline)
+                          ? context.colors.success 
+                          : context.colors.textHint,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -340,6 +378,13 @@ class _ChatPageState extends State<ChatPage> {
                   setState(() {
                     _isTyping = value.isNotEmpty;
                   });
+                  if (value.isNotEmpty) {
+                    final now = DateTime.now();
+                    if (_lastTypingSent == null || now.difference(_lastTypingSent!) > const Duration(seconds: 3)) {
+                      _lastTypingSent = now;
+                      context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId));
+                    }
+                  }
                 },
                 decoration: InputDecoration(
                   hintText: CommonStrings.typeMessage,
@@ -673,6 +718,63 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TypingDot extends StatefulWidget {
+  final int index;
+  const _TypingDot({required this.index});
+
+  @override
+  State<_TypingDot> createState() => _TypingDotState();
+}
+
+class _TypingDotState extends State<_TypingDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(
+          widget.index * 0.2,
+          0.6 + widget.index * 0.2,
+          curve: Curves.easeInOut,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          height: 6,
+          width: 6,
+          decoration: BoxDecoration(
+            color: context.colors.textSecondary.withValues(alpha: 0.3 + (0.7 * _animation.value)),
+            shape: BoxShape.circle,
+          ),
+        );
+      },
     );
   }
 }

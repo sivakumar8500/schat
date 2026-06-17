@@ -287,7 +287,12 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               ),
               child: Row(
                 children: [
-                  Image.network('https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Meet_icon_%282020%29.svg/1024px-Google_Meet_icon_%282020%29.svg.png', width: 40, height: 40, errorBuilder: (c, e, s) => const Icon(Icons.link)),
+                  Image.network(
+                    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Meet_icon_%282020%29.svg/1024px-Google_Meet_icon_%282020%29.svg.png', 
+                    width: 40, 
+                    height: 40, 
+                    errorBuilder: (c, e, s) => const Icon(Icons.link),
+                  ),
                   CommonSpaces.w12,
                   const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

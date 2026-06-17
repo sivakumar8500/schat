@@ -22,7 +22,7 @@ Future<void> main() async {
     // Initialize Hive
     await Hive.initFlutter();
     
-    configureDependencies();
+    await configureDependencies();
     
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
       try {

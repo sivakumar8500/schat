@@ -51,7 +51,7 @@ class _DashboardPageState extends State<DashboardPage> {
             });
           }
         },
-        failure: (_) {},
+        failure: (_, statusCode) {},
       );
     });
 
@@ -261,6 +261,11 @@ class _DashboardPageState extends State<DashboardPage> {
       backgroundImage: (imageUrl != null && imageUrl.isNotEmpty)
           ? NetworkImage(imageUrl)
           : null,
+      onBackgroundImageError: (imageUrl != null && imageUrl.isNotEmpty)
+          ? (exception, stackTrace) {
+              debugPrint('Error loading avatar: $exception');
+            }
+          : null,
       child: (imageUrl == null || imageUrl.isEmpty)
           ? Text(
               name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
@@ -332,6 +337,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   contactColor: context.colors.primary,
                   isOnline: chat.recipient.isOnline,
                   profilePictureUrl: chat.recipient.profilePictureUrl,
+                  recipientId: chat.recipient.id,
                 ),
               ),
             );

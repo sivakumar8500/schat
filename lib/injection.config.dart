@@ -13,6 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart' as _i895;
 import 'package:dio/dio.dart' as _i361;
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
+import 'package:shared_preferences/shared_preferences.dart' as _i460;
 
 import 'core/network/api_interceptor.dart' as _i729;
 import 'core/network/api_service.dart' as _i374;
@@ -76,14 +77,17 @@ import 'features/subscription_screen/src/domain/repositories/subscription_reposi
 
 extension GetItInjectableX on _i174.GetIt {
   // initializes the registration of main-scope dependencies inside of GetIt
-  _i174.GetIt init({
+  Future<_i174.GetIt> init({
     String? environment,
     _i526.EnvironmentFilter? environmentFilter,
-  }) {
+  }) async {
     final gh = _i526.GetItHelper(this, environment, environmentFilter);
     final networkModule = _$NetworkModule();
+    await gh.factoryAsync<_i460.SharedPreferences>(
+      () => networkModule.prefs,
+      preResolve: true,
+    );
     gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
-    gh.lazySingleton<_i263.StorageService>(() => _i263.StorageService());
     gh.lazySingleton<_i466.PaymentRepository>(
       () => _i39.PaymentRepositoryImpl(),
     );
@@ -92,6 +96,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i229.SecurityRepository>(
       () => _i568.SecurityRepositoryImpl(),
+    );
+    gh.lazySingleton<_i263.StorageService>(
+      () => _i263.StorageService(gh<_i460.SharedPreferences>()),
     );
     gh.lazySingleton<_i232.ConnectivityRepository>(
       () => _i232.ConnectivityRepositoryImpl(gh<_i895.Connectivity>()),

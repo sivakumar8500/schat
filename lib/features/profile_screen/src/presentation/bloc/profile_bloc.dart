@@ -33,7 +33,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
           user: user,
         ));
       },
-      failure: (message) => emit(ProfileFailure(errorMessage: message)),
+      failure: (message, statusCode) => emit(ProfileFailure(errorMessage: message)),
     );
   }
 
@@ -52,9 +52,9 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     
     result.when(
       success: (user) {
-        emit(const ProfileSuccess());
+        emit(ProfileSuccess(user: user));
       },
-      failure: (message) => emit(ProfileFailure(errorMessage: message)),
+      failure: (message, statusCode) => emit(ProfileFailure(errorMessage: message)),
     );
   }
 

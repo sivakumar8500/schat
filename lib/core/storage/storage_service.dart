@@ -6,36 +6,36 @@ class StorageService {
   static const String _tokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const String _userIdKey = 'user_id';
+  
+  final SharedPreferences _prefs;
+
+  @injectable
+  StorageService(this._prefs);
 
   Future<void> saveTokens({required String accessToken, required String refreshToken}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, accessToken);
-    await prefs.setString(_refreshTokenKey, refreshToken);
+    await _prefs.setString(_tokenKey, accessToken);
+    await _prefs.setString(_refreshTokenKey, refreshToken);
   }
 
   Future<void> saveUserId(String userId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_userIdKey, userId);
+    await _prefs.setString(_userIdKey, userId);
   }
 
-  Future<String?> getUserId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_userIdKey);
+  String? getUserId() {
+    return _prefs.getString(_userIdKey);
   }
 
-  Future<String?> getAccessToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+  String? getAccessToken() {
+    return _prefs.getString(_tokenKey);
   }
 
   Future<void> clearTokens() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_refreshTokenKey);
+    await _prefs.remove(_tokenKey);
+    await _prefs.remove(_refreshTokenKey);
   }
 
-  Future<bool> hasToken() async {
-    final token = await getAccessToken();
+  bool hasToken() {
+    final token = getAccessToken();
     return token != null && token.isNotEmpty;
   }
 }

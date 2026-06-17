@@ -2,12 +2,16 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/utils/common_endpoints.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_interceptor.dart';
 
 @module
 abstract class NetworkModule {
   @lazySingleton
   Connectivity get connectivity => Connectivity();
+
+  @preResolve
+  Future<SharedPreferences> get prefs => SharedPreferences.getInstance();
 
   @lazySingleton
   Dio getDio(ApiInterceptor apiInterceptor) {

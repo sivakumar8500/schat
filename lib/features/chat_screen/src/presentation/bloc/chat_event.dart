@@ -6,7 +6,9 @@ abstract class ChatEvent {
 
 class LoadMessagesEvent extends ChatEvent {
   final String conversationId;
-  const LoadMessagesEvent({required this.conversationId});
+  final String? recipientId;
+  final bool? initialIsOnline;
+  const LoadMessagesEvent({required this.conversationId, this.recipientId, this.initialIsOnline});
 }
 
 class SendMessageEvent extends ChatEvent {
@@ -40,4 +42,16 @@ class ToggleMuteEvent extends ChatEvent {
 class ToggleLockEvent extends ChatEvent {
   final bool isLocked;
   const ToggleLockEvent({required this.isLocked});
+}
+
+class UpdateUserStatusEvent extends ChatEvent {
+  final String userId;
+  final bool isOnline;
+  const UpdateUserStatusEvent({required this.userId, required this.isOnline});
+}
+
+class UpdateTypingIndicatorEvent extends ChatEvent {
+  final String conversationId;
+  final bool isTyping;
+  const UpdateTypingIndicatorEvent({required this.conversationId, required this.isTyping});
 }

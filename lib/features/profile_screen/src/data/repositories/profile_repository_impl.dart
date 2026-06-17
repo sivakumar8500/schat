@@ -26,7 +26,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUserId(user.id);
         return ApiResult.success(user);
       },
-      failure: (message) => ApiResult.failure(message),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 
@@ -43,7 +43,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUserId(user.id);
         return ApiResult.success(user);
       },
-      failure: (message) => ApiResult.failure(message),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
 }

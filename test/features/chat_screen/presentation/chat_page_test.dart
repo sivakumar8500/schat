@@ -55,6 +55,7 @@ void main() {
           contactName: 'Alice',
           contactColor: Colors.blue,
           isOnline: true,
+          recipientId: 'user_1',
         ),
       ),
     );

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$RecipientModel {
 
- String get id;@JsonKey(name: "phone_number") String get phoneNumber;@JsonKey(name: "username") String? get username;@JsonKey(name: "first_name") String? get firstName;@JsonKey(name: "last_name") String? get lastName;@JsonKey(name: "profile_picture_url") String? get profilePictureUrl;@JsonKey(name: "about") String? get about;@JsonKey(name: "is_active") bool get isActive;@JsonKey(name: "is_online") bool get isOnline;@JsonKey(name: "last_seen") String? get lastSeen;@JsonKey(name: "is_subscribed") bool get isSubscribed;@JsonKey(name: "created_at") String get createdAt;@JsonKey(name: "updated_at") String get updatedAt;
+ String get id;@JsonKey(name: "phone_number") String get phoneNumber;@JsonKey(name: "username") String? get username;@JsonKey(name: "first_name") String? get firstName;@JsonKey(name: "last_name") String? get lastName;@JsonKey(name: "profile_picture_url") String? get profilePictureUrl;@JsonKey(name: "about") String? get about;@JsonKey(name: "is_active") bool get isActive;@JsonKey(name: "is_online") bool get isOnline;@JsonKey(name: "last_seen") String? get lastSeen;@JsonKey(name: "is_subscribed") bool get isSubscribed;@JsonKey(name: "subscription_type") String? get subscriptionType;@JsonKey(name: "created_at") String get createdAt;@JsonKey(name: "updated_at") String get updatedAt;
 /// Create a copy of RecipientModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $RecipientModelCopyWith<RecipientModel> get copyWith => _$RecipientModelCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is RecipientModel&&(identical(other.id, id) || other.id == id)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is RecipientModel&&(identical(other.id, id) || other.id == id)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,phoneNumber,username,firstName,lastName,profilePictureUrl,about,isActive,isOnline,lastSeen,isSubscribed,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,phoneNumber,username,firstName,lastName,profilePictureUrl,about,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'RecipientModel(id: $id, phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'RecipientModel(id: $id, phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $RecipientModelCopyWith<$Res>  {
   factory $RecipientModelCopyWith(RecipientModel value, $Res Function(RecipientModel) _then) = _$RecipientModelCopyWithImpl;
 @useResult
 $Res call({
- String id,@JsonKey(name: "phone_number") String phoneNumber,@JsonKey(name: "username") String? username,@JsonKey(name: "first_name") String? firstName,@JsonKey(name: "last_name") String? lastName,@JsonKey(name: "profile_picture_url") String? profilePictureUrl,@JsonKey(name: "about") String? about,@JsonKey(name: "is_active") bool isActive,@JsonKey(name: "is_online") bool isOnline,@JsonKey(name: "last_seen") String? lastSeen,@JsonKey(name: "is_subscribed") bool isSubscribed,@JsonKey(name: "created_at") String createdAt,@JsonKey(name: "updated_at") String updatedAt
+ String id,@JsonKey(name: "phone_number") String phoneNumber,@JsonKey(name: "username") String? username,@JsonKey(name: "first_name") String? firstName,@JsonKey(name: "last_name") String? lastName,@JsonKey(name: "profile_picture_url") String? profilePictureUrl,@JsonKey(name: "about") String? about,@JsonKey(name: "is_active") bool isActive,@JsonKey(name: "is_online") bool isOnline,@JsonKey(name: "last_seen") String? lastSeen,@JsonKey(name: "is_subscribed") bool isSubscribed,@JsonKey(name: "subscription_type") String? subscriptionType,@JsonKey(name: "created_at") String createdAt,@JsonKey(name: "updated_at") String updatedAt
 });
 
 
@@ -65,7 +65,7 @@ class _$RecipientModelCopyWithImpl<$Res>
 
 /// Create a copy of RecipientModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
@@ -78,7 +78,8 @@ as String?,isActive: null == isActive ? _self.isActive : isActive // ignore: cas
 as bool,isOnline: null == isOnline ? _self.isOnline : isOnline // ignore: cast_nullable_to_non_nullable
 as bool,lastSeen: freezed == lastSeen ? _self.lastSeen : lastSeen // ignore: cast_nullable_to_non_nullable
 as String?,isSubscribed: null == isSubscribed ? _self.isSubscribed : isSubscribed // ignore: cast_nullable_to_non_nullable
-as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,subscriptionType: freezed == subscriptionType ? _self.subscriptionType : subscriptionType // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,
   ));
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "subscription_type")  String? subscriptionType, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _RecipientModel() when $default != null:
-return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "subscription_type")  String? subscriptionType, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _RecipientModel():
-return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: "phone_number")  String phoneNumber, @JsonKey(name: "username")  String? username, @JsonKey(name: "first_name")  String? firstName, @JsonKey(name: "last_name")  String? lastName, @JsonKey(name: "profile_picture_url")  String? profilePictureUrl, @JsonKey(name: "about")  String? about, @JsonKey(name: "is_active")  bool isActive, @JsonKey(name: "is_online")  bool isOnline, @JsonKey(name: "last_seen")  String? lastSeen, @JsonKey(name: "is_subscribed")  bool isSubscribed, @JsonKey(name: "subscription_type")  String? subscriptionType, @JsonKey(name: "created_at")  String createdAt, @JsonKey(name: "updated_at")  String updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _RecipientModel() when $default != null:
-return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -221,7 +222,7 @@ return $default(_that.id,_that.phoneNumber,_that.username,_that.firstName,_that.
 @JsonSerializable()
 
 class _RecipientModel implements RecipientModel {
-  const _RecipientModel({required this.id, @JsonKey(name: "phone_number") required this.phoneNumber, @JsonKey(name: "username") this.username, @JsonKey(name: "first_name") this.firstName, @JsonKey(name: "last_name") this.lastName, @JsonKey(name: "profile_picture_url") this.profilePictureUrl, @JsonKey(name: "about") this.about, @JsonKey(name: "is_active") required this.isActive, @JsonKey(name: "is_online") required this.isOnline, @JsonKey(name: "last_seen") this.lastSeen, @JsonKey(name: "is_subscribed") required this.isSubscribed, @JsonKey(name: "created_at") required this.createdAt, @JsonKey(name: "updated_at") required this.updatedAt});
+  const _RecipientModel({required this.id, @JsonKey(name: "phone_number") required this.phoneNumber, @JsonKey(name: "username") this.username, @JsonKey(name: "first_name") this.firstName, @JsonKey(name: "last_name") this.lastName, @JsonKey(name: "profile_picture_url") this.profilePictureUrl, @JsonKey(name: "about") this.about, @JsonKey(name: "is_active") required this.isActive, @JsonKey(name: "is_online") required this.isOnline, @JsonKey(name: "last_seen") this.lastSeen, @JsonKey(name: "is_subscribed") required this.isSubscribed, @JsonKey(name: "subscription_type") this.subscriptionType, @JsonKey(name: "created_at") required this.createdAt, @JsonKey(name: "updated_at") required this.updatedAt});
   factory _RecipientModel.fromJson(Map<String, dynamic> json) => _$RecipientModelFromJson(json);
 
 @override final  String id;
@@ -235,6 +236,7 @@ class _RecipientModel implements RecipientModel {
 @override@JsonKey(name: "is_online") final  bool isOnline;
 @override@JsonKey(name: "last_seen") final  String? lastSeen;
 @override@JsonKey(name: "is_subscribed") final  bool isSubscribed;
+@override@JsonKey(name: "subscription_type") final  String? subscriptionType;
 @override@JsonKey(name: "created_at") final  String createdAt;
 @override@JsonKey(name: "updated_at") final  String updatedAt;
 
@@ -251,16 +253,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _RecipientModel&&(identical(other.id, id) || other.id == id)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _RecipientModel&&(identical(other.id, id) || other.id == id)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,phoneNumber,username,firstName,lastName,profilePictureUrl,about,isActive,isOnline,lastSeen,isSubscribed,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,phoneNumber,username,firstName,lastName,profilePictureUrl,about,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'RecipientModel(id: $id, phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'RecipientModel(id: $id, phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -271,7 +273,7 @@ abstract mixin class _$RecipientModelCopyWith<$Res> implements $RecipientModelCo
   factory _$RecipientModelCopyWith(_RecipientModel value, $Res Function(_RecipientModel) _then) = __$RecipientModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id,@JsonKey(name: "phone_number") String phoneNumber,@JsonKey(name: "username") String? username,@JsonKey(name: "first_name") String? firstName,@JsonKey(name: "last_name") String? lastName,@JsonKey(name: "profile_picture_url") String? profilePictureUrl,@JsonKey(name: "about") String? about,@JsonKey(name: "is_active") bool isActive,@JsonKey(name: "is_online") bool isOnline,@JsonKey(name: "last_seen") String? lastSeen,@JsonKey(name: "is_subscribed") bool isSubscribed,@JsonKey(name: "created_at") String createdAt,@JsonKey(name: "updated_at") String updatedAt
+ String id,@JsonKey(name: "phone_number") String phoneNumber,@JsonKey(name: "username") String? username,@JsonKey(name: "first_name") String? firstName,@JsonKey(name: "last_name") String? lastName,@JsonKey(name: "profile_picture_url") String? profilePictureUrl,@JsonKey(name: "about") String? about,@JsonKey(name: "is_active") bool isActive,@JsonKey(name: "is_online") bool isOnline,@JsonKey(name: "last_seen") String? lastSeen,@JsonKey(name: "is_subscribed") bool isSubscribed,@JsonKey(name: "subscription_type") String? subscriptionType,@JsonKey(name: "created_at") String createdAt,@JsonKey(name: "updated_at") String updatedAt
 });
 
 
@@ -288,7 +290,7 @@ class __$RecipientModelCopyWithImpl<$Res>
 
 /// Create a copy of RecipientModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_RecipientModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
@@ -301,7 +303,8 @@ as String?,isActive: null == isActive ? _self.isActive : isActive // ignore: cas
 as bool,isOnline: null == isOnline ? _self.isOnline : isOnline // ignore: cast_nullable_to_non_nullable
 as bool,lastSeen: freezed == lastSeen ? _self.lastSeen : lastSeen // ignore: cast_nullable_to_non_nullable
 as String?,isSubscribed: null == isSubscribed ? _self.isSubscribed : isSubscribed // ignore: cast_nullable_to_non_nullable
-as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,subscriptionType: freezed == subscriptionType ? _self.subscriptionType : subscriptionType // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,
   ));

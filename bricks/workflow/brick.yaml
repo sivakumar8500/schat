@@ -1,0 +1,30 @@
+name: workflow
+description: A brick to generate GitHub Action workflows for Flutter.
+
+version: 0.1.0+1
+
+environment:
+  mason: ^0.1.2
+
+vars:
+  name:
+    type: string
+    description: The name of the workflow
+    default: firebase_distribution
+    prompt: What is the workflow name?
+  flutter_version:
+    type: string
+    description: Flutter version
+    default: 3.41.5
+    prompt: Which Flutter version to use?
+  branch:
+    type: string
+    description: Branch to trigger on
+    default: main
+    prompt: Which branch should trigger this?
+  open:
+    type: string
+    default: "{{"
+  close:
+    type: string
+    default: "}}"

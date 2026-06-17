@@ -21,7 +21,8 @@ class ProfileLoaded extends ProfileState {
 }
 
 class ProfileSuccess extends ProfileState {
-  const ProfileSuccess();
+  final UserModel user;
+  const ProfileSuccess({required this.user});
 }
 
 class ProfileFailure extends ProfileState {

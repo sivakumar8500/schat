@@ -9,4 +9,6 @@ abstract class DashboardRepository {
     String? groupDescription,
     required List<String> participantIds,
   });
+
+  Future<ApiResult<ChatModel>> startDirectChat(String participantId);
 }

@@ -24,7 +24,7 @@ class SubscriptionBloc extends Bloc<SubscriptionEvent, SubscriptionState> {
       success: (plans) {
         emit(SubscriptionLoaded(plans: plans, selectedIndex: 0));
       },
-      failure: (message) {
+      failure: (message, statusCode) {
         emit(SubscriptionFailure(error: message));
       },
     );
@@ -59,7 +59,7 @@ class SubscriptionBloc extends Bloc<SubscriptionEvent, SubscriptionState> {
         success: (subscription) {
           emit(const SubscriptionSuccess());
         },
-        failure: (message) {
+        failure: (message, statusCode) {
           // Re-emit loaded state with failure message
           emit(SubscriptionFailure(error: message));
           emit(SubscriptionLoaded(

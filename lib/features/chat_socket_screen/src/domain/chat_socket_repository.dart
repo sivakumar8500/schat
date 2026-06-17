@@ -44,7 +44,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       return;
     }
 
-    final token = await _storageService.getAccessToken();
+    final token = _storageService.getAccessToken();
     if (token == null) {
       debugPrint('DEBUG: Socket connection aborted: No access token found');
       return;

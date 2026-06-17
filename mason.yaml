@@ -15,4 +15,6 @@ bricks:
     path: ./bricks/widget
   test:
     path: ./bricks/test
+  workflow:
+    path: ./bricks/workflow
 

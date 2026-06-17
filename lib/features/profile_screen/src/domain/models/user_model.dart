@@ -17,6 +17,7 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'is_online') required bool isOnline,
     @JsonKey(name: 'last_seen') String? lastSeen,
     @JsonKey(name: 'is_subscribed') required bool isSubscribed,
+    @JsonKey(name: 'subscription_type') String? subscriptionType,
     @JsonKey(name: 'created_at') required String createdAt,
     @JsonKey(name: 'updated_at') required String updatedAt,
   }) = _UserModel;
