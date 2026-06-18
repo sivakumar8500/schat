@@ -12,14 +12,15 @@ class InternetConnectionPopup extends StatefulWidget {
   const InternetConnectionPopup({super.key});
 
   @override
-  State<InternetConnectionPopup> createState() => _InternetConnectionPopupState();
+  State<InternetConnectionPopup> createState() =>
+      _InternetConnectionPopupState();
 }
 
 class _InternetConnectionPopupState extends State<InternetConnectionPopup>
     with SingleTickerProviderStateMixin {
   late final AnimationController _animationController;
   late final Animation<Offset> _offsetAnimation;
-  
+
   bool _isOffline = false;
   bool _wasOffline = false;
   bool _showBanner = false;
@@ -31,13 +32,13 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _offsetAnimation = Tween<Offset>(
-      begin: const Offset(0, -1.5),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutBack,
-    ));
+    _offsetAnimation =
+        Tween<Offset>(begin: const Offset(0, -1.5), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _animationController,
+            curve: Curves.easeOutBack,
+          ),
+        );
   }
 
   @override
@@ -87,7 +88,9 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
   }
 
   Widget _buildBanner() {
-    final backgroundColor = _isOffline ? context.colors.error : context.colors.success;
+    final backgroundColor = _isOffline
+        ? context.colors.error
+        : context.colors.success;
     final message = _isOffline ? 'No Internet Connection' : 'Back Online';
     final icon = _isOffline ? CommonIcons.wifiOff : CommonIcons.wifi;
 
@@ -101,17 +104,23 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
               child: Material(
-                color: Colors.transparent,
+                color: context.colors.transparent,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20.0,
+                    vertical: 12.0,
+                  ),
                   decoration: BoxDecoration(
                     color: backgroundColor,
                     borderRadius: BorderRadius.circular(16.0),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
+                        color: context.colors.pureBlack.withValues(alpha: 0.15),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -120,17 +129,13 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        icon,
-                        color: Colors.white,
-                        size: 22,
-                      ),
+                      Icon(icon, color: context.colors.pureWhite, size: 22),
                       CommonSpaces.w12,
                       Expanded(
                         child: Text(
                           message,
                           style: context.bodyMedium.copyWith(
-                            color: Colors.white,
+                            color: context.colors.pureWhite,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

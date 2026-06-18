@@ -25,6 +25,21 @@ class ThemeColors {
   Color get textLight => isDark ? Colors.black87 : Colors.white;
   Color get textHint => Colors.grey;
 
+  // Base Colors
+  Color get pureWhite => Colors.white;
+  Color get transparent => Colors.transparent;
+  Color get grey => Colors.grey;
+  Color get blue => Colors.blue;
+  Color get blueAccent => Colors.blueAccent;
+  Color get pink => Colors.pink;
+  Color get pinkAccent => Colors.pinkAccent;
+  Color get green => Colors.green;
+  Color get greenAccent => Colors.greenAccent;
+  Color get orange => Colors.orange;
+  Color get orangeAccent => Colors.orangeAccent;
+  Color get purple => Colors.purple;
+  Color get purpleAccent => Colors.purpleAccent;
+
   // Status Colors
   Color get success => Colors.green;
   Color get error => Colors.redAccent;
@@ -36,7 +51,7 @@ class ThemeColors {
   // App Theme Accents & Specific Component Colors
   Color get primaryAccent => isDark ? const Color(0xFF81C784) : primary;
   Color get cardBackground => isDark ? const Color(0xFF1E2B22) : const Color(0xFFF0FDF4);
-  Color get searchBackground => isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFF3F4F6);
+  Color get searchBackground => isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6);
   Color get optionGallery => const Color(0xFF6C63FF);
   Color get optionVideo => const Color(0xFFE91E63);
   Color get optionText => const Color(0xFF4CAF50);

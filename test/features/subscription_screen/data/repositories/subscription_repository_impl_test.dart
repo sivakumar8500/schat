@@ -1,10 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/subscription_screen/src/data/repositories/subscription_repository_impl.dart';
-import 'package:schat/features/subscription_screen/src/domain/models/subscription_plan_model.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 class MockDio extends Mock implements Dio {}
@@ -30,22 +28,26 @@ void main() {
           'description': 'Basic plan',
           'billing_cycle': 'monthly',
           'is_active': true,
-        }
+        },
       ];
 
-      when(() => mockDio.request(
-            CommonEndpoints.getPlans,
-            data: any(named: 'data'),
-            queryParameters: any(named: 'queryParameters'),
-            options: any(named: 'options'),
-          )).thenAnswer((_) async => Response(
-                data: mockPlans,
-                statusCode: 200,
-                requestOptions: RequestOptions(path: CommonEndpoints.getPlans),
-              ));
+      when(
+        () => mockDio.request(
+          CommonEndpoints.getPlans,
+          data: any(named: 'data'),
+          queryParameters: any(named: 'queryParameters'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
+        (_) async => Response(
+          data: mockPlans,
+          statusCode: 200,
+          requestOptions: RequestOptions(path: CommonEndpoints.getPlans),
+        ),
+      );
 
       final result = await repository.getSubscriptionPlans();
-      
+
       result.when(
         success: (plans) {
           expect(plans, isNotEmpty);

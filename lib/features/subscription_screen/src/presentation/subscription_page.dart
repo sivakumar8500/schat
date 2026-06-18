@@ -6,7 +6,9 @@ import 'package:schat/features/subscription_screen/src/presentation/bloc/subscri
 import 'package:schat/features/subscription_screen/src/presentation/bloc/subscription_event.dart';
 import 'package:schat/features/subscription_screen/src/presentation/bloc/subscription_state.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_notifications.dart';
 
 class SubscriptionPage extends StatelessWidget {
@@ -48,7 +50,7 @@ class SubscriptionPage extends StatelessWidget {
               }
 
               return Scaffold(
-                backgroundColor: const Color(0xFFD7F9E0),
+                backgroundColor: context.colors.lightBackground,
                 body: LayoutBuilder(
                   builder: (context, constraints) {
                     return SingleChildScrollView(
@@ -61,13 +63,13 @@ class SubscriptionPage extends StatelessWidget {
                               // Close button and Title area
                               SafeArea(
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                  padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p16),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       CommonSpaces.h24,
                                       Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                        padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p16),
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.center,
                                           children: [
@@ -75,7 +77,7 @@ class SubscriptionPage extends StatelessWidget {
                                             Text(
                                               'Secure chats',
                                               style: context.h1.copyWith(
-                                                color: Colors.black,
+                                                color: context.colors.textPrimary,
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 36,
                                               ),
@@ -83,7 +85,7 @@ class SubscriptionPage extends StatelessWidget {
                                             Text(
                                               'Best in Privacy',
                                               style: context.h1Italic.copyWith(
-                                                color: Colors.black.withOpacity(0.6),
+                                                color: context.colors.textPrimary.withValues(alpha: 0.6),
                                                 fontSize: 32,
                                               ),
                                             ),
@@ -92,7 +94,7 @@ class SubscriptionPage extends StatelessWidget {
                                               'Messages that disappear. Calls that can\'t be tapped. Files only you control.',
                                               textAlign: TextAlign.center,
                                               style: context.bodyMedium.copyWith(
-                                                color: Colors.black.withOpacity(0.7),
+                                                color: context.colors.textPrimary.withValues(alpha: 0.7),
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w500,
                                               ),
@@ -144,20 +146,20 @@ class SubscriptionPage extends StatelessWidget {
                                               children: [
                                                 Container(
                                                   width: double.infinity,
-                                                  margin: const EdgeInsets.only(top: 12),
-                                                  padding: const EdgeInsets.all(24),
+                                                  margin: const EdgeInsets.only(top: CommonSizes.p12),
+                                                  padding: const EdgeInsets.all(CommonSizes.p24),
                                                   decoration: BoxDecoration(
-                                                    color: isSelected ? Colors.white : Colors.white.withOpacity(0.5),
-                                                    borderRadius: BorderRadius.circular(24),
+                                                    color: isSelected ? context.colors.pureWhite : context.colors.pureWhite.withValues(alpha: 0.5),
+                                                    borderRadius: BorderRadius.circular(CommonSizes.r24),
                                                     boxShadow: isSelected ? [
                                                       BoxShadow(
-                                                        color: const Color(0xFF008E46).withOpacity(0.15),
+                                                        color: context.colors.primary.withValues(alpha: 0.15),
                                                         blurRadius: 20,
                                                         spreadRadius: 5,
                                                       )
                                                     ] : [],
                                                     border: Border.all(
-                                                      color: isSelected ? const Color(0xFF008E46) : Colors.transparent,
+                                                      color: isSelected ? context.colors.primary : context.colors.transparent,
                                                       width: 2.5,
                                                     ),
                                                   ),
@@ -167,7 +169,7 @@ class SubscriptionPage extends StatelessWidget {
                                                       Text(
                                                         plan.name,
                                                         style: context.titleMedium.copyWith(
-                                                          color: const Color(0xFF008E46),
+                                                          color: context.colors.primary,
                                                           fontWeight: FontWeight.w900,
                                                           fontSize: 20,
                                                         ),
@@ -178,7 +180,7 @@ class SubscriptionPage extends StatelessWidget {
                                                         maxLines: 3,
                                                         overflow: TextOverflow.ellipsis,
                                                         style: context.bodyMedium.copyWith(
-                                                          color: Colors.black.withOpacity(0.6),
+                                                          color: context.colors.textPrimary.withValues(alpha: 0.6),
                                                           fontSize: 14,
                                                           height: 1.3,
                                                         ),
@@ -191,7 +193,7 @@ class SubscriptionPage extends StatelessWidget {
                                                           Text(
                                                             '₹${plan.price}',
                                                             style: context.h1.copyWith(
-                                                              color: Colors.black,
+                                                              color: context.colors.textPrimary,
                                                               fontSize: 32,
                                                               fontWeight: FontWeight.w900,
                                                             ),
@@ -200,7 +202,7 @@ class SubscriptionPage extends StatelessWidget {
                                                           Text(
                                                             '/${plan.billingCycle == 'monthly' ? 'mo' : plan.billingCycle}',
                                                             style: context.bodySmall.copyWith(
-                                                              color: Colors.black.withOpacity(0.5),
+                                                              color: context.colors.textPrimary.withValues(alpha: 0.5),
                                                               fontWeight: FontWeight.w600,
                                                             ),
                                                           ),
@@ -214,15 +216,15 @@ class SubscriptionPage extends StatelessWidget {
                                                     top: 0,
                                                     right: 20,
                                                     child: Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                                      padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p12, vertical: CommonSizes.p6),
                                                       decoration: BoxDecoration(
-                                                        color: const Color(0xFF008E46),
-                                                        borderRadius: BorderRadius.circular(12),
+                                                        color: context.colors.primary,
+                                                        borderRadius: BorderRadius.circular(CommonSizes.r12),
                                                       ),
                                                       child: Text(
                                                         'MOST POPULAR',
                                                         style: context.bodySmall.copyWith(
-                                                          color: Colors.white,
+                                                          color: context.colors.pureWhite,
                                                           fontSize: 10,
                                                           fontWeight: FontWeight.w900,
                                                         ),
@@ -246,7 +248,7 @@ class SubscriptionPage extends StatelessWidget {
                   }
                 ),
                 bottomNavigationBar: Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.all(CommonSizes.p20),
                   child: SafeArea(
                     child: SizedBox(
                       width: double.infinity,
@@ -256,19 +258,19 @@ class SubscriptionPage extends StatelessWidget {
                             ? () => context.read<SubscriptionBloc>().add(const ConfirmSubscriptionEvent())
                             : null,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF008E46),
-                          foregroundColor: Colors.white,
+                          backgroundColor: context.colors.primary,
+                          foregroundColor: context.colors.pureWhite,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(32),
+                            borderRadius: BorderRadius.circular(CommonSizes.p32),
                           ),
                           elevation: 0,
                         ),
                         child: isLoading 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          :  Text(
+                          ? CircularProgressIndicator(color: context.colors.pureWhite)
+                          : Text(
                           'Get started',
                           style: context.titleMedium.copyWith(
-                            color: Colors.white,
+                            color: context.colors.pureWhite,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
@@ -285,3 +287,4 @@ class SubscriptionPage extends StatelessWidget {
     );
   }
 }
+

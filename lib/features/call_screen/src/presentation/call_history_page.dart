@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_icons.dart';
 
 class CallLog {
   final String id;
@@ -40,54 +41,61 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
   @override
   void initState() {
     super.initState();
-    _calls = [
-      CallLog(
-        id: '1',
-        name: 'Alice Smith',
-        time: 'Today, 10:30 AM',
-        avatarColor: Colors.pinkAccent,
-        isIncoming: true,
-        isMissed: false,
-        isVideoCall: true,
-      ),
-      CallLog(
-        id: '2',
-        name: 'Bob Johnson',
-        time: 'Yesterday, 8:45 PM',
-        avatarColor: Colors.blueAccent,
-        isIncoming: false,
-        isMissed: false,
-        isVideoCall: false,
-      ),
-      CallLog(
-        id: '3',
-        name: 'Charlie Brown',
-        time: 'Yesterday, 6:15 PM',
-        avatarColor: Colors.greenAccent,
-        isIncoming: true,
-        isMissed: true,
-        isVideoCall: false,
-        count: 2,
-      ),
-      CallLog(
-        id: '4',
-        name: 'Design Team',
-        time: 'Monday, 2:00 PM',
-        avatarColor: Colors.purpleAccent,
-        isIncoming: false,
-        isMissed: false,
-        isVideoCall: true,
-      ),
-      CallLog(
-        id: '5',
-        name: 'Mom',
-        time: 'Sunday, 11:00 AM',
-        avatarColor: Colors.orangeAccent,
-        isIncoming: true,
-        isMissed: true,
-        isVideoCall: false,
-      ),
-    ];
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_calls.isEmpty) {
+      _calls = [
+        CallLog(
+          id: '1',
+          name: 'Alice Smith',
+          time: 'Today, 10:30 AM',
+          avatarColor: context.colors.pinkAccent,
+          isIncoming: true,
+          isMissed: false,
+          isVideoCall: true,
+        ),
+        CallLog(
+          id: '2',
+          name: 'Bob Johnson',
+          time: 'Yesterday, 8:45 PM',
+          avatarColor: context.colors.blueAccent,
+          isIncoming: false,
+          isMissed: false,
+          isVideoCall: false,
+        ),
+        CallLog(
+          id: '3',
+          name: 'Charlie Brown',
+          time: 'Yesterday, 6:15 PM',
+          avatarColor: context.colors.greenAccent,
+          isIncoming: true,
+          isMissed: true,
+          isVideoCall: false,
+          count: 2,
+        ),
+        CallLog(
+          id: '4',
+          name: 'Design Team',
+          time: 'Monday, 2:00 PM',
+          avatarColor: context.colors.purpleAccent,
+          isIncoming: false,
+          isMissed: false,
+          isVideoCall: true,
+        ),
+        CallLog(
+          id: '5',
+          name: 'Mom',
+          time: 'Sunday, 11:00 AM',
+          avatarColor: context.colors.orangeAccent,
+          isIncoming: true,
+          isMissed: true,
+          isVideoCall: false,
+        ),
+      ];
+    }
   }
 
   void _toggleSelection(String id) {
@@ -146,7 +154,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                       child: Container(
                         color: isSelected
                             ? context.colors.primary.withValues(alpha: 0.1)
-                            : Colors.transparent,
+                            : context.colors.transparent,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 24, vertical: 12),
                         child: Row(
@@ -181,7 +189,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                                         ),
                                       ),
                                       child: Icon(
-                                        Icons.check,
+                                        CommonIcons.check,
                                         size: 14,
                                         color: context.colors.textLight,
                                       ),
@@ -200,7 +208,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                                     call.count > 1
                                         ? '${call.name} (${call.count})'
                                         : call.name,
-                                    style: TextStyle(
+                                    style: context.titleSmall.copyWith(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 16,
                                       color: call.isMissed
@@ -213,8 +221,8 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                                     children: [
                                       Icon(
                                         call.isIncoming
-                                            ? Icons.call_received
-                                            : Icons.call_made,
+                                            ? CommonIcons.callReceived
+                                            : CommonIcons.callMade,
                                         size: 16,
                                         color: call.isMissed
                                             ? context.colors.error
@@ -225,7 +233,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                                       CommonSpaces.w4,
                                       Text(
                                         call.time,
-                                        style: TextStyle(
+                                        style: context.bodyLarge.copyWith(
                                           color: context.colors.textSecondary,
                                           fontSize: 14,
                                         ),
@@ -241,8 +249,8 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                             IconButton(
                               icon: Icon(
                                 call.isVideoCall
-                                    ? Icons.videocam_rounded
-                                    : Icons.call_rounded,
+                                    ? CommonIcons.videocam
+                                    : CommonIcons.phone,
                                 color: context.colors.primary,
                               ),
                               onPressed: () {
@@ -267,21 +275,20 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
         child: Row(
           children: [
             IconButton(
-              icon: Icon(Icons.close, color: context.colors.textPrimary),
+              icon: Icon(CommonIcons.close, color: context.colors.textPrimary),
               onPressed: _clearSelection,
             ),
             CommonSpaces.w8,
             Text(
               '${_selectedIds.length}',
-              style: TextStyle(
+              style: context.h3.copyWith(
                 fontSize: 24,
-                fontWeight: FontWeight.bold,
                 color: context.colors.textPrimary,
               ),
             ),
             const Spacer(),
             IconButton(
-              icon: Icon(Icons.delete, color: context.colors.textPrimary),
+              icon: Icon(CommonIcons.delete, color: context.colors.textPrimary),
               onPressed: _deleteSelected,
             ),
           ],
@@ -296,10 +303,8 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
         children: [
           Text(
             'Calls',
-            style: TextStyle(
+            style: context.h2.copyWith(
               fontSize: 32,
-              fontWeight: FontWeight.bold,
-              letterSpacing: -0.5,
               color: context.colors.textPrimary,
             ),
           ),
@@ -309,7 +314,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
               color: context.colors.lightBackground,
             ),
             child: IconButton(
-              icon: Icon(Icons.more_horiz, color: context.colors.textPrimary),
+              icon: Icon(CommonIcons.moreHoriz, color: context.colors.textPrimary),
               onPressed: () {
                 // Future: show menu like "Clear call log"
               },
@@ -326,7 +331,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.call_end,
+            CommonIcons.callEnd,
             size: 64,
             color: context.colors.textHint.withValues(alpha: 0.5),
           ),

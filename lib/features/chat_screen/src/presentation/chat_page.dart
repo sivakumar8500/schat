@@ -5,6 +5,7 @@ import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_strings.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -224,7 +225,7 @@ class _ChatPageState extends State<ChatPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 80, color: context.colors.textHint.withValues(alpha: 0.5)),
+          Icon(CommonIcons.chatBubbleOutline, size: 80, color: context.colors.textHint.withValues(alpha: 0.5)),
           CommonSpaces.h16,
           Text(
             'No messages yet',
@@ -346,7 +347,7 @@ class _ChatPageState extends State<ChatPage> {
                     isTyping 
                         ? 'Typing...' 
                         : (isOnline ? 'Online' : 'Offline'),
-                    style: TextStyle(
+                    style: context.bodyMedium.copyWith(
                       color: (isTyping || isOnline)
                           ? context.colors.success 
                           : context.colors.textHint,
@@ -362,7 +363,7 @@ class _ChatPageState extends State<ChatPage> {
       ),
       actions: [
         IconButton(
-          icon: Icon(Icons.videocam_rounded),
+          icon: Icon(CommonIcons.videocam),
           onPressed: () {
             Navigator.push(
               context,
@@ -373,7 +374,7 @@ class _ChatPageState extends State<ChatPage> {
           },
         ),
         IconButton(
-          icon: Icon(Icons.call_rounded),
+          icon: Icon(CommonIcons.phone),
           onPressed: () {
             Navigator.push(
               context,
@@ -414,7 +415,7 @@ class _ChatPageState extends State<ChatPage> {
       child: Row(
         children: [
           IconButton(
-            icon: Icon(Icons.add_rounded, color: context.colors.primary, size: 28),
+            icon: Icon(CommonIcons.add, color: context.colors.primary, size: 28),
             onPressed: () => _showAttachmentPopup(context),
           ),
           Expanded(
@@ -427,11 +428,11 @@ class _ChatPageState extends State<ChatPage> {
               child: TextField(
                 controller: _messageController,
                 textCapitalization: TextCapitalization.sentences,
-                style: TextStyle(color: context.colors.textPrimary),
+                style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
                 onChanged: _onTextChanged,
                 decoration: InputDecoration(
                   hintText: CommonStrings.typeMessage,
-                  hintStyle: TextStyle(color: context.colors.textHint),
+                  hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
                   border: InputBorder.none,
                 ),
               ),
@@ -440,12 +441,12 @@ class _ChatPageState extends State<ChatPage> {
           CommonSpaces.w8,
           if (!_isTyping)
             IconButton(
-              icon: Icon(Icons.camera_alt_rounded, color: context.colors.primary, size: 26),
+              icon: Icon(CommonIcons.camera, color: context.colors.primary, size: 26),
               onPressed: () => _pickImage(ImageSource.camera),
             ),
           if (!_isTyping)
             IconButton(
-              icon: Icon(Icons.mic_rounded, color: context.colors.primary, size: 26),
+              icon: Icon(CommonIcons.mic, color: context.colors.primary, size: 26),
               onPressed: () {},
             ),
           if (_isTyping)
@@ -455,7 +456,7 @@ class _ChatPageState extends State<ChatPage> {
                 shape: BoxShape.circle,
               ),
               child: IconButton(
-                icon: Icon(Icons.send_rounded, color: context.colors.textLight, size: 20),
+                icon: Icon(CommonIcons.send, color: context.colors.textLight, size: 20),
                 onPressed: () => _sendMessage(context),
               ),
             ),
@@ -467,7 +468,7 @@ class _ChatPageState extends State<ChatPage> {
   void _showAttachmentPopup(BuildContext ctx) {
     showModalBottomSheet(
       context: ctx,
-      backgroundColor: Colors.transparent,
+      backgroundColor: ctx.colors.transparent,
       builder: (sheetCtx) => Container(
         height: 300,
         margin: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
@@ -501,19 +502,19 @@ class _ChatPageState extends State<ChatPage> {
                   runSpacing: 20,
                   alignment: WrapAlignment.center,
                   children: [
-                    _attachmentOption(ctx, Icons.insert_drive_file, ctx.colors.secondary, 'Document',
+                    _attachmentOption(ctx, CommonIcons.document, ctx.colors.secondary, 'Document',
                         () { Navigator.pop(sheetCtx); _pickFile(FileType.any); }),
-                    _attachmentOption(ctx, Icons.camera_alt, ctx.colors.error, 'Camera',
+                    _attachmentOption(ctx, CommonIcons.camera, ctx.colors.error, 'Camera',
                         () { Navigator.pop(sheetCtx); _pickImage(ImageSource.camera); }),
-                    _attachmentOption(ctx, Icons.insert_photo, ctx.colors.optionGallery, 'Gallery',
+                    _attachmentOption(ctx, CommonIcons.gallery, ctx.colors.optionGallery, 'Gallery',
                         () { Navigator.pop(sheetCtx); _pickImage(ImageSource.gallery); }),
-                    _attachmentOption(ctx, Icons.headset, ctx.colors.warning, 'Audio',
+                    _attachmentOption(ctx, CommonIcons.audio, ctx.colors.warning, 'Audio',
                         () { Navigator.pop(sheetCtx); _pickFile(FileType.audio); }),
-                    _attachmentOption(ctx, Icons.video_file, ctx.colors.optionVideo, 'Video',
+                    _attachmentOption(ctx, CommonIcons.videoFile, ctx.colors.optionVideo, 'Video',
                         () { Navigator.pop(sheetCtx); _pickFile(FileType.video); }),
-                    _attachmentOption(ctx, Icons.location_pin, ctx.colors.success, 'Location',
+                    _attachmentOption(ctx, CommonIcons.location, ctx.colors.success, 'Location',
                         () { Navigator.pop(sheetCtx); _showLocationPicker(ctx); }),
-                    _attachmentOption(ctx, Icons.person, ctx.colors.primary, 'Contact',
+                    _attachmentOption(ctx, CommonIcons.person, ctx.colors.primary, 'Contact',
                         () { Navigator.pop(sheetCtx); _showContactPicker(ctx); }),
                   ],
                 ),
@@ -535,12 +536,12 @@ class _ChatPageState extends State<ChatPage> {
             CircleAvatar(
               radius: 28,
               backgroundColor: bgColor,
-              child: Icon(icon, color: Colors.white, size: 28),
+              child: Icon(icon, color: context.colors.pureWhite, size: 28),
             ),
             CommonSpaces.h8,
             Text(
               label,
-              style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
+              style: context.bodyMedium.copyWith(fontSize: 12, color: context.colors.textSecondary),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -644,8 +645,8 @@ class _ChatPageState extends State<ChatPage> {
             ),
             Row(
               children: [
-                Icon(Icons.location_pin, color: ctx.colors.success, size: 28),
-                const SizedBox(width: CommonSizes.p12),
+                Icon(CommonIcons.location, color: ctx.colors.success, size: 28),
+                CommonSpaces.w12,
                 Text('Share Location', style: ctx.titleMedium),
               ],
             ),
@@ -671,7 +672,7 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
                     ),
-                    Icon(Icons.location_pin, color: ctx.colors.error, size: 48),
+                    Icon(CommonIcons.location, color: ctx.colors.error, size: 48),
                   ],
                 ),
               ),
@@ -681,7 +682,7 @@ class _ChatPageState extends State<ChatPage> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.my_location),
+                    icon: Icon(CommonIcons.myLocation),
                     label: const Text('Current Location'),
                     onPressed: () {
                       Navigator.pop(ctx);
@@ -732,29 +733,29 @@ class _ChatPageState extends State<ChatPage> {
             ),
             Row(
               children: [
-                Icon(Icons.contacts, color: ctx.colors.primary, size: 24),
-                const SizedBox(width: CommonSizes.p12),
+                Icon(CommonIcons.contacts, color: ctx.colors.primary, size: 24),
+                CommonSpaces.w12,
                 Text('Send Contact', style: ctx.titleMedium),
               ],
             ),
-            const SizedBox(height: CommonSizes.p12),
+            CommonSpaces.h12,
             ...contacts.map((c) => ListTile(
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(
                 backgroundColor: ctx.colors.primary.withValues(alpha: 0.15),
                 child: Text(
                   c['name']![0],
-                  style: TextStyle(color: ctx.colors.primary, fontWeight: FontWeight.bold),
+                  style: ctx.bodyMedium.copyWith(color: ctx.colors.primary, fontWeight: FontWeight.bold),
                 ),
               ),
-              title: Text(c['name']!, style: TextStyle(color: ctx.colors.textPrimary, fontWeight: FontWeight.w600)),
-              subtitle: Text(c['phone']!, style: TextStyle(color: ctx.colors.textSecondary, fontSize: 12)),
+              title: Text(c['name']!, style: ctx.titleSmall.copyWith(color: ctx.colors.textPrimary, fontWeight: FontWeight.w600)),
+              subtitle: Text(c['phone']!, style: ctx.bodyMedium.copyWith(color: ctx.colors.textSecondary, fontSize: 12)),
               trailing: TextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   _sendAttachment(ctx, 'contact:${c['phone']}', '${c['name']} · ${c['phone']}', 'contact');
                 },
-                child: Text('Send', style: TextStyle(color: ctx.colors.primary)),
+                child: Text('Send', style: ctx.bodyMedium.copyWith(color: ctx.colors.primary)),
               ),
             )),
             const SizedBox(height: CommonSizes.p16),

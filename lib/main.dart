@@ -5,12 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/splash_screen/splash_screen.dart';
 import 'package:schat/utils/theme_controller.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:schat/common/widgets/internet_connection_popup_widget.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_event.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
-import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:schat/utils/common_fonts.dart';
@@ -19,12 +17,12 @@ import 'injection.dart';
 Future<void> main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
-    
+
     // Initialize Hive
     await Hive.initFlutter();
-    
+
     await configureDependencies();
-    
+
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
       try {
         await ScreenProtector.preventScreenshotOn();
@@ -32,19 +30,19 @@ Future<void> main() async {
         debugPrint('ScreenProtector error: $e');
       }
     }
-    
+
     runApp(const MyApp());
   } catch (e, stackTrace) {
     debugPrint('Initialization error: $e');
     debugPrint('Stack trace: $stackTrace');
     // Still try to run the app or show a crash screen
-    runApp(MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('App initialization failed: $e'),
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(child: Text('App initialization failed: $e')),
         ),
       ),
-    ));
+    );
   }
 }
 
@@ -59,7 +57,8 @@ class MyApp extends StatelessWidget {
         return MultiBlocProvider(
           providers: [
             BlocProvider<ConnectivityBloc>(
-              create: (context) => getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
+              create: (context) =>
+                  getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
             ),
             BlocProvider<ChatSocketBloc>(
               create: (context) => getIt<ChatSocketBloc>(),
@@ -68,40 +67,39 @@ class MyApp extends StatelessWidget {
           child: MaterialApp(
             title: 'sChat',
             themeMode: getIt<ThemeController>().themeMode,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: context.colors.primary,
-              brightness: Brightness.light,
-              surface: context.colors.scaffoldBackground,
-            ),
-            scaffoldBackgroundColor: context.colors.scaffoldBackground,
-            useMaterial3: true,
-            fontFamily: CommonFonts.primaryFont,
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: context.colors.primary,
-              brightness: Brightness.dark,
-              surface: context.colors.scaffoldBackground,
-            ),
-            scaffoldBackgroundColor: context.colors.scaffoldBackground,
-            useMaterial3: true,
-            fontFamily: CommonFonts.primaryFont,
-          ),
-          builder: (context, child) {
-            return MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                textScaler: TextScaler.linear(getIt<ThemeController>().textScaleFactor),
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: context.colors.primary,
+                brightness: Brightness.light,
+                surface: context.colors.scaffoldBackground,
               ),
-              child: Stack(
-                children: [
-                  child!,
-                  const InternetConnectionPopup(),
-                ],
+              scaffoldBackgroundColor: context.colors.scaffoldBackground,
+              useMaterial3: true,
+              fontFamily: CommonFonts.primaryFont,
+            ),
+            darkTheme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: context.colors.primary,
+                brightness: Brightness.dark,
+                surface: context.colors.scaffoldBackground,
               ),
-            );
-          },
-          home: const SplashPage(),
+              scaffoldBackgroundColor: context.colors.scaffoldBackground,
+              useMaterial3: true,
+              fontFamily: CommonFonts.primaryFont,
+            ),
+            builder: (context, child) {
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(
+                    getIt<ThemeController>().textScaleFactor,
+                  ),
+                ),
+                child: Stack(
+                  children: [child!, const InternetConnectionPopup()],
+                ),
+              );
+            },
+            home: const SplashPage(),
           ),
         );
       },

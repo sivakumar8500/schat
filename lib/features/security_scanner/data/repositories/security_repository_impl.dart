@@ -7,13 +7,26 @@ import '../../domain/repositories/security_repository.dart';
 
 @LazySingleton(as: SecurityRepository)
 class SecurityRepositoryImpl implements SecurityRepository {
-  final List<String> _suspiciousKeywords = ['.exe', '.apk', '.bat', '.sh', 'bit.ly', 'verify-account'];
-  final List<String> _maliciousExtensions = ['.exe', '.apk', '.bat', '.sh', '.msi'];
+  final List<String> _suspiciousKeywords = [
+    '.exe',
+    '.apk',
+    '.bat',
+    '.sh',
+    'bit.ly',
+    'verify-account',
+  ];
+  final List<String> _maliciousExtensions = [
+    '.exe',
+    '.apk',
+    '.bat',
+    '.sh',
+    '.msi',
+  ];
 
   @override
   Future<bool> checkDeviceIntegrity() async {
     bool isJailBroken = await SafeDevice.isJailBroken;
-    bool isRealDevice = await SafeDevice.isRealDevice;
+    // bool isRealDevice = await SafeDevice.isRealDevice;
     // For production, we usually want !isJailBroken && isRealDevice
     // But for this task, we return true if it's safe (not jail broken).
     return !isJailBroken;
@@ -21,8 +34,10 @@ class SecurityRepositoryImpl implements SecurityRepository {
 
   @override
   Future<SecurityReport> scanUrl(String url) async {
-    bool isSuspicious = _suspiciousKeywords.any((keyword) => url.toLowerCase().contains(keyword));
-    
+    bool isSuspicious = _suspiciousKeywords.any(
+      (keyword) => url.toLowerCase().contains(keyword),
+    );
+
     if (isSuspicious) {
       return SecurityReport(
         isSafe: false,
@@ -40,8 +55,10 @@ class SecurityRepositoryImpl implements SecurityRepository {
 
   @override
   Future<SecurityReport> scanFile(String filePath) async {
-    bool hasMaliciousExtension = _maliciousExtensions.any((ext) => filePath.toLowerCase().endsWith(ext));
-    
+    bool hasMaliciousExtension = _maliciousExtensions.any(
+      (ext) => filePath.toLowerCase().endsWith(ext),
+    );
+
     if (hasMaliciousExtension) {
       return SecurityReport(
         isSafe: false,
@@ -67,7 +84,8 @@ class SecurityRepositoryImpl implements SecurityRepository {
       return SecurityReport(
         isSafe: true,
         riskLevel: 'LOW',
-        message: 'File hash: ${hash.toString().substring(0, 8)}... appears safe.',
+        message:
+            'File hash: ${hash.toString().substring(0, 8)}... appears safe.',
       );
     } catch (e) {
       return SecurityReport(

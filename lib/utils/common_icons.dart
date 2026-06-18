@@ -59,4 +59,44 @@ class CommonIcons {
   static const IconData logout = Icons.logout_rounded;
   static const IconData grid = Icons.grid_view_rounded;
   static const IconData status = Icons.auto_awesome_mosaic_rounded;
+
+  // Additional Icons used in presentation screens
+  static const IconData photoLibrary = Icons.photo_library;
+  static const IconData textFields = Icons.text_fields;
+  static const IconData cameraAlt = Icons.camera_alt;
+  static const IconData privacyTipOutlined = Icons.privacy_tip_outlined;
+  static const IconData deleteOutline = Icons.delete_outline;
+  static const IconData helpOutline = Icons.help_outline;
+  static const IconData settings = Icons.settings;
+  static const IconData addPhotoAlternateOutlined = Icons.add_photo_alternate_outlined;
+  static const IconData formatSize = Icons.format_size_rounded;
+  static const IconData syncIcon = Icons.sync_rounded;
+  static const IconData arrowForwardIos = Icons.arrow_forward_ios_rounded;
+  static const IconData smsOutlined = Icons.sms_outlined;
+  static const IconData chatBubbleOutline = Icons.chat_bubble_outline;
+  static const IconData mailOutline = Icons.mail_outline;
+  static const IconData shareOutlined = Icons.share_outlined;
+  static const IconData contactPhoneOutlined = Icons.contact_phone_outlined;
+  static const IconData videocamOff = Icons.videocam_off_rounded;
+  static const IconData flipCamera = Icons.flip_camera_ios_rounded;
+  static const IconData callReceived = Icons.call_received;
+  static const IconData callMade = Icons.call_made;
+  static const IconData warning = Icons.warning;
+  static const IconData security = Icons.security;
+  static const IconData bugReport = Icons.bug_report;
+  static const IconData sendRounded = Icons.send_rounded;
+  static const IconData chat = Icons.chat_rounded;
+  static const IconData myLocation = Icons.my_location;
+  static const IconData contacts = Icons.contacts;
+  static const IconData videoFile = Icons.video_file;
+  static const IconData brokenImage = Icons.broken_image;
+  static const IconData photoOutlined = Icons.photo_outlined;
+  static const IconData videocamOutlined = Icons.videocam_outlined;
+  static const IconData linkOutlined = Icons.link_outlined;
+  static const IconData photo = Icons.photo;
+  static const IconData link = Icons.link;
+  static const IconData errorOutline = Icons.error_outline;
+  static const IconData checkCircleOutline = Icons.check_circle_outline;
+  static const IconData infoOutline = Icons.info_outline;
+  static const IconData downloading = Icons.downloading;
 }

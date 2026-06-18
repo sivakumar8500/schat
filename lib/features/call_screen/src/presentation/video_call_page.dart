@@ -1,5 +1,7 @@
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_icons.dart';
 import 'package:flutter/material.dart';
 
 class VideoCallPage extends StatefulWidget {
@@ -36,7 +38,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
               ),
             ),
             child: Center(
-              child: Icon(Icons.person, size: 200, color: context.colors.scaffoldBackground.withValues(alpha: 0.1)),
+              child: Icon(CommonIcons.person, size: 200, color: context.colors.scaffoldBackground.withValues(alpha: 0.1)),
             ),
           ),
           
@@ -56,8 +58,8 @@ class _VideoCallPageState extends State<VideoCallPage> {
                 ],
               ),
               child: _isVideoOff
-                  ? Center(child: Icon(Icons.videocam_off, color: context.colors.scaffoldBackground.withValues(alpha: 0.54), size: 40))
-                  : Center(child: Text('You', style: TextStyle(color: context.colors.scaffoldBackground.withValues(alpha: 0.54), fontWeight: FontWeight.bold))),
+                  ? Center(child: Icon(CommonIcons.videocamOff, color: context.colors.scaffoldBackground.withValues(alpha: 0.54), size: 40))
+                  : Center(child: Text('You', style: context.titleSmall.copyWith(color: context.colors.scaffoldBackground.withValues(alpha: 0.54), fontWeight: FontWeight.bold))),
             ),
           ),
 
@@ -73,17 +75,15 @@ class _VideoCallPageState extends State<VideoCallPage> {
                     shape: BoxShape.circle,
                   ),
                   child: IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: context.colors.scaffoldBackground, size: 20),
+                    icon: Icon(CommonIcons.arrowBack, color: context.colors.scaffoldBackground, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ),
                 CommonSpaces.w12,
                 Text(
                   widget.contactName,
-                  style: TextStyle(
+                  style: context.titleLarge.copyWith(
                     color: context.colors.scaffoldBackground,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
                     shadows: [Shadow(color: context.colors.textSecondary, blurRadius: 10)],
                   ),
                 ),
@@ -100,11 +100,11 @@ class _VideoCallPageState extends State<VideoCallPage> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildControlButton(
-                  icon: Icons.flip_camera_ios_rounded,
+                  icon: CommonIcons.flipCamera,
                   onTap: () {},
                 ),
                 _buildControlButton(
-                  icon: _isVideoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+                  icon: _isVideoOff ? CommonIcons.videocamOff : CommonIcons.videocam,
                   isActive: _isVideoOff,
                   onTap: () {
                     setState(() {
@@ -113,7 +113,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
                   },
                 ),
                 _buildControlButton(
-                  icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                  icon: _isMuted ? CommonIcons.micOff : CommonIcons.mic,
                   isActive: _isMuted,
                   onTap: () {
                     setState(() {
@@ -122,7 +122,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
                   },
                 ),
                 _buildControlButton(
-                  icon: Icons.call_end_rounded,
+                  icon: CommonIcons.callEnd,
                   color: context.colors.error,
                   iconColor: context.colors.scaffoldBackground,
                   size: 64,

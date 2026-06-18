@@ -1,6 +1,7 @@
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_icons.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -62,9 +63,8 @@ class _AudioCallPageState extends State<AudioCallPage> {
             CommonSpaces.h60,
             Text(
               widget.contactName,
-              style: TextStyle(
+              style: context.h2.copyWith(
                 fontSize: 32,
-                fontWeight: FontWeight.bold,
                 color: context.colors.textPrimary,
               ),
             ),
@@ -125,7 +125,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _buildControlButton(
-                    icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    icon: _isMuted ? CommonIcons.micOff : CommonIcons.mic,
                     isActive: _isMuted,
                     onTap: () {
                       setState(() {
@@ -134,7 +134,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                     },
                   ),
                   _buildControlButton(
-                    icon: Icons.call_end_rounded,
+                    icon: CommonIcons.callEnd,
                     color: context.colors.error,
                     iconColor: context.colors.scaffoldBackground,
                     size: 72,
@@ -143,7 +143,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                     },
                   ),
                   _buildControlButton(
-                    icon: _isSpeaker ? Icons.volume_up_rounded : Icons.volume_down_rounded,
+                    icon: _isSpeaker ? CommonIcons.volumeUp : CommonIcons.volumeDown,
                     isActive: _isSpeaker,
                     onTap: () {
                       setState(() {

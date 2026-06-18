@@ -5,7 +5,6 @@ import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_us
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
-import 'package:schat/core/network/api_result.dart';
 import 'chats_event.dart';
 import 'chats_state.dart';
 
@@ -35,13 +34,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       if (data is Map) {
         final type = data['type']?.toString();
         if (type == 'user_status') {
-          final userId = (data['user_id'] ?? data['id'] ?? data['sender_id'])?.toString();
+          final userId = (data['user_id'] ?? data['id'] ?? data['sender_id'])
+              ?.toString();
           final status = data['status']?.toString();
           if (userId != null) {
-            add(UpdateUserStatus(
-              userId: userId,
-              isOnline: status == 'online',
-            ));
+            add(UpdateUserStatus(userId: userId, isOnline: status == 'online'));
           }
         }
       }
@@ -62,7 +59,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     if (currentState is ChatsLoaded) {
       final updatedChats = currentState.chats.map((chat) {
         if (!chat.isGroup && chat.recipient.id == event.userId) {
-          final updatedRecipient = chat.recipient.copyWith(isOnline: event.isOnline);
+          final updatedRecipient = chat.recipient.copyWith(
+            isOnline: event.isOnline,
+          );
           return chat.copyWith(recipient: updatedRecipient);
         }
         return chat;
@@ -78,11 +77,13 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     await result.when(
       success: (chat) async {
         await _contactsRepository.removeContactFromCache(event.participantId);
-        emit(ChatsState.chatCreated(
-          chat,
-          event.contactName,
-          profilePictureUrl: event.profilePictureUrl,
-        ));
+        emit(
+          ChatsState.chatCreated(
+            chat,
+            event.contactName,
+            profilePictureUrl: event.profilePictureUrl,
+          ),
+        );
       },
       failure: (error, statusCode) {
         emit(ChatsError(error));

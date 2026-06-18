@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:schat/features/security_scanner/data/repositories/security_repository_impl.dart';
 
 void main() {
@@ -10,15 +8,13 @@ void main() {
   const MethodChannel channel = MethodChannel('safe_device');
 
   setUpAll(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (MethodCall methodCall) async {
-        if (methodCall.method == 'isJailBroken') return false;
-        if (methodCall.method == 'isRealDevice') return true;
-        if (methodCall.method == 'init') return null;
-        return null;
-      },
-    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+          if (methodCall.method == 'isJailBroken') return false;
+          if (methodCall.method == 'isRealDevice') return true;
+          if (methodCall.method == 'init') return null;
+          return null;
+        });
   });
 
   late SecurityRepositoryImpl repository;

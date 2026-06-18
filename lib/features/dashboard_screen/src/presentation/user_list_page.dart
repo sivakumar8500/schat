@@ -37,7 +37,7 @@ class _UserListPageState extends State<UserListPage> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: context.colors.transparent,
       builder: (context) => Container(
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
         decoration: BoxDecoration(
@@ -65,7 +65,7 @@ class _UserListPageState extends State<UserListPage> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _buildShareOption(
-                  icon: Icons.sms_outlined,
+                  icon: CommonIcons.smsOutlined,
                   label: 'SMS',
                   onTap: () {
                     Navigator.pop(context);
@@ -73,7 +73,7 @@ class _UserListPageState extends State<UserListPage> {
                   },
                 ),
                 _buildShareOption(
-                  icon: Icons.chat_bubble_outline,
+                  icon: CommonIcons.chatBubbleOutline,
                   label: 'WhatsApp',
                   onTap: () {
                     Navigator.pop(context);
@@ -81,7 +81,7 @@ class _UserListPageState extends State<UserListPage> {
                   },
                 ),
                 _buildShareOption(
-                  icon: Icons.mail_outline,
+                  icon: CommonIcons.mailOutline,
                   label: 'Email',
                   onTap: () {
                     Navigator.pop(context);
@@ -89,7 +89,7 @@ class _UserListPageState extends State<UserListPage> {
                   },
                 ),
                 _buildShareOption(
-                  icon: Icons.share_outlined,
+                  icon: CommonIcons.shareOutlined,
                   label: 'More',
                   onTap: () {
                     Navigator.pop(context);
@@ -352,10 +352,10 @@ class _UserListPageState extends State<UserListPage> {
             Image.asset(
               'assets/no_data/no_contacts.png',
               width: 250,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.contact_phone_outlined,
+              errorBuilder: (context, error, stackTrace) => Icon(
+                CommonIcons.contactPhoneOutlined,
                 size: 100,
-                color: Colors.grey,
+                color: context.colors.grey,
               ),
             ),
             CommonSpaces.h24,
@@ -412,7 +412,7 @@ class _UserListPageState extends State<UserListPage> {
                         return Center(
                           child: Text(
                             name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: TextStyle(
+                            style: context.bodyMedium.copyWith(
                               color: context.colors.primary,
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -424,7 +424,7 @@ class _UserListPageState extends State<UserListPage> {
                   : Center(
                       child: Text(
                         name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: TextStyle(
+                        style: context.bodyMedium.copyWith(
                           color: context.colors.primary,
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -482,7 +482,7 @@ class _UserListPageState extends State<UserListPage> {
         backgroundColor: context.colors.textHint.withValues(alpha: 0.1),
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: TextStyle(
+          style: context.bodyMedium.copyWith(
             color: context.colors.textSecondary,
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -501,7 +501,7 @@ class _UserListPageState extends State<UserListPage> {
         onPressed: () => _showInviteBottomSheet(name, phone),
         child: Text(
           'INVITE',
-          style: TextStyle(
+          style: context.bodySmall.copyWith(
             color: context.colors.primary,
             fontWeight: FontWeight.bold,
             fontSize: 12,

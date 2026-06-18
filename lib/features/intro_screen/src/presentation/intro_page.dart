@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,8 +56,8 @@ class _IntroPageState extends State<IntroPage> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            context.colors.pureBlack.withOpacity(0),
-                            context.colors.pureBlack.withOpacity(0.8),
+                            context.colors.pureBlack.withValues(alpha: 0),
+                            context.colors.pureBlack.withValues(alpha: 0.8),
                             context.colors.pureBlack,
                           ],
                         ),
@@ -69,14 +70,14 @@ class _IntroPageState extends State<IntroPage> {
 
             // Content Area - Unified with Background
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Secure chats',
                     style: context.h1.copyWith(
-                      color: Colors.white,
+                      color: context.colors.pureWhite,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -84,14 +85,14 @@ class _IntroPageState extends State<IntroPage> {
                   Text(
                     'Best in Privacy',
                     style: context.h1Italic.copyWith(
-                      color: Colors.white,
+                      color: context.colors.pureWhite,
                     ),
                   ),
                   CommonSpaces.h24,
                   Text(
                     'Messages that disappear. Calls that can\'t be tapped. Files only you control.',
                     style: context.bodyMedium.copyWith(
-                      color: Colors.white.withOpacity(0.7),
+                      color: context.colors.pureWhite.withValues(alpha: 0.7),
                       fontSize: 16,
                     ),
                   ),
@@ -105,9 +106,9 @@ class _IntroPageState extends State<IntroPage> {
                       onPressed: _onDone,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: context.colors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: context.colors.pureWhite,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(CommonSizes.r24),
                         ),
                         elevation: 0,
                       ),
@@ -117,22 +118,22 @@ class _IntroPageState extends State<IntroPage> {
                           Text(
                             'Get started',
                             style: context.titleMedium.copyWith(
-                              color: Colors.white,
+                              color: context.colors.pureWhite,
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           const Spacer(flex: 2),
                           Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
+                            padding: const EdgeInsets.all(CommonSizes.p8),
+                            decoration: BoxDecoration(
+                              color: context.colors.pureWhite,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
                               CommonIcons.arrowForward,
                               color: context.colors.primary,
-                              size: 16,
+                              size: CommonSizes.iconSmall,
                             ),
                           ),
                         ],
@@ -148,7 +149,7 @@ class _IntroPageState extends State<IntroPage> {
                       Text(
                         'Already have an account? ',
                         style: context.bodyMedium.copyWith(
-                          color: Colors.white.withOpacity(0.5),
+                          color: context.colors.pureWhite.withValues(alpha: 0.5),
                           fontSize: 15,
                         ),
                       ),
@@ -175,3 +176,4 @@ class _IntroPageState extends State<IntroPage> {
     );
   }
 }
+

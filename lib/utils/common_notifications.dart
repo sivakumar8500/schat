@@ -2,6 +2,7 @@ import 'package:another_flushbar/flushbar.dart';
 import 'package:flutter/material.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_icons.dart';
 
 extension NotificationExt on BuildContext {
   void showErrorNotification(String message) {
@@ -9,14 +10,14 @@ extension NotificationExt on BuildContext {
       message: message,
       messageText: Text(
         message,
-        style: bodyMedium.copyWith(color: Colors.white),
+        style: bodyMedium.copyWith(color: colors.pureWhite),
       ),
       backgroundColor: colors.error,
       duration: const Duration(seconds: 3),
       flushbarPosition: FlushbarPosition.TOP,
       borderRadius: BorderRadius.circular(12),
       margin: const EdgeInsets.all(12),
-      icon: const Icon(Icons.error_outline, color: Colors.white),
+      icon: Icon(CommonIcons.errorOutline, color: colors.pureWhite),
       shouldIconPulse: false,
     ).show(this);
   }
@@ -26,14 +27,14 @@ extension NotificationExt on BuildContext {
       message: message,
       messageText: Text(
         message,
-        style: bodyMedium.copyWith(color: Colors.white),
+        style: bodyMedium.copyWith(color: colors.pureWhite),
       ),
       backgroundColor: colors.success,
       duration: const Duration(seconds: 3),
       flushbarPosition: FlushbarPosition.TOP,
       borderRadius: BorderRadius.circular(12),
       margin: const EdgeInsets.all(12),
-      icon: const Icon(Icons.check_circle_outline, color: Colors.white),
+      icon: Icon(CommonIcons.checkCircleOutline, color: colors.pureWhite),
       shouldIconPulse: false,
     ).show(this);
   }
@@ -43,14 +44,14 @@ extension NotificationExt on BuildContext {
       message: message,
       messageText: Text(
         message,
-        style: bodyMedium.copyWith(color: Colors.white),
+        style: bodyMedium.copyWith(color: colors.pureWhite),
       ),
       backgroundColor: colors.primary,
       duration: const Duration(seconds: 3),
       flushbarPosition: FlushbarPosition.TOP,
       borderRadius: BorderRadius.circular(12),
       margin: const EdgeInsets.all(12),
-      icon: const Icon(Icons.info_outline, color: Colors.white),
+      icon: Icon(CommonIcons.infoOutline, color: colors.pureWhite),
       shouldIconPulse: false,
     ).show(this);
   }
@@ -64,14 +65,14 @@ extension NotificationExt on BuildContext {
         children: [
           Text(
             message,
-            style: bodyMedium.copyWith(color: Colors.white),
+            style: bodyMedium.copyWith(color: colors.pureWhite),
           ),
           if (progress != null) ...[
             const SizedBox(height: 8),
             LinearProgressIndicator(
               value: progress,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              backgroundColor: colors.pureWhite.withValues(alpha: 0.2),
+              valueColor: AlwaysStoppedAnimation<Color>(colors.pureWhite),
             ),
           ],
         ],
@@ -81,7 +82,8 @@ extension NotificationExt on BuildContext {
       flushbarPosition: FlushbarPosition.TOP,
       borderRadius: BorderRadius.circular(12),
       margin: const EdgeInsets.all(12),
-      icon: const Icon(Icons.downloading, color: Colors.white),
+      icon: Icon(CommonIcons.downloading, color: colors.pureWhite),
     ).show(this);
   }
 }
+

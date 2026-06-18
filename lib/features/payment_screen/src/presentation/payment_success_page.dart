@@ -1,6 +1,7 @@
 import 'package:schat/utils/common_fontstyles.dart';
-
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -67,7 +68,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF00873C), // Solid Green Theme
+      backgroundColor: context.colors.primary, // Solid Green Theme
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -78,12 +79,12 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
                 width: 140,
                 height: 140,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: context.colors.pureWhite.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: Colors.white,
+                child: Icon(
+                  CommonIcons.checkCircle,
+                  color: context.colors.pureWhite,
                   size: 100,
                 ),
               ),
@@ -91,32 +92,32 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
             CommonSpaces.h32,
             Text(
               'Payment Successful!',
-              style: context.h2.copyWith(color: Colors.white),
+              style: context.h2.copyWith(color: context.colors.pureWhite),
             ),
             CommonSpaces.h16,
             Text(
               'Your subscription is now active.',
-              style: TextStyle(
+              style: context.bodyLarge.copyWith(
                 fontSize: 16,
-                color: Colors.white.withValues(alpha: 0.9),
+                color: context.colors.pureWhite.withValues(alpha: 0.9),
               ),
             ),
             CommonSpaces.h60,
             Text(
               'Redirecting to dashboard in $_countdown...',
-              style: TextStyle(
+              style: context.bodyMedium.copyWith(
                 fontSize: 14,
-                color: Colors.white.withValues(alpha: 0.7),
+                color: context.colors.pureWhite.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w600,
               ),
             ),
             CommonSpaces.h24,
-            const SizedBox(
-              width: 40,
-              height: 40,
+            SizedBox(
+              width: CommonSizes.p40,
+              height: CommonSizes.p40,
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
               ),
             ),
           ],
@@ -125,3 +126,4 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
     );
   }
 }
+

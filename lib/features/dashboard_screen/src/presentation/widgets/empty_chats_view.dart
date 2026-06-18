@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:schat/common/widgets/primary_button.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 
 class EmptyChatsView extends StatelessWidget {
@@ -15,7 +15,7 @@ class EmptyChatsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40.0),
+      padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p40),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -50,7 +50,7 @@ class EmptyChatsView extends StatelessWidget {
             height: 46,
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(32),
+                borderRadius: BorderRadius.circular(CommonSizes.p32),
                 boxShadow: [
                   BoxShadow(
                     color: context.colors.primary.withValues(alpha: 0.3),
@@ -63,16 +63,16 @@ class EmptyChatsView extends StatelessWidget {
                 onPressed: onChatNowPressed,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: context.colors.primary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: context.colors.pureWhite,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(32),
+                    borderRadius: BorderRadius.circular(CommonSizes.p32),
                   ),
                 ),
                 child: Text(
                   'Chat Now',
                   style: context.titleMedium.copyWith(
-                    color: Colors.white,
+                    color: context.colors.pureWhite,
                     fontWeight: FontWeight.w700,
                     fontSize: 22,
                   ),
@@ -85,3 +85,4 @@ class EmptyChatsView extends StatelessWidget {
     );
   }
 }
+

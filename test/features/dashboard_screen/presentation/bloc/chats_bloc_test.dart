@@ -7,6 +7,7 @@ import 'package:schat/features/dashboard_screen/src/domain/recipient_model.dart'
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
@@ -14,21 +15,26 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_stat
 class MockGetChatsUseCase extends Mock implements GetChatsUseCase {}
 class MockDashboardRepository extends Mock implements DashboardRepository {}
 class MockContactsRepository extends Mock implements ContactsRepository {}
+class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
 
 void main() {
   late ChatsBloc chatsBloc;
   late MockGetChatsUseCase mockGetChatsUseCase;
   late MockDashboardRepository mockDashboardRepository;
   late MockContactsRepository mockContactsRepository;
+  late MockChatSocketRepository mockChatSocketRepository;
 
   setUp(() {
     mockGetChatsUseCase = MockGetChatsUseCase();
     mockDashboardRepository = MockDashboardRepository();
     mockContactsRepository = MockContactsRepository();
+    mockChatSocketRepository = MockChatSocketRepository();
+    when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
     chatsBloc = ChatsBloc(
       mockGetChatsUseCase,
       mockDashboardRepository,
       mockContactsRepository,
+      mockChatSocketRepository,
     );
   });
 

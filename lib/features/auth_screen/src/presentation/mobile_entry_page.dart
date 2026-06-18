@@ -56,7 +56,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final fieldBgColor = Colors.white.withValues(alpha: 0.1);
+    final fieldBgColor = context.colors.pureWhite.withValues(alpha: 0.1);
 
     return BlocProvider<AuthBloc>(
       create: (context) => AuthBloc(),
@@ -138,15 +138,15 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                               children: [
                                                 TextSpan(
                                                   text: "Let's ",
-                                                  style: context.h1.copyWith(fontSize: 36, color: Colors.white),
+                                                  style: context.h1.copyWith(fontSize: 36, color: context.colors.pureWhite),
                                                 ),
                                                 TextSpan(
                                                   text: "get ",
-                                                  style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white),
+                                                  style: context.h1Italic.copyWith(fontSize: 34, color: context.colors.pureWhite),
                                                 ),
                                                 TextSpan(
                                                   text: "you in.",
-                                                  style: context.h1.copyWith(fontSize: 36, color: Colors.white),
+                                                  style: context.h1.copyWith(fontSize: 36, color: context.colors.pureWhite),
                                                 ),
                                               ],
                                             ),
@@ -157,7 +157,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                     CommonSpaces.h24,
                                     Text(
                                       'Phone number',
-                                      style: context.titleSmall.copyWith(color: Colors.white),
+                                      style: context.titleSmall.copyWith(color: context.colors.pureWhite),
                                     ),
                                     CommonSpaces.h12,
                                     Row(
@@ -171,11 +171,11 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Text('🇮🇳', style: TextStyle(fontSize: 22)),
+                                              Text('🇮🇳', style: context.bodyLarge.copyWith(fontSize: 22)),
                                               CommonSpaces.w8,
                                               Text(
                                                 '+91',
-                                                style: context.titleSmall.copyWith(color: Colors.white),
+                                                style: context.titleSmall.copyWith(color: context.colors.pureWhite),
                                               ),
                                             ],
                                           ),
@@ -191,12 +191,12 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                               controller: _mobileController,
                                               keyboardType: TextInputType.phone,
                                               maxLength: 10,
-                                              style: context.titleSmall.copyWith(color: Colors.white),
+                                              style: context.titleSmall.copyWith(color: context.colors.pureWhite),
                                               decoration: InputDecoration(
                                                 hintText: '000 000 0000',
                                                 counterText: '',
                                                 hintStyle: context.bodyMedium.copyWith(
-                                                  color: Colors.white.withValues(alpha: 0.4),
+                                                  color: context.colors.pureWhite.withValues(alpha: 0.4),
                                                 ),
                                                 border: OutlineInputBorder(
                                                   borderRadius: BorderRadius.circular(16),
@@ -233,7 +233,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                             onPressed: isLoading ? null : () => _sendOtp(context),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: context.colors.primary,
-                              foregroundColor: Colors.white,
+                              foregroundColor: context.colors.pureWhite,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                               elevation: 0,
                             ),
@@ -242,12 +242,12 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                               children: [
                                 Text(
                                   'Continue',
-                                  style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                                  style: context.titleMedium.copyWith(color: context.colors.pureWhite, fontWeight: FontWeight.w600),
                                 ),
                                 CommonSpaces.w8,
                                 Container(
                                   padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: context.colors.pureWhite, shape: BoxShape.circle),
                                   child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
                                 ),
                               ],
@@ -259,7 +259,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                           child: Text.rich(
                             TextSpan(
                               text: 'By continuing you agree to our\n',
-                              style: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.5), height: 1.4),
+                              style: context.bodyMedium.copyWith(color: context.colors.pureWhite.withValues(alpha: 0.5), height: 1.4),
                               children: [
                                 TextSpan(text: 'Terms', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
                                 const TextSpan(text: ' & '),

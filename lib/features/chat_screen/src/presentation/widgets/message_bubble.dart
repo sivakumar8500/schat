@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_fontstyles.dart';
 
 class MessageBubble extends StatelessWidget {
   final String message;
@@ -32,14 +34,20 @@ class MessageBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
             CircleAvatar(
               radius: 12,
               backgroundColor: context.colors.textHint,
-              child: Icon(Icons.person, size: 16, color: context.colors.textLight),
+              child: Icon(
+                CommonIcons.person,
+                size: 16,
+                color: context.colors.textLight,
+              ),
             ),
             CommonSpaces.w8,
           ],
@@ -47,12 +55,18 @@ class MessageBubble extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: isMe ? context.colors.primary : context.colors.lightBackground,
+                color: isMe
+                    ? context.colors.primary
+                    : context.colors.lightBackground,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(20),
                   topRight: const Radius.circular(20),
-                  bottomLeft: isMe ? const Radius.circular(20) : const Radius.circular(0),
-                  bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(20),
+                  bottomLeft: isMe
+                      ? const Radius.circular(20)
+                      : const Radius.circular(0),
+                  bottomRight: isMe
+                      ? const Radius.circular(0)
+                      : const Radius.circular(20),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -63,15 +77,19 @@ class MessageBubble extends StatelessWidget {
                 ],
               ),
               child: Column(
-                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: isMe
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
                   _buildAttachment(context),
                   if (message.isNotEmpty)
                     Text(
                       message,
-                      style: TextStyle(
+                      style: context.bodyLarge.copyWith(
                         fontSize: 16,
-                        color: isMe ? context.colors.textLight : context.colors.textPrimary,
+                        color: isMe
+                            ? context.colors.textLight
+                            : context.colors.textPrimary,
                       ),
                     ),
                   if (message.isNotEmpty && type != 'text') CommonSpaces.h6,
@@ -80,19 +98,23 @@ class MessageBubble extends StatelessWidget {
                     children: [
                       Text(
                         time,
-                        style: TextStyle(
+                        style: context.bodySmall.copyWith(
                           fontSize: 11,
-                          color: isMe ? context.colors.textLight.withValues(alpha: 0.7) : context.colors.textSecondary,
+                          color: isMe
+                              ? context.colors.textLight.withValues(alpha: 0.7)
+                              : context.colors.textSecondary,
                         ),
                       ),
                       if (isMe) ...[
                         CommonSpaces.w4,
                         Icon(
-                          isRead ? Icons.done_all : Icons.done,
+                          isRead ? CommonIcons.doneAll : CommonIcons.done,
                           size: 14,
-                          color: isRead ? Colors.lightBlueAccent.shade100 : context.colors.textLight.withValues(alpha: 0.7),
+                          color: isRead
+                              ? context.colors.blueAccent
+                              : context.colors.textLight.withValues(alpha: 0.7),
                         ),
-                      ]
+                      ],
                     ],
                   ),
                 ],
@@ -119,13 +141,15 @@ class MessageBubble extends StatelessWidget {
           fit: BoxFit.cover,
         );
       } else if (!kIsWeb && attachmentPath != null) {
-        if (attachmentPath!.startsWith('http') || attachmentPath!.startsWith('https')) {
+        if (attachmentPath!.startsWith('http') ||
+            attachmentPath!.startsWith('https')) {
           imageWidget = Image.network(
             attachmentPath!,
             height: 200,
             width: 220,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _fileChip(context, Icons.broken_image, 'Image error'),
+            errorBuilder: (_, _, _) =>
+                _fileChip(context, CommonIcons.brokenImage, 'Image error'),
           );
         } else {
           imageWidget = Image.file(
@@ -133,7 +157,11 @@ class MessageBubble extends StatelessWidget {
             height: 200,
             width: 220,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _fileChip(context, Icons.image_not_supported, 'Image error'),
+            errorBuilder: (_, _, _) => _fileChip(
+              context,
+              CommonIcons.imageNotSupported,
+              'Image error',
+            ),
           );
         }
       } else {
@@ -147,11 +175,15 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else if (type == 'audio') {
-      return _fileChip(context, Icons.headset, attachmentName ?? 'Audio');
+      return _fileChip(context, CommonIcons.audio, attachmentName ?? 'Audio');
     } else if (type == 'video') {
-      return _fileChip(context, Icons.play_circle_fill, attachmentName ?? 'Video');
+      return _fileChip(
+        context,
+        CommonIcons.playCircle,
+        attachmentName ?? 'Video',
+      );
     } else if (type == 'file') {
-      return _fileChip(context, Icons.insert_drive_file, attachmentName ?? 'File');
+      return _fileChip(context, CommonIcons.document, attachmentName ?? 'File');
     } else if (type == 'location') {
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -160,33 +192,52 @@ class MessageBubble extends StatelessWidget {
           child: Container(
             height: 120,
             width: 200,
-            color: isMe ? Colors.white.withValues(alpha: 0.15) : context.colors.lightBackground,
+            color: isMe
+                ? context.colors.pureWhite.withValues(alpha: 0.15)
+                : context.colors.lightBackground,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 GridView.builder(
                   physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 5),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 5,
+                  ),
                   itemCount: 25,
                   itemBuilder: (_, _) => Container(
                     decoration: BoxDecoration(
-                      border: Border.all(color: context.colors.textHint.withValues(alpha: 0.2)),
+                      border: Border.all(
+                        color: context.colors.textHint.withValues(alpha: 0.2),
+                      ),
                     ),
                   ),
                 ),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.location_pin, color: context.colors.error, size: 36),
+                    Icon(
+                      CommonIcons.location,
+                      color: context.colors.error,
+                      size: 36,
+                    ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
-                        color: isMe ? Colors.white.withValues(alpha: 0.8) : context.colors.scaffoldBackground,
+                        color: isMe
+                            ? context.colors.pureWhite.withValues(alpha: 0.8)
+                            : context.colors.scaffoldBackground,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         'My Location',
-                        style: TextStyle(fontSize: 11, color: context.colors.textPrimary, fontWeight: FontWeight.bold),
+                        style: context.bodySmall.copyWith(
+                          fontSize: 11,
+                          color: context.colors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -201,10 +252,14 @@ class MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isMe ? Colors.white.withValues(alpha: 0.15) : context.colors.lightBackground,
+          color: isMe
+              ? context.colors.pureWhite.withValues(alpha: 0.15)
+              : context.colors.lightBackground,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isMe ? Colors.white.withValues(alpha: 0.3) : context.colors.primary.withValues(alpha: 0.3),
+            color: isMe
+                ? context.colors.pureWhite.withValues(alpha: 0.3)
+                : context.colors.primary.withValues(alpha: 0.3),
           ),
         ),
         child: Row(
@@ -212,15 +267,23 @@ class MessageBubble extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundColor: isMe ? Colors.white.withValues(alpha: 0.3) : context.colors.primary.withValues(alpha: 0.15),
-              child: Icon(Icons.person, color: isMe ? Colors.white : context.colors.primary, size: 20),
+              backgroundColor: isMe
+                  ? context.colors.pureWhite.withValues(alpha: 0.3)
+                  : context.colors.primary.withValues(alpha: 0.15),
+              child: Icon(
+                CommonIcons.person,
+                color: isMe ? context.colors.pureWhite : context.colors.primary,
+                size: 20,
+              ),
             ),
             CommonSpaces.w8,
             Flexible(
               child: Text(
                 attachmentName ?? 'Contact',
-                style: TextStyle(
-                  color: isMe ? Colors.white : context.colors.textPrimary,
+                style: context.bodyMedium.copyWith(
+                  color: isMe
+                      ? context.colors.pureWhite
+                      : context.colors.textPrimary,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),
@@ -240,22 +303,31 @@ class MessageBubble extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8.0),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isMe ? Colors.white.withValues(alpha: 0.2) : context.colors.scaffoldBackground,
+        color: isMe
+            ? context.colors.pureWhite.withValues(alpha: 0.2)
+            : context.colors.scaffoldBackground,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isMe ? Colors.white.withValues(alpha: 0.3) : context.colors.primary.withValues(alpha: 0.3),
+          color: isMe
+              ? context.colors.pureWhite.withValues(alpha: 0.3)
+              : context.colors.primary.withValues(alpha: 0.3),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: isMe ? Colors.white : context.colors.primary),
+          Icon(
+            icon,
+            color: isMe ? context.colors.pureWhite : context.colors.primary,
+          ),
           CommonSpaces.w8,
           Flexible(
             child: Text(
               label,
-              style: TextStyle(
-                color: isMe ? Colors.white : context.colors.textPrimary,
+              style: context.bodyMedium.copyWith(
+                color: isMe
+                    ? context.colors.pureWhite
+                    : context.colors.textPrimary,
                 fontWeight: FontWeight.w500,
               ),
               maxLines: 1,

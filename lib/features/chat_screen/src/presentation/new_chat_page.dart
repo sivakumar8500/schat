@@ -33,7 +33,8 @@ class _NewChatPageState extends State<NewChatPage> {
   final String _inviteTitle = 'Join Schat - Secure Messaging';
 
   void _showInviteBottomSheet(String name, String phone) {
-    final String baseMessage = 'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
+    final String baseMessage =
+        'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
 
     showModalBottomSheet(
       context: context,
@@ -51,7 +52,7 @@ class _NewChatPageState extends State<NewChatPage> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: context.colors.textHint.withOpacity(0.3),
+                color: context.colors.textHint.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -118,7 +119,7 @@ class _NewChatPageState extends State<NewChatPage> {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: context.colors.primary.withOpacity(0.1),
+              color: context.colors.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: context.colors.primary, size: 28),
@@ -151,11 +152,15 @@ class _NewChatPageState extends State<NewChatPage> {
 
   Future<void> _launchWhatsApp(String phone, String message) async {
     final String cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-    final Uri uri = Uri.parse('whatsapp://send?phone=$cleanPhone&text=${Uri.encodeComponent(message)}');
+    final Uri uri = Uri.parse(
+      'whatsapp://send?phone=$cleanPhone&text=${Uri.encodeComponent(message)}',
+    );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
-      final Uri webUri = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+      final Uri webUri = Uri.parse(
+        'https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}',
+      );
       if (await canLaunchUrl(webUri)) {
         await launchUrl(webUri, mode: LaunchMode.externalApplication);
       } else {
@@ -167,10 +172,7 @@ class _NewChatPageState extends State<NewChatPage> {
   Future<void> _launchEmail(String message) async {
     final Uri uri = Uri(
       scheme: 'mailto',
-      queryParameters: {
-        'subject': _inviteTitle,
-        'body': message,
-      },
+      queryParameters: {'subject': _inviteTitle, 'body': message},
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -186,16 +188,16 @@ class _NewChatPageState extends State<NewChatPage> {
         BlocProvider(
           create: (context) => ContactsBloc()..add(const LoadContacts()),
         ),
-        BlocProvider(
-          create: (context) => getIt<ChatsBloc>(),
-        ),
+        BlocProvider(create: (context) => getIt<ChatsBloc>()),
       ],
       child: BlocListener<ChatsBloc, ChatsState>(
         listener: (context, state) {
           state.maybeWhen(
-            chatCreated: (chat, contactName, {profilePictureUrl}) {
+            chatCreated: (chat, contactName, profilePictureUrl) {
               if (_pendingParticipantId != null) {
-                context.read<ContactsBloc>().add(RemoveContact(_pendingParticipantId!));
+                context.read<ContactsBloc>().add(
+                  RemoveContact(_pendingParticipantId!),
+                );
                 _pendingParticipantId = null;
               }
               Navigator.pushReplacement(
@@ -214,9 +216,9 @@ class _NewChatPageState extends State<NewChatPage> {
             },
             error: (message) {
               _pendingParticipantId = null;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(message)),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(message)));
             },
             orElse: () {},
           );
@@ -227,13 +229,13 @@ class _NewChatPageState extends State<NewChatPage> {
             backgroundColor: context.colors.scaffoldBackground,
             elevation: 0,
             leading: IconButton(
-              icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+              icon: Icon(
+                CommonIcons.arrowBack,
+                color: context.colors.textPrimary,
+              ),
               onPressed: () => Navigator.pop(context),
             ),
-            title: Text(
-              'New Chat',
-              style: context.h1.copyWith(fontSize: 22),
-            ),
+            title: Text('New Chat', style: context.h1.copyWith(fontSize: 22)),
           ),
           body: BlocBuilder<ContactsBloc, ContactsState>(
             builder: (context, state) {
@@ -311,7 +313,9 @@ class _NewChatPageState extends State<NewChatPage> {
                 ),
               ),
             ),
-            ...inviteContacts.map((contact) => _buildInviteContactTile(context, contact)),
+            ...inviteContacts.map(
+              (contact) => _buildInviteContactTile(context, contact),
+            ),
           ],
         ],
       );
@@ -366,7 +370,9 @@ class _NewChatPageState extends State<NewChatPage> {
             Text(
               'Sync your contacts to see who is on Schat.',
               textAlign: TextAlign.center,
-              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textSecondary,
+              ),
             ),
             CommonSpaces.h32,
             PrimaryButton(
@@ -387,20 +393,21 @@ class _NewChatPageState extends State<NewChatPage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       onTap: () {
         _pendingParticipantId = user.id;
-        context.read<ChatsBloc>().add(CreateChat(
-          participantId: user.id,
-          contactName: name,
-        ));
+        context.read<ChatsBloc>().add(
+          CreateChat(participantId: user.id, contactName: name),
+        );
       },
       leading: Container(
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: context.colors.primary.withOpacity(0.15),
+          color: context.colors.primary.withValues(alpha: 0.15),
           shape: BoxShape.circle,
         ),
         child: ClipOval(
-          child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+          child:
+              (user.profilePictureUrl != null &&
+                  user.profilePictureUrl!.isNotEmpty)
               ? Image.network(
                   user.profilePictureUrl!,
                   fit: BoxFit.cover,
@@ -430,8 +437,8 @@ class _NewChatPageState extends State<NewChatPage> {
         ),
       ),
       title: Text(
-        name, 
-        style: context.titleMedium.copyWith(fontWeight: FontWeight.bold)
+        name,
+        style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
         user.about ?? 'Hey there! I am using Schat.',
@@ -440,9 +447,9 @@ class _NewChatPageState extends State<NewChatPage> {
         style: context.bodySmall.copyWith(color: context.colors.textSecondary),
       ),
       trailing: Icon(
-        CommonIcons.chatBubble, 
-        color: context.colors.primary, 
-        size: 20
+        CommonIcons.chatBubble,
+        color: context.colors.primary,
+        size: 20,
       ),
     );
   }
@@ -456,7 +463,7 @@ class _NewChatPageState extends State<NewChatPage> {
       onTap: () => _showInviteBottomSheet(name, phone),
       leading: CircleAvatar(
         radius: 28,
-        backgroundColor: context.colors.textHint.withOpacity(0.1),
+        backgroundColor: context.colors.textHint.withValues(alpha: 0.1),
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : '?',
           style: TextStyle(
@@ -467,12 +474,12 @@ class _NewChatPageState extends State<NewChatPage> {
         ),
       ),
       title: Text(
-        name, 
-        style: context.titleMedium.copyWith(fontWeight: FontWeight.bold)
+        name,
+        style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
       ),
       subtitle: Text(
-        phone, 
-        style: context.bodySmall.copyWith(color: context.colors.textSecondary)
+        phone,
+        style: context.bodySmall.copyWith(color: context.colors.textSecondary),
       ),
       trailing: TextButton(
         onPressed: () => _showInviteBottomSheet(name, phone),

@@ -156,7 +156,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                                               const ProfilePage(isEditing: true),
                                         ),
                                       );
-                                      if (mounted) {
+                                      if (context.mounted) {
                                         context.read<ProfileBloc>().add(
                                           const LoadProfileEvent(),
                                         );

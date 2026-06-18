@@ -15,11 +15,11 @@ import 'package:schat/features/profile_screen/src/presentation/profile_settings_
 import 'package:schat/features/status_screen/src/presentation/status_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
@@ -93,7 +93,8 @@ class _DashboardPageState extends State<DashboardPage> {
               _buildSearchBar(),
               Expanded(
                 child: state.maybeWhen(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (message) => Center(child: Text(message)),
                   loaded: (chatList) {
                     if (chatList.isEmpty) {
@@ -107,7 +108,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     }
                     return _buildChatList(chatList);
                   },
-                  orElse: () => const Center(child: CircularProgressIndicator()),
+                  orElse: () =>
+                      const Center(child: CircularProgressIndicator()),
                 ),
               ),
             ],
@@ -128,7 +130,8 @@ class _DashboardPageState extends State<DashboardPage> {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => ProfileSettingsPage(username: _username),
+                  builder: (context) =>
+                      ProfileSettingsPage(username: _username),
                 ),
               );
               _loadProfile();
@@ -139,24 +142,31 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: [
                   TextSpan(
                     text: _username,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                    style: context.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const TextSpan(text: " 👋"),
                 ],
               ),
-              style: TextStyle(
+              style: context.h2.copyWith(
                 fontSize: 26,
                 color: context.colors.textPrimary,
               ),
             ),
           ),
           IconButton(
-            icon: Icon(CommonIcons.moreVert, color: context.colors.textPrimary, size: 28),
+            icon: Icon(
+              CommonIcons.moreVert,
+              color: context.colors.textPrimary,
+              size: 28,
+            ),
             onPressed: () async {
               await Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => ProfileSettingsPage(username: _username),
+                  builder: (context) =>
+                      ProfileSettingsPage(username: _username),
                 ),
               );
               _loadProfile();
@@ -187,11 +197,14 @@ class _DashboardPageState extends State<DashboardPage> {
           child: Row(
             children: [
               CommonSpaces.w16,
-              Icon(CommonIcons.search, color: context.colors.textHint.withValues(alpha: 0.7)),
+              Icon(
+                CommonIcons.search,
+                color: context.colors.textHint.withValues(alpha: 0.7),
+              ),
               CommonSpaces.w12,
               Text(
                 'Search',
-                style: TextStyle(
+                style: context.bodyLarge.copyWith(
                   color: context.colors.textHint.withValues(alpha: 0.7),
                   fontSize: 16,
                   fontWeight: FontWeight.normal,
@@ -217,17 +230,26 @@ class _DashboardPageState extends State<DashboardPage> {
             Positioned(
               left: 2,
               top: 2,
-              child: _buildSmallAvatar(context.colors.primary.withValues(alpha: 0.4), '👨🏻‍💻'),
+              child: _buildSmallAvatar(
+                context.colors.primary.withValues(alpha: 0.4),
+                '👨🏻‍💻',
+              ),
             ),
             Positioned(
               right: 2,
               top: 2,
-              child: _buildSmallAvatar(Colors.pinkAccent.withValues(alpha: 0.4), '👩🏼‍💻'),
+              child: _buildSmallAvatar(
+                context.colors.pinkAccent.withValues(alpha: 0.4),
+                '👩🏼‍💻',
+              ),
             ),
             Positioned(
               left: 2,
               bottom: 2,
-              child: _buildSmallAvatar(Colors.orangeAccent.withValues(alpha: 0.4), '👨🏽‍💻'),
+              child: _buildSmallAvatar(
+                context.colors.orangeAccent.withValues(alpha: 0.4),
+                '👨🏽‍💻',
+              ),
             ),
             Positioned(
               right: 2,
@@ -238,12 +260,19 @@ class _DashboardPageState extends State<DashboardPage> {
                 decoration: BoxDecoration(
                   color: context.colors.primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: context.colors.scaffoldBackground, width: 2),
+                  border: Border.all(
+                    color: context.colors.scaffoldBackground,
+                    width: 2,
+                  ),
                 ),
-                child: const Center(
+                child: Center(
                   child: Text(
                     '+3',
-                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    style: context.bodySmall.copyWith(
+                      color: context.colors.pureWhite,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -274,8 +303,10 @@ class _DashboardPageState extends State<DashboardPage> {
                     errorBuilder: (context, error, stackTrace) {
                       return Center(
                         child: Text(
-                          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-                          style: TextStyle(
+                          name.isNotEmpty
+                              ? name.substring(0, 1).toUpperCase()
+                              : '?',
+                          style: context.titleMedium.copyWith(
                             color: color,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -289,7 +320,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
                           value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
                               : null,
                         ),
                       );
@@ -297,8 +329,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   )
                 : Center(
                     child: Text(
-                      name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-                      style: TextStyle(
+                      name.isNotEmpty
+                          ? name.substring(0, 1).toUpperCase()
+                          : '?',
+                      style: context.titleMedium.copyWith(
                         color: color,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -332,12 +366,9 @@ class _DashboardPageState extends State<DashboardPage> {
     return Container(
       width: 24,
       height: 24,
-      decoration: BoxDecoration(
-        color: bgColor,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
       child: Center(
-        child: Text(emoji, style: const TextStyle(fontSize: 12)),
+        child: Text(emoji, style: context.bodyMedium.copyWith(fontSize: 12)),
       ),
     );
   }
@@ -353,7 +384,7 @@ class _DashboardPageState extends State<DashboardPage> {
       children: [
         Text(
           timeStr,
-          style: TextStyle(
+          style: context.bodySmall.copyWith(
             fontSize: 12,
             color: context.colors.textHint,
           ),
@@ -373,7 +404,10 @@ class _DashboardPageState extends State<DashboardPage> {
         final name = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : (chat.recipient.username ?? chat.recipient.phoneNumber);
-        final message = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
+        final message =
+            chat.lastMessage?.content ??
+            chat.groupDescription ??
+            'No messages yet';
 
         return InkWell(
           onTap: () {
@@ -406,7 +440,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: context.titleSmall.copyWith(
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
                           color: context.colors.textPrimary,
@@ -417,8 +451,10 @@ class _DashboardPageState extends State<DashboardPage> {
                         message,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: context.colors.textSecondary.withValues(alpha: 0.7),
+                        style: context.bodyMedium.copyWith(
+                          color: context.colors.textSecondary.withValues(
+                            alpha: 0.7,
+                          ),
                           fontWeight: FontWeight.normal,
                           fontSize: 14,
                         ),
@@ -443,7 +479,9 @@ class _DashboardPageState extends State<DashboardPage> {
         boxShadow: [
           BoxShadow(
             color: context.colors.textPrimary.withValues(
-              alpha: getIt<ThemeController>().themeMode == ThemeMode.dark ? 0.3 : 0.05,
+              alpha: getIt<ThemeController>().themeMode == ThemeMode.dark
+                  ? 0.3
+                  : 0.05,
             ),
             blurRadius: 20,
             offset: const Offset(0, -5),
@@ -458,14 +496,20 @@ class _DashboardPageState extends State<DashboardPage> {
           });
         },
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.transparent,
+        backgroundColor: context.colors.transparent,
         selectedItemColor: context.colors.primary,
         unselectedItemColor: context.colors.textHint,
         showSelectedLabels: true,
         showUnselectedLabels: true,
         elevation: 0,
-        selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+        selectedLabelStyle: context.bodyMedium.copyWith(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: context.bodyMedium.copyWith(
+          fontSize: 12,
+          fontWeight: FontWeight.normal,
+        ),
         items: [
           _buildBottomNavItem(CommonIcons.home, 'Messages', 0),
           _buildBottomNavItem(CommonIcons.statusIcon, 'Status', 1),
@@ -476,7 +520,11 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  BottomNavigationBarItem _buildBottomNavItem(String iconPath, String label, int index) {
+  BottomNavigationBarItem _buildBottomNavItem(
+    String iconPath,
+    String label,
+    int index,
+  ) {
     final isActive = _currentIndex == index;
     return BottomNavigationBarItem(
       icon: Column(

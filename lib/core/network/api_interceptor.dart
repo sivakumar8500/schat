@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
 
@@ -16,27 +17,28 @@ class ApiInterceptor extends Interceptor {
       options.headers['Authorization'] = 'Bearer $token';
     }
     
-    print('--------------------------');
-    print('API Request: ${options.method}');
-    print('---------------------------');
-    print('api --->: ${options.baseUrl}${options.path}');
-    print('body ---->: ${jsonEncode(options.data ?? {})}');
+    debugPrint('--------------------------');
+    debugPrint('API Request: ${options.method}');
+    debugPrint('---------------------------');
+    debugPrint('api --->: ${options.baseUrl}${options.path}');
+    debugPrint('body ---->: ${jsonEncode(options.data ?? {})}');
     
     super.onRequest(options, handler);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    print('responce ----->: ${jsonEncode(response.data ?? {})}');
-    print('----------------------------------');
+    debugPrint('responce ----->: ${jsonEncode(response.data ?? {})}');
+    debugPrint('----------------------------------');
     super.onResponse(response, handler);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    print('ERROR[${err.response?.statusCode}]');
-    print('responce ----->: ${jsonEncode(err.response?.data ?? {})}');
-    print('----------------------------------');
+    debugPrint('ERROR[${err.response?.statusCode}]');
+    debugPrint('responce ----->: ${jsonEncode(err.response?.data ?? {})}');
+    debugPrint('----------------------------------');
     super.onError(err, handler);
   }
 }
+

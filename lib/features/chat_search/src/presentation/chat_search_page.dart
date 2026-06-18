@@ -43,7 +43,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       child: Row(
         children: [
           IconButton(
-            icon: Icon(Icons.arrow_back_ios_new, color: context.colors.textPrimary, size: 20),
+            icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary, size: 20),
             onPressed: () => Navigator.pop(context),
           ),
           Expanded(
@@ -55,11 +55,11 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               ),
               child: TextField(
                 autofocus: true,
-                style: TextStyle(color: context.colors.textPrimary),
+                style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
                 decoration: InputDecoration(
                   prefixIcon: Icon(CommonIcons.search, color: context.colors.textHint.withValues(alpha: 0.6)),
                   hintText: 'Search',
-                  hintStyle: TextStyle(color: context.colors.textHint.withValues(alpha: 0.6)),
+                  hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint.withValues(alpha: 0.6)),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
@@ -93,7 +93,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               },
               backgroundColor: context.colors.primary.withValues(alpha: 0.05),
               selectedColor: context.colors.primary,
-              labelStyle: TextStyle(
+              labelStyle: context.bodyMedium.copyWith(
                 color: isSelected ? context.colors.textLight : context.colors.primary,
                 fontWeight: FontWeight.w600,
               ),
@@ -114,13 +114,13 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     IconData? icon;
     switch (filter) {
       case 'Unread':
-        icon = Icons.chat_bubble_outline;
+        icon = CommonIcons.chatBubbleOutline;
       case 'Photos':
-        icon = Icons.photo_outlined;
+        icon = CommonIcons.photoOutlined;
       case 'Videos':
-        icon = Icons.videocam_outlined;
+        icon = CommonIcons.videocamOutlined;
       case 'Links':
-        icon = Icons.link_outlined;
+        icon = CommonIcons.linkOutlined;
     }
     if (icon == null) return null;
     return Icon(icon, size: 16, color: isSelected ? context.colors.textLight : context.colors.primary);
@@ -146,7 +146,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         'message': 'Olivia is typing...',
         'time': '12:30',
         'unread': 3,
-        'color': Colors.pinkAccent,
+        'color': context.colors.pinkAccent,
         'isTyping': true,
       },
       {
@@ -162,7 +162,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         'message': 'Nice work, i love it 👍',
         'time': '12:30',
         'unread': 3,
-        'color': Colors.redAccent,
+        'color': context.colors.error,
       },
     ];
 
@@ -187,7 +187,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               Expanded(
                 child: Text(
                   chat['message'] as String,
-                  style: TextStyle(
+                  style: context.bodyMedium.copyWith(
                     color: chat['isTyping'] == true ? context.colors.primary : context.colors.textSecondary,
                     fontStyle: chat['isTyping'] == true ? FontStyle.italic : FontStyle.normal,
                   ),
@@ -200,7 +200,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 decoration: BoxDecoration(color: context.colors.primary, shape: BoxShape.circle),
                 child: Text(
                   chat['unread'].toString(),
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: context.bodySmall.copyWith(color: context.colors.pureWhite, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -217,16 +217,16 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         height: 48,
         child: Stack(
           children: [
-            Positioned(left: 0, top: 0, child: CircleAvatar(radius: 14, backgroundColor: Colors.grey[300])),
-            Positioned(right: 0, top: 0, child: CircleAvatar(radius: 14, backgroundColor: Colors.blue[300])),
-            Positioned(left: 0, bottom: 0, child: CircleAvatar(radius: 14, backgroundColor: Colors.orange[300])),
+            Positioned(left: 0, top: 0, child: CircleAvatar(radius: 14, backgroundColor: context.colors.lightBackground)),
+            Positioned(right: 0, top: 0, child: CircleAvatar(radius: 14, backgroundColor: context.colors.blue.withValues(alpha: 0.3))),
+            Positioned(left: 0, bottom: 0, child: CircleAvatar(radius: 14, backgroundColor: context.colors.orange.withValues(alpha: 0.3))),
             Positioned(
               right: 0,
               bottom: 0,
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(color: context.colors.primary, shape: BoxShape.circle),
-                child: const Text('+3', style: TextStyle(color: Colors.white, fontSize: 8)),
+                child: Text('+3', style: context.bodySmall.copyWith(color: context.colors.pureWhite, fontSize: 8)),
               ),
             ),
           ],
@@ -236,7 +236,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     return CircleAvatar(
       radius: 24,
       backgroundColor: (chat['color'] as Color).withValues(alpha: 0.2),
-      child: Text((chat['name'] as String)[0], style: TextStyle(color: chat['color'] as Color, fontWeight: FontWeight.bold)),
+      child: Text((chat['name'] as String)[0], style: context.bodyMedium.copyWith(color: chat['color'] as Color, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -255,7 +255,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             color: context.colors.lightBackground,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(Icons.photo, color: context.colors.textHint.withValues(alpha: 0.2), size: 32),
+          child: Icon(CommonIcons.photo, color: context.colors.textHint.withValues(alpha: 0.2), size: 32),
         );
       },
     );
@@ -270,19 +270,19 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(radius: 20, backgroundColor: Colors.pinkAccent.withValues(alpha: 0.2)),
-              title: const Text('Olivia Grant', style: TextStyle(fontWeight: FontWeight.bold)),
-              trailing: Text('12:30', style: TextStyle(color: context.colors.textHint, fontSize: 12)),
+              leading: CircleAvatar(radius: 20, backgroundColor: context.colors.pinkAccent.withValues(alpha: 0.2)),
+              title: Text('Olivia Grant', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
+              trailing: Text('12:30', style: context.bodyMedium.copyWith(color: context.colors.textHint, fontSize: 12)),
             ),
-            const Text(
+            Text(
               'You: https://www.instagram.com/p/DXHF6eljI-b/?igsh=MTB1bjM2cDhpMmIsZA%3D%3D',
-              style: TextStyle(color: Colors.blue, fontSize: 13),
+              style: context.bodyMedium.copyWith(color: context.colors.blue, fontSize: 13),
             ),
             CommonSpaces.h8,
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.05),
+                color: context.colors.green.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -291,14 +291,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                     'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Meet_icon_%282020%29.svg/1024px-Google_Meet_icon_%282020%29.svg.png', 
                     width: 40, 
                     height: 40, 
-                    errorBuilder: (c, e, s) => const Icon(Icons.link),
+                    errorBuilder: (c, e, s) => const Icon(CommonIcons.link),
                   ),
                   CommonSpaces.w12,
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Meet', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text('Video conferencing', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text('Meet', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
+                      Text('Video conferencing', style: context.bodyMedium.copyWith(fontSize: 12, color: context.colors.grey)),
                     ],
                   ),
                 ],

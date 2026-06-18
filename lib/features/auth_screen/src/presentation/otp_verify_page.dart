@@ -179,7 +179,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   @override
   Widget build(BuildContext context) {
-    final fieldBgColor = Colors.white.withValues(alpha: 0.1);
+    final fieldBgColor = context.colors.pureWhite.withValues(alpha: 0.1);
 
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
@@ -259,7 +259,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                         padding: const EdgeInsets.all(4.0),
                                         child: Icon(
                                           CommonIcons.arrowBack,
-                                          color: Colors.white,
+                                          color: context.colors.pureWhite,
                                           size: 24,
                                         ),
                                       ),
@@ -274,14 +274,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                             text: "Enter the ",
                                             style: context.h1.copyWith(
                                               fontSize: 32,
-                                              color: Colors.white,
+                                              color: context.colors.pureWhite,
                                             ),
                                           ),
                                           TextSpan(
                                             text: "Code",
                                             style: context.h1Italic.copyWith(
                                               fontSize: 30,
-                                              color: Colors.white,
+                                              color: context.colors.pureWhite,
                                             ),
                                           ),
                                         ],
@@ -296,14 +296,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                               Text(
                                 "Sent to ${widget.mobileNumber}",
                                 style: context.bodyMedium.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.6),
+                                  color: context.colors.pureWhite.withValues(alpha: 0.6),
                                 ),
                               ),
                               CommonSpaces.h24,
                               Text(
                                 'Code',
                                 style: context.titleSmall.copyWith(
-                                  color: Colors.white,
+                                  color: context.colors.pureWhite,
                                 ),
                               ),
                               CommonSpaces.h12,
@@ -339,10 +339,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                           focusNode: _focusNodes[index],
                                           keyboardType: TextInputType.number,
                                           textAlign: TextAlign.center,
-                                          style: const TextStyle(
+                                          style: context.titleLarge.copyWith(
                                             fontSize: 22,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                            color: context.colors.pureWhite,
                                           ),
                                           autofillHints: const [
                                             AutofillHints.oneTimeCode,
@@ -355,8 +354,8 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                             counterText: '',
                                             border: InputBorder.none,
                                             hintText: isFilled ? '' : '·',
-                                            hintStyle: TextStyle(
-                                              color: Colors.white.withValues(
+                                            hintStyle: context.titleLarge.copyWith(
+                                              color: context.colors.pureWhite.withValues(
                                                 alpha: 0.3,
                                               ),
                                               fontSize: 24,
@@ -377,14 +376,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                   Icon(
                                     CommonIcons.history,
                                     size: 16,
-                                    color: Colors.white.withValues(alpha: 0.5),
+                                    color: context.colors.pureWhite.withValues(alpha: 0.5),
                                   ),
                                   CommonSpaces.w6,
                                   _secondsRemaining > 0
                                       ? Text(
                                           'Resend the code in: ${(_secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(_secondsRemaining % 60).toString().padLeft(2, '0')}',
                                           style: context.bodyMedium.copyWith(
-                                            color: Colors.white.withValues(
+                                            color: context.colors.pureWhite.withValues(
                                               alpha: 0.7,
                                             ),
                                             fontWeight: FontWeight.w600,
@@ -438,7 +437,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                             : () => _verifyOtp(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: context.colors.pureWhite,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -450,15 +449,15 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                             Text(
                               'Continue',
                               style: context.titleMedium.copyWith(
-                                color: Colors.white,
+                                color: context.colors.pureWhite,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             CommonSpaces.w8,
                             Container(
                               padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
+                              decoration: BoxDecoration(
+                                color: context.colors.pureWhite,
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(

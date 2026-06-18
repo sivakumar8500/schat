@@ -5,6 +5,7 @@ import 'package:schat/utils/common_sizes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_icons.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
@@ -30,7 +31,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   Widget build(BuildContext context) {
     final cardBgColor = context.colors.cardBackground;
-    final innerCardColor = context.colors.isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white;
+    final innerCardColor = context.colors.isDark ? context.colors.pureWhite.withValues(alpha: 0.05) : context.colors.pureWhite;
 
     return BlocBuilder<ChatBloc, ChatState>(
       builder: (context, state) {
@@ -58,7 +59,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       child: Padding(
                         padding: const EdgeInsets.all(4.0),
                         child: Icon(
-                          Icons.arrow_back_ios_new_rounded,
+                          CommonIcons.arrowBack,
                           color: context.colors.textPrimary,
                           size: 24,
                         ),
@@ -112,8 +113,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                   // Status Quote
                   Text(
                     "Pursuing Goals 🤘",
-                    style: TextStyle(
-                      fontSize: 14,
+                    style: context.bodyLarge.copyWith(
                       color: context.colors.textSecondary,
                       fontStyle: FontStyle.italic,
                     ),
@@ -131,7 +131,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                     ),
                     child: Text(
                       widget.isOnline ? 'Online' : 'Offline',
-                      style: TextStyle(
+                      style: context.bodyMedium.copyWith(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: widget.isOnline ? context.colors.primary : context.colors.textSecondary,
@@ -146,7 +146,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                     children: [
                       // Call button
                       _buildRoundActionButton(
-                        icon: Icons.phone_rounded,
+                        icon: CommonIcons.phone,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -163,7 +163,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
                       // Video call button
                       _buildRoundActionButton(
-                        icon: Icons.videocam_rounded,
+                        icon: CommonIcons.videocam,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -179,14 +179,14 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
                       // Chat button (Back to chat)
                       _buildRoundActionButton(
-                        icon: Icons.chat_bubble_rounded,
+                        icon: CommonIcons.chatBubble,
                         onTap: () => Navigator.pop(context),
                       ),
                       const SizedBox(width: CommonSizes.p16),
 
                       // More options button
                       _buildRoundActionButton(
-                        icon: Icons.more_horiz_rounded,
+                        icon: CommonIcons.moreHoriz,
                         onTap: () {},
                       ),
                     ],
@@ -228,7 +228,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                             onTap: () {},
                             child: Text(
                               'View all',
-                              style: TextStyle(
+                              style: context.bodyLarge.copyWith(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
                                 color: context.colors.primary,
@@ -284,7 +284,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                           children: [
                             // Mute notifications
                             _buildSettingsTile(
-                              icon: Icons.notifications_none_rounded,
+                              icon: CommonIcons.notifications,
                               title: 'Mute notifications',
                               trailing: Switch(
                                 value: isMuted,
@@ -298,7 +298,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
                             // Lock Chat
                             _buildSettingsTile(
-                              icon: Icons.lock_outline_rounded,
+                              icon: CommonIcons.lock,
                               title: 'Lock Chat',
                               trailing: Switch(
                                 value: isLocked,
@@ -312,14 +312,14 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
                             // Auto-delete messages
                             _buildSettingsTile(
-                              icon: Icons.history_toggle_off_rounded,
+                              icon: CommonIcons.history,
                               title: 'Auto-delete messages',
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     '30s',
-                                    style: TextStyle(
+                                    style: context.bodyLarge.copyWith(
                                       color: context.colors.textSecondary,
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -327,7 +327,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                                   ),
                                   const SizedBox(width: CommonSizes.p4),
                                   Icon(
-                                    Icons.arrow_forward_ios_rounded,
+                                    CommonIcons.arrowForward,
                                     size: 14,
                                     color: context.colors.textHint,
                                   ),
@@ -342,12 +342,12 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       // Destructive Block/Report Card
                       Material(
                         color: context.colors.isDark
-                            ? Colors.redAccent.withValues(alpha: 0.05)
-                            : Colors.red.withValues(alpha: 0.05),
+                            ? context.colors.error.withValues(alpha: 0.05)
+                            : context.colors.error.withValues(alpha: 0.05),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(24),
                           side: BorderSide(
-                            color: Colors.red.withValues(alpha: 0.1),
+                            color: context.colors.error.withValues(alpha: 0.1),
                           ),
                         ),
                         clipBehavior: Clip.antiAlias,
@@ -355,17 +355,17 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                           children: [
                             // Block Contact
                             _buildDestructiveTile(
-                              icon: Icons.block_rounded,
+                              icon: CommonIcons.block,
                               title: 'Block ${widget.contactName}',
                             ),
                             Divider(
-                              color: Colors.red.withValues(alpha: 0.08),
+                              color: context.colors.error.withValues(alpha: 0.08),
                               height: 1,
                             ),
 
                             // Report Contact
                             _buildDestructiveTile(
-                              icon: Icons.report_problem_outlined,
+                              icon: CommonIcons.report,
                               title: 'Report the contact',
                             ),
                           ],
@@ -400,7 +400,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         ),
         child: Icon(
           icon,
-          color: Colors.white,
+          color: context.colors.pureWhite,
           size: 24,
         ),
       ),
@@ -428,7 +428,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       ),
       title: Text(
         title,
-        style: TextStyle(
+        style: context.titleSmall.copyWith(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: context.colors.textPrimary,
@@ -446,22 +446,22 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       leading: Container(
         padding: const EdgeInsets.all(8),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: context.colors.pureWhite,
           shape: BoxShape.circle,
         ),
         child: Icon(
           icon,
-          color: Colors.redAccent,
+          color: context.colors.error,
           size: 20,
         ),
       ),
       title: Text(
         title,
-        style: const TextStyle(
+        style: context.titleSmall.copyWith(
           fontSize: 16,
           fontWeight: FontWeight.w600,
-          color: Colors.redAccent,
+          color: context.colors.error,
         ),
       ),
       onTap: () {},
