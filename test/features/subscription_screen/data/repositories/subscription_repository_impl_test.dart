@@ -26,15 +26,19 @@ void main() {
         {
           'id': '1',
           'name': 'Basic',
-          'price': '0',
+          'price': 0,
           'description': 'Basic plan',
-          'features': ['chat'],
+          'billing_cycle': 'monthly',
           'is_active': true,
         }
       ];
 
-      when(() => mockDio.get(CommonEndpoints.getPlans))
-          .thenAnswer((_) async => Response(
+      when(() => mockDio.request(
+            CommonEndpoints.getPlans,
+            data: any(named: 'data'),
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenAnswer((_) async => Response(
                 data: mockPlans,
                 statusCode: 200,
                 requestOptions: RequestOptions(path: CommonEndpoints.getPlans),
@@ -48,7 +52,7 @@ void main() {
           expect(plans.length, 1);
           expect(plans.first.name, 'Basic');
         },
-        failure: (error) => fail('Should have succeeded'),
+        failure: (error, statusCode) => fail('Should have succeeded: $error'),
       );
     });
   });

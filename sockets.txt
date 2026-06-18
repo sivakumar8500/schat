@@ -1,0 +1,456 @@
+# Flutter WebSocket Real-Time Messaging Integration Guide
+
+This document outlines the step-by-step process for the Flutter team to integrate real-time 1-on-1 and group chatting, typing indicators, read receipts, parent message replies, security locking, view-once media control, and deletions over the unified WebSocket channel.
+
+---
+
+## 🔄 WebSocket Communication Protocol
+
+All communication over the WebSocket happens in **JSON-encoded string frames**. 
+
+```mermaid
+sequenceDiagram
+    participant Flutter as Flutter App
+    participant Server as FastAPI Server (Uvicorn)
+    participant Celery as Celery Worker (Postgres DB)
+
+    Flutter->>Server: 1. Connect (ws://localhost:8000/ws?token=JWT)
+    Note over Server: Validates token & Active Subscription
+    Server-->>Flutter: Handshake Accepted (Connected)
+
+    Note over Flutter, Server: Real-Time Messaging Flow
+
+    Flutter->>Server: 2. Send Message (type: "send_message" or "text"/"image"/etc)
+    Note over Server: Generates UUID & Broadcasts instantly
+    Server->>Flutter: WebSocket Push (type: "new_message")
+    Server->>Celery: Async task dispatch (DB Save)
+    Note over Celery: Message saved to postgres
+```
+
+---
+
+## 🔌 1. Connection Lifecycle
+
+### Connection URL
+Connect to the WebSocket gateway passing the JWT access token in the query parameters:
+```http
+ws://YOUR_SERVER_IP:8000/ws?token=<JWT_ACCESS_TOKEN>
+```
+
+### Handshake & Security Gating
+The server performs two checks during the connection phase:
+1. **JWT Verification**: If the token is expired or invalid, the connection is rejected.
+2. **Subscription Check**: If the user does not have an active subscription, the socket accepts the connection but immediately closes it with **Code `1008` (Policy Violation)** and logs:
+   ```
+   WebSocket rejected: User <UUID> does not have an active subscription
+   ```
+
+---
+
+## 📤 2. Outbound Event Payload Specifications (Client ➔ Server)
+
+The Flutter app sends these payloads to control chat actions. All JSON payloads are serialized in **camelCase**.
+
+### A. Send Message
+The backend supports two routing approaches for sending new messages:
+* **Protocol-wrapped Action**: Send with `"type": "send_message"` and specify `"message_type"` or let it default.
+* **Direct Event Type**: Send directly with `"type"` set to the message type (`"text"`, `"image"`, `"video"`, `"file"`, `"call"`).
+
+#### Root Envelope Fields:
+ Field Name | Type | Required | Description |
+ :--- | :--- | :--- | :--- |
+ `type` | String | Yes | WebSocket action (`"send_message"`, `"typing"`, `"read_receipt"`, `"delete_message"`, `"ping"`) or directly the message type (`"text"`, `"image"`, `"video"`, `"file"`, `"call"`). |
+ `conversationId` | UUID String | Yes | The UUID of the conversation. |
+ `replyMessageId` | UUID String | Optional | The parent message ID if this message is a reply. Must be enclosed in double quotes. |
+ `content` | Object | Optional | Container for text and attachment metadata (details below). |
+ `security` | Object | Optional | Security configuration (details below). |
+ `viewControl` | Object | Optional | View-once / view-control configuration (details below). |
+ `expiry` | Object | Optional | Auto-expiry configuration (details below). |
+ `callMeta` | Object | Optional | Call details (details below). |
+
+---
+
+### Payload Schema Detail Objects
+
+#### Content Metadata (`content`)
+ Field Name | Type | Required | Description |
+ :--- | :--- | :--- | :--- |
+ `text` | String | Optional | The text content of the message or a caption for media. |
+ `fileKey` | String | Optional | The S3 storage key path of the uploaded media file (e.g., `chats/2026/06/photo.jpg`). |
+ `thumbnail` | String | Optional | S3 storage key path or URL of the generated thumbnail image. |
+ `fileName` | String | Optional | Original name of the uploaded file (e.g. `document.pdf`). |
+ `fileSize` | Integer | Optional | Size of the file in bytes. |
+ `mimeType` | String | Optional | The MIME type of the file (e.g. `application/pdf`, `image/jpeg`). |
+ `duration` | Float | Optional | The playback duration in seconds (for audio/video files). |
+
+#### Security Configuration (`security`)
+ Field Name | Type | Default | Description |
+ :--- | :--- | :--- | :--- |
+ `isLocked` | Boolean | `false` | If `true`, the text and S3 keys will be redacted into `"[Locked Message]"` for any user not present in `accessUsers`. |
+ `accessUsers` | List[UUID] | `[]` | List of user UUIDs allowed to unlock and view the content (in addition to the sender). |
+ `allowDownload` | Boolean | `true` | If `false`, the client UI should disable download, save-to-gallery, and copy actions. |
+ `allowShare` | Boolean | `true` | If `false`, the client UI should restrict forwarding and sharing. |
+
+#### View Control (`viewControl`)
+ Field Name | Type | Default | Description |
+ :--- | :--- | :--- | :--- |
+ `type` | String | `"normal"` | Set to `"once"` to enable view-once. Set to `"normal"` for standard persistent messages. |
+ `maxViews` | Integer | `1` | Max times the message can be opened before it is redacted. |
+
+#### Expiry Timer (`expiry`)
+ Field Name | Type | Default | Description |
+ :--- | :--- | :--- | :--- |
+ `isEnabled` | Boolean | `false` | If `true`, the server will auto-delete this message after the expiry window. |
+ `expireType` | String | `null` | The expiry timeframe: `"24h"` or `"7days"`. |
+
+#### Call Metadata (`callMeta`)
+ Field Name | Type | Required | Description |
+ :--- | :--- | :--- | :--- |
+ `callType` | String | Yes | `"audio"` or `"video"`. |
+ `duration` | Integer | Yes | Total duration of the call in seconds. |
+ `status` | String | Yes | Call status: `"completed"`, `"missed"`, `"declined"`, `"cancelled"`. |
+
+---
+
+### Outbound JSON Examples
+
+#### 1. Send Standard Text Message
+```json
+{
+  "type": "text",
+  "conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "content": {
+    "text": "Hello, this is a standard text message!"
+  }
+}
+```
+
+#### 2. Send Locked, View-Once Image
+```json
+{
+  "type": "image",
+  "conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "content": {
+    "text": "Secret view-once photo!",
+    "fileKey": "chats/2026/06/confidential.jpg",
+    "thumbnail": "chats/2026/06/thumb_confidential.jpg",
+    "fileName": "confidential.jpg",
+    "fileSize": 102400,
+    "mimeType": "image/jpeg"
+  },
+  "security": {
+    "isLocked": true,
+    "accessUsers": ["f3848d25-0f4f-4985-9a13-98d02c6b1b6e"],
+    "allowDownload": false,
+    "allowShare": false
+  },
+  "viewControl": {
+    "type": "once",
+    "maxViews": 1
+  },
+  "expiry": {
+    "isEnabled": true,
+    "expireType": "24h"
+  }
+}
+```
+
+#### 3. Send Reply to a Message
+```json
+{
+  "type": "text",
+  "conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "replyMessageId": "a49ef384-ff2a-47eb-a041-1f6d0c2a1fbe",
+  "content": {
+    "text": "Yes, I agree with this parent message!"
+  }
+}
+```
+
+#### 4. Log Call Metadata
+```json
+{
+  "type": "call",
+  "conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "callMeta": {
+    "callType": "video",
+    "duration": 180,
+    "status": "completed"
+  }
+}
+```
+
+#### 5. Real-Time Typing Indicator
+```json
+{
+  "type": "typing",
+  "conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18"
+}
+```
+
+#### 6. Read Receipt / Open Message
+```json
+{
+  "type": "read_receipt",
+  "conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "message_id": "ff861d72-920b-4a97-becb-c903675070d7"
+}
+```
+
+#### 7. Delete Message (Everyone vs. Me)
+```json
+// For Everyone (Only sender can trigger)
+{
+  "type": "delete_message",
+  "conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "message_id": "ff861d72-920b-4a97-becb-c903675070d7",
+  "delete_type": "everyone"
+}
+
+// For Me (Hides it locally for the requestor)
+{
+  "type": "delete_message",
+  "conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+  "message_id": "ff861d72-920b-4a97-becb-c903675070d7",
+  "delete_type": "me"
+}
+```
+
+---
+
+## 📥 3. Inbound Frames (Server ➔ Client)
+
+The Flutter app should listen for these payloads from the server:
+
+### A. New Message Received (`new_message`)
+Pushed to all participants in the conversation when a message is successfully sent.
+```json
+{
+  "type": "new_message",
+  "message": {
+    "id": "febe3d84-b511-42f1-b70d-df04f0558d7a",
+    "conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18",
+    "senderId": "10d9a863-c9f2-491b-84ff-ad960e0547c5",
+    "receiverId": "f3848d25-0f4f-4985-9a13-98d02c6b1b6e",
+    "type": "text",
+    "content": {
+      "text": "Hey there! How is the integration going?",
+      "fileKey": null,
+      "thumbnail": null
+    },
+    "security": {
+      "isLocked": false,
+      "accessUsers": [],
+      "allowDownload": true,
+      "allowShare": true
+    },
+    "viewControl": {
+      "type": "normal",
+      "maxViews": 1,
+      "viewedBy": [],
+      "isOpened": false,
+      "openedAt": null
+    },
+    "expiry": {
+      "isEnabled": false,
+      "expireType": null,
+      "expireAt": null
+    },
+    "callMeta": {
+      "callType": null,
+      "duration": null,
+      "status": null
+    },
+    "isReply": false,
+    "replyMessageId": null,
+    "replyMessageBody": null,
+    "userView": "send", // "send" or "receive"
+    "deletedFor": [],
+    "isDeletedForEveryone": false,
+    "createdAt": "2026-06-16T19:14:49.186751Z",
+    "updatedAt": "2026-06-16T19:14:49.186763Z"
+  }
+}
+```
+
+### B. User Typing (`user_typing`)
+Pushed when another participant in the chat is typing.
+```json
+{
+  "type": "user_typing",
+  "sender_id": "b63dba30-bf73-48b7-8120-22113a3c1265",
+  "conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc"
+}
+```
+
+### C. Message Read (`message_read`)
+Pushed when the recipient has read your message.
+```json
+{
+  "type": "message_read",
+  "message_id": "febe3d84-b511-42f1-b70d-df04f0558d7a",
+  "reader_id": "fb7d5878-e116-42bb-93d3-db54c16b757b",
+  "conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc"
+}
+```
+
+### D. View-Once Message Opened (`message_opened`)
+Pushed when the receiver opens a view-once media message. Both parties' client apps should immediately block view access and clear local image caches.
+```json
+{
+  "type": "message_opened",
+  "message_id": "febe3d84-b511-42f1-b70d-df04f0558d7a",
+  "conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc"
+}
+```
+
+---
+
+## 💻 4. Complete Dart Implementation Example
+
+Add `web_socket_channel` to your `pubspec.yaml` dependencies:
+```yaml
+dependencies:
+  web_socket_channel: ^2.4.1
+```
+
+Here is a production-ready Dart client service managing the WebSocket channel, reconnection logic, and heartbeat:
+
+```dart
+import 'dart:async';
+import 'dart:convert';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/status.dart' as status;
+
+class ChatWebSocketService {
+  final String _baseUrl = "ws://YOUR_SERVER_IP:8000/ws";
+  WebSocketChannel? _channel;
+  StreamSubscription? _subscription;
+  Timer? _heartbeatTimer;
+  bool _isConnecting = false;
+  
+  // Callbacks for UI/Controllers
+  Function(Map<String, dynamic>)? onMessageReceived;
+  Function(String senderId, String convoId)? onUserTyping;
+  Function(String messageId, String convoId)? onMessageRead;
+  Function(String messageId, String convoId)? onMessageOpened;
+  Function()? onConnected;
+  Function(dynamic error)? onConnectionLost;
+
+  // 1. Connect and initialize connection
+  Future<void> connect(String token) async {
+    if (_channel != null || _isConnecting) return;
+    _isConnecting = true;
+
+    try {
+      final uri = Uri.parse("$_baseUrl?token=$token");
+      _channel = WebSocketChannel.connect(uri);
+      
+      await _channel!.ready;
+      _isConnecting = false;
+      onConnected?.call();
+      
+      // Start listening and heartbeat pinging
+      _startHeartbeat();
+      _subscription = _channel!.stream.listen(
+        (data) => _handleIncomingData(data),
+        onError: (err) => _handleConnectionError(err),
+        onDone: () => _handleConnectionClosed(),
+      );
+    } catch (e) {
+      _isConnecting = false;
+      _handleConnectionError(e);
+    }
+  }
+
+  // 2. Disconnect cleanly
+  void disconnect() {
+    _heartbeatTimer?.cancel();
+    _subscription?.cancel();
+    _channel?.sink.close(status.goingAway);
+    _channel = null;
+    _subscription = null;
+  }
+
+  // 3. Send message payload
+  void sendMessage(Map<String, dynamic> messagePayload) {
+    _sendJson(messagePayload);
+  }
+
+  // 4. Send typing indicator
+  void sendTypingIndicator(String conversationId) {
+    final payload = {
+      "type": "typing",
+      "conversation_id": conversationId,
+    };
+    _sendJson(payload);
+  }
+
+  // 5. Send read receipt
+  void sendReadReceipt(String conversationId, String messageId) {
+    final payload = {
+      "type": "read_receipt",
+      "conversation_id": conversationId,
+      "message_id": messageId
+    };
+    _sendJson(payload);
+  }
+
+  // 6. Send raw JSON payload helper
+  void _sendJson(Map<String, dynamic> data) {
+    if (_channel != null) {
+      _channel!.sink.add(jsonEncode(data));
+    }
+  }
+
+  // 7. Start Heartbeat (ping)
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      _sendJson({"type": "ping"});
+    });
+  }
+
+  // 8. Handle incoming string frame
+  void _handleIncomingData(dynamic rawData) {
+    try {
+      final Map<String, dynamic> event = jsonDecode(rawData);
+      final String type = event['type'] ?? '';
+
+      switch (type) {
+        case 'new_message':
+          onMessageReceived?.call(event['message']);
+          break;
+        case 'user_typing':
+          onUserTyping?.call(event['sender_id'], event['conversation_id']);
+          break;
+        case 'message_read':
+          onMessageRead?.call(event['message_id'], event['conversation_id']);
+          break;
+        case 'message_opened':
+          onMessageOpened?.call(event['message_id'], event['conversation_id']);
+          break;
+        case 'pong':
+          // Heartbeat check acknowledged by server
+          break;
+        case 'error':
+          print("WebSocket Error: ${event['message']}");
+          break;
+      }
+    } catch (e) {
+      print("Failed to parse incoming WebSocket frame: $e");
+    }
+  }
+
+  void _handleConnectionError(dynamic error) {
+    print("WebSocket connection error: $error");
+    onConnectionLost?.call(error);
+    disconnect();
+  }
+
+  void _handleConnectionClosed() {
+    print("WebSocket connection closed by host.");
+    onConnectionLost?.call("Closed");
+    disconnect();
+  }
+}

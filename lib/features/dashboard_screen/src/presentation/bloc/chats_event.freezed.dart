@@ -55,12 +55,13 @@ extension ChatsEventPatterns on ChatsEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FetchChats value)?  fetchChats,TResult Function( CreateChat value)?  createChat,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( FetchChats value)?  fetchChats,TResult Function( CreateChat value)?  createChat,TResult Function( UpdateUserStatus value)?  updateUserStatus,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats(_that);case CreateChat() when createChat != null:
-return createChat(_that);case _:
+return createChat(_that);case UpdateUserStatus() when updateUserStatus != null:
+return updateUserStatus(_that);case _:
   return orElse();
 
 }
@@ -78,12 +79,13 @@ return createChat(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FetchChats value)  fetchChats,required TResult Function( CreateChat value)  createChat,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( FetchChats value)  fetchChats,required TResult Function( CreateChat value)  createChat,required TResult Function( UpdateUserStatus value)  updateUserStatus,}){
 final _that = this;
 switch (_that) {
 case FetchChats():
 return fetchChats(_that);case CreateChat():
-return createChat(_that);case _:
+return createChat(_that);case UpdateUserStatus():
+return updateUserStatus(_that);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -100,12 +102,13 @@ return createChat(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FetchChats value)?  fetchChats,TResult? Function( CreateChat value)?  createChat,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( FetchChats value)?  fetchChats,TResult? Function( CreateChat value)?  createChat,TResult? Function( UpdateUserStatus value)?  updateUserStatus,}){
 final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats(_that);case CreateChat() when createChat != null:
-return createChat(_that);case _:
+return createChat(_that);case UpdateUserStatus() when updateUserStatus != null:
+return updateUserStatus(_that);case _:
   return null;
 
 }
@@ -122,11 +125,12 @@ return createChat(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,TResult Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  fetchChats,TResult Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,TResult Function( String userId,  bool isOnline)?  updateUserStatus,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats();case CreateChat() when createChat != null:
-return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case UpdateUserStatus() when updateUserStatus != null:
+return updateUserStatus(_that.userId,_that.isOnline);case _:
   return orElse();
 
 }
@@ -144,11 +148,12 @@ return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl)
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,required TResult Function( String participantId,  String contactName,  String? profilePictureUrl)  createChat,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  fetchChats,required TResult Function( String participantId,  String contactName,  String? profilePictureUrl)  createChat,required TResult Function( String userId,  bool isOnline)  updateUserStatus,}) {final _that = this;
 switch (_that) {
 case FetchChats():
 return fetchChats();case CreateChat():
-return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case UpdateUserStatus():
+return updateUserStatus(_that.userId,_that.isOnline);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -165,11 +170,12 @@ return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl)
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,TResult? Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  fetchChats,TResult? Function( String participantId,  String contactName,  String? profilePictureUrl)?  createChat,TResult? Function( String userId,  bool isOnline)?  updateUserStatus,}) {final _that = this;
 switch (_that) {
 case FetchChats() when fetchChats != null:
 return fetchChats();case CreateChat() when createChat != null:
-return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case _:
+return createChat(_that.participantId,_that.contactName,_that.profilePictureUrl);case UpdateUserStatus() when updateUserStatus != null:
+return updateUserStatus(_that.userId,_that.isOnline);case _:
   return null;
 
 }
@@ -273,6 +279,74 @@ participantId: null == participantId ? _self.participantId : participantId // ig
 as String,contactName: null == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
 as String,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
 as String?,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class UpdateUserStatus implements ChatsEvent {
+  const UpdateUserStatus({required this.userId, required this.isOnline});
+  
+
+ final  String userId;
+ final  bool isOnline;
+
+/// Create a copy of ChatsEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$UpdateUserStatusCopyWith<UpdateUserStatus> get copyWith => _$UpdateUserStatusCopyWithImpl<UpdateUserStatus>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateUserStatus&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,userId,isOnline);
+
+@override
+String toString() {
+  return 'ChatsEvent.updateUserStatus(userId: $userId, isOnline: $isOnline)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $UpdateUserStatusCopyWith<$Res> implements $ChatsEventCopyWith<$Res> {
+  factory $UpdateUserStatusCopyWith(UpdateUserStatus value, $Res Function(UpdateUserStatus) _then) = _$UpdateUserStatusCopyWithImpl;
+@useResult
+$Res call({
+ String userId, bool isOnline
+});
+
+
+
+
+}
+/// @nodoc
+class _$UpdateUserStatusCopyWithImpl<$Res>
+    implements $UpdateUserStatusCopyWith<$Res> {
+  _$UpdateUserStatusCopyWithImpl(this._self, this._then);
+
+  final UpdateUserStatus _self;
+  final $Res Function(UpdateUserStatus) _then;
+
+/// Create a copy of ChatsEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? userId = null,Object? isOnline = null,}) {
+  return _then(UpdateUserStatus(
+userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
+as String,isOnline: null == isOnline ? _self.isOnline : isOnline // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

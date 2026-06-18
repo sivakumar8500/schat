@@ -10,4 +10,8 @@ class ChatsEvent with _$ChatsEvent {
     required String contactName,
     String? profilePictureUrl,
   }) = CreateChat;
+  const factory ChatsEvent.updateUserStatus({
+    required String userId,
+    required bool isOnline,
+  }) = UpdateUserStatus;
 }

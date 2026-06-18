@@ -36,6 +36,21 @@ class _SplashPageState extends State<SplashPage> {
     final storage = getIt<StorageService>();
     final hasToken = storage.hasToken();
 
+    if (hasToken) {
+      final username = storage.getUsername();
+
+      if (username != null && username.isNotEmpty) {
+        // If we have a token and a cached username, go straight to Dashboard
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardPage()),
+        );
+        return;
+      }
+    }
+
+    // If no token or no cached username, we need to check profile status properly
     if (!hasToken) {
       final prefs = await SharedPreferences.getInstance();
       final hasSeenIntro = prefs.getBool('hasSeenIntro') ?? false;
@@ -56,7 +71,7 @@ class _SplashPageState extends State<SplashPage> {
       return;
     }
 
-    // Has token, check profile status
+    // Has token but no cached username, check profile status from server
     try {
       final profileRepo = getIt<ProfileRepository>();
       final result = await profileRepo.getProfile();
@@ -65,7 +80,6 @@ class _SplashPageState extends State<SplashPage> {
 
       result.when(
         success: (user) {
-          // Store username in shared preferences for Dashboard
           _saveUsernameToPrefs(user.username);
           
           if (user.username == null || user.username!.isEmpty) {
@@ -86,7 +100,6 @@ class _SplashPageState extends State<SplashPage> {
           }
         },
         failure: (message, statusCode) async {
-          // Token might be invalid/expired or unauthorized (401)
           if (statusCode == 401 || message.contains('401') || message.toLowerCase().contains('unauthorized')) {
              await storage.clearTokens();
              if (!mounted) return;
@@ -95,7 +108,6 @@ class _SplashPageState extends State<SplashPage> {
               MaterialPageRoute(builder: (context) => const MobileEntryPage()),
             );
           } else {
-            // Network error but token exists, try to proceed to dashboard
             if (!mounted) return;
             Navigator.pushReplacement(
               context,
@@ -105,6 +117,7 @@ class _SplashPageState extends State<SplashPage> {
         },
       );
     } catch (e) {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardPage()),

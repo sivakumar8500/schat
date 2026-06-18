@@ -27,33 +27,43 @@ void main() {
     const mobile = '9030303030';
 
     test('should return Success(true) when successful', () async {
-      when(() => mockDio.post(
+      when(() => mockDio.request(
             CommonEndpoints.sendOtp,
             data: any(named: 'data'),
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
           )).thenAnswer((_) async => Response(
-            data: {'status': 'success'},
+            data: {'success': true},
             statusCode: 200,
             requestOptions: RequestOptions(path: CommonEndpoints.sendOtp),
           ));
 
       final result = await repository.sendOtp(mobile);
 
-      expect(result, const Success(true));
+      expect(result is Success<bool>, isTrue);
+      expect((result as Success<bool>).data, isTrue);
     });
 
     test('should return Failure when API fails', () async {
-      when(() => mockDio.post(
+      when(() => mockDio.request(
             CommonEndpoints.sendOtp,
             data: any(named: 'data'),
-          )).thenAnswer((_) async => Response(
-            data: {'message': 'Too many requests'},
-            statusCode: 429,
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenThrow(DioException(
             requestOptions: RequestOptions(path: CommonEndpoints.sendOtp),
+            response: Response(
+              data: {'message': 'Too many requests'},
+              statusCode: 429,
+              requestOptions: RequestOptions(path: CommonEndpoints.sendOtp),
+            ),
+            type: DioExceptionType.badResponse,
           ));
 
       final result = await repository.sendOtp(mobile);
 
-      expect(result, const Failure('Too many requests'));
+      expect(result is Failure, isTrue);
+      expect((result as Failure).message, 'Too many requests');
     });
   });
 
@@ -63,16 +73,16 @@ void main() {
     const deviceId = 'ljonhonouuoi';
 
     test('should return Success(true) when successful', () async {
-      when(() => mockDio.post(
+      when(() => mockDio.request(
             CommonEndpoints.verifyOtp,
             data: any(named: 'data'),
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
           )).thenAnswer((_) async => Response(
             data: {
-              'status': 'success',
-              'tokens': {
-                'access_token': 'access',
-                'refresh_token': 'refresh',
-              }
+              'access_token': 'access',
+              'refresh_token': 'refresh',
+              'token_type': 'Bearer',
             },
             statusCode: 200,
             requestOptions: RequestOptions(path: CommonEndpoints.verifyOtp),
@@ -85,22 +95,30 @@ void main() {
 
       final result = await repository.verifyOtp(mobile, otp, deviceId);
 
-      expect(result, const Success(true));
+      expect(result is Success<bool>, isTrue);
+      expect((result as Success<bool>).data, isTrue);
     });
 
     test('should return Failure when OTP is invalid', () async {
-      when(() => mockDio.post(
+      when(() => mockDio.request(
             CommonEndpoints.verifyOtp,
             data: any(named: 'data'),
-          )).thenAnswer((_) async => Response(
-            data: {'message': 'Invalid OTP'},
-            statusCode: 400,
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenThrow(DioException(
             requestOptions: RequestOptions(path: CommonEndpoints.verifyOtp),
+            response: Response(
+              data: {'message': 'Invalid OTP'},
+              statusCode: 400,
+              requestOptions: RequestOptions(path: CommonEndpoints.verifyOtp),
+            ),
+            type: DioExceptionType.badResponse,
           ));
 
       final result = await repository.verifyOtp(mobile, otp, deviceId);
 
-      expect(result, const Failure('Invalid OTP'));
+      expect(result is Failure, isTrue);
+      expect((result as Failure).message, 'Invalid OTP');
     });
   });
 }

@@ -173,6 +173,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i127.GetChatsUseCase>(),
         gh<_i198.DashboardRepository>(),
         gh<_i1069.ContactsRepository>(),
+        gh<_i411.ChatSocketRepository>(),
       ),
     );
     return this;

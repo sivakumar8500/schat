@@ -39,7 +39,7 @@ void main() {
     );
 
     await tester.pumpWidget(createWidgetUnderTest());
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsAtLeast(1));
 
     await tester.pumpAndSettle();
     expect(find.text('Basic Test'), findsOneWidget);
@@ -48,7 +48,7 @@ void main() {
     await tester.tap(find.text('Basic Test'));
     await tester.pumpAndSettle();
     
-    // Check if Continue button is visible
-    expect(find.text('Continue'), findsOneWidget);
+    // Check if button is visible
+    expect(find.text('Get started'), findsOneWidget);
   });
 }

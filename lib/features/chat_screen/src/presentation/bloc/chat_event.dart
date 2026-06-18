@@ -55,3 +55,9 @@ class UpdateTypingIndicatorEvent extends ChatEvent {
   final bool isTyping;
   const UpdateTypingIndicatorEvent({required this.conversationId, required this.isTyping});
 }
+
+class MarkMessageReadEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  const MarkMessageReadEvent({required this.messageId, required this.conversationId});
+}

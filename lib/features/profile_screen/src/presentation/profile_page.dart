@@ -140,8 +140,10 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: IntrinsicHeight(
                           child: Column(
                             children: [
+                              const Spacer(),
                               // Top illustration area
-                              Expanded(
+                              SizedBox(
+                                height: MediaQuery.of(context).size.height * 0.35,
                                 child: Stack(
                                   children: [
                                     Positioned.fill(
@@ -171,19 +173,15 @@ class _ProfilePageState extends State<ProfilePage> {
                                   ],
                                 ),
                               ),
-
-
+                              CommonSpaces.h20,
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 32.0),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-
-
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                                      textBaseline: TextBaseline.alphabetic,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
                                       children: [
                                         if (widget.isEditing || Navigator.canPop(context)) ...[
                                           InkWell(
@@ -194,14 +192,29 @@ class _ProfilePageState extends State<ProfilePage> {
                                               child: Icon(CommonIcons.arrowBack, color: Colors.white, size: 24),
                                             ),
                                           ),
-                                          CommonSpaces.h16,
+                                          CommonSpaces.w12,
                                         ],
-                                        CommonSpaces.w20,
-                                        Text("Complete ", style: context.h1.copyWith(fontSize: 36, color: Colors.white)),
-                                        Text("Profile", style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white)),
+                                        Expanded(
+                                          child: Text.rich(
+                                            TextSpan(
+                                              children: [
+                                                TextSpan(
+                                                  text: "Complete ",
+                                                  style: context.h1.copyWith(fontSize: 32, color: Colors.white),
+                                                ),
+                                                TextSpan(
+                                                  text: "Profile",
+                                                  style: context.h1Italic.copyWith(fontSize: 30, color: Colors.white),
+                                                ),
+                                              ],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                    CommonSpaces.h20,
+                                    CommonSpaces.h24,
                                     Center(
                                       child: GestureDetector(
                                         onTap: _pickImage,
@@ -209,25 +222,35 @@ class _ProfilePageState extends State<ProfilePage> {
                                           children: [
                                             Container(
                                               width: CommonSizes.p100,
-                                              height:  CommonSizes.p100,
+                                              height: CommonSizes.p100,
                                               decoration: BoxDecoration(
                                                 color: fieldBgColor,
                                                 shape: BoxShape.circle,
-                                                image: _localImageFile != null
-                                                    ? DecorationImage(image: FileImage(_localImageFile!), fit: BoxFit.cover)
+                                              ),
+                                              child: ClipOval(
+                                                child: _localImageFile != null
+                                                    ? Image.file(_localImageFile!, fit: BoxFit.cover)
                                                     : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
-                                                        ? DecorationImage(
-                                                            image: NetworkImage(_remoteImageUrl!), 
+                                                        ? Image.network(
+                                                            _remoteImageUrl!,
                                                             fit: BoxFit.cover,
-                                                            onError: (exception, stackTrace) {
-                                                              debugPrint('Error loading profile image: $exception');
+                                                            errorBuilder: (context, error, stackTrace) {
+                                                              return Icon(CommonIcons.person, size: 64, color: Colors.white.withValues(alpha: 0.2));
+                                                            },
+                                                            loadingBuilder: (context, child, loadingProgress) {
+                                                              if (loadingProgress == null) return child;
+                                                              return Center(
+                                                                child: CircularProgressIndicator(
+                                                                  value: loadingProgress.expectedTotalBytes != null
+                                                                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                                                                      : null,
+                                                                  strokeWidth: 2,
+                                                                ),
+                                                              );
                                                             },
                                                           )
-                                                        : null),
+                                                        : Icon(CommonIcons.person, size: 64, color: Colors.white.withValues(alpha: 0.2))),
                                               ),
-                                              child: (_localImageFile == null && (_remoteImageUrl == null || _remoteImageUrl!.isEmpty))
-                                                  ? Icon(CommonIcons.person, size: 64, color: Colors.white.withValues(alpha: 0.2))
-                                                  : null,
                                             ),
                                             Positioned(
                                               bottom: 0,
@@ -246,58 +269,65 @@ class _ProfilePageState extends State<ProfilePage> {
                                         ),
                                       ),
                                     ),
-                                    CommonSpaces.h16,
-
+                                    CommonSpaces.h24,
                                     _buildLabel('Username'),
-                                    CommonSpaces.h10,
+                                    CommonSpaces.h12,
                                     _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline),
-
                                     if (_errorText != null) ...[
-                                      Padding(
-                                        padding: const EdgeInsets.only(bottom: 16.0),
-                                        child: Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-                                      ),
+                                      CommonSpaces.h16,
+                                      Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
                                     ],
                                   ],
                                 ),
                               ),
-                              CommonSpaces.h14,
+                              CommonSpaces.h20,
                             ],
                           ),
                         ),
                       ),
                     );
+
                   }
                 ),
                 bottomNavigationBar: Padding(
                   padding: const EdgeInsets.all(20.0),
                   child: SafeArea(
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: isLoading ? null : () => _saveProfile(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: context.colors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                          elevation: 0,
-                        ),
-                        child: isLoading 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text('Save Profile', style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
-                                CommonSpaces.w8,
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                  child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
-                                ),
-                              ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 46,
+                          child: ElevatedButton(
+                            onPressed: isLoading ? null : () => _saveProfile(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: context.colors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              elevation: 0,
                             ),
-                      ),
+                            child: isLoading 
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text('Save Profile', style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                                    CommonSpaces.w8,
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                      child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
+                                    ),
+                                  ],
+                                ),
+                          ),
+                        ),
+                        CommonSpaces.h14,
+                      ],
                     ),
                   ),
                 ),

@@ -13,11 +13,21 @@ abstract class ChatSocketRepository {
   void emit(String event, dynamic data);
   void sendMessage({
     required String conversationId,
-    required String content,
-    String? mediaUrl,
-    String? mediaType,
+    required String type,
+    String? text,
+    String? fileKey,
+    String? thumbnail,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
+    double? duration,
+    String? replyMessageId,
+    Map<String, dynamic>? security,
+    Map<String, dynamic>? viewControl,
+    Map<String, dynamic>? expiry,
+    Map<String, dynamic>? callMeta,
   });
-  void sendTypingIndicator(String conversationId);
+  void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
   void sendPing();
   bool get isConnected;
@@ -87,12 +97,20 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     debugPrint('--------------------------');
     debugPrint('Socket Data Received');
     debugPrint('---------------------------');
+    debugPrint('type: ${rawData.runtimeType}');
     debugPrint('response ----->: $rawData');
     debugPrint('----------------------------------');
 
     try {
-      final data = jsonDecode(rawData);
-      _messageController.add(data);
+      dynamic decodedData;
+      if (rawData is String) {
+        decodedData = jsonDecode(rawData);
+      } else if (rawData is List<int>) {
+        decodedData = jsonDecode(utf8.decode(rawData));
+      } else {
+        decodedData = rawData;
+      }
+      _messageController.add(decodedData);
     } catch (e) {
       debugPrint('Error parsing incoming data: $e');
       _messageController.add(rawData);
@@ -106,6 +124,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     debugPrint('error ---->: $error');
     debugPrint('----------------------------------');
     disconnect();
+    _reconnect();
   }
 
   void _handleConnectionClosed() {
@@ -114,6 +133,16 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     debugPrint('---------------------------');
     debugPrint('----------------------------------');
     disconnect();
+    _reconnect();
+  }
+
+  void _reconnect() {
+    if (!_isConnected) {
+      debugPrint('Attempting to reconnect in 5 seconds...');
+      Timer(const Duration(seconds: 5), () {
+        connect();
+      });
+    }
   }
 
   void _startHeartbeat() {
@@ -131,34 +160,63 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   @override
   void sendMessage({
     required String conversationId,
-    required String content,
-    String? mediaUrl,
-    String? mediaType,
+    required String type,
+    String? text,
+    String? fileKey,
+    String? thumbnail,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
+    double? duration,
+    String? replyMessageId,
+    Map<String, dynamic>? security,
+    Map<String, dynamic>? viewControl,
+    Map<String, dynamic>? expiry,
+    Map<String, dynamic>? callMeta,
   }) {
-    final payload = {
-      "type": "send_message",
-      "conversation_id": conversationId,
-      "content": content,
-      "media_url": mediaUrl,
-      "media_type": mediaType,
+    final Map<String, dynamic> content = {};
+    if (text != null) content['text'] = text;
+    if (fileKey != null) content['fileKey'] = fileKey;
+    if (thumbnail != null) content['thumbnail'] = thumbnail;
+    if (fileName != null) content['fileName'] = fileName;
+    if (fileSize != null) content['fileSize'] = fileSize;
+    if (mimeType != null) content['mimeType'] = mimeType;
+    if (duration != null) content['duration'] = duration;
+
+    final Map<String, dynamic> payload = {
+      "type": type,
+      "conversationId": conversationId,
     };
+
+    if (content.isNotEmpty) payload['content'] = content;
+    if (replyMessageId != null) payload['replyMessageId'] = replyMessageId;
+    if (security != null) payload['security'] = security;
+    if (viewControl != null) payload['viewControl'] = viewControl;
+    if (expiry != null) payload['expiry'] = expiry;
+    if (callMeta != null) payload['callMeta'] = callMeta;
+
     emit('message', payload);
   }
 
   @override
-  void sendTypingIndicator(String conversationId) {
-    final payload = {
+  void sendTypingIndicator(String conversationId, {bool isTyping = true}) {
+    final Map<String, dynamic> payload = {
       "type": "typing",
-      "conversation_id": conversationId,
+      "conversationId": conversationId,
+      "conversation_id": conversationId, // Send both to be safe
+      "is_typing": isTyping,
+      "isTyping": isTyping,
     };
     emit('message', payload);
   }
 
   @override
   void sendReadReceipt(String conversationId, String messageId) {
-    final payload = {
+    final Map<String, dynamic> payload = {
       "type": "read_receipt",
+      "conversationId": conversationId,
       "conversation_id": conversationId,
+      "messageId": messageId,
       "message_id": messageId,
     };
     emit('message', payload);
@@ -166,7 +224,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void sendPing() {
-    final payload = {
+    final Map<String, dynamic> payload = {
       "type": "ping",
     };
     emit('message', payload);

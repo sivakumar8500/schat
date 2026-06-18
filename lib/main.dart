@@ -13,6 +13,7 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:screen_protector/screen_protector.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:schat/utils/common_fonts.dart';
 import 'injection.dart';
 
 Future<void> main() async {
@@ -61,7 +62,7 @@ class MyApp extends StatelessWidget {
               create: (context) => getIt<ConnectivityBloc>()..add(ConnectivityStarted()),
             ),
             BlocProvider<ChatSocketBloc>(
-              create: (context) => getIt<ChatSocketBloc>()..add(const ConnectSocket()),
+              create: (context) => getIt<ChatSocketBloc>(),
             ),
           ],
           child: MaterialApp(
@@ -75,7 +76,7 @@ class MyApp extends StatelessWidget {
             ),
             scaffoldBackgroundColor: context.colors.scaffoldBackground,
             useMaterial3: true,
-            fontFamily: GoogleFonts.poppins().fontFamily,
+            fontFamily: CommonFonts.primaryFont,
           ),
           darkTheme: ThemeData(
             colorScheme: ColorScheme.fromSeed(
@@ -85,7 +86,7 @@ class MyApp extends StatelessWidget {
             ),
             scaffoldBackgroundColor: context.colors.scaffoldBackground,
             useMaterial3: true,
-            fontFamily: GoogleFonts.poppins().fontFamily,
+            fontFamily: CommonFonts.primaryFont,
           ),
           builder: (context, child) {
             return MediaQuery(

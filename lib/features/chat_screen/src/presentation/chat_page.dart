@@ -1,13 +1,11 @@
 import 'dart:async';
-import 'package:schat/injection.dart';
-import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
-import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_state.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_sizes.dart';
 
 import 'package:schat/utils/common_strings.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -52,7 +50,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _isTyping = false;
 
   late ChatBloc _chatBloc;
-  DateTime? _lastTypingSent;
+  Timer? _typingIndicatorTimer;
 
   @override
   void initState() {
@@ -67,9 +65,44 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _stopTypingTimer();
     _messageController.dispose();
     _chatBloc.close();
     super.dispose();
+  }
+
+  void _onTextChanged(String value) {
+    final hasText = value.trim().isNotEmpty;
+    if (hasText != _isTyping) {
+      setState(() {
+        _isTyping = hasText;
+      });
+      // Immediately notify about change
+      context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: hasText));
+    }
+
+    if (hasText) {
+      _startTypingTimer();
+    } else {
+      _stopTypingTimer();
+    }
+  }
+
+  void _startTypingTimer() {
+    if (_typingIndicatorTimer?.isActive ?? false) return;
+    
+    _typingIndicatorTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (_messageController.text.trim().isNotEmpty) {
+        context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: true));
+      } else {
+        _stopTypingTimer();
+      }
+    });
+  }
+
+  void _stopTypingTimer() {
+    _typingIndicatorTimer?.cancel();
+    _typingIndicatorTimer = null;
   }
 
   Future<void> _sendMessage(BuildContext context) async {
@@ -79,7 +112,8 @@ class _ChatPageState extends State<ChatPage> {
     // Send via socket
     context.read<ChatSocketBloc>().add(SendMessage(
       conversationId: widget.conversationId,
-      content: text,
+      type: 'text',
+      text: text,
     ));
 
     // Optimistically update UI
@@ -89,6 +123,8 @@ class _ChatPageState extends State<ChatPage> {
     ));
 
     _messageController.clear();
+    _stopTypingTimer();
+    context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: false));
     setState(() {
       _isTyping = false;
     });
@@ -98,7 +134,12 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return BlocProvider<ChatBloc>.value(
       value: _chatBloc,
-      child: BlocBuilder<ChatBloc, ChatState>(
+      child: BlocConsumer<ChatBloc, ChatState>(
+        listener: (context, state) {
+          if (state is ChatError) {
+            context.showErrorNotification(state.errorMessage);
+          }
+        },
         builder: (context, state) {
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
@@ -135,7 +176,7 @@ class _ChatPageState extends State<ChatPage> {
                                     message: msg.content,
                                     time: _formatTime(msg.createdAt),
                                     isMe: isMe,
-                                    isRead: true, // TODO: actual logic
+                                    isRead: msg.isRead,
                                     type: msg.mediaType ?? 'text',
                                     attachmentPath: msg.mediaUrl,
                                     attachmentName: '',
@@ -240,25 +281,38 @@ class _ChatPageState extends State<ChatPage> {
           children: [
             Stack(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: widget.contactColor.withValues(alpha: 0.2),
-                  backgroundImage: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
-                      ? NetworkImage(widget.profilePictureUrl!)
-                      : null,
-                  onBackgroundImageError: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
-                      ? (exception, stackTrace) {
-                          debugPrint('Error loading chat appbar image: $exception');
-                        }
-                      : null,
-                  child: (widget.profilePictureUrl == null || widget.profilePictureUrl!.isEmpty)
-                      ? Text(
-                          widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
-                          style: context.titleMedium.copyWith(
-                            color: widget.contactColor,
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: widget.contactColor.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: ClipOval(
+                    child: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
+                        ? Image.network(
+                            widget.profilePictureUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Center(
+                                child: Text(
+                                  widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
+                                  style: context.titleMedium.copyWith(
+                                    color: widget.contactColor,
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                        : Center(
+                            child: Text(
+                              widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
+                              style: context.titleMedium.copyWith(
+                                color: widget.contactColor,
+                              ),
+                            ),
                           ),
-                        )
-                      : null,
+                  ),
                 ),
                 if (isOnline)
                   Positioned(
@@ -374,18 +428,7 @@ class _ChatPageState extends State<ChatPage> {
                 controller: _messageController,
                 textCapitalization: TextCapitalization.sentences,
                 style: TextStyle(color: context.colors.textPrimary),
-                onChanged: (value) {
-                  setState(() {
-                    _isTyping = value.isNotEmpty;
-                  });
-                  if (value.isNotEmpty) {
-                    final now = DateTime.now();
-                    if (_lastTypingSent == null || now.difference(_lastTypingSent!) > const Duration(seconds: 3)) {
-                      _lastTypingSent = now;
-                      context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId));
-                    }
-                  }
-                },
+                onChanged: _onTextChanged,
                 decoration: InputDecoration(
                   hintText: CommonStrings.typeMessage,
                   hintStyle: TextStyle(color: context.colors.textHint),
@@ -556,9 +599,9 @@ class _ChatPageState extends State<ChatPage> {
     // Send via socket
     context.read<ChatSocketBloc>().add(SendMessage(
       conversationId: widget.conversationId,
-      content: type == 'image' ? '' : name,
-      mediaType: type,
-      // mediaUrl: // upload first?
+      type: type,
+      text: type == 'text' ? (type == 'image' ? '' : name) : null,
+      fileKey: type != 'text' ? name : null, // Should be real key after upload
     ));
   }
 
@@ -573,9 +616,9 @@ class _ChatPageState extends State<ChatPage> {
     // Send via socket
     context.read<ChatSocketBloc>().add(SendMessage(
       conversationId: widget.conversationId,
-      content: type == 'image' ? '' : name,
-      mediaType: type,
-      mediaUrl: path,
+      type: type,
+      text: type == 'text' ? (type == 'image' ? '' : name) : null,
+      fileKey: type != 'text' ? path : null, // Should be real key after upload
     ));
   }
 
@@ -765,13 +808,16 @@ class _TypingDotState extends State<_TypingDot> with SingleTickerProviderStateMi
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          height: 6,
-          width: 6,
-          decoration: BoxDecoration(
-            color: context.colors.textSecondary.withValues(alpha: 0.3 + (0.7 * _animation.value)),
-            shape: BoxShape.circle,
+        return Transform.translate(
+          offset: Offset(0, -4 * _animation.value),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            height: 6,
+            width: 6,
+            decoration: BoxDecoration(
+              color: context.colors.primary.withValues(alpha: 0.4 + (0.6 * _animation.value)),
+              shape: BoxShape.circle,
+            ),
           ),
         );
       },

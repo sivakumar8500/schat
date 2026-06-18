@@ -42,14 +42,24 @@ class ChatSocketBloc extends Bloc<ChatSocketEvent, ChatSocketState> {
   void _onSendMessage(SendMessage event, Emitter<ChatSocketState> emit) {
     _repository.sendMessage(
       conversationId: event.conversationId,
-      content: event.content,
-      mediaUrl: event.mediaUrl,
-      mediaType: event.mediaType,
+      type: event.type,
+      text: event.text,
+      fileKey: event.fileKey,
+      thumbnail: event.thumbnail,
+      fileName: event.fileName,
+      fileSize: event.fileSize,
+      mimeType: event.mimeType,
+      duration: event.duration,
+      replyMessageId: event.replyMessageId,
+      security: event.security,
+      viewControl: event.viewControl,
+      expiry: event.expiry,
+      callMeta: event.callMeta,
     );
   }
 
   void _onSendTypingIndicator(SendTypingIndicator event, Emitter<ChatSocketState> emit) {
-    _repository.sendTypingIndicator(event.conversationId);
+    _repository.sendTypingIndicator(event.conversationId, isTyping: event.isTyping);
   }
 
   void _onSendReadReceipt(SendReadReceipt event, Emitter<ChatSocketState> emit) {

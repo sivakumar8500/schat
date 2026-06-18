@@ -35,6 +35,13 @@ class CommonFontStyles {
         color: context.colors.textPrimary,
       );
 
+  static TextStyle titleLarge(BuildContext context) => TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
+        color: context.colors.textPrimary,
+      );
+
   static TextStyle titleMedium(BuildContext context) => TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,
@@ -87,6 +94,7 @@ extension CommonFontStylesExt on BuildContext {
   TextStyle get h1Italic => CommonFontStyles.h1Italic(this);
   TextStyle get h2 => CommonFontStyles.h2(this);
   TextStyle get h3 => CommonFontStyles.h3(this);
+  TextStyle get titleLarge => CommonFontStyles.titleLarge(this);
   TextStyle get titleMedium => CommonFontStyles.titleMedium(this);
   TextStyle get titleSmall => CommonFontStyles.titleSmall(this);
   TextStyle get bodyLarge => CommonFontStyles.bodyLarge(this);

@@ -39,7 +39,20 @@ class ApiService {
       if (e.response?.data != null) {
         final data = e.response?.data;
         if (data is Map) {
-          errorMessage = data['message'] ?? data['error'] ?? data['msg'] ?? e.message ?? 'Something went wrong';
+          final detail = data['detail'];
+          if (detail is String) {
+            errorMessage = detail;
+          } else if (detail is List && detail.isNotEmpty) {
+            // Handle FastAPI validation errors which are often in detail list
+            final firstError = detail.first;
+            if (firstError is Map) {
+              errorMessage = firstError['msg'] ?? firstError['message'] ?? e.message ?? 'Validation error';
+            } else {
+              errorMessage = firstError.toString();
+            }
+          } else {
+            errorMessage = data['message'] ?? data['error'] ?? data['msg'] ?? e.message ?? 'Something went wrong';
+          }
         } else if (data is String) {
           errorMessage = data;
         } else {

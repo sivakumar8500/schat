@@ -88,7 +88,7 @@ class MessageBubble extends StatelessWidget {
                       if (isMe) ...[
                         CommonSpaces.w4,
                         Icon(
-                          Icons.done_all,
+                          isRead ? Icons.done_all : Icons.done,
                           size: 14,
                           color: isRead ? Colors.lightBlueAccent.shade100 : context.colors.textLight.withValues(alpha: 0.7),
                         ),

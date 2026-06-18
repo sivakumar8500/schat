@@ -16,6 +16,8 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/injection.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class NewChatPage extends StatefulWidget {
   const NewChatPage({super.key});
@@ -26,6 +28,156 @@ class NewChatPage extends StatefulWidget {
 
 class _NewChatPageState extends State<NewChatPage> {
   String? _pendingParticipantId;
+
+  final String _appLink = 'https://schat.app';
+  final String _inviteTitle = 'Join Schat - Secure Messaging';
+
+  void _showInviteBottomSheet(String name, String phone) {
+    final String baseMessage = 'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.colors.textHint.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            CommonSpaces.h24,
+            Text(
+              'Invite $name',
+              style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+            ),
+            CommonSpaces.h24,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildShareOption(
+                  icon: Icons.sms_outlined,
+                  label: 'SMS',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _launchSms(phone, baseMessage);
+                  },
+                ),
+                _buildShareOption(
+                  icon: Icons.chat_bubble_outline,
+                  label: 'WhatsApp',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _launchWhatsApp(phone, baseMessage);
+                  },
+                ),
+                _buildShareOption(
+                  icon: Icons.mail_outline,
+                  label: 'Email',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _launchEmail(baseMessage);
+                  },
+                ),
+                _buildShareOption(
+                  icon: Icons.share_outlined,
+                  label: 'More',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Share.share(baseMessage, subject: _inviteTitle);
+                  },
+                ),
+              ],
+            ),
+            CommonSpaces.h24,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShareOption({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: context.colors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: context.colors.primary, size: 28),
+          ),
+          CommonSpaces.h8,
+          Text(
+            label,
+            style: context.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+              color: context.colors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _launchSms(String phone, String message) async {
+    final Uri uri = Uri(
+      scheme: 'sms',
+      path: phone,
+      queryParameters: {'body': message},
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      Share.share(message);
+    }
+  }
+
+  Future<void> _launchWhatsApp(String phone, String message) async {
+    final String cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    final Uri uri = Uri.parse('whatsapp://send?phone=$cleanPhone&text=${Uri.encodeComponent(message)}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      final Uri webUri = Uri.parse('https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}');
+      if (await canLaunchUrl(webUri)) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } else {
+        Share.share(message);
+      }
+    }
+  }
+
+  Future<void> _launchEmail(String message) async {
+    final Uri uri = Uri(
+      scheme: 'mailto',
+      queryParameters: {
+        'subject': _inviteTitle,
+        'body': message,
+      },
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      Share.share(message);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,22 +392,42 @@ class _NewChatPageState extends State<NewChatPage> {
           contactName: name,
         ));
       },
-      leading: CircleAvatar(
-        radius: 28,
-        backgroundColor: context.colors.primary.withOpacity(0.15),
-        backgroundImage: user.profilePictureUrl != null 
-            ? NetworkImage(user.profilePictureUrl!) 
-            : null,
-        child: user.profilePictureUrl == null
-            ? Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: TextStyle(
-                  color: context.colors.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
+      leading: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: context.colors.primary.withOpacity(0.15),
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(
+          child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+              ? Image.network(
+                  user.profilePictureUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          color: context.colors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : Center(
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      color: context.colors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
                 ),
-              )
-            : null,
+        ),
       ),
       title: Text(
         name, 
@@ -281,9 +453,7 @@ class _NewChatPageState extends State<NewChatPage> {
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      onTap: () {
-        // Handle invite
-      },
+      onTap: () => _showInviteBottomSheet(name, phone),
       leading: CircleAvatar(
         radius: 28,
         backgroundColor: context.colors.textHint.withOpacity(0.1),
@@ -305,9 +475,7 @@ class _NewChatPageState extends State<NewChatPage> {
         style: context.bodySmall.copyWith(color: context.colors.textSecondary)
       ),
       trailing: TextButton(
-        onPressed: () {
-          // Handle invite
-        },
+        onPressed: () => _showInviteBottomSheet(name, phone),
         child: Text(
           'INVITE',
           style: TextStyle(

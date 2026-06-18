@@ -11,7 +11,6 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 
-
 class MobileEntryPage extends StatefulWidget {
   const MobileEntryPage({super.key});
 
@@ -92,7 +91,9 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                         child: IntrinsicHeight(
                           child: Column(
                             children: [
-                              Expanded(
+                              const Spacer(),
+                              SizedBox(
+                                height: MediaQuery.of(context).size.height * 0.35,
                                 child: Stack(
                                   children: [
                                     Positioned.fill(
@@ -122,7 +123,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                   ],
                                 ),
                               ),
-
+                              CommonSpaces.h20,
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 32.0),
                                 child: Column(
@@ -130,20 +131,26 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                                      textBaseline: TextBaseline.alphabetic,
                                       children: [
-                                        Text(
-                                          "Let's ",
-                                          style: context.h1.copyWith(fontSize: 36, color: Colors.white),
-                                        ),
-                                        Text(
-                                          "get ",
-                                          style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white),
-                                        ),
-                                        Text(
-                                          "you in.",
-                                          style: context.h1.copyWith(fontSize: 36, color: Colors.white),
+                                        Expanded(
+                                          child: Text.rich(
+                                            TextSpan(
+                                              children: [
+                                                TextSpan(
+                                                  text: "Let's ",
+                                                  style: context.h1.copyWith(fontSize: 36, color: Colors.white),
+                                                ),
+                                                TextSpan(
+                                                  text: "get ",
+                                                  style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white),
+                                                ),
+                                                TextSpan(
+                                                  text: "you in.",
+                                                  style: context.h1.copyWith(fontSize: 36, color: Colors.white),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -205,70 +212,69 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                   ],
                                 ),
                               ),
-                            CommonSpaces.h14,
-                          ],
+                              CommonSpaces.h20,
+                            ],
+                          ),
                         ),
                       ),
+                    );
+                  },
+                ),
+                bottomNavigationBar: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 46,
+                          child: ElevatedButton(
+                            onPressed: isLoading ? null : () => _sendOtp(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: context.colors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              elevation: 0,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Continue',
+                                  style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                                ),
+                                CommonSpaces.w8,
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        CommonSpaces.h24,
+                        Center(
+                          child: Text.rich(
+                            TextSpan(
+                              text: 'By continuing you agree to our\n',
+                              style: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.5), height: 1.4),
+                              children: [
+                                TextSpan(text: 'Terms', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
+                                const TextSpan(text: ' & '),
+                                TextSpan(text: 'Privacy Policy', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        CommonSpaces.h14,
+                      ],
                     ),
-                  );
-                }
-              ),
-              bottomNavigationBar: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          onPressed: isLoading ? null : () => _sendOtp(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: context.colors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            elevation: 0,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Continue',
-                                style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
-                              ),
-                              CommonSpaces.w8,
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      CommonSpaces.h24,
-
-                      // Terms
-                      Center(
-                        child: Text.rich(
-                          TextSpan(
-                            text: 'By continuing you agree to our\n',
-                            style: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.5), height: 1.4),
-                            children: [
-                              TextSpan(text: 'Terms', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
-                              const TextSpan(text: ' & '),
-                              TextSpan(text: 'Privacy Policy', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
-              ),
-            );
+              );
             },
           );
         },

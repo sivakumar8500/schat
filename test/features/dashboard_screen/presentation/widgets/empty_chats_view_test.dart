@@ -25,8 +25,8 @@ void main() {
   testWidgets('renders EmptyChatsView with illustration and button', (WidgetTester tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
 
-    expect(find.text('No active chats'), findsOneWidget);
-    expect(find.text('Ready to chat? Tap below to start a conversation and stay connected with friends and family!'), findsOneWidget);
+    expect(find.text('Start your message'), findsOneWidget);
+    expect(find.text('Start conversation with other employee in your organization.'), findsOneWidget);
     expect(find.text('Chat Now'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
   });

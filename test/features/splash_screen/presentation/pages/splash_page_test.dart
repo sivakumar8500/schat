@@ -26,7 +26,7 @@ void main() {
     
     SharedPreferences.setMockInitialValues({});
     
-    when(() => mockStorage.hasToken()).thenAnswer((_) async => false);
+    when(() => mockStorage.hasToken()).thenReturn(false);
   });
 
   Widget createWidgetUnderTest() {

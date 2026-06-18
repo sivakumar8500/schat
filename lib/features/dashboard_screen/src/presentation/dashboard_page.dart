@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:schat/common/widgets/primary_button.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/chat_search/src/presentation/chat_search_page.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_chats_view.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
-import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
-import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
@@ -22,6 +20,9 @@ import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -38,10 +39,11 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _loadProfile();
+    // Initialize socket connection when dashboard is loaded
+    context.read<ChatSocketBloc>().add(const ConnectSocket());
   }
 
   Future<void> _loadProfile() async {
-    // Background sync user ID and profile info
     getIt<ProfileRepository>().getProfile().then((result) {
       result.when(
         success: (user) {
@@ -55,9 +57,8 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     });
 
-    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _username = prefs.getString('username') ?? 'David';
+      _username = getIt<StorageService>().getUsername() ?? 'David';
     });
   }
 
@@ -99,7 +100,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       return EmptyChatsView(
                         onChatNowPressed: () {
                           setState(() {
-                            _currentIndex = 3; // Switch to New Chat tab
+                            _currentIndex = 3;
                           });
                         },
                       );
@@ -254,28 +255,76 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final imageUrl = chat.recipient.profilePictureUrl;
     final name = chat.recipient.username ?? chat.recipient.phoneNumber;
+    final isOnline = chat.recipient.isOnline;
 
-    return CircleAvatar(
-      radius: 28,
-      backgroundColor: color.withValues(alpha: 0.15),
-      backgroundImage: (imageUrl != null && imageUrl.isNotEmpty)
-          ? NetworkImage(imageUrl)
-          : null,
-      onBackgroundImageError: (imageUrl != null && imageUrl.isNotEmpty)
-          ? (exception, stackTrace) {
-              debugPrint('Error loading avatar: $exception');
-            }
-          : null,
-      child: (imageUrl == null || imageUrl.isEmpty)
-          ? Text(
-              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-              style: TextStyle(
-                color: color,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+    return Stack(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            shape: BoxShape.circle,
+          ),
+          child: ClipOval(
+            child: (imageUrl != null && imageUrl.isNotEmpty)
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Center(
+                        child: Text(
+                          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      );
+                    },
+                  )
+                : Center(
+                    child: Text(
+                      name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        if (isOnline)
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: context.colors.success,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: context.colors.scaffoldBackground,
+                  width: 2.5,
+                ),
               ),
-            )
-          : null,
+            ),
+          ),
+      ],
     );
   }
 

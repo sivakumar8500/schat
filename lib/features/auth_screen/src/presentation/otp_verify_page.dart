@@ -13,7 +13,6 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 
-
 class OtpVerifyPage extends StatefulWidget {
   final String mobileNumber;
   final bool autoFill;
@@ -28,11 +27,14 @@ class OtpVerifyPage extends StatefulWidget {
 }
 
 class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
-  final List<TextEditingController> _controllers = List.generate(6, (index) => TextEditingController());
+  final List<TextEditingController> _controllers = List.generate(
+    6,
+    (index) => TextEditingController(),
+  );
   final List<FocusNode> _focusNodes = List.generate(6, (index) => FocusNode());
-  
+
   Timer? _countdownTimer;
-  int _secondsRemaining = 30;
+  int _secondsRemaining = 120;
 
   @override
   void initState() {
@@ -62,7 +64,8 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
   void _setupFocusNodes() {
     for (int i = 0; i < 6; i++) {
       _focusNodes[i].onKeyEvent = (node, event) {
-        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.backspace) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.backspace) {
           if (_controllers[i].text.isEmpty && i > 0) {
             _controllers[i - 1].clear();
             _focusNodes[i - 1].requestFocus();
@@ -76,7 +79,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
   }
 
   void _startCountdown() {
-    _secondsRemaining = 30;
+    _secondsRemaining = 120;
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
@@ -105,9 +108,10 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   void _verifyOtp(BuildContext context) {
     String otp = _controllers.map((c) => c.text).join();
-    // In a real app, retrieve the actual device ID using a package like device_info_plus
-    const String mockDeviceId = 'ljonhonouuoi'; 
-    context.read<AuthBloc>().add(VerifyOtpEvent(otpCode: otp, deviceId: mockDeviceId));
+    const String mockDeviceId = 'ljonhonouuoi';
+    context.read<AuthBloc>().add(
+      VerifyOtpEvent(otpCode: otp, deviceId: mockDeviceId),
+    );
   }
 
   void _handleOtpInput(String value, int index) {
@@ -182,9 +186,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
         if (state is AuthSuccess) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(
-              builder: (context) => const ProfilePage(),
-            ),
+            MaterialPageRoute(builder: (context) => const ProfilePage()),
           );
         } else if (state is AuthFailure) {
           context.showErrorNotification(state.errorMessage);
@@ -204,8 +206,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                   child: IntrinsicHeight(
                     child: Column(
                       children: [
-                        // Top illustration area - Matching IntroPage & MobileEntryPage
-                        Expanded(
+                        const Spacer(),
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.35,
                           child: Stack(
                             children: [
                               Positioned.fill(
@@ -214,7 +217,6 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                   fit: BoxFit.cover,
                                 ),
                               ),
-                              // Gradient overlay to blend image into black background
                               Positioned(
                                 bottom: -1,
                                 left: 0,
@@ -226,7 +228,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
                                       colors: [
-                                        context.colors.pureBlack.withValues(alpha: 0),
+                                        context.colors.pureBlack.withValues(
+                                          alpha: 0,
+                                        ),
                                         context.colors.pureBlack,
                                       ],
                                     ),
@@ -236,8 +240,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                             ],
                           ),
                         ),
-
-
+                        CommonSpaces.h20,
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 32.0),
                           child: Column(
@@ -245,8 +248,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Align(
                                     alignment: Alignment.centerLeft,
@@ -263,47 +265,71 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                       ),
                                     ),
                                   ),
-                                  CommonSpaces.w20,
-                                  Text(
-                                    "Enter the ",
-                                    style: context.h1.copyWith(fontSize: 36, color: Colors.white),
-                                  ),
-                                  Text(
-                                    "Code",
-                                    style: context.h1Italic.copyWith(fontSize: 34, color: Colors.white),
+                                  CommonSpaces.w12,
+                                  Expanded(
+                                    child: Text.rich(
+                                      TextSpan(
+                                        children: [
+                                          TextSpan(
+                                            text: "Enter the ",
+                                            style: context.h1.copyWith(
+                                              fontSize: 32,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: "Code",
+                                            style: context.h1Italic.copyWith(
+                                              fontSize: 30,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ],
                               ),
+                              CommonSpaces.h8,
+                              Text(
+                                "Sent to ${widget.mobileNumber}",
+                                style: context.bodyMedium.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.6),
+                                ),
+                              ),
                               CommonSpaces.h24,
-
-                              // Code section label
                               Text(
                                 'Code',
-                                style: context.titleSmall.copyWith(color: Colors.white),
+                                style: context.titleSmall.copyWith(
+                                  color: Colors.white,
+                                ),
                               ),
                               CommonSpaces.h12,
-
-
                               AutofillGroup(
                                 child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: List.generate(6, (index) {
                                     final controller = _controllers[index];
                                     final isFilled = controller.text.isNotEmpty;
-
                                     return Container(
                                       width: 48,
                                       height: 56,
                                       decoration: BoxDecoration(
-                                        color: isFilled ? context.colors.primary : fieldBgColor,
+                                        color: isFilled
+                                            ? context.colors.primary
+                                            : fieldBgColor,
                                         borderRadius: BorderRadius.circular(12),
                                         boxShadow: isFilled
                                             ? [
                                                 BoxShadow(
-                                                  color: context.colors.primary.withValues(alpha: 0.25),
+                                                  color: context.colors.primary
+                                                      .withValues(alpha: 0.25),
                                                   blurRadius: 8,
                                                   offset: const Offset(0, 4),
-                                                )
+                                                ),
                                               ]
                                             : [],
                                       ),
@@ -313,21 +339,26 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                           focusNode: _focusNodes[index],
                                           keyboardType: TextInputType.number,
                                           textAlign: TextAlign.center,
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             fontSize: 22,
                                             fontWeight: FontWeight.bold,
-                                            color: isFilled ? Colors.white : Colors.white,
+                                            color: Colors.white,
                                           ),
-                                          autofillHints: const [AutofillHints.oneTimeCode],
+                                          autofillHints: const [
+                                            AutofillHints.oneTimeCode,
+                                          ],
                                           inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly,
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
                                           ],
                                           decoration: InputDecoration(
                                             counterText: '',
                                             border: InputBorder.none,
                                             hintText: isFilled ? '' : '·',
                                             hintStyle: TextStyle(
-                                              color: Colors.white.withValues(alpha: 0.3),
+                                              color: Colors.white.withValues(
+                                                alpha: 0.3,
+                                              ),
                                               fontSize: 24,
                                             ),
                                           ),
@@ -340,9 +371,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                   }),
                                 ),
                               ),
-
                               CommonSpaces.h12,
-
                               Row(
                                 children: [
                                   Icon(
@@ -353,19 +382,22 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                   CommonSpaces.w6,
                                   _secondsRemaining > 0
                                       ? Text(
-                                          'Resend the code in: 00:${_secondsRemaining.toString().padLeft(2, '0')}',
+                                          'Resend the code in: ${(_secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(_secondsRemaining % 60).toString().padLeft(2, '0')}',
                                           style: context.bodyMedium.copyWith(
-                                            color: Colors.white.withValues(alpha: 0.7),
+                                            color: Colors.white.withValues(
+                                              alpha: 0.7,
+                                            ),
                                             fontWeight: FontWeight.w600,
                                           ),
                                         )
                                       : InkWell(
                                           onTap: () {
                                             context.read<AuthBloc>().add(
-                                                  SendOtpEvent(
-                                                    phoneNumber: widget.mobileNumber,
-                                                  ),
-                                                );
+                                              SendOtpEvent(
+                                                phoneNumber:
+                                                    widget.mobileNumber,
+                                              ),
+                                            );
                                             _startCountdown();
                                           },
                                           child: Text(
@@ -381,60 +413,71 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                             ],
                           ),
                         ),
-                        CommonSpaces.h14,
+                        CommonSpaces.h20,
                       ],
                     ),
                   ),
                 ),
               );
-            }
+            },
           ),
-        bottomNavigationBar: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: SafeArea(
-            child: SizedBox(
-              width: double.infinity,
-              height: 46,
-              child: ElevatedButton(
-                onPressed: isLoading ? null : () => _verifyOtp(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.colors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  elevation: 0,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+          bottomNavigationBar: BlocBuilder<AuthBloc, AuthState>(
+            builder: (context, state) {
+              final isLoading = state is AuthLoading;
+              return Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Continue',
-                      style: context.titleMedium.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () => _verifyOtp(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: context.colors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Continue',
+                              style: context.titleMedium.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            CommonSpaces.w8,
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                CommonIcons.arrowForward,
+                                color: context.colors.primary,
+                                size: 16,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    CommonSpaces.w8,
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        CommonIcons.arrowForward,
-                        color: context.colors.primary,
-                        size: 16,
-                      ),
-                    ),
+                    CommonSpaces.h14,
                   ],
                 ),
-              ),
-            ),
+              );
+            },
           ),
-        ),
-      );
+        );
       },
     );
   }

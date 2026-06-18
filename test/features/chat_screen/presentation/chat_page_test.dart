@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -15,6 +16,7 @@ class MockChatRepository extends Mock implements ChatRepository {}
 class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
 class MockConnectSocketUseCase extends Mock implements ConnectSocketUseCase {}
 class MockChatSocketBloc extends Mock implements ChatSocketBloc {}
+class MockStorageService extends Mock implements StorageService {}
 
 void main() {
   setUpAll(() {
@@ -32,18 +34,22 @@ void main() {
   late MockChatRepository mockChatRepository;
   late MockChatSocketRepository mockChatSocketRepository;
   late MockConnectSocketUseCase mockConnectSocketUseCase;
+  late MockStorageService mockStorageService;
 
   setUp(() async {
     await getIt.reset();
     mockChatRepository = MockChatRepository();
     mockChatSocketRepository = MockChatSocketRepository();
     mockConnectSocketUseCase = MockConnectSocketUseCase();
+    mockStorageService = MockStorageService();
     
     getIt.registerSingleton<ChatRepository>(mockChatRepository);
     getIt.registerSingleton<ChatSocketRepository>(mockChatSocketRepository);
+    getIt.registerSingleton<StorageService>(mockStorageService);
     getIt.registerFactory<ChatSocketBloc>(() => ChatSocketBloc(mockConnectSocketUseCase, mockChatSocketRepository));
 
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
+    when(() => mockStorageService.getUserId()).thenReturn('my_id');
   });
 
   Widget createWidgetUnderTest() {

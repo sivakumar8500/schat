@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
@@ -9,6 +12,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
 
@@ -24,19 +28,36 @@ class ProfileSettingsPage extends StatefulWidget {
 class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   @override
   Widget build(BuildContext context) {
-    return BlocProvider<ProfileBloc>(
-      create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
-      child: BlocConsumer<ProfileBloc, ProfileState>(
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider<ProfileBloc>(
+          create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
+        ),
+        BlocProvider<ContactsBloc>(
+          create: (context) => ContactsBloc(),
+        ),
+      ],
+      child: BlocListener<ContactsBloc, ContactsState>(
         listener: (context, state) {
-          if (state is ProfileLogoutSuccess) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const IntroPage()),
-              (Route<dynamic> route) => false,
-            );
+          if (state is ContactsLoaded) {
+            context.showSuccessNotification('Contacts synced successfully');
+          } else if (state is ContactsFailure) {
+            context.showErrorNotification('Failed to sync contacts: ${state.errorMessage}');
+          } else if (state is ContactsPermissionDenied) {
+            context.showErrorNotification('Contacts permission denied');
           }
         },
-        builder: (context, state) {
+        child: BlocConsumer<ProfileBloc, ProfileState>(
+          listener: (context, state) {
+            if (state is ProfileLogoutSuccess) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const IntroPage()),
+                (Route<dynamic> route) => false,
+              );
+            }
+          },
+          builder: (context, state) {
           String? imageUrl;
           String currentUsername = widget.username;
 
@@ -226,6 +247,27 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                               ),
                             ),
                             CommonSpaces.h12,
+                            BlocBuilder<ContactsBloc, ContactsState>(
+                              builder: (context, state) {
+                                final isSyncing = state is ContactsLoading;
+                                return _buildSettingsTile(
+                                  context: context,
+                                  icon: Icons.sync_rounded,
+                                  title: 'Sync Contacts',
+                                  onTap: isSyncing 
+                                      ? null 
+                                      : () => context.read<ContactsBloc>().add(const SyncContactsEvent()),
+                                  trailing: isSyncing
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : Icon(Icons.arrow_forward_ios_rounded, color: context.colors.textPrimary, size: 16),
+                                );
+                              },
+                            ),
+                            CommonSpaces.h12,
                             const _LogoutButton(),
                             CommonSpaces.h20,
                           ],
@@ -239,20 +281,23 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSettingsTile({
     required BuildContext context,
     required IconData icon,
     required String title,
     required Widget trailing,
+    VoidCallback? onTap,
   }) {
     return Material(
       color: context.colors.textPrimary.withValues(alpha:0.05),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
+        onTap: onTap,
         leading: Icon(icon, color: context.colors.textPrimary),
         title: Text(
           title,
