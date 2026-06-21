@@ -13,6 +13,7 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class ProfilePage extends StatefulWidget {
   final bool isEditing;
@@ -46,9 +47,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to pick image')),
-        );
+        context.showErrorNotification('Failed to pick image');
       }
     }
   }

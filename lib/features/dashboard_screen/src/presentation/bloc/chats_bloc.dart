@@ -29,14 +29,30 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     _listenToSocket();
   }
 
+  Map<String, dynamic> _cleanMap(Map<dynamic, dynamic> map) {
+    final Map<String, dynamic> result = {};
+    map.forEach((key, val) {
+      final k = key.toString();
+      if (val is Map) {
+        result[k] = _cleanMap(val);
+      } else if (val is List) {
+        result[k] = val.map((item) => item is Map ? _cleanMap(item) : item).toList();
+      } else {
+        result[k] = val;
+      }
+    });
+    return result;
+  }
+
   void _listenToSocket() {
     _socketSubscription = _socketRepository.onMessage.listen((data) {
       if (data is Map) {
-        final type = data['type']?.toString();
+        final cleanData = _cleanMap(data);
+        final type = cleanData['type']?.toString();
         if (type == 'user_status') {
-          final userId = (data['user_id'] ?? data['id'] ?? data['sender_id'])
+          final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
               ?.toString();
-          final status = data['status']?.toString();
+          final status = cleanData['status']?.toString();
           if (userId != null) {
             add(UpdateUserStatus(userId: userId, isOnline: status == 'online'));
           }

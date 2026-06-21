@@ -216,9 +216,6 @@ class _NewChatPageState extends State<NewChatPage> {
             },
             error: (message) {
               _pendingParticipantId = null;
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text(message)));
             },
             orElse: () {},
           );
@@ -340,7 +337,7 @@ class _NewChatPageState extends State<NewChatPage> {
         ),
       );
     } else if (state is ContactsFailure) {
-      return Center(child: Text('Error: ${state.errorMessage}'));
+      return const SizedBox.shrink();
     }
     return const SizedBox.shrink();
   }

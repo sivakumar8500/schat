@@ -95,7 +95,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: state.maybeWhen(
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
-                  error: (message) => Center(child: Text(message)),
+                  error: (message) => const SizedBox.shrink(),
                   loaded: (chatList) {
                     if (chatList.isEmpty) {
                       return EmptyChatsView(

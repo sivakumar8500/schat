@@ -18,7 +18,7 @@ class _IntroPageState extends State<IntroPage> {
   Future<void> _onDone() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenIntro', true);
-    
+
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
@@ -101,7 +101,7 @@ class _IntroPageState extends State<IntroPage> {
                   // Get started Button
                   SizedBox(
                     width: double.infinity,
-                    height: 64,
+                    height: 46,
                     child: ElevatedButton(
                       onPressed: _onDone,
                       style: ElevatedButton.styleFrom(
@@ -149,7 +149,9 @@ class _IntroPageState extends State<IntroPage> {
                       Text(
                         'Already have an account? ',
                         style: context.bodyMedium.copyWith(
-                          color: context.colors.pureWhite.withValues(alpha: 0.5),
+                          color: context.colors.pureWhite.withValues(
+                            alpha: 0.5,
+                          ),
                           fontSize: 15,
                         ),
                       ),
@@ -176,4 +178,3 @@ class _IntroPageState extends State<IntroPage> {
     );
   }
 }
-

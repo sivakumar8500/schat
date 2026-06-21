@@ -13,6 +13,7 @@ import 'package:schat/features/status_screen/src/presentation/status_view_page.d
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_state.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class StatusPage extends StatelessWidget {
   const StatusPage({super.key});
@@ -265,14 +266,7 @@ class StatusPageContent extends StatelessWidget {
             _menuTile(ctx, Icons.delete_outline, 'Delete My Status', () {
               Navigator.pop(ctx);
               context.read<StatusBloc>().add(const DeleteMyStatusEvent());
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Status deleted'),
-                  backgroundColor: ctx.colors.error,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              context.showErrorNotification('Status deleted');
             }),
             _menuTile(ctx, Icons.help_outline, 'Help', () => _showComingSoon(context)),
             CommonSpaces.h8,
@@ -284,13 +278,7 @@ class StatusPageContent extends StatelessWidget {
 
   void _showComingSoon(BuildContext context) {
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Feature coming soon'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+    context.showInfoNotification('Feature coming soon');
   }
 
   Widget _menuTile(BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
@@ -306,6 +294,9 @@ class StatusPageContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<StatusBloc, StatusState>(
       builder: (context, state) {
+        if (state is StatusFailure) {
+          return const SizedBox.shrink();
+        }
         final isLoading = state is StatusLoading || state is StatusInitial;
         final recentStatuses = state is StatusLoaded ? state.recentUpdates : <StatusContactModel>[];
         final mutedStatuses = state is StatusLoaded ? state.mutedUpdates : <StatusContactModel>[];

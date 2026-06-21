@@ -1,4 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'package:flutter/services.dart';
+import 'package:hive/hive.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_sizes.dart';
 
@@ -22,6 +30,7 @@ import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 
 
 class ChatPage extends StatefulWidget {
@@ -53,6 +62,18 @@ class _ChatPageState extends State<ChatPage> {
   late ChatBloc _chatBloc;
   Timer? _typingIndicatorTimer;
 
+  final Set<String> _selectedMessageIds = {};
+  MessageModel? _replyingToMessage;
+  MessageModel? _editingMessage;
+  Box? _pinnedBox;
+  MessageModel? _pinnedMessage;
+
+  String? _selectedAttachmentPath;
+  String? _selectedAttachmentName;
+  String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
+  Uint8List? _selectedAttachmentBytes;
+  int _selectedAttachmentSize = 0;
+
   @override
   void initState() {
     super.initState();
@@ -62,7 +83,648 @@ class _ChatPageState extends State<ChatPage> {
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
     ));
+    _initHive();
   }
+
+  void _initHive() async {
+    final box = await Hive.openBox('pinned_messages');
+    if (mounted) {
+      setState(() {
+        _pinnedBox = box;
+        final cached = box.get(widget.conversationId);
+        if (cached != null) {
+          _pinnedMessage = MessageModel.fromJson(Map<String, dynamic>.from(cached));
+        }
+      });
+    }
+  }
+
+  Future<List<UserModel>> _getForwardContacts() async {
+    try {
+      final box = await Hive.openBox('contacts_box');
+      final String? jsonString = box.get('cached_contacts');
+      if (jsonString != null) {
+        final List<dynamic> decoded = jsonDecode(jsonString);
+        return decoded.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+      }
+    } catch (e) {
+      debugPrint('Error loading forward contacts: $e');
+    }
+    return [];
+  }
+
+  Widget _buildPinnedMessageBanner() {
+    if (_pinnedMessage == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.lightBackground,
+        border: Border(
+          bottom: BorderSide(
+            color: context.colors.border,
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(CommonIcons.pin, color: context.colors.primary, size: 20),
+          CommonSpaces.w12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Pinned Message',
+                  style: context.bodySmall.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.primary,
+                  ),
+                ),
+                Text(
+                  _pinnedMessage!.content,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.bodyMedium.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.close, color: context.colors.textSecondary, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () async {
+              _chatBloc.add(PinMessageEvent(
+                messageId: _pinnedMessage!.id,
+                conversationId: widget.conversationId,
+                isPinned: false,
+              ));
+              if (_pinnedBox != null) {
+                await _pinnedBox!.delete(widget.conversationId);
+              }
+              setState(() {
+                _pinnedMessage = null;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyPreview() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.lightBackground,
+        border: Border(
+          top: BorderSide(color: context.colors.border, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 36,
+            color: context.colors.primary,
+          ),
+          CommonSpaces.w12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to Message',
+                  style: context.bodySmall.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.primary,
+                  ),
+                ),
+                Text(
+                  _replyingToMessage!.content,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.bodyMedium.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.close, color: context.colors.textSecondary, size: 20),
+            onPressed: () {
+              setState(() {
+                _replyingToMessage = null;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditPreview() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.lightBackground,
+        border: Border(
+          top: BorderSide(color: context.colors.border, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 36,
+            color: context.colors.warning,
+          ),
+          CommonSpaces.w12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Editing Message',
+                  style: context.bodySmall.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.warning,
+                  ),
+                ),
+                Text(
+                  _editingMessage!.content,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.bodyMedium.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.close, color: context.colors.textSecondary, size: 20),
+            onPressed: () {
+              setState(() {
+                _editingMessage = null;
+                _messageController.clear();
+                _isTyping = false;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomSection(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_replyingToMessage != null) _buildReplyPreview(),
+        if (_editingMessage != null) _buildEditPreview(),
+        if (_selectedAttachmentType != null) _buildAttachmentPreview(),
+        _buildInputBar(context),
+      ],
+    );
+  }
+
+  void _showMessageMenu(BuildContext context, MessageModel msg, bool isMe) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(top: 12, bottom: 8),
+                    decoration: BoxDecoration(
+                      color: context.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            msg.content,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.bodyMedium.copyWith(
+                              color: context.colors.textSecondary,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(color: context.colors.primary.withValues(alpha: 0.3)),
+                  _menuTile(context, CommonIcons.reply, 'Reply', () {
+                    Navigator.pop(sheetCtx);
+                    setState(() {
+                      _replyingToMessage = msg;
+                      _editingMessage = null;
+                    });
+                  }),
+                  _menuTile(context, CommonIcons.copy, 'Copy', () {
+                    Navigator.pop(sheetCtx);
+                    Clipboard.setData(ClipboardData(text: msg.content));
+                    context.showSuccessNotification('Message copied to clipboard');
+                  }),
+                  if (isMe)
+                    _menuTile(context, CommonIcons.edit, 'Edit', () {
+                      Navigator.pop(sheetCtx);
+                      setState(() {
+                        _editingMessage = msg;
+                        _replyingToMessage = null;
+                        _messageController.text = msg.content;
+                        _isTyping = true;
+                      });
+                    }),
+                  _menuTile(context, CommonIcons.pin, msg.isPinned ? 'Unpin Message' : 'Pin Message', () async {
+                    Navigator.pop(sheetCtx);
+                    final shouldPin = !msg.isPinned;
+                    _chatBloc.add(PinMessageEvent(
+                      messageId: msg.id,
+                      conversationId: widget.conversationId,
+                      isPinned: shouldPin,
+                    ));
+                    
+                    if (_pinnedBox != null) {
+                      if (shouldPin) {
+                        await _pinnedBox!.put(widget.conversationId, msg.copyWith(isPinned: true).toJson());
+                        setState(() {
+                          _pinnedMessage = msg.copyWith(isPinned: true);
+                        });
+                      } else {
+                        await _pinnedBox!.delete(widget.conversationId);
+                        setState(() {
+                          _pinnedMessage = null;
+                        });
+                      }
+                    }
+                  }),
+                  _menuTile(context, CommonIcons.forward, 'Forward', () {
+                    Navigator.pop(sheetCtx);
+                    _showForwardDialog(context, msg.content);
+                  }),
+                  _menuTile(context, CommonIcons.infoOutline, 'Message Info', () {
+                    Navigator.pop(sheetCtx);
+                    _showMessageInfo(context, msg);
+                  }),
+                  _menuTile(context, CommonIcons.selectAll, 'Select', () {
+                    Navigator.pop(sheetCtx);
+                    setState(() {
+                      _selectedMessageIds.add(msg.id);
+                    });
+                  }),
+                  _menuTile(context, CommonIcons.deleteOutline, 'Delete', () {
+                    Navigator.pop(sheetCtx);
+                    _showDeleteDialog(context, [msg]);
+                  }, isDestructive: true),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _menuTile(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+  }) {
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: context.colors.primary,
+      ),
+      title: Text(
+        label,
+        style: context.bodyMedium.copyWith(
+          color: isDestructive ? context.colors.error : context.colors.textPrimary,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  void _showMessageInfo(BuildContext context, MessageModel msg) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: context.colors.textHint.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Message Info',
+                    style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  CommonSpaces.h16,
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: context.colors.lightBackground,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      msg.content,
+                      style: context.bodyLarge,
+                    ),
+                  ),
+                  CommonSpaces.h20,
+                  Divider(color: context.colors.primary.withValues(alpha: 0.3)),
+                  CommonSpaces.h20,
+                  Row(
+                    children: [
+                      Icon(CommonIcons.check, color: context.colors.primary, size: 20),
+                      CommonSpaces.w12,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Sent', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
+                            Text(
+                              _formatFullDateTime(msg.createdAt),
+                              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  CommonSpaces.h16,
+                  Row(
+                    children: [
+                      Icon(
+                        msg.isRead ? CommonIcons.doneAll : CommonIcons.done,
+                        color: msg.isRead ? context.colors.primary : context.colors.textSecondary,
+                        size: 20,
+                      ),
+                      CommonSpaces.w12,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Read', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
+                            Text(
+                              msg.isRead 
+                                  ? _formatFullDateTime(msg.updatedAt)
+                                  : 'Not read yet',
+                              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  CommonSpaces.h20,
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatFullDateTime(String timestamp) {
+    try {
+      DateTime date;
+      final parsedInt = int.tryParse(timestamp);
+      if (parsedInt != null) {
+        if (timestamp.length <= 10) {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        date = DateTime.parse(timestamp).toLocal();
+      }
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final monthName = months[date.month - 1];
+      final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+      final minute = date.minute.toString().padLeft(2, '0');
+      final period = date.hour >= 12 ? 'PM' : 'AM';
+      return '$monthName ${date.day}, ${date.year} at $hour:$minute $period';
+    } catch (e) {
+      return timestamp;
+    }
+  }
+
+  void _showForwardDialog(BuildContext context, String messageText) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final contacts = await _getForwardContacts();
+    
+    if (context.mounted) {
+      Navigator.pop(context);
+    }
+
+    if (contacts.isEmpty) {
+      if (context.mounted) {
+        context.showInfoNotification('No contacts available for forwarding');
+      }
+      return;
+    }
+
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        builder: (dialogCtx) {
+          return AlertDialog(
+            backgroundColor: context.colors.scaffoldBackground,
+            title: Text(
+              'Forward Message',
+              style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: contacts.length,
+                itemBuilder: (context, index) {
+                  final user = contacts[index];
+                  final name = user.username ?? user.phoneNumber;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: context.colors.primary.withValues(alpha: 0.15),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    title: Text(
+                      name,
+                      style: context.titleSmall.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      user.about ?? 'Hey there! I am using Schat.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+                    ),
+                    trailing: TextButton(
+                      child: Text('Send', style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        Navigator.pop(dialogCtx);
+                        
+                        context.showInfoNotification('Forwarding to $name...');
+
+                        try {
+                          final dashboardRepo = getIt<DashboardRepository>();
+                          final socketRepo = getIt<ChatSocketRepository>();
+                          final result = await dashboardRepo.startDirectChat(user.id);
+                          
+                          result.when(
+                            success: (chat) {
+                              socketRepo.emit('message', {
+                                'type': 'text',
+                                'conversationId': chat.id,
+                                'conversation_id': chat.id,
+                                'text': messageText,
+                              });
+                              
+                              context.showSuccessNotification('Message forwarded to $name');
+                            },
+                            failure: (error, statusCode) {
+                              context.showErrorNotification('Failed to forward: $error');
+                            },
+                          );
+                        } catch (e) {
+                          context.showErrorNotification('Error: $e');
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                onPressed: () => Navigator.pop(dialogCtx),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
+  void _showDeleteDialog(BuildContext context, List<MessageModel> messages) {
+    final myId = (_chatBloc.state as ChatLoaded).myId;
+    final allFromMe = messages.every((msg) => msg.senderId == myId);
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          backgroundColor: context.colors.scaffoldBackground,
+          title: Text(
+            'Delete Message${messages.length > 1 ? "s" : ""}',
+            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            'Are you sure you want to delete ${messages.length > 1 ? "these messages" : "this message"}?',
+            style: context.bodyMedium,
+          ),
+          actions: [
+            TextButton(
+              child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+              onPressed: () => Navigator.pop(dialogCtx),
+            ),
+            TextButton(
+              child: Text('Delete for me', style: TextStyle(color: context.colors.error)),
+              onPressed: () {
+                Navigator.pop(dialogCtx);
+                final ids = messages.map((m) => m.id).toList();
+                _chatBloc.add(DeleteMessagesEvent(
+                  messageIds: ids,
+                  conversationId: widget.conversationId,
+                  deleteType: 'me',
+                ));
+                setState(() {
+                  _selectedMessageIds.clear();
+                });
+              },
+            ),
+            if (allFromMe)
+              TextButton(
+                child: Text('Delete for everyone', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  final ids = messages.map((m) => m.id).toList();
+                  _chatBloc.add(DeleteMessagesEvent(
+                    messageIds: ids,
+                    conversationId: widget.conversationId,
+                    deleteType: 'everyone',
+                  ));
+                  setState(() {
+                    _selectedMessageIds.clear();
+                  });
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
 
   @override
   void dispose() {
@@ -74,9 +736,11 @@ class _ChatPageState extends State<ChatPage> {
 
   void _onTextChanged(String value) {
     final hasText = value.trim().isNotEmpty;
-    if (hasText != _isTyping) {
+    final hasAttachment = _selectedAttachmentType != null;
+    final shouldShowSend = hasText || hasAttachment;
+    if (shouldShowSend != _isTyping) {
       setState(() {
-        _isTyping = hasText;
+        _isTyping = shouldShowSend;
       });
       // Immediately notify about change
       context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: hasText));
@@ -108,20 +772,44 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _sendMessage(BuildContext context) async {
     final text = _messageController.text.trim();
+
+    if (_selectedAttachmentType != null) {
+      await _uploadAndSendAttachment(context);
+      return;
+    }
+
     if (text.isEmpty) return;
 
-    // Send via socket
-    context.read<ChatSocketBloc>().add(SendMessage(
-      conversationId: widget.conversationId,
-      type: 'text',
-      text: text,
-    ));
+    if (_editingMessage != null) {
+      _chatBloc.add(EditMessageEvent(
+        messageId: _editingMessage!.id,
+        conversationId: widget.conversationId,
+        newContent: text,
+      ));
+      setState(() {
+        _editingMessage = null;
+      });
+    } else {
+      // Send via socket
+      context.read<ChatSocketBloc>().add(SendMessage(
+        conversationId: widget.conversationId,
+        type: 'text',
+        text: text,
+        replyMessageId: _replyingToMessage?.id,
+      ));
 
-    // Optimistically update UI
-    _chatBloc.add(SendMessageEvent(
-      conversationId: widget.conversationId,
-      text: text,
-    ));
+      // Optimistically update UI
+      _chatBloc.add(SendMessageEvent(
+        conversationId: widget.conversationId,
+        text: text,
+        replyMessageId: _replyingToMessage?.id,
+        replyMessageBody: _replyingToMessage?.content,
+      ));
+
+      setState(() {
+        _replyingToMessage = null;
+      });
+    }
 
     _messageController.clear();
     _stopTypingTimer();
@@ -129,6 +817,212 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _isTyping = false;
     });
+  }
+
+  Future<void> _uploadAndSendAttachment(BuildContext context) async {
+    final String type = _selectedAttachmentType!;
+    final String name = _selectedAttachmentName ?? 'File';
+    final Uint8List? bytes = _selectedAttachmentBytes;
+    final String? path = _selectedAttachmentPath;
+    final int size = _selectedAttachmentSize;
+    final String caption = _messageController.text.trim();
+
+    // Clear preview states immediately so UI is responsive
+    setState(() {
+      _selectedAttachmentPath = null;
+      _selectedAttachmentBytes = null;
+      _selectedAttachmentName = null;
+      _selectedAttachmentType = null;
+      _selectedAttachmentSize = 0;
+      _messageController.clear();
+      _isTyping = false;
+    });
+
+    if (type == 'location' || type == 'contact') {
+      context.read<ChatBloc>().add(SendMessageEvent(
+        conversationId: widget.conversationId,
+        text: caption.isNotEmpty ? caption : name,
+        type: type,
+        attachmentPath: path,
+        attachmentName: name,
+      ));
+
+      context.read<ChatSocketBloc>().add(SendMessage(
+        conversationId: widget.conversationId,
+        type: type,
+        text: caption.isNotEmpty ? caption : name,
+        fileKey: path,
+      ));
+      return;
+    }
+
+    // 1. Send optimistic message event immediately to ChatBloc (shows loader)
+    context.read<ChatBloc>().add(SendMessageEvent(
+      conversationId: widget.conversationId,
+      text: caption.isNotEmpty ? caption : (type == 'image' ? '' : name),
+      type: type,
+      attachmentPath: path,
+      attachmentName: name,
+      attachmentBytes: bytes,
+    ));
+
+    // 2. Perform the upload and socket broadcast in the background
+    _performBackgroundUploadAndSend(
+      context: context,
+      type: type,
+      name: name,
+      bytes: bytes,
+      path: path,
+      size: size,
+      caption: caption,
+    );
+  }
+
+  Future<void> _performBackgroundUploadAndSend({
+    required BuildContext context,
+    required String type,
+    required String name,
+    required Uint8List? bytes,
+    required String? path,
+    required int size,
+    required String caption,
+  }) async {
+    String? fileKey;
+    try {
+      final repo = getIt<ChatRepository>();
+      fileKey = await repo.uploadMedia(
+        conversationId: widget.conversationId,
+        filePath: path ?? '',
+        fileName: name,
+        mediaType: _getMediaType(type),
+        mimeType: _getMimeType(name, type),
+        fileSizeBytes: size,
+        fileBytes: bytes,
+      );
+    } catch (e) {
+      debugPrint('Background upload error: $e');
+      if (context.mounted) {
+        context.showErrorNotification('Upload failed: $e');
+      }
+      return;
+    }
+
+    if (fileKey != null && context.mounted) {
+      context.read<ChatSocketBloc>().add(SendMessage(
+        conversationId: widget.conversationId,
+        type: type,
+        text: caption.isNotEmpty ? caption : (type == 'image' ? '' : name),
+        fileKey: fileKey,
+        fileName: name,
+        fileSize: size,
+        mimeType: _getMimeType(name, type),
+      ));
+    }
+  }
+
+  Widget _buildAttachmentPreview() {
+    final isImage = _selectedAttachmentType == 'image';
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.colors.lightBackground,
+        border: Border(
+          top: BorderSide(color: context.colors.border, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Preview thumbnail/icon
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 56,
+              height: 56,
+              color: context.colors.scaffoldBackground,
+              child: isImage
+                  ? (_selectedAttachmentBytes != null
+                      ? Image.memory(
+                          _selectedAttachmentBytes!,
+                          fit: BoxFit.cover,
+                        )
+                      : const Icon(CommonIcons.gallery, size: 28))
+                  : Center(
+                      child: Icon(
+                        _selectedAttachmentType == 'video'
+                            ? CommonIcons.playCircle
+                            : _selectedAttachmentType == 'audio'
+                                ? CommonIcons.audio
+                                : _selectedAttachmentType == 'location'
+                                    ? CommonIcons.location
+                                    : _selectedAttachmentType == 'contact'
+                                        ? CommonIcons.person
+                                        : CommonIcons.document,
+                        color: context.colors.primary,
+                        size: 28,
+                      ),
+                    ),
+            ),
+          ),
+          CommonSpaces.w12,
+          // Attachment Name / Size details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _selectedAttachmentName ?? 'Attachment',
+                  style: context.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                CommonSpaces.h4,
+                Text(
+                  _selectedAttachmentType == 'location'
+                      ? 'Location share'
+                      : _selectedAttachmentType == 'contact'
+                          ? 'Contact card'
+                          : _formatBytes(_selectedAttachmentSize),
+                  style: context.bodySmall.copyWith(
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Clear Button
+          IconButton(
+            icon: Icon(CommonIcons.close, color: context.colors.textSecondary),
+            onPressed: () {
+              setState(() {
+                _selectedAttachmentPath = null;
+                _selectedAttachmentBytes = null;
+                _selectedAttachmentName = null;
+                _selectedAttachmentType = null;
+                _selectedAttachmentSize = 0;
+                _isTyping = _messageController.text.trim().isNotEmpty;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return "0 B";
+    const suffixes = ["B", "KB", "MB", "GB"];
+    var i = 0;
+    double w = bytes.toDouble();
+    while (w >= 1024 && i < suffixes.length - 1) {
+      w /= 1024;
+      i++;
+    }
+    return "${w.toStringAsFixed(1)} ${suffixes[i]}";
   }
 
   @override
@@ -145,13 +1039,15 @@ class _ChatPageState extends State<ChatPage> {
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
           final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
+          final customBgColor = state is ChatLoaded ? state.customBgColor : null;
 
           return Scaffold(
-            backgroundColor: context.colors.scaffoldBackground,
+            backgroundColor: customBgColor ?? context.colors.scaffoldBackground,
             appBar: _buildAppBar(context, state),
             body: SafeArea(
               child: Column(
                 children: [
+                  _buildPinnedMessageBanner(),
                   Expanded(
                     child: isLoading
                         ? Center(child: CircularProgressIndicator(color: context.colors.primary))
@@ -173,20 +1069,59 @@ class _ChatPageState extends State<ChatPage> {
                                   // we access it from the end.
                                   final msg = messages[messages.length - 1 - adjustedIndex];
                                   final isMe = state is ChatLoaded && msg.senderId == state.myId;
-                                  return MessageBubble(
-                                    message: msg.content,
-                                    time: _formatTime(msg.createdAt),
-                                    isMe: isMe,
-                                    isRead: msg.isRead,
-                                    type: msg.mediaType ?? 'text',
-                                    attachmentPath: msg.mediaUrl,
-                                    attachmentName: '',
-                                    attachmentBytes: null,
+                                  
+                                  String? replySenderName;
+                                  if (msg.isReply && msg.replyMessageId != null) {
+                                    try {
+                                      final parent = messages.firstWhere((m) => m.id == msg.replyMessageId);
+                                      replySenderName = (state is ChatLoaded && parent.senderId == state.myId)
+                                          ? 'You'
+                                          : widget.contactName;
+                                    } catch (_) {
+                                      replySenderName = isMe ? widget.contactName : 'You';
+                                    }
+                                  }
+
+                                  return GestureDetector(
+                                    onLongPress: () {
+                                      if (msg.isDeleted) return;
+                                      if (_selectedMessageIds.isEmpty) {
+                                        _showMessageMenu(context, msg, isMe);
+                                      }
+                                    },
+                                    onTap: () {
+                                      if (msg.isDeleted) return;
+                                      if (_selectedMessageIds.isNotEmpty) {
+                                        setState(() {
+                                          if (_selectedMessageIds.contains(msg.id)) {
+                                            _selectedMessageIds.remove(msg.id);
+                                          } else {
+                                            _selectedMessageIds.add(msg.id);
+                                          }
+                                        });
+                                      }
+                                    },
+                                    child: MessageBubble(
+                                      message: msg.content,
+                                      time: _formatTime(msg.createdAt),
+                                      isMe: isMe,
+                                      isRead: msg.isRead,
+                                      type: msg.mediaType ?? 'text',
+                                      attachmentPath: msg.mediaUrl,
+                                      attachmentName: msg.attachmentName ?? (msg.content.isNotEmpty ? msg.content : 'File'),
+                                      attachmentBytes: msg.attachmentBytes,
+                                      isReply: msg.isReply,
+                                      replyMessageBody: msg.replyMessageBody,
+                                      replyMessageSenderName: replySenderName,
+                                      isEdited: msg.isEdited,
+                                      isSelected: _selectedMessageIds.contains(msg.id),
+                                      isUploading: msg.isUploading,
+                                    ),
                                   );
                                 },
                               ),
                   ),
-                  _buildInputBar(context),
+                  _buildBottomSection(context),
                 ],
               ),
             ),
@@ -243,7 +1178,17 @@ class _ChatPageState extends State<ChatPage> {
 
   String _formatTime(String createdAt) {
     try {
-      final date = DateTime.parse(createdAt).toLocal();
+      DateTime date;
+      final parsedInt = int.tryParse(createdAt);
+      if (parsedInt != null) {
+        if (createdAt.length <= 10) {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        date = DateTime.parse(createdAt).toLocal();
+      }
       final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
       final minute = date.minute.toString().padLeft(2, '0');
       final period = date.hour >= 12 ? 'PM' : 'AM';
@@ -254,6 +1199,71 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context, ChatState state) {
+    if (_selectedMessageIds.isNotEmpty) {
+      return AppBar(
+        backgroundColor: context.colors.primary,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(CommonIcons.close, color: context.colors.pureWhite),
+          onPressed: () {
+            setState(() {
+              _selectedMessageIds.clear();
+            });
+          },
+        ),
+        title: Text(
+          '${_selectedMessageIds.length} selected',
+          style: context.titleMedium.copyWith(color: context.colors.pureWhite, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(CommonIcons.copy, color: context.colors.pureWhite),
+            onPressed: () {
+              if (state is ChatLoaded) {
+                final selectedMsgs = state.messages
+                    .where((m) => _selectedMessageIds.contains(m.id))
+                    .map((m) => m.content)
+                    .join('\n');
+                if (selectedMsgs.isNotEmpty) {
+                  Clipboard.setData(ClipboardData(text: selectedMsgs));
+                  context.showSuccessNotification('Messages copied to clipboard');
+                }
+              }
+              setState(() {
+                _selectedMessageIds.clear();
+              });
+            },
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.reply, color: context.colors.pureWhite),
+            onPressed: () {
+              if (state is ChatLoaded) {
+                final selectedMsgs = state.messages
+                    .where((m) => _selectedMessageIds.contains(m.id))
+                    .toList();
+                if (selectedMsgs.isNotEmpty) {
+                  final combinedText = selectedMsgs.map((m) => m.content).join('\n');
+                  _showForwardDialog(context, combinedText);
+                }
+              }
+            },
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.delete, color: context.colors.pureWhite),
+            onPressed: () {
+              if (state is ChatLoaded) {
+                final selectedMsgs = state.messages
+                    .where((m) => _selectedMessageIds.contains(m.id))
+                    .toList();
+                _showDeleteDialog(context, selectedMsgs);
+              }
+            },
+          ),
+          CommonSpaces.w8,
+        ],
+      );
+    }
+
     final isOnline = state is ChatLoaded ? state.isRecipientOnline : widget.isOnline;
     final isTyping = state is ChatLoaded && state.isRecipientTyping;
 
@@ -270,6 +1280,7 @@ class _ChatPageState extends State<ChatPage> {
               builder: (context) => BlocProvider.value(
                 value: _chatBloc,
                 child: ContactProfilePage(
+                  conversationId: widget.conversationId,
                   contactName: widget.contactName,
                   contactColor: widget.contactColor,
                   isOnline: isOnline,
@@ -386,6 +1397,35 @@ class _ChatPageState extends State<ChatPage> {
               ),
             );
           },
+        ),
+        PopupMenuButton<String>(
+          icon: Icon(CommonIcons.moreVert),
+          color: context.colors.scaffoldBackground,
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (value) {
+            if (value == 'background_color') {
+              _showBackgroundColorBottomSheet(context);
+            }
+          },
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+            PopupMenuItem<String>(
+              value: 'background_color',
+              child: Row(
+                children: [
+                  Icon(Icons.color_lens_outlined, color: context.colors.primary, size: 20),
+                  CommonSpaces.w8,
+                  Text(
+                    'Background Color',
+                    style: context.bodyMedium.copyWith(
+                      color: context.colors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         CommonSpaces.w8,
       ],
@@ -552,27 +1592,96 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  String _getMimeType(String filename, String type) {
+    final ext = filename.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'svg':
+        return 'image/svg+xml';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'csv':
+        return 'text/csv';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'mp4':
+        return 'video/mp4';
+      case 'webm':
+        return type == 'audio' ? 'audio/webm' : 'video/webm';
+      case 'ogg':
+        return type == 'audio' ? 'audio/ogg' : 'video/ogg';
+      case 'avi':
+        return 'video/x-msvideo';
+      case 'json':
+        return 'application/json';
+      case 'zip':
+        return 'application/zip';
+      case 'xml':
+        return 'application/xml';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  String _getMediaType(String type) {
+    switch (type) {
+      case 'image':
+        return 'CHAT_IMAGE';
+      case 'video':
+        return 'CHAT_VIDEO';
+      case 'audio':
+        return 'VOICE_NOTE';
+      default:
+        return 'DOCUMENT';
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
     if (image == null || !mounted) return;
 
     final String name = image.name;
+    final int size = await image.length();
+    if (!mounted) return;
 
-    if (kIsWeb) {
-      // On web, read bytes since file path is not available
-      final Uint8List bytes = await image.readAsBytes();
-      if (!mounted) return;
-      _sendAttachmentWithBytes(context, bytes, name, 'image');
-    } else {
-      _sendAttachment(context, image.path, name, 'image');
-    }
+    final Uint8List bytes = await image.readAsBytes();
+    if (!mounted) return;
+
+    setState(() {
+      _selectedAttachmentPath = kIsWeb ? null : image.path;
+      _selectedAttachmentBytes = bytes;
+      _selectedAttachmentName = name;
+      _selectedAttachmentType = 'image';
+      _selectedAttachmentSize = size;
+      _isTyping = true;
+    });
   }
 
   Future<void> _pickFile(FileType type) async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: type,
-      withData: true, // always load bytes so it works on web too
+      withData: true,
     );
     if (result == null || !mounted) return;
     final PlatformFile file = result.files.single;
@@ -581,47 +1690,18 @@ class _ChatPageState extends State<ChatPage> {
         : type == FileType.video
             ? 'video'
             : 'file';
-    if (!mounted) return;
-    if (kIsWeb && file.bytes != null) {
-      _sendAttachmentWithBytes(context, file.bytes!, file.name, fileType);
-    } else if (file.path != null) {
-      _sendAttachment(context, file.path!, file.name, fileType);
-    }
+
+    setState(() {
+      _selectedAttachmentPath = file.path;
+      _selectedAttachmentBytes = file.bytes;
+      _selectedAttachmentName = file.name;
+      _selectedAttachmentType = fileType;
+      _selectedAttachmentSize = file.size;
+      _isTyping = true;
+    });
   }
 
-  void _sendAttachmentWithBytes(BuildContext context, Uint8List bytes, String name, String type) {
-    context.read<ChatBloc>().add(SendMessageEvent(
-      conversationId: widget.conversationId,
-      text: type == 'image' ? '' : name,
-      type: type,
-      attachmentName: name,
-      attachmentBytes: bytes,
-    ));
-    // Send via socket
-    context.read<ChatSocketBloc>().add(SendMessage(
-      conversationId: widget.conversationId,
-      type: type,
-      text: type == 'text' ? (type == 'image' ? '' : name) : null,
-      fileKey: type != 'text' ? name : null, // Should be real key after upload
-    ));
-  }
 
-  Future<void> _sendAttachment(BuildContext context, String path, String name, String type) async {
-    context.read<ChatBloc>().add(SendMessageEvent(
-      conversationId: widget.conversationId,
-      text: type == 'image' ? '' : name,
-      type: type,
-      attachmentPath: path,
-      attachmentName: name,
-    ));
-    // Send via socket
-    context.read<ChatSocketBloc>().add(SendMessage(
-      conversationId: widget.conversationId,
-      type: type,
-      text: type == 'text' ? (type == 'image' ? '' : name) : null,
-      fileKey: type != 'text' ? path : null, // Should be real key after upload
-    ));
-  }
 
   void _showLocationPicker(BuildContext ctx) {
     showModalBottomSheet(
@@ -645,7 +1725,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
             Row(
               children: [
-                Icon(CommonIcons.location, color: ctx.colors.success, size: 28),
+                Icon(CommonIcons.location, color: ctx.colors.primary, size: 28),
                 CommonSpaces.w12,
                 Text('Share Location', style: ctx.titleMedium),
               ],
@@ -672,7 +1752,7 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
                     ),
-                    Icon(CommonIcons.location, color: ctx.colors.error, size: 48),
+                    Icon(CommonIcons.location, color: ctx.colors.primary, size: 48),
                   ],
                 ),
               ),
@@ -682,11 +1762,18 @@ class _ChatPageState extends State<ChatPage> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: Icon(CommonIcons.myLocation),
+                    icon: Icon(CommonIcons.myLocation, color: ctx.colors.primary),
                     label: const Text('Current Location'),
                     onPressed: () {
                       Navigator.pop(ctx);
-                      _sendAttachment(ctx, 'location', 'My Location', 'location');
+                      setState(() {
+                        _selectedAttachmentPath = 'location';
+                        _selectedAttachmentName = 'My Location';
+                        _selectedAttachmentType = 'location';
+                        _selectedAttachmentBytes = null;
+                        _selectedAttachmentSize = 0;
+                        _isTyping = true;
+                      });
                     },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ctx.colors.primary,
@@ -753,7 +1840,14 @@ class _ChatPageState extends State<ChatPage> {
               trailing: TextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _sendAttachment(ctx, 'contact:${c['phone']}', '${c['name']} · ${c['phone']}', 'contact');
+                  setState(() {
+                    _selectedAttachmentPath = 'contact:${c['phone']}';
+                    _selectedAttachmentName = '${c['name']} · ${c['phone']}';
+                    _selectedAttachmentType = 'contact';
+                    _selectedAttachmentBytes = null;
+                    _selectedAttachmentSize = 0;
+                    _isTyping = true;
+                  });
                 },
                 child: Text('Send', style: ctx.bodyMedium.copyWith(color: ctx.colors.primary)),
               ),
@@ -762,6 +1856,161 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
       ),
+    );
+  }
+
+  List<Color> _generateHarmoniousColors(bool isDark) {
+    final random = Random();
+    return List.generate(10, (index) {
+      final double hue = random.nextDouble() * 360;
+      final double saturation = 0.4 + random.nextDouble() * 0.25; // 40% - 65%
+      final double lightness = isDark
+          ? 0.12 + random.nextDouble() * 0.08 // 12% - 20% for dark background readability
+          : 0.88 + random.nextDouble() * 0.06; // 88% - 94% for light background readability
+      return HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
+    });
+  }
+
+  void _showBackgroundColorBottomSheet(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorsList = _generateHarmoniousColors(isDark);
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: context.colors.scaffoldBackground,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            color: context.colors.textHint.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Choose Wallpaper',
+                            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(sheetCtx);
+                              // Reset to default
+                              _chatBloc.add(ChangeBackgroundColorEvent(
+                                color: context.colors.scaffoldBackground,
+                                conversationId: widget.conversationId,
+                              ));
+                              // Notify other user to reset as well
+                              context.read<ChatSocketBloc>().add(SendMessage(
+                                conversationId: widget.conversationId,
+                                type: 'change_background_color',
+                                text: context.colors.scaffoldBackground.toARGB32().toString(),
+                              ));
+                            },
+                            child: Text(
+                              'Reset',
+                              style: TextStyle(
+                                color: context.colors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      CommonSpaces.h8,
+                      Text(
+                        'Select a custom background color to personalize this chat.',
+                        style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                      ),
+                      CommonSpaces.h20,
+                      // Grid of 10 colors
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                        ),
+                        itemCount: colorsList.length,
+                        itemBuilder: (context, index) {
+                          final color = colorsList[index];
+                          final isSelected = _chatBloc.state is ChatLoaded &&
+                              (_chatBloc.state as ChatLoaded).customBgColor?.toARGB32() == color.toARGB32();
+                              
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pop(sheetCtx);
+                              
+                              // Local update and Hive save
+                              _chatBloc.add(ChangeBackgroundColorEvent(
+                                color: color,
+                                conversationId: widget.conversationId,
+                              ));
+                              
+                              // Send change via socket
+                              context.read<ChatSocketBloc>().add(SendMessage(
+                                conversationId: widget.conversationId,
+                                type: 'change_background_color',
+                                text: color.toARGB32().toString(),
+                              ));
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected ? context.colors.primary : Colors.transparent,
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: isSelected
+                                  ? Icon(
+                                      Icons.check_circle_rounded,
+                                      color: context.colors.primary,
+                                      size: 24,
+                                    )
+                                  : null,
+                            ),
+                          );
+                        },
+                      ),
+                      CommonSpaces.h12,
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

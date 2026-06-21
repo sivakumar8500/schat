@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 
 abstract class ChatState {
@@ -19,6 +20,7 @@ class ChatLoaded extends ChatState {
   final String myId;
   final bool isRecipientOnline;
   final bool isRecipientTyping;
+  final Color? customBgColor;
 
   const ChatLoaded({
     required this.messages,
@@ -27,6 +29,7 @@ class ChatLoaded extends ChatState {
     this.myId = '',
     this.isRecipientOnline = false,
     this.isRecipientTyping = false,
+    this.customBgColor,
   });
 
   ChatLoaded copyWith({
@@ -36,6 +39,7 @@ class ChatLoaded extends ChatState {
     String? myId,
     bool? isRecipientOnline,
     bool? isRecipientTyping,
+    Color? customBgColor,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
@@ -44,6 +48,7 @@ class ChatLoaded extends ChatState {
       myId: myId ?? this.myId,
       isRecipientOnline: isRecipientOnline ?? this.isRecipientOnline,
       isRecipientTyping: isRecipientTyping ?? this.isRecipientTyping,
+      customBgColor: customBgColor ?? this.customBgColor,
     );
   }
 }

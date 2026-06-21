@@ -10,14 +10,23 @@ import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:schat/utils/common_endpoints.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class ContactProfilePage extends StatefulWidget {
+  final String conversationId;
   final String contactName;
   final Color contactColor;
   final bool isOnline;
 
   const ContactProfilePage({
     super.key,
+    required this.conversationId,
     required this.contactName,
     required this.contactColor,
     required this.isOnline,
@@ -28,6 +37,141 @@ class ContactProfilePage extends StatefulWidget {
 }
 
 class _ContactProfilePageState extends State<ContactProfilePage> {
+  List<ChatMediaModel> _mediaList = [];
+  bool _isLoadingMedia = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSharedMedia();
+  }
+
+  Future<void> _fetchSharedMedia() async {
+    try {
+      final repo = getIt<ChatRepository>();
+      final list = await repo.getConversationMedia(widget.conversationId);
+      if (mounted) {
+        setState(() {
+          _mediaList = list;
+          _isLoadingMedia = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading shared media: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMedia = false;
+        });
+      }
+    }
+  }
+
+  String _resolveUrl(String rawUrl) {
+    String url = rawUrl;
+    if (url.contains('minio')) {
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty) {
+          url = url.replaceAll('minio', host);
+        }
+      } catch (_) {}
+    }
+    return url;
+  }
+
+  String _getThumbnailOrUrl(ChatMediaModel media) {
+    if (media.thumbnails.isNotEmpty) {
+      try {
+        final thumb = media.thumbnails.first;
+        if (thumb is Map && thumb.containsKey('url')) {
+          return _resolveUrl(thumb['url'].toString());
+        }
+      } catch (_) {}
+    }
+    return _resolveUrl(media.url);
+  }
+
+  Future<void> _launchMedia(ChatMediaModel media) async {
+    final rawUrl = media.url;
+    final resolved = _resolveUrl(rawUrl);
+    final uri = Uri.parse(resolved);
+    try {
+      final canLaunch = await canLaunchUrl(uri);
+      if (!mounted) return;
+      if (canLaunch) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        context.showErrorNotification('Could not open file URL');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      context.showErrorNotification('Error opening file: $e');
+    }
+  }
+
+  Widget _buildMediaCell(ChatMediaModel media, Color innerCardColor) {
+    final isImage = media.mediaType == 'CHAT_IMAGE' || media.mimeType.startsWith('image/');
+    final isVideo = media.mediaType == 'CHAT_VIDEO' || media.mimeType.startsWith('video/');
+    final isAudio = media.mediaType == 'VOICE_NOTE' || media.mimeType.startsWith('audio/');
+    
+    Widget content;
+    if (isImage) {
+      content = Image.network(
+        _getThumbnailOrUrl(media),
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => Center(
+          child: Icon(CommonIcons.brokenImage, color: context.colors.textHint, size: 24),
+        ),
+      );
+    } else if (isVideo) {
+      content = Container(
+        color: context.colors.lightBackground,
+        child: Center(
+          child: Icon(CommonIcons.playCircle, color: context.colors.primary, size: 28),
+        ),
+      );
+    } else if (isAudio) {
+      content = Container(
+        color: context.colors.lightBackground,
+        child: Center(
+          child: Icon(CommonIcons.audio, color: context.colors.primary, size: 28),
+        ),
+      );
+    } else {
+      content = Container(
+        color: context.colors.lightBackground,
+        child: Center(
+          child: Icon(CommonIcons.document, color: context.colors.primary, size: 28),
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: media.filename,
+      child: GestureDetector(
+        onTap: () => _launchMedia(media),
+        child: Container(
+          width: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+          height: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+          decoration: BoxDecoration(
+            color: innerCardColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: context.colors.border.withValues(alpha: 0.5),
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(11),
+            child: content,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cardBgColor = context.colors.cardBackground;
@@ -225,7 +369,18 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                             style: context.titleSmall,
                           ),
                           GestureDetector(
-                            onTap: () {},
+                            onTap: () {
+                              if (_isLoadingMedia) return;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SharedMediaPage(
+                                    conversationId: widget.conversationId,
+                                    initialMediaList: _mediaList,
+                                  ),
+                                ),
+                              );
+                            },
                             child: Text(
                               'View all',
                               style: context.bodyLarge.copyWith(
@@ -239,40 +394,64 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       ),
                       const SizedBox(height: CommonSizes.p16),
 
-                      // 4 Media Grid Thumbnails
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: List.generate(4, (index) {
-                          return Container(
-                            width: (MediaQuery.of(context).size.width - 48 - 36) / 4,
-                            height: (MediaQuery.of(context).size.width - 48 - 36) / 4,
-                            decoration: BoxDecoration(
-                              color: innerCardColor,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: context.colors.border.withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Center(
-                              child: Opacity(
-                                opacity: 0.1,
-                                child: GridView.builder(
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    mainAxisSpacing: 2,
-                                    crossAxisSpacing: 2,
-                                  ),
-                                  itemCount: 4,
-                                  itemBuilder: (_, index) => Container(
-                                    color: context.colors.textPrimary,
-                                  ),
+                      if (_isLoadingMedia)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(4, (index) {
+                            return Container(
+                              width: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+                              height: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+                              decoration: BoxDecoration(
+                                color: innerCardColor,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: context.colors.border.withValues(alpha: 0.5),
                                 ),
                               ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            );
+                          }),
+                        )
+                      else if (_mediaList.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          alignment: Alignment.center,
+                          child: Text(
+                            'No shared media',
+                            style: context.bodyMedium.copyWith(
+                              color: context.colors.textHint,
+                              fontStyle: FontStyle.italic,
                             ),
-                          );
-                        }),
-                      ),
+                          ),
+                        )
+                      else
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(4, (index) {
+                            if (index < _mediaList.length) {
+                              return _buildMediaCell(_mediaList[index], innerCardColor);
+                            } else {
+                              return Container(
+                                width: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+                                height: (MediaQuery.of(context).size.width - 48 - 36) / 4,
+                                decoration: BoxDecoration(
+                                  color: innerCardColor.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: context.colors.border.withValues(alpha: 0.2),
+                                  ),
+                                ),
+                              );
+                            }
+                          }),
+                        ),
                       const SizedBox(height: CommonSizes.p24),
 
                       // Settings Options Card

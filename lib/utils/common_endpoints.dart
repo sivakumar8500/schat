@@ -20,4 +20,10 @@ class CommonEndpoints {
   // Chats
   static const String getChats = '/chats/';
   static const String getMessages = '/messages/';
+
+  // Media Upload
+  static const String requestUpload = '/media/request-upload';
+  static String completeUpload(String mediaId) => '/media/$mediaId/complete';
+  static String getConversationMedia(String conversationId) => '/media/$conversationId';
 }
+

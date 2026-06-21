@@ -52,7 +52,7 @@ $Res call({
 });
 
 
-$RecipientModelCopyWith<$Res> get recipient;$LastMessageModelCopyWith<$Res>? get lastMessage;
+$RecipientModelCopyWith<$Res> get recipient;
 
 }
 /// @nodoc
@@ -86,18 +86,6 @@ $RecipientModelCopyWith<$Res> get recipient {
   
   return $RecipientModelCopyWith<$Res>(_self.recipient, (value) {
     return _then(_self.copyWith(recipient: value));
-  });
-}/// Create a copy of ChatModel
-/// with the given fields replaced by the non-null parameter values.
-@override
-@pragma('vm:prefer-inline')
-$LastMessageModelCopyWith<$Res>? get lastMessage {
-    if (_self.lastMessage == null) {
-    return null;
-  }
-
-  return $LastMessageModelCopyWith<$Res>(_self.lastMessage!, (value) {
-    return _then(_self.copyWith(lastMessage: value));
   });
 }
 }
@@ -286,7 +274,7 @@ $Res call({
 });
 
 
-@override $RecipientModelCopyWith<$Res> get recipient;@override $LastMessageModelCopyWith<$Res>? get lastMessage;
+@override $RecipientModelCopyWith<$Res> get recipient;
 
 }
 /// @nodoc
@@ -321,18 +309,6 @@ $RecipientModelCopyWith<$Res> get recipient {
   
   return $RecipientModelCopyWith<$Res>(_self.recipient, (value) {
     return _then(_self.copyWith(recipient: value));
-  });
-}/// Create a copy of ChatModel
-/// with the given fields replaced by the non-null parameter values.
-@override
-@pragma('vm:prefer-inline')
-$LastMessageModelCopyWith<$Res>? get lastMessage {
-    if (_self.lastMessage == null) {
-    return null;
-  }
-
-  return $LastMessageModelCopyWith<$Res>(_self.lastMessage!, (value) {
-    return _then(_self.copyWith(lastMessage: value));
   });
 }
 }

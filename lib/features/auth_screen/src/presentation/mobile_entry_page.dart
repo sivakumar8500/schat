@@ -8,6 +8,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 
@@ -87,13 +88,16 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                   builder: (context, constraints) {
                     return SingleChildScrollView(
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
                         child: IntrinsicHeight(
                           child: Column(
                             children: [
                               const Spacer(),
                               SizedBox(
-                                height: MediaQuery.of(context).size.height * 0.35,
+                                height:
+                                    MediaQuery.of(context).size.height * 0.35,
                                 child: Stack(
                                   children: [
                                     Positioned.fill(
@@ -113,7 +117,8 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                             begin: Alignment.topCenter,
                                             end: Alignment.bottomCenter,
                                             colors: [
-                                              context.colors.pureBlack.withValues(alpha: 0),
+                                              context.colors.pureBlack
+                                                  .withValues(alpha: 0),
                                               context.colors.pureBlack,
                                             ],
                                           ),
@@ -125,7 +130,9 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                               ),
                               CommonSpaces.h20,
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32.0,
+                                ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,15 +145,31 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                               children: [
                                                 TextSpan(
                                                   text: "Let's ",
-                                                  style: context.h1.copyWith(fontSize: 36, color: context.colors.pureWhite),
+                                                  style: context.h1.copyWith(
+                                                    fontSize: 36,
+                                                    color: context
+                                                        .colors
+                                                        .pureWhite,
+                                                  ),
                                                 ),
                                                 TextSpan(
                                                   text: "get ",
-                                                  style: context.h1Italic.copyWith(fontSize: 34, color: context.colors.pureWhite),
+                                                  style: context.h1Italic
+                                                      .copyWith(
+                                                        fontSize: 34,
+                                                        color: context
+                                                            .colors
+                                                            .pureWhite,
+                                                      ),
                                                 ),
                                                 TextSpan(
                                                   text: "you in.",
-                                                  style: context.h1.copyWith(fontSize: 36, color: context.colors.pureWhite),
+                                                  style: context.h1.copyWith(
+                                                    fontSize: 36,
+                                                    color: context
+                                                        .colors
+                                                        .pureWhite,
+                                                  ),
                                                 ),
                                               ],
                                             ),
@@ -157,57 +180,93 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                     CommonSpaces.h24,
                                     Text(
                                       'Phone number',
-                                      style: context.titleSmall.copyWith(color: context.colors.pureWhite),
+                                      style: context.titleSmall.copyWith(
+                                        color: context.colors.pureWhite,
+                                      ),
                                     ),
                                     CommonSpaces.h12,
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                                          decoration: BoxDecoration(
-                                            color: fieldBgColor,
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text('🇮🇳', style: context.bodyLarge.copyWith(fontSize: 22)),
-                                              CommonSpaces.w8,
-                                              Text(
-                                                '+91',
-                                                style: context.titleSmall.copyWith(color: context.colors.pureWhite),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        CommonSpaces.w12,
-                                        Expanded(
-                                          child: Container(
+                                    SizedBox(
+                                      height: CommonSizes.p40,
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 6,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: fieldBgColor,
-                                              borderRadius: BorderRadius.circular(16),
+                                              borderRadius: BorderRadius.circular(
+                                                16,
+                                              ),
                                             ),
-                                            child: TextField(
-                                              controller: _mobileController,
-                                              keyboardType: TextInputType.phone,
-                                              maxLength: 10,
-                                              style: context.titleSmall.copyWith(color: context.colors.pureWhite),
-                                              decoration: InputDecoration(
-                                                hintText: '000 000 0000',
-                                                counterText: '',
-                                                hintStyle: context.bodyMedium.copyWith(
-                                                  color: context.colors.pureWhite.withValues(alpha: 0.4),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  '🇮🇳',
+                                                  style: context.bodyLarge
+                                                      .copyWith(fontSize: 22),
                                                 ),
-                                                border: OutlineInputBorder(
-                                                  borderRadius: BorderRadius.circular(16),
-                                                  borderSide: BorderSide.none,
+                                                CommonSpaces.w8,
+                                                Text(
+                                                  '+91',
+                                                  style: context.titleSmall
+                                                      .copyWith(
+                                                        color: context
+                                                            .colors
+                                                            .pureWhite,
+                                                      ),
                                                 ),
-                                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                                              ],
+                                            ),
+                                          ),
+                                          CommonSpaces.w12,
+                                          Expanded(
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: fieldBgColor,
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                              ),
+                                              child: TextField(
+                                                controller: _mobileController,
+                                                keyboardType: TextInputType.phone,
+                                                maxLength: 10,
+                                                style: context.titleSmall
+                                                    .copyWith(
+                                                      color: context
+                                                          .colors
+                                                          .pureWhite,
+                                                    ),
+                                                decoration: InputDecoration(
+                                                  hintText: '000 000 0000',
+                                                  counterText: '',
+                                                  hintStyle: context.bodyMedium
+                                                      .copyWith(
+                                                        color: context
+                                                            .colors
+                                                            .pureWhite
+                                                            .withValues(
+                                                              alpha: 0.4,
+                                                            ),
+                                                      ),
+                                                  border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(16),
+                                                    borderSide: BorderSide.none,
+                                                  ),
+                                                  contentPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 20,
+                                                        vertical: 6,
+                                                      ),
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -230,11 +289,15 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                           width: double.infinity,
                           height: 46,
                           child: ElevatedButton(
-                            onPressed: isLoading ? null : () => _sendOtp(context),
+                            onPressed: isLoading
+                                ? null
+                                : () => _sendOtp(context),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: context.colors.primary,
                               foregroundColor: context.colors.pureWhite,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
                               elevation: 0,
                             ),
                             child: Row(
@@ -242,13 +305,23 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                               children: [
                                 Text(
                                   'Continue',
-                                  style: context.titleMedium.copyWith(color: context.colors.pureWhite, fontWeight: FontWeight.w600),
+                                  style: context.titleMedium.copyWith(
+                                    color: context.colors.pureWhite,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                                 CommonSpaces.w8,
                                 Container(
                                   padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(color: context.colors.pureWhite, shape: BoxShape.circle),
-                                  child: Icon(CommonIcons.arrowForward, color: context.colors.primary, size: 16),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.pureWhite,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    CommonIcons.arrowForward,
+                                    color: context.colors.primary,
+                                    size: 16,
+                                  ),
                                 ),
                               ],
                             ),
@@ -259,11 +332,28 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                           child: Text.rich(
                             TextSpan(
                               text: 'By continuing you agree to our\n',
-                              style: context.bodyMedium.copyWith(color: context.colors.pureWhite.withValues(alpha: 0.5), height: 1.4),
+                              style: context.bodyMedium.copyWith(
+                                color: context.colors.pureWhite.withValues(
+                                  alpha: 0.5,
+                                ),
+                                height: 1.4,
+                              ),
                               children: [
-                                TextSpan(text: 'Terms', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
+                                TextSpan(
+                                  text: 'Terms',
+                                  style: context.bodyMedium.copyWith(
+                                    color: context.colors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                                 const TextSpan(text: ' & '),
-                                TextSpan(text: 'Privacy Policy', style: context.bodyMedium.copyWith(color: context.colors.primary, fontWeight: FontWeight.bold)),
+                                TextSpan(
+                                  text: 'Privacy Policy',
+                                  style: context.bodyMedium.copyWith(
+                                    color: context.colors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
                             textAlign: TextAlign.center,

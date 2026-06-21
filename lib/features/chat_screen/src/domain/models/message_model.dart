@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class MessageModel {
   final String id;
   final String conversationId;
@@ -9,6 +11,18 @@ class MessageModel {
   final bool isRead;
   final String createdAt;
   final String updatedAt;
+  
+  // New features support
+  final bool isReply;
+  final String? replyMessageId;
+  final String? replyMessageBody;
+  final bool isEdited;
+  final bool isPinned;
+
+  // Background upload tracking
+  final Uint8List? attachmentBytes;
+  final String? attachmentName;
+  final bool isUploading;
 
   const MessageModel({
     required this.id,
@@ -21,6 +35,14 @@ class MessageModel {
     this.isRead = false,
     required this.createdAt,
     required this.updatedAt,
+    this.isReply = false,
+    this.replyMessageId,
+    this.replyMessageBody,
+    this.isEdited = false,
+    this.isPinned = false,
+    this.attachmentBytes,
+    this.attachmentName,
+    this.isUploading = false,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -44,10 +66,24 @@ class MessageModel {
       content: contentText,
       mediaUrl: mediaUrl,
       mediaType: mediaType ?? (json['media_type'] as String?),
-      isDeleted: (json['isDeleted'] ?? json['is_deleted']) as bool? ?? false,
+      isDeleted: (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false,
       isRead: (json['isRead'] ?? json['is_read']) as bool? ?? false,
-      createdAt: (json['createdAt'] ?? json['created_at']) as String? ?? '',
-      updatedAt: (json['updatedAt'] ?? json['updated_at']) as String? ?? '',
+      createdAt: (json['createdAt'] ?? json['created_at'])?.toString() ?? '',
+      updatedAt: (json['updatedAt'] ?? json['updated_at'])?.toString() ?? '',
+      isReply: (json['isReply'] ?? json['is_reply']) as bool? ?? false,
+      replyMessageId: (json['replyMessageId'] ?? json['reply_message_id'])?.toString(),
+      replyMessageBody: () {
+        final dynamic body = json['replyMessageBody'] ?? json['reply_message_body'];
+        if (body is Map) {
+          return (body['text'] ?? body['content'] ?? '')?.toString();
+        }
+        return body?.toString();
+      }(),
+      isEdited: (json['isEdited'] ?? json['is_edited']) as bool? ?? false,
+      isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
+      attachmentBytes: null,
+      attachmentName: null,
+      isUploading: false,
     );
   }
 
@@ -64,6 +100,11 @@ class MessageModel {
     'isRead': isRead,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
+    'isReply': isReply,
+    'replyMessageId': replyMessageId,
+    'replyMessageBody': replyMessageBody,
+    'isEdited': isEdited,
+    'isPinned': isPinned,
   };
 
   MessageModel copyWith({
@@ -77,6 +118,14 @@ class MessageModel {
     bool? isRead,
     String? createdAt,
     String? updatedAt,
+    bool? isReply,
+    String? replyMessageId,
+    String? replyMessageBody,
+    bool? isEdited,
+    bool? isPinned,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
+    bool? isUploading,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -89,6 +138,14 @@ class MessageModel {
       isRead: isRead ?? this.isRead,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isReply: isReply ?? this.isReply,
+      replyMessageId: replyMessageId ?? this.replyMessageId,
+      replyMessageBody: replyMessageBody ?? this.replyMessageBody,
+      isEdited: isEdited ?? this.isEdited,
+      isPinned: isPinned ?? this.isPinned,
+      attachmentBytes: attachmentBytes ?? this.attachmentBytes,
+      attachmentName: attachmentName ?? this.attachmentName,
+      isUploading: isUploading ?? this.isUploading,
     );
   }
 }

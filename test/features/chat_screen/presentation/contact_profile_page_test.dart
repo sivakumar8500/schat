@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/contact_profile_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
@@ -11,13 +12,21 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 class MockChatBloc extends MockBloc<ChatEvent, ChatState> implements ChatBloc {}
+class MockChatRepository extends Mock implements ChatRepository {}
 
 void main() {
   late MockChatBloc mockChatBloc;
+  late MockChatRepository mockChatRepository;
 
   setUp(() async {
     await getIt.reset();
     getIt.registerSingleton<ThemeController>(ThemeController());
+    mockChatRepository = MockChatRepository();
+    getIt.registerSingleton<ChatRepository>(mockChatRepository);
+    
+    when(() => mockChatRepository.getConversationMedia(any()))
+        .thenAnswer((_) async => []);
+
     mockChatBloc = MockChatBloc();
     
     when(() => mockChatBloc.state).thenReturn(const ChatLoaded(messages: []));
@@ -28,6 +37,7 @@ void main() {
       home: BlocProvider<ChatBloc>.value(
         value: mockChatBloc,
         child: const ContactProfilePage(
+          conversationId: 'test_conv_id',
           contactName: 'Olive Grant',
           contactColor: Colors.pinkAccent,
           isOnline: true,

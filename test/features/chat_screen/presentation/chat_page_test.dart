@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
@@ -35,6 +37,7 @@ void main() {
   late MockChatSocketRepository mockChatSocketRepository;
   late MockConnectSocketUseCase mockConnectSocketUseCase;
   late MockStorageService mockStorageService;
+  late Directory tempDir;
 
   setUp(() async {
     await getIt.reset();
@@ -49,7 +52,19 @@ void main() {
     getIt.registerFactory<ChatSocketBloc>(() => ChatSocketBloc(mockConnectSocketUseCase, mockChatSocketRepository));
 
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
+    when(() => mockChatSocketRepository.sendReadReceipt(any(), any())).thenAnswer((_) {});
     when(() => mockStorageService.getUserId()).thenReturn('my_id');
+
+    // Initialize Hive to a temporary directory for test environment
+    tempDir = await Directory.systemTemp.createTemp();
+    Hive.init(tempDir.path);
+  });
+
+  tearDown(() async {
+    await Hive.close();
+    if (await tempDir.exists()) {
+      await tempDir.delete(recursive: true);
+    }
   });
 
   Widget createWidgetUnderTest() {
@@ -82,10 +97,15 @@ void main() {
       ],
     );
 
-    await tester.pumpWidget(createWidgetUnderTest());
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-    await tester.pumpAndSettle();
+      // Wait for Hive disk I/O and async repository call to complete
+      await Future.delayed(const Duration(milliseconds: 500));
+      await tester.pump();
+    });
+
     expect(find.text('Hello'), findsOneWidget);
     expect(find.text('Alice'), findsWidgets);
   });

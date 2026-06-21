@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 
 abstract class ChatEvent {
   const ChatEvent();
@@ -18,6 +19,8 @@ class SendMessageEvent extends ChatEvent {
   final String? attachmentPath;
   final String? attachmentName;
   final Uint8List? attachmentBytes;
+  final String? replyMessageId;
+  final String? replyMessageBody;
 
   const SendMessageEvent({
     required this.conversationId,
@@ -26,6 +29,8 @@ class SendMessageEvent extends ChatEvent {
     this.attachmentPath,
     this.attachmentName,
     this.attachmentBytes,
+    this.replyMessageId,
+    this.replyMessageBody,
   });
 }
 
@@ -60,4 +65,44 @@ class MarkMessageReadEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
   const MarkMessageReadEvent({required this.messageId, required this.conversationId});
+}
+
+class DeleteMessagesEvent extends ChatEvent {
+  final List<String> messageIds;
+  final String conversationId;
+  final String deleteType; // 'me' or 'everyone'
+  const DeleteMessagesEvent({required this.messageIds, required this.conversationId, required this.deleteType});
+}
+
+class EditMessageEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final String newContent;
+  const EditMessageEvent({required this.messageId, required this.conversationId, required this.newContent});
+}
+
+class PinMessageEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final bool isPinned;
+  const PinMessageEvent({required this.messageId, required this.conversationId, required this.isPinned});
+}
+
+class ReceiveDeleteMessageEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  const ReceiveDeleteMessageEvent({required this.messageId, required this.conversationId});
+}
+
+class ReceiveEditMessageEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final String newContent;
+  const ReceiveEditMessageEvent({required this.messageId, required this.conversationId, required this.newContent});
+}
+
+class ChangeBackgroundColorEvent extends ChatEvent {
+  final Color color;
+  final String conversationId;
+  const ChangeBackgroundColorEvent({required this.color, required this.conversationId});
 }

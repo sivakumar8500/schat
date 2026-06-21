@@ -99,4 +99,9 @@ class CommonIcons {
   static const IconData checkCircleOutline = Icons.check_circle_outline;
   static const IconData infoOutline = Icons.info_outline;
   static const IconData downloading = Icons.downloading;
+  static const IconData copy = Icons.copy;
+  static const IconData reply = Icons.reply;
+  static const IconData pin = Icons.pin_drop;
+  static const IconData forward = Icons.forward;
+  static const IconData selectAll = Icons.select_all;
 }

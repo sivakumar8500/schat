@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -38,6 +39,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateUserStatusEvent>(_onUpdateUserStatus);
     on<UpdateTypingIndicatorEvent>(_onUpdateTypingIndicator);
     on<MarkMessageReadEvent>(_onMarkMessageRead);
+    on<DeleteMessagesEvent>(_onDeleteMessages);
+    on<EditMessageEvent>(_onEditMessage);
+    on<PinMessageEvent>(_onPinMessage);
+    on<ReceiveDeleteMessageEvent>(_onReceiveDeleteMessage);
+    on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
+    on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
 
     _listenToSocket();
   }
@@ -49,15 +56,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     return s1 == s2;
   }
 
+  Map<String, dynamic> _cleanMap(Map<dynamic, dynamic> map) {
+    final Map<String, dynamic> result = {};
+    map.forEach((key, val) {
+      final k = key.toString();
+      if (val is Map) {
+        result[k] = _cleanMap(val);
+      } else if (val is List) {
+        result[k] = val.map((item) => item is Map ? _cleanMap(item) : item).toList();
+      } else {
+        result[k] = val;
+      }
+    });
+    return result;
+  }
+
   void _listenToSocket() {
     _socketSubscription = _socketRepository.onMessage.listen((data) {
       debugPrint('DEBUG: ChatBloc RECEIVED DATA: $data');
       
       if (data is Map) {
-        final type = data['type']?.toString();
+        final cleanData = _cleanMap(data);
+        final type = cleanData['type']?.toString();
         
         if (type == 'new_message' || type == 'message') {
-          final message = data['message'] ?? (data.containsKey('id') ? data : null);
+          final message = cleanData['message'] ?? (cleanData.containsKey('id') ? cleanData : null);
           if (message is Map) {
             final msgData = Map<String, dynamic>.from(message);
             final msgConvId = (msgData['conversationId'] ?? msgData['conversation_id'] ?? msgData['conversation'])?.toString();
@@ -71,8 +94,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             }
           }
         } else if (type == 'user_typing' || type == 'typing') {
-          final convId = (data['conversationId'] ?? data['conversation_id'])?.toString();
-          final isTypingField = data['is_typing'] ?? data['isTyping'];
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final isTypingField = cleanData['is_typing'] ?? cleanData['isTyping'];
           final isTyping = isTypingField is bool ? isTypingField : true;
           
           if (_isSameConversation(convId, _conversationId)) {
@@ -82,20 +105,47 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             ));
           }
         } else if (type == 'message_read' || type == 'read_receipt' || type == 'message_opened') {
-          final convId = (data['conversationId'] ?? data['conversation_id'])?.toString();
-          final msgId = (data['messageId'] ?? data['message_id'] ?? data['id'])?.toString();
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(MarkMessageReadEvent(messageId: msgId, conversationId: convId!));
           }
+        } else if (type == 'delete_message') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(ReceiveDeleteMessageEvent(messageId: msgId, conversationId: convId!));
+          }
+        } else if (type == 'edit_message') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'] ?? cleanData['id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final contentMap = cleanData['content'];
+          final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
+            add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent));
+          }
         } else if (type == 'user_status') {
-          final userId = (data['user_id'] ?? data['id'] ?? data['sender_id'])?.toString();
-          final status = data['status']?.toString();
+          final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])?.toString();
+          final status = cleanData['status']?.toString();
           debugPrint('DEBUG: Status Match Check - Event User: $userId, Current Recipient: $_recipientId, Status: $status');
           if (userId == _recipientId) {
             add(UpdateUserStatusEvent(
               userId: userId ?? '',
               isOnline: status == 'online',
             ));
+          }
+        } else if (type == 'change_background_color') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final contentMap = cleanData['content'];
+          final colorStr = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
+          if (_isSameConversation(convId, _conversationId) && colorStr != null) {
+            final colorVal = int.tryParse(colorStr);
+            if (colorVal != null) {
+              add(ChangeBackgroundColorEvent(
+                color: Color(colorVal),
+                conversationId: convId!,
+              ));
+            }
           }
         } else if (type == 'pong') {
           debugPrint('DEBUG: ChatBloc received Heartbeat PONG');
@@ -127,11 +177,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
+      Color? savedColor;
+      try {
+        final bgBox = await Hive.openBox('chat_backgrounds');
+        final cachedColorVal = bgBox.get(event.conversationId);
+        if (cachedColorVal != null) {
+          savedColor = Color(cachedColorVal);
+        }
+      } catch (e) {
+        debugPrint('Error loading saved background color: $e');
+      }
+
       emit(ChatLoaded(
         messages: messages,
         myId: myId,
         isRecipientOnline: _currentIsOnline,
         isRecipientTyping: _currentIsTyping,
+        customBgColor: savedColor,
       ));
     } catch (e) {
       emit(ChatError(errorMessage: e.toString()));
@@ -152,6 +214,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isDeleted: false,
         createdAt: now,
         updatedAt: now,
+        isReply: event.replyMessageId != null,
+        replyMessageId: event.replyMessageId,
+        replyMessageBody: event.replyMessageBody,
+        attachmentBytes: event.attachmentBytes,
+        attachmentName: event.attachmentName,
+        isUploading: event.type != 'text' && event.type != 'location' && event.type != 'contact',
       );
 
       final updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);
@@ -168,7 +236,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         debugPrint('DEBUG: Decoded new message. ID=${newMessage.id}, sender=${newMessage.senderId}, myId=${currentState.myId}');
         
         if (newMessage.senderId == currentState.myId && newMessage.senderId.isNotEmpty) {
-          debugPrint('DEBUG: Message ignored because senderId matches myId');
+          debugPrint('DEBUG: Message is from me, updating temp message with real ID');
+          final updatedMessages = List<MessageModel>.from(currentState.messages);
+          int index = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_') && msg.content == newMessage.content);
+          if (index != -1) {
+            updatedMessages[index] = newMessage;
+            emit(currentState.copyWith(messages: updatedMessages));
+          } else {
+            int lastTempIndex = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
+            if (lastTempIndex != -1) {
+              updatedMessages[lastTempIndex] = newMessage;
+              emit(currentState.copyWith(messages: updatedMessages));
+            }
+          }
           return;
         }
 
@@ -239,6 +319,109 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  void _onDeleteMessages(DeleteMessagesEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (event.messageIds.contains(msg.id)) {
+          return msg.copyWith(isDeleted: true, content: 'This message was deleted');
+        }
+        return msg;
+      }).toList();
+
+      for (var id in event.messageIds) {
+        _socketRepository.emit('message', {
+          'type': 'delete_message',
+          'conversationId': event.conversationId,
+          'conversation_id': event.conversationId,
+          'messageId': id,
+          'message_id': id,
+          'deleteType': event.deleteType,
+          'delete_type': event.deleteType,
+        });
+      }
+
+      emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  void _onEditMessage(EditMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(content: event.newContent, isEdited: true);
+        }
+        return msg;
+      }).toList();
+
+      _socketRepository.emit('message', {
+        'type': 'edit_message',
+        'conversationId': event.conversationId,
+        'conversation_id': event.conversationId,
+        'messageId': event.messageId,
+        'message_id': event.messageId,
+        'content': {
+          'text': event.newContent,
+        }
+      });
+
+      emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  void _onPinMessage(PinMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(isPinned: event.isPinned);
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  void _onReceiveDeleteMessage(ReceiveDeleteMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(isDeleted: true, content: 'This message was deleted');
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  void _onReceiveEditMessage(ReceiveEditMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(content: event.newContent, isEdited: true);
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+    }
+  }
+
+  Future<void> _onChangeBackgroundColor(ChangeBackgroundColorEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      try {
+        final bgBox = await Hive.openBox('chat_backgrounds');
+        await bgBox.put(event.conversationId, event.color.toARGB32());
+      } catch (e) {
+        debugPrint('Error saving background color: $e');
+      }
+      emit(currentState.copyWith(customBgColor: event.color));
     }
   }
 
