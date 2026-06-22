@@ -23,6 +23,12 @@ class MessageModel {
   final Uint8List? attachmentBytes;
   final String? attachmentName;
   final bool isUploading;
+  final int? fileSize;
+
+  // Attachment permissions
+  final bool allowShare;
+  final bool allowDownload;
+  final bool allowView;
 
   const MessageModel({
     required this.id,
@@ -43,6 +49,10 @@ class MessageModel {
     this.attachmentBytes,
     this.attachmentName,
     this.isUploading = false,
+    this.allowShare = true,
+    this.allowDownload = true,
+    this.allowView = true,
+    this.fileSize,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -58,6 +68,31 @@ class MessageModel {
       contentText = contentData;
       mediaUrl = (json['media_url'] ?? json['url']) as String?;
     }
+
+    final viewControl = json['viewControl'] ?? json['view_control'] ?? json['security'];
+    bool allowShare = true;
+    bool allowDownload = true;
+    bool allowView = true;
+
+    if (viewControl is Map) {
+      allowShare = (viewControl['allowShare'] ?? viewControl['allow_share'] ?? true) as bool;
+      allowDownload = (viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true) as bool;
+      allowView = (viewControl['allowView'] ?? viewControl['allow_view'] ?? true) as bool;
+    } else {
+      allowShare = (json['allowShare'] ?? json['allow_share'] ?? true) as bool;
+      allowDownload = (json['allowDownload'] ?? json['allow_download'] ?? true) as bool;
+      allowView = (json['allowView'] ?? json['allow_view'] ?? true) as bool;
+    }
+
+    int? fileSize;
+    final dynamic rawFileSize = json['fileSize'] ?? json['file_size'] ?? json['file_size_bytes'] ?? 
+        (contentData is Map ? (contentData['fileSize'] ?? contentData['file_size']) : null);
+    if (rawFileSize != null) {
+      fileSize = int.tryParse(rawFileSize.toString());
+    }
+
+    final String? parsedAttachmentName = (json['attachmentName'] ?? json['attachment_name'] ?? json['file_name'] ?? 
+        (contentData is Map ? (contentData['fileName'] ?? contentData['file_name'] ?? contentData['name']) : null)) as String?;
 
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
@@ -82,8 +117,12 @@ class MessageModel {
       isEdited: (json['isEdited'] ?? json['is_edited']) as bool? ?? false,
       isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
       attachmentBytes: null,
-      attachmentName: null,
+      attachmentName: parsedAttachmentName,
       isUploading: false,
+      allowShare: allowShare,
+      allowDownload: allowDownload,
+      allowView: allowView,
+      fileSize: fileSize,
     );
   }
 
@@ -94,6 +133,8 @@ class MessageModel {
     'content': {
       'text': content,
       'fileKey': mediaUrl,
+      if (attachmentName != null) 'fileName': attachmentName,
+      if (fileSize != null) 'fileSize': fileSize,
     },
     'type': mediaType,
     'isDeleted': isDeleted,
@@ -105,6 +146,13 @@ class MessageModel {
     'replyMessageBody': replyMessageBody,
     'isEdited': isEdited,
     'isPinned': isPinned,
+    'attachmentName': attachmentName,
+    'fileSize': fileSize,
+    'viewControl': {
+      'allowShare': allowShare,
+      'allowDownload': allowDownload,
+      'allowView': allowView,
+    },
   };
 
   MessageModel copyWith({
@@ -126,6 +174,10 @@ class MessageModel {
     Uint8List? attachmentBytes,
     String? attachmentName,
     bool? isUploading,
+    bool? allowShare,
+    bool? allowDownload,
+    bool? allowView,
+    int? fileSize,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -146,6 +198,10 @@ class MessageModel {
       attachmentBytes: attachmentBytes ?? this.attachmentBytes,
       attachmentName: attachmentName ?? this.attachmentName,
       isUploading: isUploading ?? this.isUploading,
+      allowShare: allowShare ?? this.allowShare,
+      allowDownload: allowDownload ?? this.allowDownload,
+      allowView: allowView ?? this.allowView,
+      fileSize: fileSize ?? this.fileSize,
     );
   }
 }

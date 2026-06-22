@@ -45,6 +45,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveDeleteMessageEvent>(_onReceiveDeleteMessage);
     on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
+    on<UpdateAttachmentPermissionsEvent>(_onUpdateAttachmentPermissions);
 
     _listenToSocket();
   }
@@ -147,6 +148,22 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               ));
             }
           }
+        } else if (type == 'update_attachment_permissions') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final viewControlMap = cleanData['viewControl'] ?? cleanData['view_control'] ?? cleanData;
+          final allowShare = viewControlMap['allowShare'] ?? viewControlMap['allow_share'] ?? true;
+          final allowDownload = viewControlMap['allowDownload'] ?? viewControlMap['allow_download'] ?? true;
+          final allowView = viewControlMap['allowView'] ?? viewControlMap['allow_view'] ?? true;
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(UpdateAttachmentPermissionsEvent(
+              messageId: msgId,
+              conversationId: convId!,
+              allowShare: allowShare == true,
+              allowDownload: allowDownload == true,
+              allowView: allowView == true,
+            ));
+          }
         } else if (type == 'pong') {
           debugPrint('DEBUG: ChatBloc received Heartbeat PONG');
         } else {
@@ -165,11 +182,48 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _recipientId = event.recipientId;
     _currentIsOnline = event.initialIsOnline ?? false;
 
-    emit(const ChatLoading());
+    final myId = _storageService.getUserId() ?? '';
+    Color? savedColor;
+    
+    // 1. Try loading from cache first
+    List<MessageModel> cachedMessages = [];
     try {
-      final myId = _storageService.getUserId() ?? '';
+      final msgBox = await Hive.openBox('cached_messages');
+      final List<dynamic>? cachedList = msgBox.get(event.conversationId);
+      if (cachedList != null) {
+        cachedMessages = cachedList
+            .map((item) => MessageModel.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList();
+      }
+
+      final bgBox = await Hive.openBox('chat_backgrounds');
+      final cachedColorVal = bgBox.get(event.conversationId);
+      if (cachedColorVal != null) {
+        savedColor = Color(cachedColorVal);
+      }
+    } catch (e) {
+      debugPrint('Error loading cached messages: $e');
+    }
+
+    if (cachedMessages.isNotEmpty) {
+      emit(ChatLoaded(
+        messages: cachedMessages,
+        myId: myId,
+        isRecipientOnline: _currentIsOnline,
+        isRecipientTyping: _currentIsTyping,
+        customBgColor: savedColor,
+      ));
+    } else {
+      emit(const ChatLoading());
+    }
+
+    // 2. Fetch fresh messages from API in background
+    try {
       final messages = await _chatRepository.getMessages(event.conversationId);
       
+      // Save fresh messages to cache
+      _saveToCache(event.conversationId, messages);
+
       // Mark unread messages from recipient as read
       for (var msg in messages) {
         if (msg.senderId != myId && !msg.isRead) {
@@ -177,26 +231,24 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
-      Color? savedColor;
-      try {
-        final bgBox = await Hive.openBox('chat_backgrounds');
-        final cachedColorVal = bgBox.get(event.conversationId);
-        if (cachedColorVal != null) {
-          savedColor = Color(cachedColorVal);
-        }
-      } catch (e) {
-        debugPrint('Error loading saved background color: $e');
+      final currentState = state;
+      if (currentState is ChatLoaded) {
+        emit(currentState.copyWith(messages: messages));
+      } else {
+        emit(ChatLoaded(
+          messages: messages,
+          myId: myId,
+          isRecipientOnline: _currentIsOnline,
+          isRecipientTyping: _currentIsTyping,
+          customBgColor: savedColor,
+        ));
       }
-
-      emit(ChatLoaded(
-        messages: messages,
-        myId: myId,
-        isRecipientOnline: _currentIsOnline,
-        isRecipientTyping: _currentIsTyping,
-        customBgColor: savedColor,
-      ));
     } catch (e) {
-      emit(ChatError(errorMessage: e.toString()));
+      if (state is! ChatLoaded) {
+        emit(ChatError(errorMessage: e.toString()));
+      } else {
+        debugPrint('Error reloading messages from API: $e');
+      }
     }
   }
 
@@ -220,10 +272,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         attachmentBytes: event.attachmentBytes,
         attachmentName: event.attachmentName,
         isUploading: event.type != 'text' && event.type != 'location' && event.type != 'contact',
+        allowShare: event.allowShare,
+        allowDownload: event.allowDownload,
+        allowView: event.allowView,
+        fileSize: event.fileSize,
       );
 
       final updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -242,11 +299,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (index != -1) {
             updatedMessages[index] = newMessage;
             emit(currentState.copyWith(messages: updatedMessages));
+            _saveToCache(_conversationId!, updatedMessages);
           } else {
             int lastTempIndex = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
             if (lastTempIndex != -1) {
               updatedMessages[lastTempIndex] = newMessage;
               emit(currentState.copyWith(messages: updatedMessages));
+              _saveToCache(_conversationId!, updatedMessages);
             }
           }
           return;
@@ -262,6 +321,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           messages: updatedMessages,
           isRecipientTyping: false,
         ));
+        _saveToCache(_conversationId!, updatedMessages);
         _typingTimer?.cancel();
       } catch (e) {
         debugPrint('Error parsing incoming message: $e');
@@ -319,6 +379,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -345,6 +406,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
 
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -370,6 +432,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       });
 
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -383,6 +446,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -396,6 +460,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -409,6 +474,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 
@@ -423,6 +489,33 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
       emit(currentState.copyWith(customBgColor: event.color));
     }
+  }
+
+  void _onUpdateAttachmentPermissions(UpdateAttachmentPermissionsEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(
+            allowShare: event.allowShare,
+            allowDownload: event.allowDownload,
+            allowView: event.allowView,
+          );
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _saveToCache(String conversationId, List<MessageModel> messages) {
+    Hive.openBox('cached_messages').then((box) {
+      final serializable = messages.map((m) => m.toJson()).toList();
+      box.put(conversationId, serializable);
+    }).catchError((e) {
+      debugPrint('Error saving to cache: $e');
+    });
   }
 
   @override

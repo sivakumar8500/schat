@@ -21,6 +21,10 @@ class SendMessageEvent extends ChatEvent {
   final Uint8List? attachmentBytes;
   final String? replyMessageId;
   final String? replyMessageBody;
+  final bool allowShare;
+  final bool allowDownload;
+  final bool allowView;
+  final int? fileSize;
 
   const SendMessageEvent({
     required this.conversationId,
@@ -31,6 +35,10 @@ class SendMessageEvent extends ChatEvent {
     this.attachmentBytes,
     this.replyMessageId,
     this.replyMessageBody,
+    this.allowShare = true,
+    this.allowDownload = true,
+    this.allowView = true,
+    this.fileSize,
   });
 }
 
@@ -105,4 +113,20 @@ class ChangeBackgroundColorEvent extends ChatEvent {
   final Color color;
   final String conversationId;
   const ChangeBackgroundColorEvent({required this.color, required this.conversationId});
+}
+
+class UpdateAttachmentPermissionsEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final bool allowShare;
+  final bool allowDownload;
+  final bool allowView;
+
+  const UpdateAttachmentPermissionsEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.allowShare,
+    required this.allowDownload,
+    required this.allowView,
+  });
 }

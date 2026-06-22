@@ -20,7 +20,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:typed_data';
 import 'package:schat/features/chat_screen/src/presentation/widgets/message_bubble.dart';
 import 'package:schat/features/chat_screen/src/presentation/contact_profile_page.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
@@ -73,6 +72,10 @@ class _ChatPageState extends State<ChatPage> {
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
+  bool _attachmentAllowShare = true;
+  bool _attachmentAllowDownload = true;
+  bool _attachmentAllowView = true;
+  Offset? _tapPosition;
 
   @override
   void initState() {
@@ -297,142 +300,115 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showMessageMenu(BuildContext context, MessageModel msg, bool isMe) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) {
-        return Container(
-          decoration: BoxDecoration(
-            color: context.colors.scaffoldBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: SafeArea(
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                    decoration: BoxDecoration(
-                      color: context.colors.textHint.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            msg.content,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.bodyMedium.copyWith(
-                              color: context.colors.textSecondary,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Divider(color: context.colors.primary.withValues(alpha: 0.3)),
-                  _menuTile(context, CommonIcons.reply, 'Reply', () {
-                    Navigator.pop(sheetCtx);
-                    setState(() {
-                      _replyingToMessage = msg;
-                      _editingMessage = null;
-                    });
-                  }),
-                  _menuTile(context, CommonIcons.copy, 'Copy', () {
-                    Navigator.pop(sheetCtx);
-                    Clipboard.setData(ClipboardData(text: msg.content));
-                    context.showSuccessNotification('Message copied to clipboard');
-                  }),
-                  if (isMe)
-                    _menuTile(context, CommonIcons.edit, 'Edit', () {
-                      Navigator.pop(sheetCtx);
-                      setState(() {
-                        _editingMessage = msg;
-                        _replyingToMessage = null;
-                        _messageController.text = msg.content;
-                        _isTyping = true;
-                      });
-                    }),
-                  _menuTile(context, CommonIcons.pin, msg.isPinned ? 'Unpin Message' : 'Pin Message', () async {
-                    Navigator.pop(sheetCtx);
-                    final shouldPin = !msg.isPinned;
-                    _chatBloc.add(PinMessageEvent(
-                      messageId: msg.id,
-                      conversationId: widget.conversationId,
-                      isPinned: shouldPin,
-                    ));
-                    
-                    if (_pinnedBox != null) {
-                      if (shouldPin) {
-                        await _pinnedBox!.put(widget.conversationId, msg.copyWith(isPinned: true).toJson());
-                        setState(() {
-                          _pinnedMessage = msg.copyWith(isPinned: true);
-                        });
-                      } else {
-                        await _pinnedBox!.delete(widget.conversationId);
-                        setState(() {
-                          _pinnedMessage = null;
-                        });
-                      }
-                    }
-                  }),
-                  _menuTile(context, CommonIcons.forward, 'Forward', () {
-                    Navigator.pop(sheetCtx);
-                    _showForwardDialog(context, msg.content);
-                  }),
-                  _menuTile(context, CommonIcons.infoOutline, 'Message Info', () {
-                    Navigator.pop(sheetCtx);
-                    _showMessageInfo(context, msg);
-                  }),
-                  _menuTile(context, CommonIcons.selectAll, 'Select', () {
-                    Navigator.pop(sheetCtx);
-                    setState(() {
-                      _selectedMessageIds.add(msg.id);
-                    });
-                  }),
-                  _menuTile(context, CommonIcons.deleteOutline, 'Delete', () {
-                    Navigator.pop(sheetCtx);
-                    _showDeleteDialog(context, [msg]);
-                  }, isDestructive: true),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+  void _showMessageMenu(BuildContext context, MessageModel msg, bool isMe, Offset? tapPosition) async {
+    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromLTWH(
+        tapPosition?.dx ?? overlay.size.width / 2,
+        tapPosition?.dy ?? overlay.size.height / 2,
+        0,
+        0,
+      ),
+      Offset.zero & overlay.size,
     );
+
+    final result = await showMenu<String>(
+      context: context,
+      position: position,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: context.colors.scaffoldBackground,
+      elevation: 8,
+      items: [
+        _menuPopupItem(context, 'Reply', CommonIcons.reply),
+        _menuPopupItem(context, 'Copy', CommonIcons.copy),
+        if (isMe) _menuPopupItem(context, 'Edit', CommonIcons.edit),
+        _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
+        _menuPopupItem(context, 'Forward', CommonIcons.forward),
+        _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
+        _menuPopupItem(context, 'Select', CommonIcons.selectAll),
+        _menuPopupItem(context, 'Delete', CommonIcons.deleteOutline, isDestructive: true),
+      ],
+    );
+
+    if (result == null || !context.mounted) return;
+
+    if (result == 'Reply') {
+      setState(() {
+        _replyingToMessage = msg;
+        _editingMessage = null;
+      });
+    } else if (result == 'Copy') {
+      Clipboard.setData(ClipboardData(text: msg.content));
+      context.showSuccessNotification('Message copied to clipboard');
+    } else if (result == 'Edit') {
+      setState(() {
+        _editingMessage = msg;
+        _replyingToMessage = null;
+        _messageController.text = msg.content;
+        _isTyping = true;
+      });
+    } else if (result == 'Pin' || result == 'Unpin') {
+      final shouldPin = !msg.isPinned;
+      _chatBloc.add(PinMessageEvent(
+        messageId: msg.id,
+        conversationId: widget.conversationId,
+        isPinned: shouldPin,
+      ));
+      
+      if (_pinnedBox != null) {
+        if (shouldPin) {
+          await _pinnedBox!.put(widget.conversationId, msg.copyWith(isPinned: true).toJson());
+          setState(() {
+            _pinnedMessage = msg.copyWith(isPinned: true);
+          });
+        } else {
+          await _pinnedBox!.delete(widget.conversationId);
+          setState(() {
+            _pinnedMessage = null;
+          });
+        }
+      }
+    } else if (result == 'Forward') {
+      _showForwardDialog(context, msg.content);
+    } else if (result == 'Info') {
+      _showMessageInfo(context, msg);
+    } else if (result == 'Select') {
+      setState(() {
+        _selectedMessageIds.add(msg.id);
+      });
+    } else if (result == 'Delete') {
+      _showDeleteDialog(context, [msg]);
+    }
   }
 
-  Widget _menuTile(
+  PopupMenuEntry<String> _menuPopupItem(
     BuildContext context,
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
+    String value,
+    IconData icon, {
     bool isDestructive = false,
   }) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: context.colors.primary,
-      ),
-      title: Text(
-        label,
-        style: context.bodyMedium.copyWith(
-          color: isDestructive ? context.colors.error : context.colors.textPrimary,
-          fontWeight: FontWeight.w500,
+    return PopupMenuItem<String>(
+      value: value,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              value,
+              style: context.bodyMedium.copyWith(
+                color: isDestructive ? context.colors.error : context.colors.textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            Icon(
+              icon,
+              size: 16,
+              color: isDestructive ? context.colors.error : context.colors.primary,
+            ),
+          ],
         ),
       ),
-      onTap: onTap,
     );
   }
 
@@ -826,6 +802,9 @@ class _ChatPageState extends State<ChatPage> {
     final String? path = _selectedAttachmentPath;
     final int size = _selectedAttachmentSize;
     final String caption = _messageController.text.trim();
+    final bool allowShare = _attachmentAllowShare;
+    final bool allowDownload = _attachmentAllowDownload;
+    final bool allowView = _attachmentAllowView;
 
     // Clear preview states immediately so UI is responsive
     setState(() {
@@ -834,6 +813,9 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
+      _attachmentAllowView = true;
       _messageController.clear();
       _isTyping = false;
     });
@@ -845,6 +827,10 @@ class _ChatPageState extends State<ChatPage> {
         type: type,
         attachmentPath: path,
         attachmentName: name,
+        allowShare: allowShare,
+        allowDownload: allowDownload,
+        allowView: allowView,
+        fileSize: size,
       ));
 
       context.read<ChatSocketBloc>().add(SendMessage(
@@ -852,6 +838,11 @@ class _ChatPageState extends State<ChatPage> {
         type: type,
         text: caption.isNotEmpty ? caption : name,
         fileKey: path,
+        viewControl: {
+          'allowShare': allowShare,
+          'allowDownload': allowDownload,
+          'allowView': allowView,
+        },
       ));
       return;
     }
@@ -864,6 +855,10 @@ class _ChatPageState extends State<ChatPage> {
       attachmentPath: path,
       attachmentName: name,
       attachmentBytes: bytes,
+      allowShare: allowShare,
+      allowDownload: allowDownload,
+      allowView: allowView,
+      fileSize: size,
     ));
 
     // 2. Perform the upload and socket broadcast in the background
@@ -875,6 +870,9 @@ class _ChatPageState extends State<ChatPage> {
       path: path,
       size: size,
       caption: caption,
+      allowShare: allowShare,
+      allowDownload: allowDownload,
+      allowView: allowView,
     );
   }
 
@@ -886,6 +884,9 @@ class _ChatPageState extends State<ChatPage> {
     required String? path,
     required int size,
     required String caption,
+    required bool allowShare,
+    required bool allowDownload,
+    required bool allowView,
   }) async {
     String? fileKey;
     try {
@@ -916,6 +917,11 @@ class _ChatPageState extends State<ChatPage> {
         fileName: name,
         fileSize: size,
         mimeType: _getMimeType(name, type),
+        viewControl: {
+          'allowShare': allowShare,
+          'allowDownload': allowDownload,
+          'allowView': allowView,
+        },
       ));
     }
   }
@@ -931,84 +937,183 @@ class _ChatPageState extends State<ChatPage> {
           top: BorderSide(color: context.colors.border, width: 1),
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Preview thumbnail/icon
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 56,
-              height: 56,
-              color: context.colors.scaffoldBackground,
-              child: isImage
-                  ? (_selectedAttachmentBytes != null
-                      ? Image.memory(
-                          _selectedAttachmentBytes!,
-                          fit: BoxFit.cover,
-                        )
-                      : const Icon(CommonIcons.gallery, size: 28))
-                  : Center(
-                      child: Icon(
-                        _selectedAttachmentType == 'video'
-                            ? CommonIcons.playCircle
-                            : _selectedAttachmentType == 'audio'
-                                ? CommonIcons.audio
-                                : _selectedAttachmentType == 'location'
-                                    ? CommonIcons.location
-                                    : _selectedAttachmentType == 'contact'
-                                        ? CommonIcons.person
-                                        : CommonIcons.document,
-                        color: context.colors.primary,
-                        size: 28,
+          Row(
+            children: [
+              // Preview thumbnail/icon
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  color: context.colors.scaffoldBackground,
+                  child: isImage
+                      ? (_selectedAttachmentBytes != null
+                          ? Image.memory(
+                              _selectedAttachmentBytes!,
+                              fit: BoxFit.cover,
+                            )
+                          : const Icon(CommonIcons.gallery, size: 28))
+                      : Center(
+                          child: Icon(
+                            _selectedAttachmentType == 'video'
+                                ? CommonIcons.playCircle
+                                : _selectedAttachmentType == 'audio'
+                                    ? CommonIcons.audio
+                                    : _selectedAttachmentType == 'location'
+                                        ? CommonIcons.location
+                                        : _selectedAttachmentType == 'contact'
+                                            ? CommonIcons.person
+                                            : CommonIcons.document,
+                            color: context.colors.primary,
+                            size: 28,
+                          ),
+                        ),
+                ),
+              ),
+              CommonSpaces.w12,
+              // Attachment Name / Size details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _selectedAttachmentName ?? 'Attachment',
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    CommonSpaces.h4,
+                    Text(
+                      _selectedAttachmentType == 'location'
+                          ? 'Location share'
+                          : _selectedAttachmentType == 'contact'
+                              ? 'Contact card'
+                              : _formatBytes(_selectedAttachmentSize),
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
                       ),
                     ),
-            ),
-          ),
-          CommonSpaces.w12,
-          // Attachment Name / Size details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _selectedAttachmentName ?? 'Attachment',
-                  style: context.bodyMedium.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: context.colors.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  ],
                 ),
-                CommonSpaces.h4,
-                Text(
-                  _selectedAttachmentType == 'location'
-                      ? 'Location share'
-                      : _selectedAttachmentType == 'contact'
-                          ? 'Contact card'
-                          : _formatBytes(_selectedAttachmentSize),
-                  style: context.bodySmall.copyWith(
-                    color: context.colors.textSecondary,
-                  ),
+              ),
+              // Clear Button
+              IconButton(
+                icon: Icon(CommonIcons.close, color: context.colors.textSecondary),
+                onPressed: () {
+                  setState(() {
+                    _selectedAttachmentPath = null;
+                    _selectedAttachmentBytes = null;
+                    _selectedAttachmentName = null;
+                    _selectedAttachmentType = null;
+                    _selectedAttachmentSize = 0;
+                    _attachmentAllowShare = true;
+                    _attachmentAllowDownload = true;
+                    _attachmentAllowView = true;
+                    _isTyping = _messageController.text.trim().isNotEmpty;
+                  });
+                },
+              ),
+            ],
+          ),
+          if (_selectedAttachmentType != 'location' && _selectedAttachmentType != 'contact') ...[
+            CommonSpaces.h12,
+            const Divider(height: 1, thickness: 1),
+            CommonSpaces.h12,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildPermissionToggle(
+                  icon: _attachmentAllowView ? Icons.visibility : Icons.visibility_off,
+                  label: 'View',
+                  isActive: _attachmentAllowView,
+                  onTap: () {
+                    setState(() {
+                      _attachmentAllowView = !_attachmentAllowView;
+                    });
+                  },
+                ),
+                _buildPermissionToggle(
+                  icon: _attachmentAllowDownload ? Icons.download : Icons.download_for_offline_outlined,
+                  label: 'Download',
+                  isActive: _attachmentAllowDownload,
+                  onTap: () {
+                    setState(() {
+                      _attachmentAllowDownload = !_attachmentAllowDownload;
+                    });
+                  },
+                ),
+                _buildPermissionToggle(
+                  icon: Icons.share,
+                  label: 'Share',
+                  isActive: _attachmentAllowShare,
+                  onTap: () {
+                    setState(() {
+                      _attachmentAllowShare = !_attachmentAllowShare;
+                    });
+                  },
                 ),
               ],
             ),
-          ),
-          // Clear Button
-          IconButton(
-            icon: Icon(CommonIcons.close, color: context.colors.textSecondary),
-            onPressed: () {
-              setState(() {
-                _selectedAttachmentPath = null;
-                _selectedAttachmentBytes = null;
-                _selectedAttachmentName = null;
-                _selectedAttachmentType = null;
-                _selectedAttachmentSize = 0;
-                _isTyping = _messageController.text.trim().isNotEmpty;
-              });
-            },
-          ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionToggle({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: isActive
+                ? context.colors.primary.withValues(alpha: 0.12)
+                : context.colors.textHint.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isActive
+                  ? context.colors.primary.withValues(alpha: 0.3)
+                  : context.colors.textHint.withValues(alpha: 0.1),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isActive ? context.colors.primary : context.colors.textSecondary,
+              ),
+              CommonSpaces.w8,
+              Text(
+                label,
+                style: context.bodyMedium.copyWith(
+                  fontSize: 12,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  color: isActive ? context.colors.primary : context.colors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1082,11 +1187,14 @@ class _ChatPageState extends State<ChatPage> {
                                     }
                                   }
 
-                                  return GestureDetector(
+                                   return GestureDetector(
+                                    onTapDown: (details) {
+                                      _tapPosition = details.globalPosition;
+                                    },
                                     onLongPress: () {
                                       if (msg.isDeleted) return;
                                       if (_selectedMessageIds.isEmpty) {
-                                        _showMessageMenu(context, msg, isMe);
+                                        _showMessageMenu(context, msg, isMe, _tapPosition);
                                       }
                                     },
                                     onTap: () {
@@ -1102,6 +1210,8 @@ class _ChatPageState extends State<ChatPage> {
                                       }
                                     },
                                     child: MessageBubble(
+                                      messageId: msg.id,
+                                      conversationId: widget.conversationId,
                                       message: msg.content,
                                       time: _formatTime(msg.createdAt),
                                       isMe: isMe,
@@ -1116,6 +1226,11 @@ class _ChatPageState extends State<ChatPage> {
                                       isEdited: msg.isEdited,
                                       isSelected: _selectedMessageIds.contains(msg.id),
                                       isUploading: msg.isUploading,
+                                      allowShare: msg.allowShare,
+                                      allowDownload: msg.allowDownload,
+                                      allowView: msg.allowView,
+                                      onSharePressed: () => _showForwardDialog(context, msg.mediaUrl ?? msg.content),
+                                      fileSize: msg.fileSize,
                                     ),
                                   );
                                 },
@@ -1505,60 +1620,68 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showAttachmentPopup(BuildContext ctx) {
-    showModalBottomSheet(
+  void _showAttachmentPopup(BuildContext ctx) async {
+    final RenderBox? button = ctx.findRenderObject() as RenderBox?;
+    final RenderBox overlay = Navigator.of(ctx).overlay!.context.findRenderObject() as RenderBox;
+    
+    final offset = button?.localToGlobal(Offset.zero, ancestor: overlay) ?? Offset.zero;
+    final position = RelativeRect.fromLTRB(
+      offset.dx,
+      offset.dy - 260, // position above the input field
+      offset.dx + (button?.size.width ?? 0),
+      offset.dy,
+    );
+
+    final result = await showMenu<String>(
       context: ctx,
-      backgroundColor: ctx.colors.transparent,
-      builder: (sheetCtx) => Container(
-        height: 300,
-        margin: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
-        decoration: BoxDecoration(
-          color: ctx.colors.scaffoldBackground,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: ctx.colors.textPrimary.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
+      position: position,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: ctx.colors.scaffoldBackground,
+      elevation: 8,
+      constraints: const BoxConstraints(minWidth: 200, maxWidth: 200),
+      items: [
+        _attachmentPopupItem(ctx, 'Files', Icons.attachment),
+        _attachmentPopupItem(ctx, 'Camera', Icons.camera_alt_outlined),
+        _attachmentPopupItem(ctx, 'Poll', Icons.bar_chart_outlined),
+        _attachmentPopupItem(ctx, 'Events', Icons.calendar_month_outlined),
+        _attachmentPopupItem(ctx, 'Contact', Icons.person_outline_rounded),
+      ],
+    );
+
+    if (result == null || !ctx.mounted) return;
+
+    if (result == 'Files') {
+      _pickFile(FileType.any);
+    } else if (result == 'Camera') {
+      _pickImage(ImageSource.camera);
+    } else if (result == 'Poll') {
+      ctx.showInfoNotification('Poll feature is coming soon!');
+    } else if (result == 'Events') {
+      ctx.showInfoNotification('Events feature is coming soon!');
+    } else if (result == 'Contact') {
+      _showContactPicker(ctx);
+    }
+  }
+
+  PopupMenuEntry<String> _attachmentPopupItem(BuildContext context, String value, IconData icon) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: ctx.colors.textHint.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
+            Text(
+              value,
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8),
-                child: Wrap(
-                  spacing: 20,
-                  runSpacing: 20,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    _attachmentOption(ctx, CommonIcons.document, ctx.colors.secondary, 'Document',
-                        () { Navigator.pop(sheetCtx); _pickFile(FileType.any); }),
-                    _attachmentOption(ctx, CommonIcons.camera, ctx.colors.error, 'Camera',
-                        () { Navigator.pop(sheetCtx); _pickImage(ImageSource.camera); }),
-                    _attachmentOption(ctx, CommonIcons.gallery, ctx.colors.optionGallery, 'Gallery',
-                        () { Navigator.pop(sheetCtx); _pickImage(ImageSource.gallery); }),
-                    _attachmentOption(ctx, CommonIcons.audio, ctx.colors.warning, 'Audio',
-                        () { Navigator.pop(sheetCtx); _pickFile(FileType.audio); }),
-                    _attachmentOption(ctx, CommonIcons.videoFile, ctx.colors.optionVideo, 'Video',
-                        () { Navigator.pop(sheetCtx); _pickFile(FileType.video); }),
-                    _attachmentOption(ctx, CommonIcons.location, ctx.colors.success, 'Location',
-                        () { Navigator.pop(sheetCtx); _showLocationPicker(ctx); }),
-                    _attachmentOption(ctx, CommonIcons.person, ctx.colors.primary, 'Contact',
-                        () { Navigator.pop(sheetCtx); _showContactPicker(ctx); }),
-                  ],
-                ),
-              ),
+            Icon(
+              icon,
+              size: 18,
+              color: context.colors.primary,
             ),
           ],
         ),
@@ -1566,31 +1689,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _attachmentOption(BuildContext context, IconData icon, Color bgColor, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 70,
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: bgColor,
-              child: Icon(icon, color: context.colors.pureWhite, size: 28),
-            ),
-            CommonSpaces.h8,
-            Text(
-              label,
-              style: context.bodyMedium.copyWith(fontSize: 12, color: context.colors.textSecondary),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   String _getMimeType(String filename, String type) {
     final ext = filename.split('.').last.toLowerCase();
@@ -1674,6 +1773,9 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = name;
       _selectedAttachmentType = 'image';
       _selectedAttachmentSize = size;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
+      _attachmentAllowView = true;
       _isTyping = true;
     });
   }
@@ -1697,6 +1799,9 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = file.name;
       _selectedAttachmentType = fileType;
       _selectedAttachmentSize = file.size;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
+      _attachmentAllowView = true;
       _isTyping = true;
     });
   }
@@ -1772,6 +1877,9 @@ class _ChatPageState extends State<ChatPage> {
                         _selectedAttachmentType = 'location';
                         _selectedAttachmentBytes = null;
                         _selectedAttachmentSize = 0;
+                        _attachmentAllowShare = true;
+                        _attachmentAllowDownload = true;
+                        _attachmentAllowView = true;
                         _isTyping = true;
                       });
                     },
@@ -1846,6 +1954,9 @@ class _ChatPageState extends State<ChatPage> {
                     _selectedAttachmentType = 'contact';
                     _selectedAttachmentBytes = null;
                     _selectedAttachmentSize = 0;
+                    _attachmentAllowShare = true;
+                    _attachmentAllowDownload = true;
+                    _attachmentAllowView = true;
                     _isTyping = true;
                   });
                 },
