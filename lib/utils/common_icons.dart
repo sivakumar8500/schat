@@ -104,4 +104,8 @@ class CommonIcons {
   static const IconData pin = Icons.pin_drop;
   static const IconData forward = Icons.forward;
   static const IconData selectAll = Icons.select_all;
+  static const IconData poll = Icons.poll_rounded;
+  static const IconData music = Icons.music_note_rounded;
+  static const IconData payment = Icons.payments_rounded;
+  static const IconData attach = Icons.attach_file_rounded;
 }

@@ -25,6 +25,7 @@ class SendMessageEvent extends ChatEvent {
   final bool allowDownload;
   final bool allowView;
   final int? fileSize;
+  final String? messageId;
 
   const SendMessageEvent({
     required this.conversationId,
@@ -39,7 +40,14 @@ class SendMessageEvent extends ChatEvent {
     this.allowDownload = true,
     this.allowView = true,
     this.fileSize,
+    this.messageId,
   });
+}
+
+class MarkMessageFailedEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  const MarkMessageFailedEvent({required this.messageId, required this.conversationId});
 }
 
 class ReceiveMessageEvent extends ChatEvent {

@@ -19,6 +19,7 @@ class CommonEndpoints {
 
   // Chats
   static const String getChats = '/chats/';
+  static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
 
   // Media Upload

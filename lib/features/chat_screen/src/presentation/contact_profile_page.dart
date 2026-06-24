@@ -18,11 +18,16 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/chat_screen/chat_screen.dart';
+
 class ContactProfilePage extends StatefulWidget {
   final String conversationId;
   final String contactName;
   final Color contactColor;
   final bool isOnline;
+  final String? recipientId;
+  final bool isFromGroup;
 
   const ContactProfilePage({
     super.key,
@@ -30,6 +35,8 @@ class ContactProfilePage extends StatefulWidget {
     required this.contactName,
     required this.contactColor,
     required this.isOnline,
+    this.recipientId,
+    this.isFromGroup = false,
   });
 
   @override
@@ -324,7 +331,13 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       // Chat button (Back to chat)
                       _buildRoundActionButton(
                         icon: CommonIcons.chatBubble,
-                        onTap: () => Navigator.pop(context),
+                        onTap: () {
+                          if (widget.isFromGroup && widget.recipientId != null) {
+                            _startDirectChat(context, widget.recipientId!);
+                          } else {
+                            Navigator.pop(context);
+                          }
+                        },
                       ),
                       const SizedBox(width: CommonSizes.p16),
 
@@ -561,6 +574,42 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
       },
     );
+  }
+
+  Future<void> _startDirectChat(BuildContext context, String recipientId) async {
+    try {
+      final repo = getIt<DashboardRepository>();
+      final result = await repo.startDirectChat(recipientId);
+      
+      result.when(
+        success: (chat) {
+          if (!mounted) return;
+          // Navigate to ChatPage for this 1-to-1 conversation
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatPage(
+                conversationId: chat.id,
+                contactName: widget.contactName,
+                contactColor: widget.contactColor,
+                isOnline: widget.isOnline,
+                recipientId: recipientId,
+                isGroup: false,
+              ),
+            ),
+          );
+        },
+        failure: (error, _) {
+          if (mounted) {
+            context.showErrorNotification('Failed to start chat: $error');
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        context.showErrorNotification('Error: $e');
+      }
+    }
   }
 
   Widget _buildRoundActionButton({

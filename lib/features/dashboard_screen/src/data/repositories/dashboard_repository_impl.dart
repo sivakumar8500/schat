@@ -68,4 +68,25 @@ class DashboardRepositoryImpl implements DashboardRepository {
       failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
     );
   }
+
+  @override
+  Future<ApiResult<ChatModel>> createGroup({
+    required String groupName,
+    String? groupDescription,
+    required List<String> participantIds,
+  }) async {
+    final result = await _apiService.post<ChatModel>(
+      CommonEndpoints.createGroup,
+      data: {
+        'group_name': groupName,
+        'group_description': groupDescription ?? '',
+        'participant_ids': participantIds,
+      },
+      mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result.when(
+      success: (chat) => ApiResult.success(chat),
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+    );
+  }
 }

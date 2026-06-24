@@ -5,6 +5,7 @@ import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_us
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
 import 'chats_event.dart';
 import 'chats_state.dart';
 
@@ -73,7 +74,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onUpdateUserStatus(UpdateUserStatus event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
-      final updatedChats = currentState.chats.map((chat) {
+       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (!chat.isGroup && chat.recipient.id == event.userId) {
           final updatedRecipient = chat.recipient.copyWith(
             isOnline: event.isOnline,
@@ -94,7 +95,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       success: (chat) async {
         await _contactsRepository.removeContactFromCache(event.participantId);
         emit(
-          ChatsState.chatCreated(
+          ChatCreated(
             chat,
             event.contactName,
             profilePictureUrl: event.profilePictureUrl,

@@ -28,9 +28,17 @@ class UserListPage extends StatefulWidget {
 
 class _UserListPageState extends State<UserListPage> {
   String? _pendingParticipantId;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   final String _appLink = 'https://schat.app';
   final String _inviteTitle = 'Join Schat - Secure Messaging';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void _showInviteBottomSheet(String name, String phone) {
     final String baseMessage = 'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
@@ -231,6 +239,7 @@ class _UserListPageState extends State<UserListPage> {
                     padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
                     child: Text('New Chat', style: context.h1.copyWith(fontSize: 26)),
                   ),
+                  _buildSearchBar(),
                   Expanded(
                     child: _buildBody(context, state),
                   ),
@@ -251,7 +260,15 @@ class _UserListPageState extends State<UserListPage> {
         return _buildEmptyState(context);
       }
 
-      final syncedUsers = state.syncedContacts;
+      final query = _searchQuery.toLowerCase();
+
+      final syncedUsers = state.syncedContacts.where((user) {
+        if (query.isEmpty) return true;
+        final name = (user.username ?? '').toLowerCase();
+        final phone = user.phoneNumber.toLowerCase();
+        return name.contains(query) || phone.contains(query);
+      }).toList();
+
       final allContacts = state.contacts;
       final hiddenPhones = state.hiddenPhoneNumbers;
 
@@ -266,7 +283,8 @@ class _UserListPageState extends State<UserListPage> {
         });
         if (isHidden) return false;
 
-        return !syncedUsers.any((user) {
+        // Exclude if already a synced user
+        bool isSynced = state.syncedContacts.any((user) {
           return contact.phones.any((phone) {
             String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
             if (normalized.length > 10) {
@@ -275,9 +293,24 @@ class _UserListPageState extends State<UserListPage> {
             return user.phoneNumber.contains(normalized);
           });
         });
+        if (isSynced) return false;
+
+        // Search filter
+        if (query.isEmpty) return true;
+        final name = contact.displayName.toLowerCase();
+        final phones = contact.phones.map((p) => p.number.toLowerCase()).join(' ');
+        return name.contains(query) || phones.contains(query);
       }).toList();
 
       if (syncedUsers.isEmpty && inviteContacts.isEmpty) {
+        if (query.isNotEmpty) {
+          return Center(
+            child: Text(
+              'No results for "$_searchQuery"',
+              style: context.bodyMedium,
+            ),
+          );
+        }
         return _buildEmptyState(context);
       }
 
@@ -374,6 +407,50 @@ class _UserListPageState extends State<UserListPage> {
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: context.colors.searchBackground,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+            });
+          },
+          decoration: InputDecoration(
+            hintText: 'Search contacts...',
+            hintStyle: context.bodyLarge.copyWith(
+              color: context.colors.textHint.withValues(alpha: 0.7),
+            ),
+            prefixIcon: Icon(
+              CommonIcons.search,
+              color: context.colors.textHint.withValues(alpha: 0.7),
+            ),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: Icon(CommonIcons.close, size: 20),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                      });
+                    },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          ),
         ),
       ),
     );

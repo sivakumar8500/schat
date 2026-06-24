@@ -1,1 +1,235 @@
-<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Text To Word</title></head><body><p># Media Upload and Chat Message Sending Integration Guide <br><br>This document outlines the step-by-step workflow required for the client application (Flutter/Web/Postman) to upload media (images, videos, audio/voice notes, or documents) and send it as a message inside a chat conversation. <br><br>--- <br><br>## 🔄 End-to-End Media Flow Overview <br><br>The process is divided into **four simple steps**: <br><br>```mermaid <br>sequenceDiagram <br>participant Client as Client (App) <br>participant Server as FastAPI Server <br>participant S3 as AWS S3 Storage <br><br>Client-&gt;&gt;Server: 1. Request Upload URL (POST /media/request-upload) <br>Server--&gt;&gt;Client: Returns upload_url, object_key, media_id <br>Client-&gt;&gt;S3: 2. Upload file binary (PUT upload_url) <br>S3--&gt;&gt;Client: Returns 200 OK <br>Client-&gt;&gt;Server: 3. Complete Upload (POST /media/{media_id}/complete) <br>Server--&gt;&gt;Client: Returns MediaResponse (with thumbnail keys if applicable) <br>Client-&gt;&gt;Server: 4. Send Message referencing keys (REST / WebSocket) <br>Server--&gt;&gt;Client: Broadcasts final message payload <br>``` <br><br>--- <br><br>## 📥 Step-1: Request a Presigned Upload URL <br><br>Call the backend to request a secure presigned S3 upload URL. <br><br>* **HTTP Method**: `POST` <br>* **Endpoint**: `/api/v1/media/request-upload` <br>* **Headers**: <br>* `Authorization: Bearer ` <br>* `Content-Type: application/json` <br><br>### Request Payloads (Choose one based on type) <br><br>#### A. For Images <br>```json <br>{ <br>"media_type": "CHAT_IMAGE", <br>"mime_type": "image/png", <br>"file_size_bytes": 1048576, <br>"filename": "sunset.png", <br>"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" <br>} <br>``` <br><br>#### B. For Videos <br>```json <br>{ <br>"media_type": "CHAT_VIDEO", <br>"mime_type": "video/mp4", <br>"file_size_bytes": 14500000, <br>"filename": "clip.mp4", <br>"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" <br>} <br>``` <br><br>#### C. For Audio / Voice Notes <br>```json <br>{ <br>"media_type": "VOICE_NOTE", <br>"mime_type": "audio/mpeg", <br>"file_size_bytes": 450000, <br>"filename": "voice_note.mp3", <br>"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" <br>} <br>``` <br><br>#### D. For Documents / Files <br>```json <br>{ <br>"media_type": "DOCUMENT", <br>"mime_type": "application/pdf", <br>"file_size_bytes": 2500000, <br>"filename": "invoice.pdf", <br>"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" <br>} <br>``` <br><br>### Response <br>```json <br>{ <br>"media_id": "b3109a29-0ff2-4bc3-bf64-b97a82c3fe81", <br>"upload_url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;...", <br>"object_key": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png", <br>"expires_in": 3600 <br>} <br>``` <br><br>--- <br><br>## 📤 Step-2: Upload File Directly to S3 <br><br>Upload the raw file binary using the `upload_url` returned from Step 1. <br><br>* **HTTP Method**: **`PUT`** *(AWS S3 put_object requires PUT method)* <br>* **URL**: Use the exact `upload_url` string. <br>* **Headers**: <br>* `Content-Type: ` *(Must match the `mime_type` requested in Step 1)* <br>* **Body**: Select **binary** data in your request client and select the raw file to upload. Do not send as `multipart/form-data`. <br>* **Response**: `200 OK` (Standard empty response from AWS S3 confirming successful receipt). <br><br>--- <br><br>## 💾 Step-3: Complete the Upload <br><br>Notify the backend server that the file has been successfully uploaded to S3. <br><br>* **HTTP Method**: `POST` <br>* **Endpoint**: `/api/v1/media/{media_id}/complete` <br>*(Replace `{media_id}` with the `media_id` returned in Step 1)* <br>* **Headers**: <br>* `Authorization: Bearer ` <br>* `Content-Type: application/json` <br>* **Body (JSON)**: <br>```json <br>{ <br>"sha256_checksum": null <br>} <br>``` <br><br>### Response <br>```json <br>{ <br>"id": "b3109a29-0ff2-4bc3-bf64-b97a82c3fe81", <br>"uploader_id": "10d9a863-c9f2-491b-84ff-ad960e0547c5", <br>"media_type": "CHAT_IMAGE", <br>"mime_type": "image/png", <br>"filename": "sunset.png", <br>"file_size_bytes": 1048576, <br>"status": "COMPLETED", <br>"created_at": "2026-06-19T21:40:00Z", <br>"url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/...", <br>"thumbnails": [ <br>{ <br>"id": "c530f929-1ff2-4bc3-bf64-a97a82c3f101", <br>"width": 150, <br>"height": 150, <br>"file_size_bytes": 12000, <br>"url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/10d9a863-c9f2/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81_thumb.png?..." <br>} <br>] <br>} <br>``` <br>&gt; [!NOTE] <br>&gt; For `CHAT_IMAGE` and `CHAT_VIDEO` media, the server initiates a Celery background task to compress the file and generate thumbnails. These will be resolved dynamically and returned under the `thumbnails` key. <br><br>--- <br><br>## 💬 Step-4: Send the Chat Message Referencing the Media <br><br>Once the upload is completed, send the chat message referencing the S3 keys and file details. This can be done over the REST API (`POST /api/v1/messages/`) or WebSocket connection (`"send_message"` event). <br><br>### A. Payload for Image Message <br>* Set `"type"` to `"image"`. <br>* Provide the S3 `object_key` in `fileKey`. <br>* Provide the thumbnail key in `thumbnail` (if generated by the server or client). <br><br>```json <br>{ <br>"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", <br>"type": "image", <br>"replyMessageId": null, <br>"content": { <br>"text": "Check out this photo!", <br>"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png", <br>"thumbnail": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81_thumb.png", <br>"fileName": "sunset.png", <br>"fileSize": 1048576, <br>"mimeType": "image/png" <br>} <br>} <br>``` <br><br>### B. Payload for Video Message <br>* Set `"type"` to `"video"`. <br>* Provide `duration` in seconds. <br><br>```json <br>{ <br>"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", <br>"type": "video", <br>"replyMessageId": null, <br>"content": { <br>"text": "Look at this video clip!", <br>"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/video_file_name.mp4", <br>"thumbnail": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/video_file_name_thumb.jpg", <br>"fileName": "sunset_video.mp4", <br>"fileSize": 14500000, <br>"mimeType": "video/mp4", <br>"duration": 42.5 <br>} <br>} <br>``` <br><br>### C. Payload for Audio Message <br>* Set `"type"` to `"audio"`. <br>* Provide `duration` in seconds. <br><br>```json <br>{ <br>"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", <br>"type": "audio", <br>"replyMessageId": null, <br>"content": { <br>"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/voice_note.mp3", <br>"fileName": "recording.mp3", <br>"fileSize": 450000, <br>"mimeType": "audio/mpeg", <br>"duration": 18.2 <br>} <br>} <br>``` <br><br>### D. Payload for Document / File Message <br>* Set `"type"` to `"file"`. <br><br>```json <br>{ <br>"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", <br>"type": "file", <br>"replyMessageId": null, <br>"content": { <br>"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/invoice.pdf", <br>"fileName": "June_Invoice.pdf", <br>"fileSize": 2500000, <br>"mimeType": "application/pdf" <br>} <br>} <br>``` </p></body></html>
+# Media Upload and Chat Message Sending Integration Guide 
+
+This document outlines the step-by-step workflow required for the client application (Flutter/Web/Postman) to upload media (images, videos, audio/voice notes, or documents) and send it as a message inside a chat conversation. 
+
+--- 
+
+## 🔄 End-to-End Media Flow Overview 
+
+The process is divided into **four simple steps**: 
+
+```mermaid 
+sequenceDiagram 
+participant Client as Client (App) 
+participant Server as FastAPI Server 
+participant S3 as AWS S3 Storage 
+
+Client->>Server: 1. Request Upload URL (POST /media/request-upload) 
+Server-->>Client: Returns upload_url, object_key, media_id 
+Client->>S3: 2. Upload file binary (PUT upload_url) 
+S3-->>Client: Returns 200 OK 
+Client->>Server: 3. Complete Upload (POST /media/{media_id}/complete) 
+Server-->>Client: Returns MediaResponse (with thumbnail keys if applicable) 
+Client->>Server: 4. Send Message referencing keys (REST / WebSocket) 
+Server-->>Client: Broadcasts final message payload 
+``` 
+
+--- 
+
+## 📥 Step-1: Request a Presigned Upload URL 
+
+Call the backend to request a secure presigned S3 upload URL. 
+
+* **HTTP Method**: `POST` 
+* **Endpoint**: `/api/v1/media/request-upload` 
+* **Headers**: 
+* `Authorization: Bearer ` 
+* `Content-Type: application/json` 
+
+### Request Payloads (Choose one based on type) 
+
+#### A. For Images 
+```json 
+{ 
+"media_type": "CHAT_IMAGE", 
+"mime_type": "image/png", 
+"file_size_bytes": 1048576, 
+"filename": "sunset.png", 
+"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" 
+} 
+``` 
+
+#### B. For Videos 
+```json 
+{ 
+"media_type": "CHAT_VIDEO", 
+"mime_type": "video/mp4", 
+"file_size_bytes": 14500000, 
+"filename": "clip.mp4", 
+"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" 
+} 
+``` 
+
+#### C. For Audio / Voice Notes 
+```json 
+{ 
+"media_type": "VOICE_NOTE", 
+"mime_type": "audio/mpeg", 
+"file_size_bytes": 450000, 
+"filename": "voice_note.mp3", 
+"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" 
+} 
+``` 
+
+#### D. For Documents / Files 
+```json 
+{ 
+"media_type": "DOCUMENT", 
+"mime_type": "application/pdf", 
+"file_size_bytes": 2500000, 
+"filename": "invoice.pdf", 
+"conversation_id": "ec925ee1-4687-481a-9b92-ab74006c0a18" 
+} 
+``` 
+
+### Response 
+```json 
+{ 
+"media_id": "b3109a29-0ff2-4bc3-bf64-b97a82c3fe81", 
+"upload_url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&...", 
+"object_key": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png", 
+"expires_in": 3600 
+} 
+``` 
+
+--- 
+
+## 📤 Step-2: Upload File Directly to S3 
+
+Upload the raw file binary using the `upload_url` returned from Step 1. 
+
+* **HTTP Method**: **`PUT`** *(AWS S3 put_object requires PUT method)* 
+* **URL**: Use the exact `upload_url` string. 
+* **Headers**: 
+* `Content-Type: ` *(Must match the `mime_type` requested in Step 1)* 
+* **Body**: Select **binary** data in your request client and select the raw file to upload. Do not send as `multipart/form-data`. 
+* **Response**: `200 OK` (Standard empty response from AWS S3 confirming successful receipt). 
+
+--- 
+
+## 💾 Step-3: Complete the Upload 
+
+Notify the backend server that the file has been successfully uploaded to S3. 
+
+* **HTTP Method**: `POST` 
+* **Endpoint**: `/api/v1/media/{media_id}/complete` 
+*(Replace `{media_id}` with the `media_id` returned in Step 1)* 
+* **Headers**: 
+* `Authorization: Bearer ` 
+* `Content-Type: application/json` 
+* **Body (JSON)**: 
+```json 
+{ 
+"sha256_checksum": null 
+} 
+``` 
+
+### Response 
+```json 
+{ 
+"id": "b3109a29-0ff2-4bc3-bf64-b97a82c3fe81", 
+"uploader_id": "10d9a863-c9f2-491b-84ff-ad960e0547c5", 
+"media_type": "CHAT_IMAGE", 
+"mime_type": "image/png", 
+"filename": "sunset.png", 
+"file_size_bytes": 1048576, 
+"status": "COMPLETED", 
+"created_at": "2026-06-19T21:40:00Z", 
+"url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/...", 
+"thumbnails": [ 
+{ 
+"id": "c530f929-1ff2-4bc3-bf64-a97a82c3f101", 
+"width": 150, 
+"height": 150, 
+"file_size_bytes": 12000, 
+"url": "https://qlyncs-docs.s3.ap-south-1.amazonaws.com/10d9a863-c9f2/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81_thumb.png?..." 
+} 
+] 
+} 
+``` 
+> [!NOTE] 
+> For `CHAT_IMAGE` and `CHAT_VIDEO` media, the server initiates a Celery background task to compress the file and generate thumbnails. These will be resolved dynamically and returned under the `thumbnails` key. 
+
+--- 
+
+## 💬 Step-4: Send the Chat Message Referencing the Media 
+
+Once the upload is completed, send the chat message referencing the S3 keys and file details. This can be done over the REST API (`POST /api/v1/messages/`) or WebSocket connection (`"send_message"` event). 
+
+### A. Payload for Image Message 
+* Set `"type"` to `"image"`. 
+* Provide the S3 `object_key` in `fileKey`. 
+* Provide the thumbnail key in `thumbnail` (if generated by the server or client). 
+
+```json 
+{ 
+"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", 
+"type": "image", 
+"replyMessageId": null, 
+"content": { 
+"text": "Check out this photo!", 
+"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81.png", 
+"thumbnail": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/b3109a29-0ff2-4bc3-bf64-b97a82c3fe81_thumb.png", 
+"fileName": "sunset.png", 
+"fileSize": 1048576, 
+"mimeType": "image/png" 
+} 
+} 
+``` 
+
+### B. Payload for Video Message 
+* Set `"type"` to `"video"`. 
+* Provide `duration` in seconds. 
+
+```json 
+{ 
+"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", 
+"type": "video", 
+"replyMessageId": null, 
+"content": { 
+"text": "Look at this video clip!", 
+"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/video_file_name.mp4", 
+"thumbnail": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/video_file_name_thumb.jpg", 
+"fileName": "sunset_video.mp4", 
+"fileSize": 14500000, 
+"mimeType": "video/mp4", 
+"duration": 42.5 
+} 
+} 
+``` 
+
+### C. Payload for Audio Message 
+* Set `"type"` to `"audio"`. 
+* Provide `duration` in seconds. 
+
+```json 
+{ 
+"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", 
+"type": "audio", 
+"replyMessageId": null, 
+"content": { 
+"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/voice_note.mp3", 
+"fileName": "recording.mp3", 
+"fileSize": 450000, 
+"mimeType": "audio/mpeg", 
+"duration": 18.2 
+} 
+} 
+``` 
+
+### D. Payload for Document / File Message 
+* Set `"type"` to `"file"`. 
+
+```json 
+{ 
+"conversationId": "ec925ee1-4687-481a-9b92-ab74006c0a18", 
+"type": "file", 
+"replyMessageId": null, 
+"content": { 
+"fileKey": "10d9a863-c9f2-491b-84ff-ad960e0547c5/chat_media/invoice.pdf", 
+"fileName": "June_Invoice.pdf", 
+"fileSize": 2500000, 
+"mimeType": "application/pdf" 
+} 
+} 
+``` 

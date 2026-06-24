@@ -1,0 +1,570 @@
+# WebRTC Audio & Video Calling UI Integration Guide
+
+This integration guide explains how the frontend client (Web / React or Flutter) interacts with our WebSocket signaling server to establish and manage peer-to-peer WebRTC voice and video calls.
+
+---
+
+## 📞 WebRTC Signaling Architecture
+
+Because WebRTC is a **peer-to-peer** protocol, media streams (audio/video) flow directly between clients. The server acts purely as a **signaling channel** to route initialization configurations (SDP offers, SDP answers, and ICE connection candidates).
+
+```mermaid
+sequenceDiagram
+autonumber
+participant A as Client A (Caller)
+participant Server as FastAPI WebSocket Server
+participant B as Client B (Callee)
+
+Note over A, B: Phase 1: Call Initiation
+A->>A: 1. Get Local Audio/Video Stream
+A->>A: 2. Create RTCPeerConnection & SDP Offer
+A->>Server: 3. Send event: "call_initiate" (SDP Offer)
+Server->>B: 4. Relay event: "call_incoming" (SDP Offer)
+B-->>B: 5. Play Ringing UI / Accept Dialog
+
+Note over A, B: Phase 2: Call Acceptance
+B->>B: 6. Get Local Audio/Video Stream
+B->>B: 7. Set Remote SDP & Create SDP Answer
+B->>Server: 8. Send event: "call_response" (SDP Answer)
+Server->>A: 9. Relay event: "call_answered" (SDP Answer)
+
+Note over A, B: Phase 3: Connection & ICE Candidate Exchange
+A->>Server: 10. Send event: "ice_candidate"
+Server->>B: 11. Relay event: "ice_candidate_received"
+B->>Server: 12. Send event: "ice_candidate"
+Server->>A: 13. Relay event: "ice_candidate_received"
+Note over A, B: P2P Connection Established (Media Flowing)
+
+Note over A, B: Phase 4: Termination
+A->>Server: 14. Send event: "call_hangup"
+Server->>B: 15. Relay event: "call_disconnected"
+A->>A: 16. Stop Tracks & Close Connection
+B->>B: 17. Stop Tracks & Close Connection
+```
+
+---
+
+## 🔌 1. WebSocket Call Signaling Payload Formats
+
+Use the existing authenticated WebSocket connection (`ws:///ws?token=`) to send and receive the following JSON frames.
+
+### A. Call Initiation (`call_initiate` ➔ `call_incoming`)
+Sent by the caller to notify a participant of an incoming call.
+
+* **Client A (Outbound) Payload**:
+```json
+{
+"type": "call_initiate",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"call_type": "video", // "audio" or "video"
+"offer": {
+"type": "offer",
+"sdp": "v=0\r\no=- 42962... [Standard SDP String]"
+}
+}
+```
+
+* **Client B (Inbound) Pushed Payload**:
+```json
+{
+"type": "call_incoming",
+"sender_id": "b63dba30-bf73-48b7-8120-22113a3c1265", // Caller's ID
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"call_type": "video",
+"offer": {
+"type": "offer",
+"sdp": "v=0\r\no=- 42962... [Standard SDP String]"
+}
+}
+```
+
+---
+
+### B. Call Response (`call_response` ➔ `call_answered`)
+Sent by the receiver to accept, reject, or mark themselves busy.
+
+* **Client B (Outbound) Payload**:
+```json
+{
+"type": "call_response",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"response": "accept", // "accept", "reject", "busy"
+"answer": {
+"type": "answer",
+"sdp": "v=0\r\no=- 98216... [Standard SDP String]"
+} // Null if response is "reject" or "busy"
+}
+```
+
+* **Client A (Inbound) Pushed Payload**:
+```json
+{
+"type": "call_answered",
+"sender_id": "fb7d5878-e116-42bb-93d3-db54c16b757b", // Callee's ID
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"response": "accept",
+"answer": {
+"type": "answer",
+"sdp": "v=0\r\no=- 98216... [Standard SDP String]"
+}
+}
+```
+
+---
+
+### C. Connection Candidates (`ice_candidate` ➔ `ice_candidate_received`)
+Sent continuously as each client finds network routes (ICE candidate trickling).
+
+* **Outbound Payload**:
+```json
+{
+"type": "ice_candidate",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"candidate": {
+"candidate": "candidate:842163011 1 udp 1677721607 192.168.1.100 52367 typ host ...",
+"sdpMid": "0",
+"sdpMLineIndex": 0
+}
+}
+```
+
+* **Inbound Pushed Payload**:
+```json
+{
+"type": "ice_candidate_received",
+"sender_id": "b63dba30-bf73-48b7-8120-22113a3c1265",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc",
+"candidate": {
+"candidate": "candidate:842163011 1 udp 1677721607 192.168.1.100 52367 typ host ...",
+"sdpMid": "0",
+"sdpMLineIndex": 0
+}
+}
+```
+
+---
+
+### D. Teardown / Hang Up (`call_hangup` ➔ `call_disconnected`)
+Sent by either client to end or cancel the call at any time.
+
+* **Outbound Payload**:
+```json
+{
+"type": "call_hangup",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc"
+}
+```
+
+* **Inbound Pushed Payload**:
+```json
+{
+"type": "call_disconnected",
+"sender_id": "fb7d5878-e116-42bb-93d3-db54c16b757b",
+"conversation_id": "7ca34b9d-5246-4cb0-a5eb-079ee7792abc"
+}
+```
+
+---
+
+## 💻 2. Web Browser Implementation (React / JavaScript)
+
+Here is a standard, robust JavaScript implementation using standard DOM WebRTC APIs.
+
+### Setup Configuration
+> [!IMPORTANT]
+> Always provide Google public stun servers or a TURN server to route traffic through NAT firewalls.
+
+```javascript
+const peerConfig = {
+iceServers: [
+{ urls: "stun:stun.l.google.com:19302" },
+{ urls: "stun:stun1.l.google.com:19302" }
+]
+};
+
+let localStream = null;
+let peerConnection = null;
+let activeConversationId = null;
+
+// WebSocket channel reference
+const socket = new WebSocket("ws://localhost:8000/ws?token=JWT_TOKEN");
+```
+
+### Flow 1: Initiating a Call (Caller)
+```javascript
+async function startCall(conversationId, callType = 'video') {
+activeConversationId = conversationId;
+
+// 1. Capture local audio/video media
+localStream = await navigator.mediaDevices.getUserMedia({
+audio: true,
+video: callType === 'video'
+});
+
+// Render local stream in UI
+document.getElementById("localVideo").srcObject = localStream;
+
+// 2. Initialize RTCPeerConnection
+peerConnection = new RTCPeerConnection(peerConfig);
+
+// 3. Attach local media tracks
+localStream.getTracks().forEach(track => {
+peerConnection.addTrack(track, localStream);
+});
+
+// 4. Send ICE candidates as they are generated
+peerConnection.onicecandidate = (event) => {
+if (event.candidate) {
+socket.send(JSON.stringify({
+type: "ice_candidate",
+conversation_id: activeConversationId,
+candidate: event.candidate
+}));
+}
+};
+
+// 5. Play remote track when received
+peerConnection.ontrack = (event) => {
+document.getElementById("remoteVideo").srcObject = event.streams[0];
+};
+
+// 6. Create SDP Offer
+const offer = await peerConnection.createOffer();
+await peerConnection.setLocalDescription(offer);
+
+// 7. Publish call offer over WebSocket
+socket.send(JSON.stringify({
+type: "call_initiate",
+conversation_id: activeConversationId,
+call_type: callType,
+offer: offer
+}));
+
+showOutgoingCallUI();
+}
+```
+
+### Flow 2: Receiving & Answering a Call (Callee)
+```javascript
+// Triggered on receiving incoming WebSocket frame
+async function handleIncomingCall(event) {
+const { sender_id, conversation_id, call_type, offer } = event;
+activeConversationId = conversation_id;
+
+showIncomingCallDialog(async (isAccepted) => {
+if (!isAccepted) {
+// User rejected
+socket.send(JSON.stringify({
+type: "call_response",
+conversation_id: activeConversationId,
+response: "reject",
+answer: null
+}));
+return;
+}
+
+// Capture Callee's media
+localStream = await navigator.mediaDevices.getUserMedia({
+audio: true,
+video: call_type === 'video'
+});
+document.getElementById("localVideo").srcObject = localStream;
+
+// Init Connection
+peerConnection = new RTCPeerConnection(peerConfig);
+
+localStream.getTracks().forEach(track => {
+peerConnection.addTrack(track, localStream);
+});
+
+peerConnection.onicecandidate = (event) => {
+if (event.candidate) {
+socket.send(JSON.stringify({
+type: "ice_candidate",
+conversation_id: activeConversationId,
+candidate: event.candidate
+}));
+}
+};
+
+peerConnection.ontrack = (event) => {
+document.getElementById("remoteVideo").srcObject = event.streams[0];
+};
+
+// Set the Caller's remote offer description
+await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+// Create Local SDP Answer
+const answer = await peerConnection.createAnswer();
+await peerConnection.setLocalDescription(answer);
+
+// Send Accept response back
+socket.send(JSON.stringify({
+type: "call_response",
+conversation_id: activeConversationId,
+response: "accept",
+answer: answer
+}));
+
+showActiveCallUI();
+});
+}
+```
+
+### Flow 3: Handling Remote Call Answer (Caller side)
+```javascript
+async function handleCallAnswered(event) {
+const { response, answer } = event;
+
+if (response === 'reject' || response === 'busy') {
+alert("Call was declined.");
+cleanupCall();
+return;
+}
+
+// Set the Remote description received from callee
+await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+showActiveCallUI();
+}
+```
+
+### Flow 4: Exchanging ICE Candidates
+```javascript
+function handleRemoteIceCandidate(event) {
+const { candidate } = event;
+if (peerConnection && candidate) {
+peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+.catch(err => console.error("Error adding remote ICE candidate:", err));
+}
+}
+```
+
+### Flow 5: Cleanup & Hang Up (Both Sides)
+```javascript
+function hangUp() {
+// Notify remote party
+socket.send(JSON.stringify({
+type: "call_hangup",
+conversation_id: activeConversationId
+}));
+
+cleanupCall();
+}
+
+function cleanupCall() {
+if (localStream) {
+localStream.getTracks().forEach(track => track.stop());
+localStream = null;
+}
+if (peerConnection) {
+peerConnection.close();
+peerConnection = null;
+}
+activeConversationId = null;
+resetCallUI();
+}
+```
+
+---
+
+## 📱 3. Flutter Implementation (`flutter_webrtc`)
+
+Flutter applications use the popular [flutter_webrtc](https://pub.dev/packages/flutter_webrtc) package.
+
+### Configuration
+```dart
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+
+final Map peerConnectionConfig = {
+'iceServers': [
+{'url': 'stun:stun.l.google.com:19302'},
+{'url': 'stun:stun1.l.google.com:19302'},
+]
+};
+
+final Map offerConstraints = {
+'mandatory': {
+'OfferToReceiveAudio': true,
+'OfferToReceiveVideo': true,
+},
+'optional': [],
+};
+
+RTCPeerConnection? _peerConnection;
+MediaStream? _localStream;
+RTCVideoRenderer localRenderer = RTCVideoRenderer();
+RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
+```
+
+### Initializing Call (Flutter)
+```dart
+Future makeCall(String conversationId, bool isVideo) async {
+await localRenderer.initialize();
+await remoteRenderer.initialize();
+
+// 1. Configure media constraints
+final mediaConstraints = {
+'audio': true,
+'video': isVideo
+? {
+'mandatory': {
+'minWidth': '640',
+'minHeight': '480',
+'minFrameRate': '30',
+},
+'facingMode': 'user',
+'optional': [],
+}
+: false
+};
+
+// 2. Capture media
+_localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
+localRenderer.srcObject = _localStream;
+
+// 3. Create peer connection
+_peerConnection = await createPeerConnection(peerConnectionConfig, offerConstraints);
+
+// Add tracks
+_localStream!.getTracks().forEach((track) {
+_peerConnection!.addTrack(track, _localStream!);
+});
+
+// Handle local ICE candidates
+_peerConnection!.onIceCandidate = (candidate) {
+sendWebSocketMessage({
+'type': 'ice_candidate',
+'conversation_id': conversationId,
+'candidate': {
+'candidate': candidate.candidate,
+'sdpMid': candidate.sdpMid,
+'sdpMLineIndex': candidate.sdpMLineIndex,
+}
+});
+};
+
+// Handle remote video stream
+_peerConnection!.onTrack = (event) {
+if (event.streams.isNotEmpty) {
+remoteRenderer.srcObject = event.streams[0];
+}
+};
+
+// 4. Create and set Local Offer description
+RTCSessionDescription offer = await _peerConnection!.createOffer(offerConstraints);
+await _peerConnection!.setLocalDescription(offer);
+
+// 5. Send Initiate frame
+sendWebSocketMessage({
+'type': 'call_initiate',
+'conversation_id': conversationId,
+'call_type': isVideo ? 'video' : 'audio',
+'offer': {
+'type': offer.type,
+'sdp': offer.sdp,
+}
+});
+}
+```
+
+### Answering Call (Flutter)
+```dart
+Future answerIncomingCall(Map incomingEvent) async {
+String convoId = incomingEvent['conversation_id'];
+String callType = incomingEvent['call_type'];
+var offerMap = incomingEvent['offer'];
+
+await localRenderer.initialize();
+await remoteRenderer.initialize();
+
+// Get Callee stream
+_localStream = await navigator.mediaDevices.getUserMedia({
+'audio': true,
+'video': callType == 'video'
+});
+localRenderer.srcObject = _localStream;
+
+// Create Connection
+_peerConnection = await createPeerConnection(peerConnectionConfig, offerConstraints);
+
+_localStream!.getTracks().forEach((track) {
+_peerConnection!.addTrack(track, _localStream!);
+});
+
+_peerConnection!.onIceCandidate = (candidate) {
+sendWebSocketMessage({
+'type': 'ice_candidate',
+'conversation_id': convoId,
+'candidate': {
+'candidate': candidate.candidate,
+'sdpMid': candidate.sdpMid,
+'sdpMLineIndex': candidate.sdpMLineIndex,
+}
+});
+};
+
+_peerConnection!.onTrack = (event) {
+if (event.streams.isNotEmpty) {
+remoteRenderer.srcObject = event.streams[0];
+}
+};
+
+// Set remote offer
+RTCSessionDescription offer = RTCSessionDescription(offerMap['sdp'], offerMap['type']);
+await _peerConnection!.setRemoteDescription(offer);
+
+// Create and set Local Answer
+RTCSessionDescription answer = await _peerConnection!.createAnswer(offerConstraints);
+await _peerConnection!.setLocalDescription(answer);
+
+// Send call_response frame
+sendWebSocketMessage({
+'type': 'call_response',
+'conversation_id': convoId,
+'response': 'accept',
+'answer': {
+'type': answer.type,
+'sdp': answer.sdp,
+}
+});
+}
+```
+
+### Cleanup Connection (Flutter)
+```dart
+Future endCall(String conversationId) async {
+sendWebSocketMessage({
+'type': 'call_hangup',
+'conversation_id': conversationId,
+});
+
+await _cleanup();
+}
+
+Future _cleanup() async {
+localRenderer.srcObject = null;
+remoteRenderer.srcObject = null;
+
+await _localStream?.dispose();
+await _peerConnection?.close();
+
+_localStream = null;
+_peerConnection = null;
+
+localRenderer.dispose();
+remoteRenderer.dispose();
+}
+```
+
+---
+
+## ⚡ 4. WebRTC Connection Troubleshooting Checklist
+
+1. **Local stream is not rendering / black screen**:
+- Ensure you call `setLocalDescription` AFTER capturing media and attaching all local tracks.
+- Check application permissions (microphone/camera) in Chrome settings or Android Manifest/iOS Info.plist.
+2. **ICE Candidates failing to connect across networks (External Mobile networks/cellular)**:
+- WebRTC requires STUN/TURN servers to penetrate cellular and symmetric router firewalls. You will need a TURN server configured in `iceServers` (such as Coturn) for production deployments.
+3. **Sound Echoing**:
+- Enable hardware Echo Cancellation (`echoCancellation: true`) in media constraints.
+- Ensure testing clients are not in the same physical room without headphones.

@@ -19,6 +19,9 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_dialog.dart';
 import 'package:schat/utils/theme_controller.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
@@ -34,6 +37,8 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   int _currentIndex = 0;
   String _username = 'David';
+  final Set<String> _hiddenChatIds = {};
+  final Set<String> _deletedChatIds = {};
 
   @override
   void initState() {
@@ -155,22 +160,90 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: Icon(
               CommonIcons.moreVert,
               color: context.colors.textPrimary,
               size: 28,
             ),
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ProfileSettingsPage(username: _username),
-                ),
-              );
-              _loadProfile();
+            color: context.colors.scaffoldBackground,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onSelected: (value) async {
+              if (value == 'theme') {
+                getIt<ThemeController>().toggleTheme();
+                setState(() {});
+              } else if (value == 'create_group') {
+                final chat = await showDialog<ChatModel>(
+                  context: context,
+                  builder: (dialogCtx) => BlocProvider(
+                    create: (context) => ContactsBloc()..add(const LoadContacts()),
+                    child: const CreateGroupDialog(),
+                  ),
+                );
+                if (chat != null && mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatPage(
+                        conversationId: chat.id,
+                        contactName: chat.groupName ?? 'Group',
+                        contactColor: context.colors.primary,
+                        isOnline: false,
+                        recipientId: chat.id,
+                        isGroup: true,
+                      ),
+                    ),
+                  );
+                }
+              } else if (value == 'profile') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProfileSettingsPage(username: _username),
+                  ),
+                );
+                _loadProfile();
+              }
             },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'theme',
+                child: Row(
+                  children: [
+                    Icon(
+                      getIt<ThemeController>().themeMode == ThemeMode.dark
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                      color: context.colors.primary,
+                      size: 20,
+                    ),
+                    CommonSpaces.w12,
+                    Text('Theme', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'create_group',
+                child: Row(
+                  children: [
+                    Icon(Icons.group_add_rounded, color: context.colors.primary, size: 20),
+                    CommonSpaces.w12,
+                    Text('Create Group', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'profile',
+                child: Row(
+                  children: [
+                    Icon(Icons.person_outline_rounded, color: context.colors.primary, size: 20),
+                    CommonSpaces.w12,
+                    Text('Profile', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -375,8 +448,25 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildChatStatus(ChatModel chat) {
     final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
-    final time = DateTime.parse(timestamp);
-    final timeStr = "${time.hour}:${time.minute.toString().padLeft(2, '0')}";
+    String timeStr = '--:--';
+    try {
+      if (timestamp.isNotEmpty) {
+        DateTime time;
+        final parsedInt = int.tryParse(timestamp);
+        if (parsedInt != null) {
+          if (timestamp.length <= 10) {
+            time = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+          } else {
+            time = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+          }
+        } else {
+          time = DateTime.parse(timestamp).toLocal();
+        }
+        timeStr = "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
+      }
+    } catch (e) {
+      debugPrint('Error parsing timestamp: $e');
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -396,11 +486,15 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatList(List<ChatModel> chatList) {
+    final visibleChats = chatList
+        .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
+        .toList();
+
     return ListView.builder(
       padding: const EdgeInsets.only(top: 12, bottom: 80),
-      itemCount: chatList.length,
+      itemCount: visibleChats.length,
       itemBuilder: (context, index) {
-        final chat = chatList[index];
+        final chat = visibleChats[index];
         final name = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : (chat.recipient.username ?? chat.recipient.phoneNumber);
@@ -409,66 +503,211 @@ class _DashboardPageState extends State<DashboardPage> {
             chat.groupDescription ??
             'No messages yet';
 
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ChatPage(
-                  conversationId: chat.id,
-                  contactName: name,
-                  contactColor: context.colors.primary,
-                  isOnline: chat.recipient.isOnline,
-                  profilePictureUrl: chat.recipient.profilePictureUrl,
-                  recipientId: chat.recipient.id,
-                ),
+        return _buildSwipeableChat(
+          chat: chat,
+          name: name,
+          message: message,
+        );
+      },
+    );
+  }
+
+  Widget _buildSwipeableChat({
+    required ChatModel chat,
+    required String name,
+    required String message,
+  }) {
+    return Dismissible(
+      key: ValueKey(chat.id),
+      // Allow swiping both directions
+      direction: DismissDirection.horizontal,
+      // Threshold before the background snaps in
+      dismissThresholds: const {
+        DismissDirection.startToEnd: 0.3,
+        DismissDirection.endToStart: 0.3,
+      },
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.endToStart) {
+          // Swipe left → Delete
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: context.colors.scaffoldBackground,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(
+                'Delete Chat',
+                style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
               ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            child: Row(
-              children: [
-                _buildAvatar(chat),
-                CommonSpaces.w16,
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.titleSmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          color: context.colors.textPrimary,
-                        ),
-                      ),
-                      CommonSpaces.h4,
-                      Text(
-                        message,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.bodyMedium.copyWith(
-                          color: context.colors.textSecondary.withValues(
-                            alpha: 0.7,
-                          ),
-                          fontWeight: FontWeight.normal,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
+              content: Text(
+                'Remove this chat from your list?',
+                style: context.bodyMedium,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
                 ),
-                CommonSpaces.w12,
-                _buildChatStatus(chat),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text('Delete', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
+                ),
               ],
+            ),
+          );
+          if (confirm == true) {
+            setState(() => _deletedChatIds.add(chat.id));
+            return true;
+          }
+          return false;
+        } else {
+          // Swipe right → Hide
+          setState(() => _hiddenChatIds.add(chat.id));
+          return true;
+        }
+      },
+      onDismissed: (_) {},
+      // Background shown when swiping RIGHT (hide action on the left)
+      background: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: context.colors.textSecondary.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: context.colors.textSecondary.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.visibility_off_rounded,
+                color: context.colors.textSecondary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Hide',
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      // Secondary background shown when swiping LEFT (delete action on the right)
+      secondaryBackground: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: context.colors.error.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              'Delete',
+              style: context.bodyMedium.copyWith(
+                color: context.colors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: context.colors.error.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.delete_rounded,
+                color: context.colors.error,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
+      ),
+      child: _buildChatTile(chat: chat, name: name, message: message),
+    );
+  }
+
+  Widget _buildChatTile({
+    required ChatModel chat,
+    required String name,
+    required String message,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatPage(
+              conversationId: chat.id,
+              contactName: name,
+              contactColor: context.colors.primary,
+              isOnline: chat.recipient.isOnline,
+              profilePictureUrl: chat.recipient.profilePictureUrl,
+              recipientId: chat.recipient.id,
+              isGroup: chat.isGroup,
             ),
           ),
         );
       },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        child: Row(
+          children: [
+            _buildAvatar(chat),
+            CommonSpaces.w16,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.titleSmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  CommonSpaces.h4,
+                  Text(
+                    message,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.bodyMedium.copyWith(
+                      color: context.colors.textSecondary.withValues(
+                        alpha: 0.7,
+                      ),
+                      fontWeight: FontWeight.normal,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            CommonSpaces.w12,
+            _buildChatStatus(chat),
+          ],
+        ),
+      ),
     );
   }
 

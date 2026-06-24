@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
@@ -16,6 +17,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MessageBubble extends StatelessWidget {
   final String messageId;
@@ -24,6 +26,7 @@ class MessageBubble extends StatelessWidget {
   final String time;
   final bool isMe;
   final bool isRead;
+  final bool isDeleted;
   final String type;
   final String? attachmentPath;
   final String? attachmentName;
@@ -34,6 +37,9 @@ class MessageBubble extends StatelessWidget {
   final bool isEdited;
   final bool isSelected;
   final bool isUploading;
+  final bool isFailed;
+  final VoidCallback? onResendPressed;
+  final bool isGroup;
   final bool allowShare;
   final bool allowDownload;
   final bool allowView;
@@ -48,6 +54,7 @@ class MessageBubble extends StatelessWidget {
     required this.time,
     required this.isMe,
     this.isRead = false,
+    this.isDeleted = false,
     this.type = 'text',
     this.attachmentPath,
     this.attachmentName,
@@ -58,6 +65,9 @@ class MessageBubble extends StatelessWidget {
     this.isEdited = false,
     this.isSelected = false,
     this.isUploading = false,
+    this.isFailed = false,
+    this.onResendPressed,
+    this.isGroup = false,
     this.allowShare = true,
     this.allowDownload = true,
     this.allowView = true,
@@ -77,6 +87,27 @@ class MessageBubble extends StatelessWidget {
           mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            if (isFailed && isMe) ...[
+              GestureDetector(
+                onTap: onResendPressed,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'Resend',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             if (!isMe) ...[
               CircleAvatar(
                 radius: 12,
@@ -117,7 +148,7 @@ class MessageBubble extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
-                      if (isReply && replyMessageBody != null)
+                      if (isReply && replyMessageBody != null && !isDeleted)
                         Container(
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.all(8),
@@ -167,17 +198,16 @@ class MessageBubble extends StatelessWidget {
                             ],
                           ),
                         ),
-                      _buildAttachment(context),
-                      _buildPermissionControls(context),
-                      if (message.isNotEmpty && (type == 'text' || message != attachmentName))
-                        Text(
-                          message,
-                          style: context.bodyLarge.copyWith(
-                            fontSize: 16,
-                            color: isMe ? context.colors.textLight : context.colors.textPrimary,
-                          ),
+                      if (!isDeleted) _buildAttachment(context),
+                      if (!isDeleted) _buildPermissionControls(context),
+                      _buildMessageText(
+                        context,
+                        context.bodyLarge.copyWith(
+                          fontSize: 16,
+                          color: isMe ? context.colors.textLight : context.colors.textPrimary,
                         ),
-                      if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text') CommonSpaces.h6,
+                      ),
+                      if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -442,7 +472,7 @@ class MessageBubble extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: isMe
                             ? context.colors.pureWhite.withValues(alpha: 0.8)
-                            : context.colors.scaffoldBackground,
+                            : context.colors.lightBackground,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -462,50 +492,61 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else if (type == 'contact') {
-      result = Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isMe
-              ? context.colors.pureWhite.withValues(alpha: 0.15)
-              : context.colors.lightBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
+      result = GestureDetector(
+        onTap: () async {
+          if (attachmentPath != null && attachmentPath!.startsWith('contact:')) {
+            final phone = attachmentPath!.replaceFirst('contact:', '');
+            final Uri telUri = Uri(scheme: 'tel', path: phone);
+            if (await canLaunchUrl(telUri)) {
+              await launchUrl(telUri);
+            }
+          }
+        },
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
             color: isMe
-                ? context.colors.pureWhite.withValues(alpha: 0.3)
-                : context.colors.primary.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: isMe
+                ? context.colors.pureWhite.withValues(alpha: 0.15)
+                : context.colors.lightBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isMe
                   ? context.colors.pureWhite.withValues(alpha: 0.3)
-                  : context.colors.primary.withValues(alpha: 0.15),
-              child: Icon(
-                CommonIcons.person,
-                color: isMe ? context.colors.pureWhite : context.colors.primary,
-                size: 20,
-              ),
+                  : context.colors.primary.withValues(alpha: 0.3),
             ),
-            CommonSpaces.w8,
-            Flexible(
-              child: Text(
-                attachmentName ?? 'Contact',
-                style: context.bodyMedium.copyWith(
-                  color: isMe
-                      ? context.colors.pureWhite
-                      : context.colors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: isMe
+                    ? context.colors.pureWhite.withValues(alpha: 0.3)
+                    : context.colors.primary.withValues(alpha: 0.15),
+                child: Icon(
+                  CommonIcons.person,
+                  color: isMe ? context.colors.pureWhite : context.colors.primary,
+                  size: 20,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+              CommonSpaces.w8,
+              Flexible(
+                child: Text(
+                  attachmentName ?? 'Contact',
+                  style: context.bodyMedium.copyWith(
+                    color: isMe
+                        ? context.colors.pureWhite
+                        : context.colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     } else {
@@ -554,6 +595,10 @@ class MessageBubble extends StatelessWidget {
     final chipBg = context.colors.lightBackground;
     final chipText = context.colors.textPrimary;
     final chipBorder = context.colors.border;
+
+    if (isGroup) {
+      return const SizedBox.shrink();
+    }
 
     if (isMe) {
       final activeBg = Colors.white.withValues(alpha: 0.2);
@@ -619,17 +664,6 @@ class MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (canView) ...[
-                _buildCapsuleChip(
-                  context: context,
-                  icon: Icons.access_time,
-                  label: 'View Once',
-                  backgroundColor: const Color(0xFF00A859),
-                  textColor: Colors.white,
-                  onTap: () {
-                    _openInAppViewer(context);
-                    _updatePermissions(context, view: false);
-                  },
-                ),
                 _buildCapsuleChip(
                   context: context,
                   icon: Icons.visibility,
@@ -717,6 +751,12 @@ class MessageBubble extends StatelessWidget {
       conversationId: conversationId,
       type: 'update_attachment_permissions',
       text: messageId,
+      security: {
+        'messageId': messageId,
+        'allowShare': newShare,
+        'allowDownload': newDownload,
+        'allowView': newView,
+      },
       viewControl: {
         'messageId': messageId,
         'allowShare': newShare,
@@ -1045,6 +1085,104 @@ class MessageBubble extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMessageText(BuildContext context, TextStyle baseStyle) {
+    if (isDeleted) {
+      final deletedStyle = baseStyle.copyWith(
+        fontStyle: FontStyle.italic,
+        color: isMe
+            ? context.colors.textLight.withValues(alpha: 0.7)
+            : context.colors.textSecondary,
+      );
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.block,
+              size: 16,
+              color: deletedStyle.color,
+            ),
+            CommonSpaces.w6,
+            Text(
+              message.isNotEmpty ? message : 'This message was deleted',
+              style: deletedStyle,
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (message.isEmpty || (type != 'text' && message == attachmentName)) {
+      return const SizedBox.shrink();
+    }
+
+    final RegExp urlRegex = RegExp(
+      r'(https?:\/\/[^\s]+|www\.[^\s]+)',
+      caseSensitive: false,
+    );
+
+    final matches = urlRegex.allMatches(message);
+    if (matches.isEmpty) {
+      return Text(
+        message,
+        style: baseStyle,
+      );
+    }
+
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: message.substring(lastEnd, match.start),
+        ));
+      }
+
+      final url = message.substring(match.start, match.end);
+      final linkColor = isMe ? Colors.cyanAccent : Colors.blue.shade700;
+
+      spans.add(TextSpan(
+        text: url,
+        style: TextStyle(
+          color: linkColor,
+          decoration: TextDecoration.underline,
+        ),
+        recognizer: TapGestureRecognizer()
+          ..onTap = () {
+            var openUrl = url;
+            if (openUrl.toLowerCase().startsWith('www.')) {
+              openUrl = 'https://$openUrl';
+            }
+            InAppViewer.show(
+              context,
+              url: openUrl,
+              fileName: url,
+              type: 'file',
+              allowShare: false,
+              allowDownload: false,
+            );
+          },
+      ));
+
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < message.length) {
+      spans.add(TextSpan(
+        text: message.substring(lastEnd),
+      ));
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: baseStyle,
+        children: spans,
       ),
     );
   }

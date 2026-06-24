@@ -46,6 +46,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
     on<UpdateAttachmentPermissionsEvent>(_onUpdateAttachmentPermissions);
+    on<MarkMessageFailedEvent>(_onMarkMessageFailed);
 
     _listenToSocket();
   }
@@ -151,17 +152,37 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         } else if (type == 'update_attachment_permissions') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          final viewControlMap = cleanData['viewControl'] ?? cleanData['view_control'] ?? cleanData;
-          final allowShare = viewControlMap['allowShare'] ?? viewControlMap['allow_share'] ?? true;
-          final allowDownload = viewControlMap['allowDownload'] ?? viewControlMap['allow_download'] ?? true;
-          final allowView = viewControlMap['allowView'] ?? viewControlMap['allow_view'] ?? true;
+          
+          final viewControlMap = cleanData['viewControl'] ?? cleanData['view_control'];
+          final securityMap = cleanData['security'];
+          
+          bool allowShare = true;
+          bool allowDownload = true;
+          bool allowView = true;
+
+          if (securityMap is Map) {
+            allowShare = (securityMap['allowShare'] ?? securityMap['allow_share'] ?? allowShare) as bool;
+            allowDownload = (securityMap['allowDownload'] ?? securityMap['allow_download'] ?? allowDownload) as bool;
+            allowView = (securityMap['allowView'] ?? securityMap['allow_view'] ?? allowView) as bool;
+          }
+
+          if (viewControlMap is Map) {
+            allowShare = (viewControlMap['allowShare'] ?? viewControlMap['allow_share'] ?? allowShare) as bool;
+            allowDownload = (viewControlMap['allowDownload'] ?? viewControlMap['allow_download'] ?? allowDownload) as bool;
+            allowView = (viewControlMap['allowView'] ?? viewControlMap['allow_view'] ?? allowView) as bool;
+          }
+
+          allowShare = (cleanData['allowShare'] ?? cleanData['allow_share'] ?? allowShare) as bool;
+          allowDownload = (cleanData['allowDownload'] ?? cleanData['allow_download'] ?? allowDownload) as bool;
+          allowView = (cleanData['allowView'] ?? cleanData['allow_view'] ?? allowView) as bool;
+
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(UpdateAttachmentPermissionsEvent(
               messageId: msgId,
               conversationId: convId!,
-              allowShare: allowShare == true,
-              allowDownload: allowDownload == true,
-              allowView: allowView == true,
+              allowShare: allowShare,
+              allowDownload: allowDownload,
+              allowView: allowView,
             ));
           }
         } else if (type == 'pong') {
@@ -257,7 +278,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (currentState is ChatLoaded) {
       final String now = DateTime.now().toIso8601String();
       final newMessage = MessageModel(
-        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        id: event.messageId ?? 'temp_${DateTime.now().millisecondsSinceEpoch}',
         conversationId: event.conversationId,
         senderId: currentState.myId,
         content: event.text,
@@ -501,6 +522,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             allowDownload: event.allowDownload,
             allowView: event.allowView,
           );
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onMarkMessageFailed(MarkMessageFailedEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(isFailed: true, isUploading: false);
         }
         return msg;
       }).toList();

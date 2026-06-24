@@ -11,4 +11,10 @@ abstract class DashboardRepository {
   });
 
   Future<ApiResult<ChatModel>> startDirectChat(String participantId);
+
+  Future<ApiResult<ChatModel>> createGroup({
+    required String groupName,
+    String? groupDescription,
+    required List<String> participantIds,
+  });
 }

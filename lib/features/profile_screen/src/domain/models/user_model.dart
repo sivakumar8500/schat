@@ -1,26 +1,103 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+class UserModel {
+  final String phoneNumber;
+  final String? username;
+  final String? firstName;
+  final String? lastName;
+  final String? profilePictureUrl;
+  final String? about;
+  final String id;
+  final bool isActive;
+  final bool isOnline;
+  final String? lastSeen;
+  final bool isSubscribed;
+  final String? subscriptionType;
+  final String createdAt;
+  final String updatedAt;
 
-part 'user_model.freezed.dart';
-part 'user_model.g.dart';
+  const UserModel({
+    this.phoneNumber = '',
+    this.username,
+    this.firstName,
+    this.lastName,
+    this.profilePictureUrl,
+    this.about,
+    this.id = '',
+    this.isActive = false,
+    this.isOnline = false,
+    this.lastSeen,
+    this.isSubscribed = false,
+    this.subscriptionType,
+    this.createdAt = '',
+    this.updatedAt = '',
+  });
 
-@freezed
-abstract class UserModel with _$UserModel {
-  const factory UserModel({
-    @JsonKey(name: 'phone_number') required String phoneNumber,
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      phoneNumber: json['phone_number']?.toString() ?? '',
+      username: json['username']?.toString(),
+      firstName: json['first_name']?.toString(),
+      lastName: json['last_name']?.toString(),
+      profilePictureUrl: json['profile_picture_url']?.toString(),
+      about: json['about']?.toString(),
+      id: (json['id'] ?? json['_id'])?.toString() ?? '',
+      isActive: json['is_active'] as bool? ?? false,
+      isOnline: json['is_online'] as bool? ?? false,
+      lastSeen: json['last_seen']?.toString(),
+      isSubscribed: json['is_subscribed'] as bool? ?? false,
+      subscriptionType: json['subscription_type']?.toString(),
+      createdAt: json['created_at']?.toString() ?? '',
+      updatedAt: json['updated_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'phone_number': phoneNumber,
+        'username': username,
+        'first_name': firstName,
+        'last_name': lastName,
+        'profile_picture_url': profilePictureUrl,
+        'about': about,
+        'id': id,
+        'is_active': isActive,
+        'is_online': isOnline,
+        'last_seen': lastSeen,
+        'is_subscribed': isSubscribed,
+        'subscription_type': subscriptionType,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
+
+  UserModel copyWith({
+    String? phoneNumber,
     String? username,
-    @JsonKey(name: 'first_name') String? firstName,
-    @JsonKey(name: 'last_name') String? lastName,
-    @JsonKey(name: 'profile_picture_url') String? profilePictureUrl,
+    String? firstName,
+    String? lastName,
+    String? profilePictureUrl,
     String? about,
-    required String id,
-    @JsonKey(name: 'is_active') required bool isActive,
-    @JsonKey(name: 'is_online') required bool isOnline,
-    @JsonKey(name: 'last_seen') String? lastSeen,
-    @JsonKey(name: 'is_subscribed') required bool isSubscribed,
-    @JsonKey(name: 'subscription_type') String? subscriptionType,
-    @JsonKey(name: 'created_at') required String createdAt,
-    @JsonKey(name: 'updated_at') required String updatedAt,
-  }) = _UserModel;
-
-  factory UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(json);
+    String? id,
+    bool? isActive,
+    bool? isOnline,
+    String? lastSeen,
+    bool? isSubscribed,
+    String? subscriptionType,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return UserModel(
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      username: username ?? this.username,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
+      about: about ?? this.about,
+      id: id ?? this.id,
+      isActive: isActive ?? this.isActive,
+      isOnline: isOnline ?? this.isOnline,
+      lastSeen: lastSeen ?? this.lastSeen,
+      isSubscribed: isSubscribed ?? this.isSubscribed,
+      subscriptionType: subscriptionType ?? this.subscriptionType,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 }

@@ -197,7 +197,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
 
                                             decoration: BoxDecoration(
                                               color: fieldBgColor,
-                                              borderRadius: BorderRadius.circular(
+                                               borderRadius: BorderRadius.circular(
                                                 16,
                                               ),
                                             ),

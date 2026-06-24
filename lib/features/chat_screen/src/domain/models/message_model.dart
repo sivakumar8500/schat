@@ -24,6 +24,7 @@ class MessageModel {
   final String? attachmentName;
   final bool isUploading;
   final int? fileSize;
+  final bool isFailed;
 
   // Attachment permissions
   final bool allowShare;
@@ -49,6 +50,7 @@ class MessageModel {
     this.attachmentBytes,
     this.attachmentName,
     this.isUploading = false,
+    this.isFailed = false,
     this.allowShare = true,
     this.allowDownload = true,
     this.allowView = true,
@@ -61,28 +63,36 @@ class MessageModel {
     String? mediaType = json['type'] as String?;
 
     final dynamic contentData = json['content'];
-    if (contentData is Map<String, dynamic>) {
-      contentText = contentData['text'] as String? ?? '';
+    if (contentData is Map) {
+      contentText = (contentData['text'] ?? '')?.toString() ?? '';
       mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url']) as String?;
     } else if (contentData is String) {
       contentText = contentData;
       mediaUrl = (json['media_url'] ?? json['url']) as String?;
     }
 
-    final viewControl = json['viewControl'] ?? json['view_control'] ?? json['security'];
+    final dynamic security = json['security'];
+    final dynamic viewControl = json['viewControl'] ?? json['view_control'];
+    
     bool allowShare = true;
     bool allowDownload = true;
     bool allowView = true;
 
-    if (viewControl is Map) {
-      allowShare = (viewControl['allowShare'] ?? viewControl['allow_share'] ?? true) as bool;
-      allowDownload = (viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true) as bool;
-      allowView = (viewControl['allowView'] ?? viewControl['allow_view'] ?? true) as bool;
-    } else {
-      allowShare = (json['allowShare'] ?? json['allow_share'] ?? true) as bool;
-      allowDownload = (json['allowDownload'] ?? json['allow_download'] ?? true) as bool;
-      allowView = (json['allowView'] ?? json['allow_view'] ?? true) as bool;
+    if (security is Map) {
+      allowShare = (security['allowShare'] ?? security['allow_share'] ?? allowShare) as bool;
+      allowDownload = (security['allowDownload'] ?? security['allow_download'] ?? allowDownload) as bool;
+      allowView = (security['allowView'] ?? security['allow_view'] ?? allowView) as bool;
     }
+
+    if (viewControl is Map) {
+      allowShare = (viewControl['allowShare'] ?? viewControl['allow_share'] ?? allowShare) as bool;
+      allowDownload = (viewControl['allowDownload'] ?? viewControl['allow_download'] ?? allowDownload) as bool;
+      allowView = (viewControl['allowView'] ?? viewControl['allow_view'] ?? allowView) as bool;
+    }
+
+    allowShare = (json['allowShare'] ?? json['allow_share'] ?? allowShare) as bool;
+    allowDownload = (json['allowDownload'] ?? json['allow_download'] ?? allowDownload) as bool;
+    allowView = (json['allowView'] ?? json['allow_view'] ?? allowView) as bool;
 
     int? fileSize;
     final dynamic rawFileSize = json['fileSize'] ?? json['file_size'] ?? json['file_size_bytes'] ?? 
@@ -119,6 +129,7 @@ class MessageModel {
       attachmentBytes: null,
       attachmentName: parsedAttachmentName,
       isUploading: false,
+      isFailed: (json['isFailed'] ?? json['is_failed']) as bool? ?? false,
       allowShare: allowShare,
       allowDownload: allowDownload,
       allowView: allowView,
@@ -148,6 +159,7 @@ class MessageModel {
     'isPinned': isPinned,
     'attachmentName': attachmentName,
     'fileSize': fileSize,
+    'isFailed': isFailed,
     'viewControl': {
       'allowShare': allowShare,
       'allowDownload': allowDownload,
@@ -174,6 +186,7 @@ class MessageModel {
     Uint8List? attachmentBytes,
     String? attachmentName,
     bool? isUploading,
+    bool? isFailed,
     bool? allowShare,
     bool? allowDownload,
     bool? allowView,
@@ -198,6 +211,7 @@ class MessageModel {
       attachmentBytes: attachmentBytes ?? this.attachmentBytes,
       attachmentName: attachmentName ?? this.attachmentName,
       isUploading: isUploading ?? this.isUploading,
+      isFailed: isFailed ?? this.isFailed,
       allowShare: allowShare ?? this.allowShare,
       allowDownload: allowDownload ?? this.allowDownload,
       allowView: allowView ?? this.allowView,
