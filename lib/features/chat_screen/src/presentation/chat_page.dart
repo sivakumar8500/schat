@@ -81,6 +81,8 @@ class _ChatPageState extends State<ChatPage> {
 
   late ChatBloc _chatBloc;
   Timer? _typingIndicatorTimer;
+  late CallWebRtcBloc _callWebRtcBloc;
+  StreamSubscription? _callSocketSubscription;
 
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
@@ -132,6 +134,14 @@ class _ChatPageState extends State<ChatPage> {
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
     ));
+
+    // Init CallWebRtcBloc and listen for incoming call socket events
+    _callWebRtcBloc = CallWebRtcBloc(
+      getIt<WebRtcService>(),
+      getIt<ChatSocketRepository>(),
+    );
+    _listenForCallEvents();
+
     _initHive();
 
     // Listen to preview player events
@@ -152,6 +162,46 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+  void _listenForCallEvents() {
+    final repo = getIt<ChatSocketRepository>();
+    _callSocketSubscription = repo.onMessage.listen((data) {
+      if (!mounted) return;
+      if (data is! Map<String, dynamic>) return;
+      final type = data['type'] as String?;
+      if (type == 'call_incoming' &&
+          data['conversation_id'] == widget.conversationId) {
+        _callWebRtcBloc.add(HandleIncomingCallEvent(data));
+        _showIncomingCallScreen(data);
+      } else if (type == 'call_answered') {
+        _callWebRtcBloc.add(HandleCallAnsweredEvent(data));
+      } else if (type == 'ice_candidate_received') {
+        _callWebRtcBloc.add(HandleIceCandidateEvent(data));
+      } else if (type == 'call_disconnected') {
+        _callWebRtcBloc.add(const HandleCallDisconnectedEvent());
+      }
+    });
+  }
+
+  void _showIncomingCallScreen(Map<String, dynamic> event) {
+    final callType = event['call_type'] as String? ?? 'audio';
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BlocProvider.value(
+          value: _callWebRtcBloc,
+          child: IncomingCallDialog(
+            incomingEvent: event,
+            callerName: widget.contactName,
+            callerColor: widget.contactColor,
+            isVideo: callType == 'video',
+            conversationId: widget.conversationId,
+            recipientId: widget.recipientId,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _initHive() async {
     final box = await Hive.openBox('pinned_messages');
     if (mounted) {
@@ -164,6 +214,7 @@ class _ChatPageState extends State<ChatPage> {
       });
     }
   }
+
 
   Future<List<UserModel>> _getForwardContacts() async {
     try {
@@ -961,6 +1012,8 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _callSocketSubscription?.cancel();
+    _callWebRtcBloc.close();
     _stopTypingTimer();
     _messageController.dispose();
     _inputFocusNode.dispose();
@@ -2253,7 +2306,16 @@ class _ChatPageState extends State<ChatPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => VideoCallPage(contactName: widget.contactName),
+                builder: (_) => BlocProvider.value(
+                  value: _callWebRtcBloc,
+                  child: VideoCallPage(
+                    conversationId: widget.conversationId,
+                    contactName: widget.contactName,
+                    contactColor: widget.contactColor,
+                    recipientId: widget.recipientId,
+                    isOutgoing: true,
+                  ),
+                ),
               ),
             );
           },
@@ -2264,9 +2326,15 @@ class _ChatPageState extends State<ChatPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AudioCallPage(
-                  contactName: widget.contactName,
-                  contactColor: widget.contactColor,
+                builder: (_) => BlocProvider.value(
+                  value: _callWebRtcBloc,
+                  child: AudioCallPage(
+                    conversationId: widget.conversationId,
+                    contactName: widget.contactName,
+                    contactColor: widget.contactColor,
+                    recipientId: widget.recipientId,
+                    isOutgoing: true,
+                  ),
                 ),
               ),
             );
@@ -2301,13 +2369,17 @@ class _ChatPageState extends State<ChatPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => BlocProvider.value(
-                      value: _chatBloc,
+                    builder: (context) => MultiBlocProvider(
+                      providers: [
+                        BlocProvider.value(value: _chatBloc),
+                        BlocProvider.value(value: _callWebRtcBloc),
+                      ],
                       child: ContactProfilePage(
                         conversationId: widget.conversationId,
                         contactName: widget.contactName,
                         contactColor: widget.contactColor,
                         isOnline: isOnline,
+                        recipientId: widget.recipientId,
                       ),
                     ),
                   ),

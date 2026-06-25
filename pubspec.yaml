@@ -39,6 +39,7 @@ dependencies:
   record: ^7.1.0
   audioplayers: ^6.8.0
   path_provider: ^2.1.6
+  flutter_webrtc: ^0.12.3
 
 dev_dependencies:
   flutter_test:

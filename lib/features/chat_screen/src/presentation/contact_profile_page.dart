@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 
@@ -299,12 +300,27 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       _buildRoundActionButton(
                         icon: CommonIcons.phone,
                         onTap: () {
+                          CallWebRtcBloc callBloc;
+                          try {
+                            callBloc = context.read<CallWebRtcBloc>();
+                          } catch (_) {
+                            callBloc = CallWebRtcBloc(
+                              getIt<WebRtcService>(),
+                              getIt<ChatSocketRepository>(),
+                            );
+                          }
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => AudioCallPage(
-                                contactName: widget.contactName,
-                                contactColor: widget.contactColor,
+                              builder: (_) => BlocProvider.value(
+                                value: callBloc,
+                                child: AudioCallPage(
+                                  conversationId: widget.conversationId,
+                                  contactName: widget.contactName,
+                                  contactColor: widget.contactColor,
+                                  recipientId: widget.recipientId ?? '',
+                                  isOutgoing: true,
+                                ),
                               ),
                             ),
                           );
@@ -316,11 +332,27 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       _buildRoundActionButton(
                         icon: CommonIcons.videocam,
                         onTap: () {
+                          CallWebRtcBloc callBloc;
+                          try {
+                            callBloc = context.read<CallWebRtcBloc>();
+                          } catch (_) {
+                            callBloc = CallWebRtcBloc(
+                              getIt<WebRtcService>(),
+                              getIt<ChatSocketRepository>(),
+                            );
+                          }
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => VideoCallPage(
-                                contactName: widget.contactName,
+                              builder: (_) => BlocProvider.value(
+                                value: callBloc,
+                                child: VideoCallPage(
+                                  conversationId: widget.conversationId,
+                                  contactName: widget.contactName,
+                                  contactColor: widget.contactColor,
+                                  recipientId: widget.recipientId ?? '',
+                                  isOutgoing: true,
+                                ),
                               ),
                             ),
                           );
