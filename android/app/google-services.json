@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1086245508574",
+    "project_id": "schat-aa86b",
+    "storage_bucket": "schat-aa86b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1086245508574:android:f51bf2605ce4c50d2e794f",
+        "android_client_info": {
+          "package_name": "com.schat.schat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrn-7ZT0MB5uRM8hmM__Hr7AAGI9tR5WE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

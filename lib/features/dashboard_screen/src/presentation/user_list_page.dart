@@ -20,7 +20,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class UserListPage extends StatefulWidget {
-  const UserListPage({super.key});
+  final bool forceSync;
+  final bool showOnlySynced;
+  const UserListPage({
+    super.key,
+    this.forceSync = false,
+    this.showOnlySynced = false,
+  });
 
   @override
   State<UserListPage> createState() => _UserListPageState();
@@ -30,13 +36,34 @@ class _UserListPageState extends State<UserListPage> {
   String? _pendingParticipantId;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  late ContactsBloc _contactsBloc;
 
   final String _appLink = 'https://schat.app';
   final String _inviteTitle = 'Join Schat - Secure Messaging';
 
   @override
+  void initState() {
+    super.initState();
+    _contactsBloc = ContactsBloc();
+    if (widget.forceSync) {
+      _contactsBloc.add(const SyncContactsEvent());
+    } else {
+      _contactsBloc.add(const LoadContacts());
+    }
+  }
+
+  @override
+  void didUpdateWidget(UserListPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.forceSync && !oldWidget.forceSync) {
+      _contactsBloc.add(const SyncContactsEvent());
+    }
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
+    _contactsBloc.close();
     super.dispose();
   }
 
@@ -193,8 +220,8 @@ class _UserListPageState extends State<UserListPage> {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (context) => ContactsBloc()..add(const LoadContacts()),
+        BlocProvider.value(
+          value: _contactsBloc,
         ),
         BlocProvider(
           create: (context) => getIt<ChatsBloc>(),
@@ -228,40 +255,55 @@ class _UserListPageState extends State<UserListPage> {
             orElse: () {},
           );
         },
-        child: Scaffold(
-          backgroundColor: context.colors.scaffoldBackground,
-          body: BlocBuilder<ContactsBloc, ContactsState>(
-            builder: (context, state) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-                    child: Text('New Chat', style: context.h1.copyWith(fontSize: 26)),
-                  ),
-                  _buildSearchBar(),
-                  Expanded(
-                    child: _buildBody(context, state),
-                  ),
+        child: DefaultTabController(
+          length: 2,
+          child: Scaffold(
+            backgroundColor: context.colors.scaffoldBackground,
+            appBar: AppBar(
+              backgroundColor: context.colors.scaffoldBackground,
+              elevation: 0,
+              automaticallyImplyLeading: false,
+              title: Text('New Chat', style: context.h1.copyWith(fontSize: 26)),
+              bottom: TabBar(
+                indicatorColor: context.colors.primary,
+                labelColor: context.colors.primary,
+                unselectedLabelColor: context.colors.textSecondary,
+                labelStyle: context.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                tabs: const [
+                  Tab(text: 'Schat Users'),
+                  Tab(text: 'All Contacts'),
                 ],
-              );
-            },
+              ),
+            ),
+            body: BlocBuilder<ContactsBloc, ContactsState>(
+              builder: (context, state) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSearchBar(),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildSchatUsersTab(context, state),
+                          _buildAllContactsTab(context, state),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context, ContactsState state) {
+  Widget _buildSchatUsersTab(BuildContext context, ContactsState state) {
     if (state is ContactsLoading) {
       return const Center(child: CircularProgressIndicator());
     } else if (state is ContactsLoaded) {
-      if (state.contacts.isEmpty && state.syncedContacts.isEmpty) {
-        return _buildEmptyState(context);
-      }
-
       final query = _searchQuery.toLowerCase();
-
       final syncedUsers = state.syncedContacts.where((user) {
         if (query.isEmpty) return true;
         final name = (user.username ?? '').toLowerCase();
@@ -269,11 +311,28 @@ class _UserListPageState extends State<UserListPage> {
         return name.contains(query) || phone.contains(query);
       }).toList();
 
-      final allContacts = state.contacts;
-      final hiddenPhones = state.hiddenPhoneNumbers;
+      if (syncedUsers.isEmpty) {
+        return _buildEmptyState(context, isSchatOnly: true);
+      }
+
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: syncedUsers.length,
+        itemBuilder: (context, index) => _buildSyncedUserTile(context, syncedUsers[index]),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildAllContactsTab(BuildContext context, ContactsState state) {
+    if (state is ContactsLoading) {
+      return const Center(child: CircularProgressIndicator());
+    } else if (state is ContactsLoaded || state is ContactsPermissionDenied || state is ContactsInitial) {
+      final query = _searchQuery.toLowerCase();
+      final allContacts = (state is ContactsLoaded) ? state.contacts : <Contact>[];
+      final hiddenPhones = (state is ContactsLoaded) ? state.hiddenPhoneNumbers : <String>[];
 
       final inviteContacts = allContacts.where((contact) {
-        // Exclude if phone number is in hidden list
         bool isHidden = contact.phones.any((phone) {
           String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
           if (normalized.length > 10) {
@@ -283,96 +342,53 @@ class _UserListPageState extends State<UserListPage> {
         });
         if (isHidden) return false;
 
-        // Exclude if already a synced user
-        bool isSynced = state.syncedContacts.any((user) {
-          return contact.phones.any((phone) {
-            String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
-            if (normalized.length > 10) {
-              normalized = normalized.substring(normalized.length - 10);
-            }
-            return user.phoneNumber.contains(normalized);
-          });
-        });
-        if (isSynced) return false;
-
-        // Search filter
         if (query.isEmpty) return true;
         final name = contact.displayName.toLowerCase();
         final phones = contact.phones.map((p) => p.number.toLowerCase()).join(' ');
         return name.contains(query) || phones.contains(query);
       }).toList();
 
-      if (syncedUsers.isEmpty && inviteContacts.isEmpty) {
-        if (query.isNotEmpty) {
-          return Center(
-            child: Text(
-              'No results for "$_searchQuery"',
-              style: context.bodyMedium,
-            ),
-          );
+      if (inviteContacts.isEmpty) {
+        if (state is ContactsPermissionDenied) {
+          return _buildPermissionDeniedState(context);
         }
-        return _buildEmptyState(context);
+        return _buildEmptyState(context, isSchatOnly: false);
       }
 
-      return ListView(
+      return ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: [
-          if (syncedUsers.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Text(
-                'Contacts on Schat',
-                style: context.titleMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: context.colors.primary,
-                ),
-              ),
-            ),
-            ...syncedUsers.map((user) => _buildSyncedUserTile(context, user)),
-            const Divider(height: 32),
-          ],
-          if (inviteContacts.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Text(
-                'Invite to Schat',
-                style: context.titleMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: context.colors.textSecondary,
-                ),
-              ),
-            ),
-            ...inviteContacts.map((contact) => _buildInviteContactTile(context, contact)),
-          ],
-        ],
+        itemCount: inviteContacts.length,
+        itemBuilder: (context, index) => _buildInviteContactTile(context, inviteContacts[index]),
       );
-    } else if (state is ContactsPermissionDenied) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                'Contact permission is required to start a new chat.',
-                textAlign: TextAlign.center,
-              ),
-              CommonSpaces.h16,
-              ElevatedButton(
-                onPressed: () => openAppSettings(),
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else if (state is ContactsFailure) {
-      return const SizedBox.shrink();
     }
     return const SizedBox.shrink();
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildPermissionDeniedState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(CommonIcons.contactPhoneOutlined, size: 80, color: context.colors.grey),
+            CommonSpaces.h16,
+            const Text(
+              'Contact permission is required to see your phone contacts.',
+              textAlign: TextAlign.center,
+            ),
+            CommonSpaces.h16,
+            ElevatedButton(
+              onPressed: () => openAppSettings(),
+              child: const Text('Open Settings'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, {required bool isSchatOnly}) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32.0),
@@ -381,36 +397,43 @@ class _UserListPageState extends State<UserListPage> {
           children: [
             Image.asset(
               'assets/no_data/no_contacts.png',
-              width: 250,
+              width: 150,
               errorBuilder: (context, error, stackTrace) => Icon(
                 CommonIcons.contactPhoneOutlined,
-                size: 100,
+                size: 80,
                 color: context.colors.grey,
               ),
             ),
             CommonSpaces.h24,
             Text(
-              'No contacts found',
-              style: context.h3.copyWith(fontWeight: FontWeight.bold),
+              isSchatOnly ? 'No Schat users found' : 'No contacts found',
+              style: context.h3.copyWith(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             CommonSpaces.h8,
             Text(
-              'Sync your contacts to see who is on Schat.',
+              isSchatOnly 
+                ? 'Sync your contacts to see who is on Schat.' 
+                : 'Grant contact permission to see your address book.',
               textAlign: TextAlign.center,
               style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
             ),
             CommonSpaces.h32,
-            PrimaryButton(
-              text: 'Sync Now',
-              onPressed: () {
-                context.read<ContactsBloc>().add(const SyncContactsEvent());
-              },
-            ),
+            if (isSchatOnly)
+              PrimaryButton(
+                text: 'Sync Now',
+                onPressed: () {
+                  context.read<ContactsBloc>().add(const SyncContactsEvent());
+                },
+              ),
           ],
         ),
       ),
     );
   }
+
+  // Removed old _buildBody as it's replaced by TabBarView
+  // Keeping _buildSearchBar, _buildSyncedUserTile, _buildInviteContactTile as they are used by tabs
+
 
   Widget _buildSearchBar() {
     return Padding(

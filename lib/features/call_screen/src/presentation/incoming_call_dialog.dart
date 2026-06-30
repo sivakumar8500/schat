@@ -9,6 +9,8 @@ import 'package:schat/features/call_screen/src/presentation/video_call_page.dart
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/permission_helper.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 /// Full-screen incoming call dialog shown when `call_incoming` is received.
 /// mason make widget --name incoming_call_dialog
@@ -93,7 +95,18 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     super.dispose();
   }
 
-  void _accept(BuildContext context) {
+  void _accept(BuildContext context) async {
+    final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: widget.isVideo);
+    if (!hasPermission) {
+      if (mounted) {
+        context.showErrorNotification(widget.isVideo 
+            ? 'Camera and Microphone permissions are required for video calls'
+            : 'Microphone permission is required for audio calls');
+      }
+      return;
+    }
+    
+    if (!mounted) return;
     context.read<CallWebRtcBloc>().add(AnswerCallEvent(widget.incomingEvent));
     Navigator.of(context).pop();
     Navigator.of(context).push(
@@ -213,17 +226,17 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                     // Ripple ring 1
                     AnimatedBuilder(
                       animation: _ring1,
-                      builder: (_, __) => _buildRing(_ring1.value),
+                      builder: (_, _) => _buildRing(_ring1.value),
                     ),
                     // Ripple ring 2
                     AnimatedBuilder(
                       animation: _ring2,
-                      builder: (_, __) => _buildRing(_ring2.value),
+                      builder: (_, _) => _buildRing(_ring2.value),
                     ),
                     // Ripple ring 3
                     AnimatedBuilder(
                       animation: _ring3,
-                      builder: (_, __) => _buildRing(_ring3.value),
+                      builder: (_, _) => _buildRing(_ring3.value),
                     ),
                     // Avatar
                     ScaleTransition(

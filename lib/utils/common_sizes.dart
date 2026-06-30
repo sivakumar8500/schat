@@ -13,6 +13,7 @@ class CommonSizes {
   static const double p24 = 24.0;
   static const double p30 = 30.0;
   static const double p32 = 32.0;
+  static const double p38 = 38.0;
   static const double p40 = 40.0;
   static const double p48 = 48.0;
   static const double p50 = 50.0;

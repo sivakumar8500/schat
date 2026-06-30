@@ -17,11 +17,12 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_dialog.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'package:schat/utils/theme_controller.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
@@ -37,8 +38,11 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   int _currentIndex = 0;
   String _username = 'David';
+  String? _profilePicUrl;
   final Set<String> _hiddenChatIds = {};
   final Set<String> _deletedChatIds = {};
+  bool _shouldSyncContacts = false;
+  bool _onlyShowSynced = false;
 
   @override
   void initState() {
@@ -49,21 +53,27 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadProfile() async {
+    // Immediate load from storage
+    if (mounted) {
+      setState(() {
+        _username = getIt<StorageService>().getUsername() ?? 'David';
+        _profilePicUrl = getIt<StorageService>().getProfilePic();
+      });
+    }
+
+    // Background refresh from API
     getIt<ProfileRepository>().getProfile().then((result) {
       result.when(
         success: (user) {
           if (mounted) {
             setState(() {
               _username = user.username ?? 'David';
+              _profilePicUrl = user.profilePictureUrl;
             });
           }
         },
         failure: (_, statusCode) {},
       );
-    });
-
-    setState(() {
-      _username = getIt<StorageService>().getUsername() ?? 'David';
     });
   }
 
@@ -79,7 +89,10 @@ class _DashboardPageState extends State<DashboardPage> {
             _buildChatsTab(),
             const StatusPage(),
             const CallHistoryPage(),
-            const UserListPage(),
+            UserListPage(
+              forceSync: _shouldSyncContacts,
+              showOnlySynced: _onlyShowSynced,
+            ),
           ],
         ),
       ),
@@ -130,33 +143,76 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          GestureDetector(
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      ProfileSettingsPage(username: _username),
-                ),
-              );
-              _loadProfile();
-            },
-            child: Text.rich(
-              TextSpan(
-                text: "Hello ",
+          Expanded(
+            child: GestureDetector(
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ProfileSettingsPage(
+                          username: _username,
+                          profilePicUrl: _profilePicUrl,
+                        ),
+                  ),
+                );
+                
+                if (result == 'sync') {
+                  setState(() {
+                    _currentIndex = 3;
+                    _shouldSyncContacts = true;
+                    _onlyShowSynced = true;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _shouldSyncContacts = false);
+                  });
+                }
+                _loadProfile();
+              },
+              child: Row(
                 children: [
-                  TextSpan(
-                    text: _username,
-                    style: context.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w900,
+                  Container(
+                    width: CommonSizes.p32,
+                    height: CommonSizes.p32,
+                    decoration: BoxDecoration(
+                      color: context.colors.primary.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: ClipOval(
+                      child: (_profilePicUrl != null && _profilePicUrl!.isNotEmpty)
+                          ? Image.network(
+                              _profilePicUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(CommonIcons.person, color: context.colors.primary, size: 20),
+                            )
+                          : Icon(CommonIcons.person, color: context.colors.primary, size: 20),
                     ),
                   ),
-                  const TextSpan(text: " 👋"),
+                  CommonSpaces.w12,
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        text: "Hello ",
+                        children: [
+                          TextSpan(
+                            text: _username,
+                            style: context.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const TextSpan(text: " 👋"),
+                        ],
+                      ),
+                      style: context.h2.copyWith(
+                        fontSize: 22,
+                        color: context.colors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
-              ),
-              style: context.h2.copyWith(
-                fontSize: 26,
-                color: context.colors.textPrimary,
               ),
             ),
           ),
@@ -174,14 +230,17 @@ class _DashboardPageState extends State<DashboardPage> {
                 getIt<ThemeController>().toggleTheme();
                 setState(() {});
               } else if (value == 'create_group') {
-                final chat = await showDialog<ChatModel>(
+                final chat = await showModalBottomSheet<ChatModel>(
                   context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
                   builder: (dialogCtx) => BlocProvider(
                     create: (context) => ContactsBloc()..add(const LoadContacts()),
-                    child: const CreateGroupDialog(),
+                    child: const CreateGroupBottomSheet(),
                   ),
                 );
                 if (chat != null && mounted) {
+                  context.showSuccessNotification('Group created successfully');
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -197,12 +256,26 @@ class _DashboardPageState extends State<DashboardPage> {
                   );
                 }
               } else if (value == 'profile') {
-                await Navigator.push(
+                final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ProfileSettingsPage(username: _username),
+                    builder: (context) => ProfileSettingsPage(
+                      username: _username,
+                      profilePicUrl: _profilePicUrl,
+                    ),
                   ),
                 );
+                
+                if (result == 'sync') {
+                  setState(() {
+                    _currentIndex = 3;
+                    _shouldSyncContacts = true;
+                    _onlyShowSynced = true;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _shouldSyncContacts = false);
+                  });
+                }
                 _loadProfile();
               }
             },
@@ -296,8 +369,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (isGroup) {
       return SizedBox(
-        width: 56,
-        height: 56,
+        width: CommonSizes.p48,
+        height: CommonSizes.p48,
         child: Stack(
           children: [
             Positioned(
@@ -362,8 +435,8 @@ class _DashboardPageState extends State<DashboardPage> {
     return Stack(
       children: [
         Container(
-          width: 56,
-          height: 56,
+          width: CommonSizes.p38,
+          height: CommonSizes.p38,
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.15),
             shape: BoxShape.circle,
@@ -732,6 +805,9 @@ class _DashboardPageState extends State<DashboardPage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
+            if (index == 3) {
+              _onlyShowSynced = false; // Reset to show all when tapped manually
+            }
           });
         },
         type: BottomNavigationBarType.fixed,

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/update_profile_request.dart';
@@ -40,12 +41,46 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
   Future<void> _onUpdateProfile(UpdateProfileEvent event, Emitter<ProfileState> emit) async {
     emit(const ProfileLoading());
     
+    String? profileImageUrl = event.imagePath;
+
+    // Handle media upload if imagePath is a local file
+    if (event.imagePath != null && 
+        !event.imagePath!.startsWith('http') && 
+        !event.imagePath!.startsWith('https')) {
+      try {
+        final file = File(event.imagePath!);
+        if (await file.exists()) {
+          final fileName = file.path.split('/').last;
+          final fileSize = await file.length();
+          // Simple mime type detection for images
+          String mimeType = 'image/jpeg';
+          if (fileName.toLowerCase().endsWith('.png')) mimeType = 'image/png';
+          if (fileName.toLowerCase().endsWith('.gif')) mimeType = 'image/gif';
+          if (fileName.toLowerCase().endsWith('.webp')) mimeType = 'image/webp';
+
+          final uploadedKey = await _profileRepository.uploadProfilePicture(
+            filePath: file.path,
+            fileName: fileName,
+            mimeType: mimeType,
+            fileSizeBytes: fileSize,
+          );
+          
+          if (uploadedKey != null) {
+            profileImageUrl = uploadedKey;
+          }
+        }
+      } catch (e) {
+        emit(ProfileFailure(errorMessage: 'Failed to upload profile picture: $e'));
+        return;
+      }
+    }
+
     final request = UpdateProfileRequest(
       username: event.username,
       firstName: event.firstName,
       lastName: event.lastName,
       about: event.about,
-      profilePictureUrl: event.imagePath,
+      profilePictureUrl: profileImageUrl,
     );
 
     final result = await _profileRepository.updateProfile(request);

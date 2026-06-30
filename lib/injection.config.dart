@@ -19,11 +19,17 @@ import 'core/network/api_interceptor.dart' as _i729;
 import 'core/network/api_service.dart' as _i374;
 import 'core/network/connectivity_repository.dart' as _i232;
 import 'core/network/network_module.dart' as _i550;
+import 'core/notifications/call_notification_service.dart' as _i374;
+import 'core/security/screen_protection_service.dart' as _i568;
 import 'core/storage/storage_service.dart' as _i263;
 import 'features/auth_screen/src/data/repositories/auth_repository_impl.dart'
     as _i299;
 import 'features/auth_screen/src/domain/repositories/auth_repository.dart'
     as _i939;
+import 'features/call_screen/src/domain/call_sound_service.dart' as _i849;
+import 'features/call_screen/src/domain/web_rtc_service.dart' as _i176;
+import 'features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart'
+    as _i288;
 import 'features/chat_screen/src/data/repositories/chat_repository_impl.dart'
     as _i715;
 import 'features/chat_screen/src/domain/repositories/chat_repository.dart'
@@ -88,6 +94,14 @@ extension GetItInjectableX on _i174.GetIt {
       preResolve: true,
     );
     gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
+    gh.lazySingleton<_i374.CallNotificationService>(
+      () => _i374.CallNotificationService(),
+    );
+    gh.lazySingleton<_i568.ScreenProtectionService>(
+      () => _i568.ScreenProtectionService(),
+    );
+    gh.lazySingleton<_i849.CallSoundService>(() => _i849.CallSoundService());
+    gh.lazySingleton<_i176.WebRtcService>(() => _i176.WebRtcService());
     gh.lazySingleton<_i466.PaymentRepository>(
       () => _i39.PaymentRepositoryImpl(),
     );
@@ -135,6 +149,12 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>()),
     );
     gh.lazySingleton<_i374.ApiService>(() => _i374.ApiService(gh<_i361.Dio>()));
+    gh.lazySingleton<_i288.CallWebRtcBloc>(
+      () => _i288.CallWebRtcBloc(
+        gh<_i176.WebRtcService>(),
+        gh<_i411.ChatSocketRepository>(),
+      ),
+    );
     gh.lazySingleton<_i939.AuthRepository>(
       () => _i299.AuthRepositoryImpl(
         gh<_i374.ApiService>(),

@@ -29,6 +29,34 @@ abstract class ChatSocketRepository {
   });
   void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
+  void editMessage({required String messageId, required String text});
+  void deleteMessage({
+    required String conversationId,
+    required String messageId,
+    required String deleteType,
+  });
+  void sendFileAction({
+    required String type,
+    required String conversationId,
+    required String messageId,
+    required String fileKey,
+  });
+  void sendLocationMessage({
+    required String conversationId,
+    required double latitude,
+    required double longitude,
+    String? address,
+  });
+  void sendContactMessage({
+    required String conversationId,
+    required String contactName,
+    required String phoneNumber,
+  });
+  void sendScreenShareSignaling({
+    required String type,
+    required String conversationId,
+    Map<String, dynamic>? data,
+  });
   void sendPing();
   bool get isConnected;
   Stream<dynamic> get onMessage;
@@ -186,6 +214,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     final Map<String, dynamic> payload = {
       "type": type,
       "conversationId": conversationId,
+      "conversation_id": conversationId,
     };
 
     if (content.isNotEmpty) payload['content'] = content;
@@ -218,6 +247,97 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       "conversation_id": conversationId,
       "messageId": messageId,
       "message_id": messageId,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void editMessage({required String messageId, required String text}) {
+    final Map<String, dynamic> payload = {
+      "type": "edit_message",
+      "message_id": messageId,
+      "text": text,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void deleteMessage({
+    required String conversationId,
+    required String messageId,
+    required String deleteType,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "delete_message",
+      "conversation_id": conversationId,
+      "message_id": messageId,
+      "delete_type": deleteType,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void sendFileAction({
+    required String type,
+    required String conversationId,
+    required String messageId,
+    required String fileKey,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": type,
+      "conversation_id": conversationId,
+      "message_id": messageId,
+      "file_key": fileKey,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void sendLocationMessage({
+    required String conversationId,
+    required double latitude,
+    required double longitude,
+    String? address,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "location",
+      "conversation_id": conversationId,
+      "content": {
+        "latitude": latitude,
+        "longitude": longitude,
+        "address": address ?? "",
+      }
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void sendContactMessage({
+    required String conversationId,
+    required String contactName,
+    required String phoneNumber,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "contact",
+      "conversation_id": conversationId,
+      "content": {
+        "contactName": contactName,
+        "phoneNumber": phoneNumber,
+      }
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void sendScreenShareSignaling({
+    required String type,
+    required String conversationId,
+    Map<String, dynamic>? data,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": type,
+      "conversation_id": conversationId,
+      ...?data,
     };
     emit('message', payload);
   }

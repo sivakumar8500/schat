@@ -12,6 +12,8 @@ class CommonEndpoints {
   static const String profileMe = '/users/me';
   static const String updateProfile = '/users/me';
   static const String syncContacts = '/users/sync-contacts';
+  static String getUserProfile(String userId) => '/users/$userId';
+  static const String deleteAccount = '/users/me';
 
   // Subscriptions
   static const String getPlans = '/subscriptions/plans';
@@ -21,10 +23,23 @@ class CommonEndpoints {
   static const String getChats = '/chats/';
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
+  static String getGroupDetails(String groupId) => '/groups/$groupId';
+  static String deleteGroup(String groupId) => '/groups/$groupId';
+
+  // Chat Actions
+  static String favoriteChat(String conversationId) => '/chats/$conversationId/favorite';
+  static String unfavoriteChat(String conversationId) => '/chats/$conversationId/unfavorite';
+  static String muteChat(String conversationId) => '/chats/$conversationId/mute';
+  static String unmuteChat(String conversationId) => '/chats/$conversationId/unmute';
+  static String setDisappearingTimer(String conversationId) => '/chats/$conversationId/disappearing-timer';
+  
+  // Message Actions
+  static String forwardMessage(String messageId) => '/messages/$messageId/forward';
+  static String editMessage(String messageId) => '/messages/$messageId';
+  static String deleteMessage(String messageId) => '/messages/$messageId';
 
   // Media Upload
   static const String requestUpload = '/media/request-upload';
   static String completeUpload(String mediaId) => '/media/$mediaId/complete';
-  static String getConversationMedia(String conversationId) => '/media/$conversationId';
+  static String getConversationMedia(String conversationId) => '/chats/$conversationId/media';
 }
-

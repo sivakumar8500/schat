@@ -52,14 +52,16 @@ class _VideoCallPageState extends State<VideoCallPage>
       value: 1.0,
     );
 
-    if (widget.isOutgoing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
+      if (widget.isOutgoing) {
         context.read<CallWebRtcBloc>().add(InitiateCallEvent(
           conversationId: widget.conversationId,
           isVideo: true,
+          contactName: widget.contactName,
         ));
-      });
-    }
+      }
+    });
 
     _scheduleControlsHide();
   }
@@ -103,6 +105,17 @@ class _VideoCallPageState extends State<VideoCallPage>
     _timer?.cancel();
     _controlsTimer?.cancel();
     _fadeController.dispose();
+    
+    // Notify bloc that page is being closed (minimized if call still active)
+    try {
+      final bloc = getIt<CallWebRtcBloc>();
+      if (bloc.state is CallActive || bloc.state is CallConnecting) {
+        bloc.add(const SetCallMinimizedEvent(true));
+      }
+    } catch (e) {
+      debugPrint('Error setting minimized state in dispose: $e');
+    }
+
     super.dispose();
   }
 
@@ -182,6 +195,21 @@ class _VideoCallPageState extends State<VideoCallPage>
                     child: FadeTransition(
                       opacity: _fadeController,
                       child: _buildTopHeader(context, state),
+                    ),
+                  ),
+
+                  // ─── Top Left Minimize Button ───
+                  Positioned(
+                    top: 10,
+                    left: 16,
+                    child: SafeArea(
+                      child: FadeTransition(
+                        opacity: _fadeController,
+                        child: _buildFrostedButton(
+                          icon: CommonIcons.minimize,
+                          onTap: () => Navigator.of(context).pop(),
+                        ),
+                      ),
                     ),
                   ),
 
@@ -269,7 +297,7 @@ class _VideoCallPageState extends State<VideoCallPage>
         child: Column(
           children: [
             Text(
-              widget.contactName,
+              state is CallActive ? state.contactName : widget.contactName,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
@@ -385,6 +413,7 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   Widget _buildControlBar(BuildContext context, bool isMuted, bool isVideoOff,
       CallWebRtcState state) {
+    final isSpeakerOn = state is CallActive ? state.isSpeakerOn : true;
     return Container(
       padding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -415,8 +444,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                 .add(const ToggleCameraCallEvent()),
           ),
           _buildBarButton(
-            icon: CommonIcons.volumeUp,
-            isActive: true,
+            icon: isSpeakerOn ? CommonIcons.volumeUp : CommonIcons.volumeDown,
+            isActive: isSpeakerOn,
             activeColor: const Color(0xFF34C759),
             onTap: () => context
                 .read<CallWebRtcBloc>()

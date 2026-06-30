@@ -5,14 +5,13 @@ import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
-import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
-import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 
 import 'package:schat/features/chat_screen/src/presentation/contact_profile_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/injection.dart';
 
 class GroupInfoPage extends StatefulWidget {
@@ -35,14 +34,41 @@ class GroupInfoPage extends StatefulWidget {
 
 class _GroupInfoPageState extends State<GroupInfoPage> {
   final String _myId = getIt<StorageService>().getUserId() ?? '';
+  bool _isLoading = true;
+  Map<String, dynamic>? _groupData;
+  List<UserModel> _participants = [];
 
-  // Better Mock participants
-  final List<UserModel> _participants = [
-    const UserModel(id: '1', firstName: 'Alice', username: 'alice_w', about: 'Available', isOnline: true),
-    const UserModel(id: '2', firstName: 'Bob', username: 'bob_builder', about: 'At work', isOnline: false),
-    const UserModel(id: '3', firstName: 'Charlie', username: 'charlie_brown', about: 'Sleeping', isOnline: true),
-    const UserModel(id: '4', firstName: 'David', username: 'david_king', about: 'Hey there!', isOnline: false),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchGroupDetails();
+  }
+
+  Future<void> _fetchGroupDetails() async {
+    try {
+      final repo = getIt<ChatRepository>();
+      final data = await repo.getGroupDetails(widget.conversationId);
+      
+      if (mounted) {
+        setState(() {
+          _groupData = data;
+          final participantsData = data['participants'];
+          if (participantsData is List) {
+            _participants = participantsData.map((p) {
+              final userJson = p['user'] ?? p;
+              return UserModel.fromJson(Map<String, dynamic>.from(userJson as Map));
+            }).toList();
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching group details: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,10 +78,14 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     return BlocBuilder<ChatBloc, ChatState>(
       builder: (context, state) {
         final isMuted = state is ChatLoaded ? state.isMuted : false;
-        
+        final description = _groupData?['description'] ?? widget.groupDescription;
+        final participantCount = _groupData?['participant_count'] ?? _participants.length;
+
         return Scaffold(
           backgroundColor: context.colors.scaffoldBackground,
-          body: CustomScrollView(
+          body: _isLoading 
+              ? Center(child: CircularProgressIndicator(color: context.colors.primary))
+              : CustomScrollView(
             slivers: [
               // WhatsApp style Sliver AppBar
               SliverAppBar(
@@ -63,7 +93,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                 pinned: true,
                 flexibleSpace: FlexibleSpaceBar(
                   title: Text(
-                    widget.groupName,
+                    _groupData?['name'] ?? widget.groupName,
                     style: context.titleMedium.copyWith(color: Colors.white, shadows: [
                       const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2)),
                     ]),
@@ -88,15 +118,15 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    if (widget.groupDescription != null && widget.groupDescription!.isNotEmpty)
+                    if (description != null && description.isNotEmpty)
                       _buildSectionCard(
                         innerCardColor,
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Add group description', style: context.bodyMedium.copyWith(color: context.colors.primary)),
+                            Text('Group description', style: context.bodyMedium.copyWith(color: context.colors.primary)),
                             CommonSpaces.h8,
-                            Text(widget.groupDescription!, style: context.bodyLarge),
+                            Text(description, style: context.bodyLarge),
                           ],
                         ),
                       ),
@@ -110,8 +140,10 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             title: 'Mute notifications',
                             trailing: Switch(
                               value: isMuted,
-                              onChanged: (val) {},
-                              activeColor: context.colors.primary,
+                              onChanged: (val) {
+                                context.read<ChatBloc>().add(ToggleMuteEvent(isMuted: val));
+                              },
+                              activeThumbColor: context.colors.primary,
                             ),
                           ),
                           _buildSettingsTile(
@@ -145,7 +177,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             child: Text(
-                              '12 participants',
+                              '$participantCount participants',
                               style: context.titleSmall.copyWith(color: context.colors.textSecondary),
                             ),
                           ),
@@ -157,22 +189,25 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             title: Text('Add participants', style: context.bodyLarge.copyWith(color: context.colors.textPrimary)),
                             onTap: () {},
                           ),
-                          // Real/Mock participants
+                          // Real participants
                           ..._participants.map((user) {
                             final isMe = user.id == _myId;
                             final name = user.firstName ?? user.username ?? 'User';
+                            final isAdmin = _groupData?['participants']?.any((p) => p['user_id'] == user.id && p['is_admin'] == true) ?? false;
                             
                             return ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: context.colors.primary.withValues(alpha: 0.1),
-                                child: Text(
-                                  name.substring(0, 1).toUpperCase(),
-                                  style: TextStyle(color: context.colors.primary),
-                                ),
+                                child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                                    ? ClipOval(child: Image.network(user.profilePictureUrl!, fit: BoxFit.cover))
+                                    : Text(
+                                        name.substring(0, 1).toUpperCase(),
+                                        style: TextStyle(color: context.colors.primary),
+                                      ),
                               ),
                               title: Text(isMe ? 'You' : name, style: context.bodyLarge),
-                              subtitle: Text(user.about ?? 'Status message goes here...', style: context.bodySmall),
-                              trailing: user.id == '1' ? Container(
+                              subtitle: Text(user.about ?? 'Hey there! I am using Schat.', style: context.bodySmall),
+                              trailing: isAdmin ? Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
                                   border: Border.all(color: context.colors.primary),

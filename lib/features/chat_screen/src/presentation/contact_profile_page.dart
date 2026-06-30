@@ -14,9 +14,10 @@ import 'package:schat/injection.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
+import 'package:schat/utils/permission_helper.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/utils/common_endpoints.dart';
-import 'package:schat/utils/common_notifications.dart';
 
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
@@ -299,16 +300,18 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       // Call button
                       _buildRoundActionButton(
                         icon: CommonIcons.phone,
-                        onTap: () {
-                          CallWebRtcBloc callBloc;
-                          try {
-                            callBloc = context.read<CallWebRtcBloc>();
-                          } catch (_) {
-                            callBloc = CallWebRtcBloc(
-                              getIt<WebRtcService>(),
-                              getIt<ChatSocketRepository>(),
-                            );
+                        onTap: () async {
+                          final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
+                          if (!hasPermission) {
+                            if (mounted) {
+                              context.showErrorNotification('Microphone permission is required for audio calls');
+                            }
+                            return;
                           }
+                          CallWebRtcBloc callBloc = getIt<CallWebRtcBloc>();
+                          final isAlreadyInCall = callBloc.isCallActiveFor(widget.conversationId);
+                          
+                          if (!mounted) return;
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -319,7 +322,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                                   contactName: widget.contactName,
                                   contactColor: widget.contactColor,
                                   recipientId: widget.recipientId ?? '',
-                                  isOutgoing: true,
+                                  isOutgoing: !isAlreadyInCall,
                                 ),
                               ),
                             ),
@@ -331,16 +334,18 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       // Video call button
                       _buildRoundActionButton(
                         icon: CommonIcons.videocam,
-                        onTap: () {
-                          CallWebRtcBloc callBloc;
-                          try {
-                            callBloc = context.read<CallWebRtcBloc>();
-                          } catch (_) {
-                            callBloc = CallWebRtcBloc(
-                              getIt<WebRtcService>(),
-                              getIt<ChatSocketRepository>(),
-                            );
+                        onTap: () async {
+                          final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
+                          if (!hasPermission) {
+                            if (mounted) {
+                              context.showErrorNotification('Camera and Microphone permissions are required for video calls');
+                            }
+                            return;
                           }
+                          CallWebRtcBloc callBloc = getIt<CallWebRtcBloc>();
+                          final isAlreadyInCall = callBloc.isCallActiveFor(widget.conversationId);
+
+                          if (!mounted) return;
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -351,7 +356,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                                   contactName: widget.contactName,
                                   contactColor: widget.contactColor,
                                   recipientId: widget.recipientId ?? '',
-                                  isOutgoing: true,
+                                  isOutgoing: !isAlreadyInCall,
                                 ),
                               ),
                             ),

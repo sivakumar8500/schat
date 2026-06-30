@@ -17,38 +17,46 @@ class ChatLoaded extends ChatState {
   final List<MessageModel> messages;
   final bool isMuted;
   final bool isLocked;
+  final bool isFavorite;
   final String myId;
   final bool isRecipientOnline;
   final bool isRecipientTyping;
   final Color? customBgColor;
+  final String? notificationMessage;
 
   const ChatLoaded({
     required this.messages,
     this.isMuted = false,
     this.isLocked = false,
+    this.isFavorite = false,
     this.myId = '',
     this.isRecipientOnline = false,
     this.isRecipientTyping = false,
     this.customBgColor,
+    this.notificationMessage,
   });
 
   ChatLoaded copyWith({
     List<MessageModel>? messages,
     bool? isMuted,
     bool? isLocked,
+    bool? isFavorite,
     String? myId,
     bool? isRecipientOnline,
     bool? isRecipientTyping,
     Color? customBgColor,
+    String? notificationMessage,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
       isMuted: isMuted ?? this.isMuted,
       isLocked: isLocked ?? this.isLocked,
+      isFavorite: isFavorite ?? this.isFavorite,
       myId: myId ?? this.myId,
       isRecipientOnline: isRecipientOnline ?? this.isRecipientOnline,
       isRecipientTyping: isRecipientTyping ?? this.isRecipientTyping,
       customBgColor: customBgColor ?? this.customBgColor,
+      notificationMessage: notificationMessage,
     );
   }
 }
@@ -56,4 +64,8 @@ class ChatLoaded extends ChatState {
 class ChatError extends ChatState {
   final String errorMessage;
   const ChatError({required this.errorMessage});
+}
+
+class ChatDeleted extends ChatState {
+  const ChatDeleted();
 }

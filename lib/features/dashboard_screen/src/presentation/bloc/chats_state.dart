@@ -9,7 +9,7 @@ abstract class ChatsState {
     TResult Function(List<ChatModel> chats)? loaded,
     TResult Function(ChatModel chat, String contactName, String? profilePictureUrl)? chatCreated,
     TResult Function(String message)? error,
-    required TResult orElse(),
+    required TResult Function() orElse,
   }) {
     if (this is ChatsInitial && initial != null) return initial();
     if (this is ChatsLoading && loading != null) return loading();

@@ -4,8 +4,9 @@ abstract class AuthEvent {
 
 class SendOtpEvent extends AuthEvent {
   final String phoneNumber;
+  final String? appSignature;
 
-  const SendOtpEvent({required this.phoneNumber});
+  const SendOtpEvent({required this.phoneNumber, this.appSignature});
 }
 
 class VerifyOtpEvent extends AuthEvent {

@@ -19,6 +19,12 @@ class ChatSocketBloc extends Bloc<ChatSocketEvent, ChatSocketState> {
     on<SendMessage>(_onSendMessage);
     on<SendTypingIndicator>(_onSendTypingIndicator);
     on<SendReadReceipt>(_onSendReadReceipt);
+    on<SendEditMessage>(_onSendEditMessage);
+    on<SendDeleteMessage>(_onSendDeleteMessage);
+    on<SendFileAction>(_onSendFileAction);
+    on<SendLocationMessage>(_onSendLocationMessage);
+    on<SendContactMessage>(_onSendContactMessage);
+    on<SendScreenShareSignaling>(_onSendScreenShareSignaling);
     
     _messageSubscription = _repository.onMessage.listen((data) {
       // Handle incoming messages/events here if needed to update state
@@ -64,6 +70,52 @@ class ChatSocketBloc extends Bloc<ChatSocketEvent, ChatSocketState> {
 
   void _onSendReadReceipt(SendReadReceipt event, Emitter<ChatSocketState> emit) {
     _repository.sendReadReceipt(event.conversationId, event.messageId);
+  }
+
+  void _onSendEditMessage(SendEditMessage event, Emitter<ChatSocketState> emit) {
+    _repository.editMessage(messageId: event.messageId, text: event.text);
+  }
+
+  void _onSendDeleteMessage(SendDeleteMessage event, Emitter<ChatSocketState> emit) {
+    _repository.deleteMessage(
+      conversationId: event.conversationId,
+      messageId: event.messageId,
+      deleteType: event.deleteType,
+    );
+  }
+
+  void _onSendFileAction(SendFileAction event, Emitter<ChatSocketState> emit) {
+    _repository.sendFileAction(
+      type: event.type,
+      conversationId: event.conversationId,
+      messageId: event.messageId,
+      fileKey: event.fileKey,
+    );
+  }
+
+  void _onSendLocationMessage(SendLocationMessage event, Emitter<ChatSocketState> emit) {
+    _repository.sendLocationMessage(
+      conversationId: event.conversationId,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      address: event.address,
+    );
+  }
+
+  void _onSendContactMessage(SendContactMessage event, Emitter<ChatSocketState> emit) {
+    _repository.sendContactMessage(
+      conversationId: event.conversationId,
+      contactName: event.contactName,
+      phoneNumber: event.phoneNumber,
+    );
+  }
+
+  void _onSendScreenShareSignaling(SendScreenShareSignaling event, Emitter<ChatSocketState> emit) {
+    _repository.sendScreenShareSignaling(
+      type: event.type,
+      conversationId: event.conversationId,
+      data: event.data,
+    );
   }
 
   @override

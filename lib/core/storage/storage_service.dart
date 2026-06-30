@@ -7,8 +7,9 @@ class StorageService {
   static const String _refreshTokenKey = 'refresh_token';
   static const String _userIdKey = 'user_id';
   static const String _usernameKey = 'username';
+  static const String _profilePicKey = 'profile_pic_url';
   static const String _hasSyncedContactsKey = 'has_synced_contacts';
-  
+
   final SharedPreferences _prefs;
 
   @injectable
@@ -37,8 +38,20 @@ class StorageService {
     }
   }
 
+  Future<void> saveProfilePic(String? url) async {
+    if (url != null && url.isNotEmpty) {
+      await _prefs.setString(_profilePicKey, url);
+    } else {
+      await _prefs.remove(_profilePicKey);
+    }
+  }
+
   String? getUsername() {
     return _prefs.getString(_usernameKey);
+  }
+
+  String? getProfilePic() {
+    return _prefs.getString(_profilePicKey);
   }
 
   String? getUserId() {

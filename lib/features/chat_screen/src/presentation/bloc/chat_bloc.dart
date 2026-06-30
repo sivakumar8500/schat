@@ -47,6 +47,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
     on<UpdateAttachmentPermissionsEvent>(_onUpdateAttachmentPermissions);
     on<MarkMessageFailedEvent>(_onMarkMessageFailed);
+    on<ToggleFavoriteEvent>(_onToggleFavorite);
+    on<SetDisappearingTimerEvent>(_onSetDisappearingTimer);
+    on<CloseChatEvent>((event, emit) => emit(const ChatDeleted()));
+    on<ShowNotificationEvent>((event, emit) {
+      final currentState = state;
+      if (currentState is ChatLoaded) {
+        emit(currentState.copyWith(notificationMessage: event.message));
+        // Reset notification message after emission so it doesn't show again on next build
+        emit(currentState.copyWith(notificationMessage: null));
+      }
+    });
 
     _listenToSocket();
   }
@@ -112,19 +123,42 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(MarkMessageReadEvent(messageId: msgId, conversationId: convId!));
           }
-        } else if (type == 'delete_message') {
+        } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(ReceiveDeleteMessageEvent(messageId: msgId, conversationId: convId!));
           }
-        } else if (type == 'edit_message') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'] ?? cleanData['id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          final contentMap = cleanData['content'];
-          final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
-          if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-            add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent));
+        } else if (type == 'message_edited' || type == 'edit_message') {
+          final message = cleanData['message'];
+          String? convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          
+          if (message is Map) {
+            convId ??= (message['conversationId'] ?? message['conversation_id'] ?? message['conversation'])?.toString();
+            final msgId = (message['id'] ?? message['messageId'])?.toString();
+            final contentMap = message['content'];
+            final newContent = contentMap is Map ? contentMap['text']?.toString() : message['content']?.toString();
+            if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
+              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId ?? _conversationId!, newContent: newContent));
+            }
+          } else {
+            final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+            final contentMap = cleanData['content'];
+            final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
+            if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
+              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent));
+            }
+          }
+        } else if (type == 'file_viewed' || type == 'file_downloaded' || type == 'file_shared') {
+          final userId = (cleanData['user_id'] ?? cleanData['userId'])?.toString();
+          if (userId != null && userId != _storageService.getUserId()) {
+             final action = type!.split('_').last;
+             add(ShowNotificationEvent(message: 'Other participant $action your file'));
+          }
+        } else if (type == 'conversation_deleted') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+             add(const CloseChatEvent());
           }
         } else if (type == 'user_status') {
           final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])?.toString();
@@ -151,10 +185,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           }
         } else if (type == 'update_attachment_permissions') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           
           final viewControlMap = cleanData['viewControl'] ?? cleanData['view_control'];
           final securityMap = cleanData['security'];
+          final contentMap = cleanData['content'];
+
+          var msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (msgId == null && securityMap is Map) {
+            msgId = (securityMap['messageId'] ?? securityMap['message_id'])?.toString();
+          }
+          if (msgId == null && viewControlMap is Map) {
+            msgId = (viewControlMap['messageId'] ?? viewControlMap['message_id'])?.toString();
+          }
+          if (msgId == null && contentMap is Map) {
+            msgId = contentMap['text']?.toString();
+          }
           
           bool allowShare = true;
           bool allowDownload = true;
@@ -185,7 +230,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               allowView: allowView,
             ));
           }
-        } else if (type == 'pong') {
+        }
+else if (type == 'pong') {
           debugPrint('DEBUG: ChatBloc received Heartbeat PONG');
         } else {
           debugPrint('DEBUG: ChatBloc ignored event type: $type');
@@ -354,8 +400,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   void _onToggleMute(ToggleMuteEvent event, Emitter<ChatState> emit) {
     final currentState = state;
-    if (currentState is ChatLoaded) {
+    if (currentState is ChatLoaded && _conversationId != null) {
+      _chatRepository.toggleMute(conversationId: _conversationId!, isMuted: event.isMuted);
       emit(currentState.copyWith(isMuted: event.isMuted));
+    }
+  }
+
+  void _onToggleFavorite(ToggleFavoriteEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded && _conversationId != null) {
+      _chatRepository.toggleFavorite(conversationId: _conversationId!, isFavorite: event.isFavorite);
+      emit(currentState.copyWith(isFavorite: event.isFavorite));
+    }
+  }
+
+  void _onSetDisappearingTimer(SetDisappearingTimerEvent event, Emitter<ChatState> emit) {
+    if (_conversationId != null) {
+      _chatRepository.setDisappearingTimer(conversationId: _conversationId!, seconds: event.seconds);
     }
   }
 
@@ -415,15 +476,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
 
       for (var id in event.messageIds) {
-        _socketRepository.emit('message', {
-          'type': 'delete_message',
-          'conversationId': event.conversationId,
-          'conversation_id': event.conversationId,
-          'messageId': id,
-          'message_id': id,
-          'deleteType': event.deleteType,
-          'delete_type': event.deleteType,
-        });
+        _socketRepository.deleteMessage(
+          conversationId: event.conversationId,
+          messageId: id,
+          deleteType: event.deleteType,
+        );
       }
 
       emit(currentState.copyWith(messages: updatedMessages));
@@ -441,16 +498,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
 
-      _socketRepository.emit('message', {
-        'type': 'edit_message',
-        'conversationId': event.conversationId,
-        'conversation_id': event.conversationId,
-        'messageId': event.messageId,
-        'message_id': event.messageId,
-        'content': {
-          'text': event.newContent,
-        }
-      });
+      _socketRepository.editMessage(
+        messageId: event.messageId,
+        text: event.newContent,
+      );
 
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);

@@ -35,7 +35,6 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<bool> sendMessage(MessageModel message) async {
-    // For now success, as socket handles the real-time sending
     return true;
   }
 
@@ -50,7 +49,6 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
   }) async {
     try {
-      // Step 1: Request upload URL
       final requestData = {
         'media_type': mediaType,
         'mime_type': mimeType,
@@ -88,21 +86,16 @@ class ChatRepositoryImpl implements ChatRepository {
         throw Exception('Invalid metadata received from request-upload');
       }
 
-      // Step 2: Upload file binary directly to S3 via PUT
       Uint8List bytes;
       if (kIsWeb) {
-        if (fileBytes == null) {
-          throw Exception('File bytes must not be null for web uploads');
-        }
+        if (fileBytes == null) throw Exception('File bytes must not be null for web uploads');
         bytes = fileBytes;
       } else {
         if (fileBytes != null) {
           bytes = fileBytes;
         } else {
           final file = File(filePath);
-          if (!await file.exists()) {
-            throw Exception('File does not exist at path: $filePath');
-          }
+          if (!await file.exists()) throw Exception('File does not exist at path: $filePath');
           bytes = await file.readAsBytes();
         }
       }
@@ -110,21 +103,16 @@ class ChatRepositoryImpl implements ChatRepository {
       final uploadResponse = await http.put(
         Uri.parse(uploadUrl),
         body: bytes,
-        headers: {
-          'Content-Type': mimeType,
-        },
+        headers: {'Content-Type': mimeType},
       );
 
       if (uploadResponse.statusCode != 200) {
         throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
       }
 
-      // Step 3: Complete upload
       final completeResult = await _apiService.post<Map<String, dynamic>>(
         CommonEndpoints.completeUpload(mediaId),
-        data: {
-          'sha256_checksum': null,
-        },
+        data: {'sha256_checksum': null},
         mapper: (data) => Map<String, dynamic>.from(data as Map),
       );
 
@@ -157,5 +145,79 @@ class ChatRepositoryImpl implements ChatRepository {
       failure: (error, statusCode) => throw Exception(error),
     );
   }
-}
 
+  @override
+  Future<Map<String, dynamic>> getGroupDetails(String groupId) async {
+    final result = await _apiService.get<Map<String, dynamic>>(
+      CommonEndpoints.getGroupDetails(groupId),
+      mapper: (data) => Map<String, dynamic>.from(data as Map),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> toggleFavorite({required String conversationId, required bool isFavorite}) async {
+    final endpoint = isFavorite 
+        ? CommonEndpoints.favoriteChat(conversationId) 
+        : CommonEndpoints.unfavoriteChat(conversationId);
+    final result = await _apiService.post(endpoint, mapper: (data) => data);
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> toggleMute({required String conversationId, required bool isMuted}) async {
+    final endpoint = isMuted 
+        ? CommonEndpoints.muteChat(conversationId) 
+        : CommonEndpoints.unmuteChat(conversationId);
+    final result = await _apiService.post(endpoint, mapper: (data) => data);
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> forwardMessage({required String messageId, required String targetConversationId}) async {
+    final result = await _apiService.post(
+      CommonEndpoints.forwardMessage(messageId),
+      data: {'conversationId': targetConversationId},
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> setDisappearingTimer({required String conversationId, int? seconds}) async {
+    final result = await _apiService.post(
+      CommonEndpoints.setDisappearingTimer(conversationId),
+      data: {'timer_seconds': seconds},
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    final result = await _apiService.delete(
+      CommonEndpoints.deleteGroup(groupId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+}

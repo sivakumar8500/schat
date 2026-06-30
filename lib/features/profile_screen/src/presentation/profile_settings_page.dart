@@ -18,14 +18,29 @@ import 'package:schat/utils/theme_controller.dart';
 
 class ProfileSettingsPage extends StatefulWidget {
   final String username;
+  final String? profilePicUrl;
 
-  const ProfileSettingsPage({super.key, required this.username});
+  const ProfileSettingsPage({
+    super.key,
+    required this.username,
+    this.profilePicUrl,
+  });
 
   @override
   State<ProfileSettingsPage> createState() => _ProfileSettingsPageState();
 }
 
 class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
+  late String _currentUsername;
+  String? _currentImageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUsername = widget.username;
+    _currentImageUrl = widget.profilePicUrl;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
@@ -49,7 +64,12 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
         },
         child: BlocConsumer<ProfileBloc, ProfileState>(
           listener: (context, state) {
-            if (state is ProfileLogoutSuccess) {
+            if (state is ProfileLoaded) {
+              setState(() {
+                _currentUsername = state.username;
+                _currentImageUrl = state.imagePath;
+              });
+            } else if (state is ProfileLogoutSuccess) {
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (context) => const IntroPage()),
@@ -58,40 +78,33 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
             }
           },
           builder: (context, state) {
-          String? imageUrl;
-          String currentUsername = widget.username;
-
-          if (state is ProfileLoaded) {
-            imageUrl = state.imagePath;
-            currentUsername = state.username;
-          }
-
-          return SafeArea(
-            child: Scaffold(
-              backgroundColor: context.colors.scaffoldBackground,
-              body: Stack(
-                children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.50,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: (imageUrl != null && imageUrl.isNotEmpty)
-                              ? Image.network(
-                                  imageUrl,
-                                  fit: BoxFit.fill,
-                                  errorBuilder:
-                                      (context, error, stackTrace) =>
-                                          Image.asset(
-                                            'assets/main_bg_img.png',
-                                            fit: BoxFit.cover,
-                                          ),
-                                )
-                              : Image.asset(
-                                  'assets/main_bg_img.png',
-                                  fit: BoxFit.cover,
-                                ),
-                        ),
+            return SafeArea(
+              child: Scaffold(
+                backgroundColor: context.colors.scaffoldBackground,
+                body: Stack(
+                  children: [
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.50,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: (_currentImageUrl != null &&
+                                    _currentImageUrl!.isNotEmpty)
+                                ? Image.network(
+                                    _currentImageUrl!,
+                                    fit: BoxFit.fill,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            Image.asset(
+                                              'assets/main_bg_img.png',
+                                              fit: BoxFit.cover,
+                                            ),
+                                  )
+                                : Image.asset(
+                                    'assets/main_bg_img.png',
+                                    fit: BoxFit.cover,
+                                  ),
+                          ),
                         Positioned(
                           bottom: -1,
                           left: 0,
@@ -182,7 +195,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
-                              currentUsername,
+                              _currentUsername,
                               style: context.h2,
                             ),
                             CommonSpaces.h40,
@@ -247,25 +260,18 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                               ),
                             ),
                             CommonSpaces.h12,
-                            BlocBuilder<ContactsBloc, ContactsState>(
-                              builder: (context, state) {
-                                final isSyncing = state is ContactsLoading;
-                                return _buildSettingsTile(
-                                  context: context,
-                                  icon: Icons.sync_rounded,
-                                  title: 'Sync Contacts',
-                                  onTap: isSyncing 
-                                      ? null 
-                                      : () => context.read<ContactsBloc>().add(const SyncContactsEvent()),
-                                  trailing: isSyncing
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : Icon(Icons.arrow_forward_ios_rounded, color: context.colors.textPrimary, size: 16),
-                                );
+                            _buildSettingsTile(
+                              context: context,
+                              icon: Icons.sync_rounded,
+                              title: 'Sync Contacts',
+                              onTap: () {
+                                Navigator.pop(context, 'sync');
                               },
+                              trailing: Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                color: context.colors.textPrimary,
+                                size: 16,
+                              ),
                             ),
                             CommonSpaces.h12,
                             const _LogoutButton(),

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
@@ -51,15 +52,17 @@ class _AudioCallPageState extends State<AudioCallPage>
     super.initState();
     _setupAnimations();
 
-    // If outgoing call, initiate WebRTC
-    if (widget.isOutgoing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
+      // If outgoing call, initiate WebRTC
+      if (widget.isOutgoing) {
         context.read<CallWebRtcBloc>().add(InitiateCallEvent(
           conversationId: widget.conversationId,
           isVideo: false,
+          contactName: widget.contactName,
         ));
-      });
-    }
+      }
+    });
   }
 
   void _setupAnimations() {
@@ -110,6 +113,17 @@ class _AudioCallPageState extends State<AudioCallPage>
     _ring1Controller.dispose();
     _ring2Controller.dispose();
     _ring3Controller.dispose();
+    
+    // Notify bloc that page is being closed (minimized if call still active)
+    try {
+      final bloc = getIt<CallWebRtcBloc>();
+      if (bloc.state is CallActive || bloc.state is CallConnecting) {
+        bloc.add(const SetCallMinimizedEvent(true));
+      }
+    } catch (e) {
+      debugPrint('Error setting minimized state in dispose: $e');
+    }
+
     super.dispose();
   }
 
@@ -147,7 +161,7 @@ class _AudioCallPageState extends State<AudioCallPage>
       child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
         builder: (context, state) {
           final isMuted = state is CallActive ? state.isMuted : false;
-          final isSpeaker = state is CallActive ? state.isSpeakerOn : true;
+          final isSpeaker = state is CallActive ? state.isSpeakerOn : false;
 
           return Scaffold(
             body: Container(
@@ -173,7 +187,7 @@ class _AudioCallPageState extends State<AudioCallPage>
 
                     // ─── Name + Status ───
                     Text(
-                      widget.contactName,
+                      state is CallActive ? state.contactName : widget.contactName,
                       style: context.h2.copyWith(
                         fontSize: 32,
                         color: const Color(0xFF1A1A1A),
@@ -206,15 +220,15 @@ class _AudioCallPageState extends State<AudioCallPage>
                         children: [
                           AnimatedBuilder(
                             animation: _ring1,
-                            builder: (_, __) => _buildRing(_ring1.value),
+                            builder: (_, _) => _buildRing(_ring1.value),
                           ),
                           AnimatedBuilder(
                             animation: _ring2,
-                            builder: (_, __) => _buildRing(_ring2.value),
+                            builder: (_, _) => _buildRing(_ring2.value),
                           ),
                           AnimatedBuilder(
                             animation: _ring3,
-                            builder: (_, __) => _buildRing(_ring3.value),
+                            builder: (_, _) => _buildRing(_ring3.value),
                           ),
                           ScaleTransition(
                             scale: _pulseAnimation,
@@ -333,7 +347,7 @@ class _AudioCallPageState extends State<AudioCallPage>
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: 4, end: 16),
           duration: Duration(milliseconds: 300 + (i * 80)),
-          builder: (_, h, __) => Container(
+          builder: (_, h, _) => Container(
             width: 4,
             height: h,
             margin: const EdgeInsets.symmetric(horizontal: 2),

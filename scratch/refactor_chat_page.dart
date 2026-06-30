@@ -26,7 +26,7 @@ void main() {
 
   Future<void> _pickFile(FileType type) async {
     Navigator.pop(context); // Close bottom sheet
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: type);
+    FilePickerResult? result = await FilePicker.pickFiles(type: type);
     if (result != null && result.files.single.path != null) {
       final String fileType = type == FileType.audio ? 'audio' : 'file';
       _sendAttachment(result.files.single.path!, result.files.single.name, fileType);

@@ -4,11 +4,14 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:video_player/video_player.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -18,6 +21,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class MessageBubble extends StatelessWidget {
   final String messageId;
@@ -394,37 +398,26 @@ class MessageBubble extends StatelessWidget {
           child: imageContent,
         ),
       );
-    } else if (type == 'audio') {
+    } else if (type == 'audio' || type == 'voice_note') {
       result = _AudioWaveformPlayer(audioUrl: attachmentPath, isMe: isMe);
-    } else if (type == 'video' || type == 'file') {
+    } else if (type == 'video') {
       if (viewLocked) {
+        result = _buildLockedPreview(context);
+      } else {
         result = Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              height: 64,
-              width: 220,
-              color: context.colors.textPrimary.withValues(alpha: 0.1),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lock_outline, color: context.colors.textSecondary, size: 20),
-                  CommonSpaces.w8,
-                  Flexible(
-                    child: Text(
-                      'View Locked',
-                      style: context.bodyMedium.copyWith(
-                        color: context.colors.textSecondary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          child: _VideoMessagePreview(
+            url: attachmentPath,
+            messageId: messageId,
+            isMe: isMe,
+            onTap: () => _openInAppViewer(context),
+            isUploading: isUploading,
           ),
         );
+      }
+    } else if (type == 'file') {
+      if (viewLocked) {
+        result = _buildLockedPreview(context);
       } else {
         result = _buildFileBubbleCard(context);
       }
@@ -553,37 +546,6 @@ class MessageBubble extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    if (!allowView && isMe) {
-      return Column(
-        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          result,
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  CommonIcons.lock,
-                  color: context.colors.pureWhite.withValues(alpha: 0.7),
-                  size: 12,
-                ),
-                CommonSpaces.w4,
-                Text(
-                  'Awaiting view approval',
-                  style: context.bodySmall.copyWith(
-                    fontSize: 10,
-                    color: context.colors.pureWhite.withValues(alpha: 0.7),
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
     return result;
   }
 
@@ -591,10 +553,6 @@ class MessageBubble extends StatelessWidget {
     if (attachmentPath == null && attachmentBytes == null) {
       return const SizedBox.shrink();
     }
-
-    final chipBg = context.colors.lightBackground;
-    final chipText = context.colors.textPrimary;
-    final chipBorder = context.colors.border;
 
     if (isGroup) {
       return const SizedBox.shrink();
@@ -618,7 +576,7 @@ class MessageBubble extends StatelessWidget {
             children: [
               _buildCapsuleChip(
                 context: context,
-                icon: allowView ? Icons.visibility : Icons.visibility_off,
+                icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
                 label: allowView ? 'View Allowed' : 'View Locked',
                 backgroundColor: allowView ? activeBg : inactiveBg,
                 textColor: allowView ? activeIcon : inactiveIcon,
@@ -627,7 +585,7 @@ class MessageBubble extends StatelessWidget {
               ),
               _buildCapsuleChip(
                 context: context,
-                icon: allowDownload ? Icons.download : Icons.download_done,
+                icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                 label: allowDownload ? 'Download Allowed' : 'Download Locked',
                 backgroundColor: allowDownload ? activeBg : inactiveBg,
                 textColor: allowDownload ? activeIcon : inactiveIcon,
@@ -636,7 +594,7 @@ class MessageBubble extends StatelessWidget {
               ),
               _buildCapsuleChip(
                 context: context,
-                icon: allowShare ? Icons.share : CommonIcons.reply,
+                icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
                 label: allowShare ? 'Share Allowed' : 'Share Locked',
                 backgroundColor: allowShare ? activeBg : inactiveBg,
                 textColor: allowShare ? activeIcon : inactiveIcon,
@@ -648,13 +606,13 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else {
-      final showDownload = allowDownload;
-      final showShare = allowShare;
-      final canView = allowView;
+      final activeBg = context.colors.primary.withValues(alpha: 0.1);
+      final activeIcon = context.colors.primary;
+      final activeBorder = context.colors.primary.withValues(alpha: 0.3);
 
-      if (!canView && !showDownload && !showShare) {
-        return const SizedBox.shrink();
-      }
+      final inactiveBg = context.colors.textHint.withValues(alpha: 0.05);
+      final inactiveIcon = context.colors.textHint.withValues(alpha: 0.4);
+      final inactiveBorder = context.colors.textHint.withValues(alpha: 0.1);
 
       return Padding(
         padding: const EdgeInsets.only(top: 8.0),
@@ -663,37 +621,33 @@ class MessageBubble extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (canView) ...[
-                _buildCapsuleChip(
-                  context: context,
-                  icon: Icons.visibility,
-                  label: 'View',
-                  backgroundColor: chipBg,
-                  textColor: chipText,
-                  borderColor: chipBorder,
-                  onTap: () => _openInAppViewer(context),
-                ),
-              ],
-              if (showDownload)
-                _buildCapsuleChip(
-                  context: context,
-                  icon: Icons.download,
-                  label: 'Download',
-                  backgroundColor: chipBg,
-                  textColor: chipText,
-                  borderColor: chipBorder,
-                  onTap: () => _triggerDownload(context),
-                ),
-              if (showShare)
-                _buildCapsuleChip(
-                  context: context,
-                  icon: Icons.share,
-                  label: 'Share',
-                  backgroundColor: chipBg,
-                  textColor: chipText,
-                  borderColor: chipBorder,
-                  onTap: () => _triggerShare(context),
-                ),
+              _buildCapsuleChip(
+                context: context,
+                icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                label: 'View',
+                backgroundColor: allowView ? activeBg : inactiveBg,
+                textColor: allowView ? activeIcon : inactiveIcon,
+                borderColor: allowView ? activeBorder : inactiveBorder,
+                onTap: allowView ? () => _openInAppViewer(context) : null,
+              ),
+              _buildCapsuleChip(
+                context: context,
+                icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
+                label: 'Download',
+                backgroundColor: allowDownload ? activeBg : inactiveBg,
+                textColor: allowDownload ? activeIcon : inactiveIcon,
+                borderColor: allowDownload ? activeBorder : inactiveBorder,
+                onTap: allowDownload ? () => _triggerDownload(context) : null,
+              ),
+              _buildCapsuleChip(
+                context: context,
+                icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
+                label: 'Share',
+                backgroundColor: allowShare ? activeBg : inactiveBg,
+                textColor: allowShare ? activeIcon : inactiveIcon,
+                borderColor: allowShare ? activeBorder : inactiveBorder,
+                onTap: allowShare ? () => _triggerShare(context) : null,
+              ),
             ],
           ),
         ),
@@ -728,6 +682,36 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
             child: Icon(icon, size: 16, color: textColor),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLockedPreview(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 64,
+          width: 220,
+          color: context.colors.textPrimary.withValues(alpha: 0.1),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline, color: context.colors.textSecondary, size: 20),
+              CommonSpaces.w8,
+              Flexible(
+                child: Text(
+                  'View Locked',
+                  style: context.bodyMedium.copyWith(
+                    color: context.colors.textSecondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -781,7 +765,9 @@ class MessageBubble extends StatelessWidget {
       } catch (_) {}
     }
 
-    if (!url.startsWith('http') && !url.startsWith('https')) {
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
+
+    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
       String s3BaseUrl;
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
@@ -806,6 +792,16 @@ class MessageBubble extends StatelessWidget {
       allowDownload: allowDownload,
       onSharePressed: onSharePressed,
     );
+
+    // Notify backend about file view
+    if (!isLocalFile) {
+      getIt<ChatSocketRepository>().sendFileAction(
+        type: 'view_file',
+        conversationId: conversationId,
+        messageId: messageId,
+        fileKey: path,
+      );
+    }
   }
 
   void _triggerDownload(BuildContext context) {
@@ -813,17 +809,9 @@ class MessageBubble extends StatelessWidget {
     if (path == null || path.isEmpty) return;
     String url = path;
 
-    if (url.contains('minio')) {
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty) {
-          url = url.replaceAll('minio', host);
-        }
-      } catch (_) {}
-    }
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
 
-    if (!url.startsWith('http') && !url.startsWith('https')) {
+    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
       String s3BaseUrl;
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
@@ -839,13 +827,38 @@ class MessageBubble extends StatelessWidget {
       url = '$s3BaseUrl$url';
     }
 
-    downloadFile(url, attachmentName ?? 'File');
-    context.showSuccessNotification('Downloading ${attachmentName ?? "File"}...');
+    if (isLocalFile) {
+      // If it's already local, we just try to open it
+      downloadFile(url, attachmentName ?? 'File');
+    } else {
+      downloadFile(url, attachmentName ?? 'File');
+      context.showSuccessNotification('Downloading ${attachmentName ?? "File"}...');
+    }
+
+    // Notify backend about file download
+    if (!isLocalFile) {
+      getIt<ChatSocketRepository>().sendFileAction(
+        type: 'download_file',
+        conversationId: conversationId,
+        messageId: messageId,
+        fileKey: path,
+      );
+    }
   }
 
   void _triggerShare(BuildContext context) {
     if (onSharePressed != null) {
       onSharePressed!();
+      
+      // Notify backend about file share
+      if (attachmentPath != null) {
+        getIt<ChatSocketRepository>().sendFileAction(
+          type: 'share_file',
+          conversationId: conversationId,
+          messageId: messageId,
+          fileKey: attachmentPath!,
+        );
+      }
     }
   }
 
@@ -1122,7 +1135,7 @@ class MessageBubble extends StatelessWidget {
     }
 
     final RegExp urlRegex = RegExp(
-      r'(https?:\/\/[^\s]+|www\.[^\s]+)',
+      r'(https?://\S+|www\.\S+)',
       caseSensitive: false,
     );
 
@@ -1188,6 +1201,150 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+class _VideoMessagePreview extends StatefulWidget {
+  final String? url;
+  final String messageId;
+  final bool isMe;
+  final VoidCallback onTap;
+  final bool isUploading;
+
+  const _VideoMessagePreview({
+    required this.url,
+    required this.messageId,
+    required this.isMe,
+    required this.onTap,
+    this.isUploading = false,
+  });
+
+  @override
+  State<_VideoMessagePreview> createState() => _VideoMessagePreviewState();
+}
+
+class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.url != null && !widget.isUploading) {
+      _initializePlayer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_VideoMessagePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.url != oldWidget.url || (oldWidget.isUploading && !widget.isUploading)) {
+      if (widget.url != null && !widget.isUploading) {
+        _initializePlayer();
+      }
+    }
+  }
+
+  String _resolveUrl(String path) {
+    String url = path;
+    if (url.contains('minio')) {
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty) {
+          url = url.replaceAll('minio', host);
+        }
+      } catch (_) {}
+    }
+
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
+
+    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
+      String s3BaseUrl;
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
+        } else {
+          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        }
+      } catch (_) {
+        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+      }
+      url = '$s3BaseUrl$url';
+    }
+    return url;
+  }
+
+  Future<void> _initializePlayer() async {
+    if (_controller != null) await _controller!.dispose();
+
+    try {
+      final url = _resolveUrl(widget.url!);
+      final bool isLocal = !kIsWeb && File(url).existsSync();
+
+      _controller = isLocal
+          ? VideoPlayerController.file(File(url))
+          : VideoPlayerController.networkUrl(Uri.parse(url));
+
+      await _controller!.initialize();
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing video preview: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 180,
+          width: 220,
+          color: Colors.black12,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_isInitialized && _controller != null)
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _controller!.value.size.width,
+                      height: _controller!.value.size.height,
+                      child: VideoPlayer(_controller!),
+                    ),
+                  ),
+                ),
+              if (!_isInitialized)
+                const Icon(Icons.play_circle_outline, color: Colors.white54, size: 50),
+              if (widget.isUploading)
+                Container(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              if (_isInitialized && !widget.isUploading)
+                const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _AudioWaveformPlayer extends StatefulWidget {
   final String? audioUrl;
   final bool isMe;
@@ -1197,9 +1354,12 @@ class _AudioWaveformPlayer extends StatefulWidget {
   State<_AudioWaveformPlayer> createState() => _AudioWaveformPlayerState();
 }
 
-class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
+class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
+  final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
   final List<double> _barHeights = [
     10, 16, 12, 22, 26, 14, 20, 12, 16, 10, 24, 28, 20, 14, 18,
     12, 20, 24, 10, 14, 18, 22, 16, 12, 20, 14, 10, 16, 12, 20
@@ -1208,20 +1368,21 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> with SingleT
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 35),
-    );
+    _setupAudioPlayer();
+  }
 
-    _animationController.addListener(() {
-      setState(() {});
+  void _setupAudioPlayer() {
+    _audioPlayer.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
     });
-
-    _animationController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
+    _audioPlayer.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
         setState(() {
           _isPlaying = false;
-          _animationController.reset();
+          _position = Duration.zero;
         });
       }
     });
@@ -1229,19 +1390,67 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> with SingleT
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
-  void _togglePlay() {
-    setState(() {
-      _isPlaying = !_isPlaying;
-      if (_isPlaying) {
-        _animationController.forward();
-      } else {
-        _animationController.stop();
+  String _resolveUrl(String path) {
+    String url = path;
+    if (url.contains('minio')) {
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty) {
+          url = url.replaceAll('minio', host);
+        }
+      } catch (_) {}
+    }
+
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
+
+    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
+      String s3BaseUrl;
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
+        } else {
+          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        }
+      } catch (_) {
+        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
       }
-    });
+      url = '$s3BaseUrl$url';
+    }
+    return url;
+  }
+
+  Future<void> _togglePlay() async {
+    if (widget.audioUrl == null || widget.audioUrl!.isEmpty) return;
+
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+      if (mounted) setState(() => _isPlaying = false);
+    } else {
+      try {
+        final url = _resolveUrl(widget.audioUrl!);
+        final bool isLocal = !kIsWeb && File(url).existsSync();
+
+        await _audioPlayer.play(
+          isLocal ? DeviceFileSource(url) : UrlSource(url),
+        );
+        if (mounted) setState(() => _isPlaying = true);
+      } catch (e) {
+        debugPrint('Error playing audio: $e');
+      }
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return "$minutes:$seconds";
   }
 
   @override
@@ -1251,12 +1460,13 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> with SingleT
     final buttonBg = widget.isMe ? Colors.white : context.colors.primary;
     final buttonIconColor = widget.isMe ? context.colors.primary : Colors.white;
 
-    final progress = _animationController.value;
-    final currentSeconds = (progress * 35).floor();
-    final durationStr = "00:${(35 - currentSeconds).toString().padLeft(2, '0')}";
+    final double progress = _duration.inMilliseconds > 0 
+        ? _position.inMilliseconds / _duration.inMilliseconds 
+        : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(minWidth: 150),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1277,30 +1487,43 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> with SingleT
               ),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w8,
           // Waveform
-          Row(
-            children: List.generate(_barHeights.length, (index) {
-              final barProgress = index / _barHeights.length;
-              final isPlayed = progress >= barProgress;
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                width: 2.5,
-                height: _barHeights[index],
-                decoration: BoxDecoration(
-                  color: isPlayed ? activeColor : inactiveColor,
-                  borderRadius: BorderRadius.circular(1.5),
-                ),
-              );
-            }),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final availableWidth = constraints.maxWidth;
+                const barWidth = 2.0;
+                const spacing = 2.0;
+                final int barsCount = (availableWidth / (barWidth + spacing)).floor().clamp(5, 30);
+                
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: List.generate(barsCount, (index) {
+                    final barProgress = index / barsCount;
+                    final isPlayed = progress >= barProgress;
+                    return Container(
+                      width: barWidth,
+                      height: _barHeights[index % _barHeights.length],
+                      decoration: BoxDecoration(
+                        color: isPlayed ? activeColor : inactiveColor,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w8,
           // Duration
           Text(
-            durationStr,
+            _isPlaying || _position != Duration.zero 
+                ? _formatDuration(_position)
+                : (_duration != Duration.zero ? _formatDuration(_duration) : "00:00"),
             style: TextStyle(
               color: activeColor,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
           ),

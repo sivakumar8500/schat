@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -41,22 +42,28 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
     super.initState();
     _startCountdown();
     _setupFocusNodes();
-    listenForCode();
-    _printAppSignature();
+    _initSmsListener();
   }
 
-  Future<void> _printAppSignature() async {
-    final signature = await SmsAutoFill().getAppSignature;
-    debugPrint("App Signature for SMS: $signature");
+  void _initSmsListener() async {
+    if (widget.autoFill) {
+      listenForCode();
+    }
+    if (kDebugMode) {
+      final signature = await SmsAutoFill().getAppSignature;
+      debugPrint("OTP AutoFill Signature: $signature");
+    }
   }
 
   @override
   void codeUpdated() {
     if (code != null && code!.length == 6) {
+      debugPrint("OTP Auto-filled: $code");
       for (int i = 0; i < 6; i++) {
         _controllers[i].text = code![i];
       }
       setState(() {});
+      // Auto-submit when code is received via auto-fill
       _verifyOtp(context);
     }
   }
@@ -108,6 +115,12 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   void _verifyOtp(BuildContext context) {
     String otp = _controllers.map((c) => c.text).join();
+    
+    if (otp.length < 6) {
+      // Button should be disabled anyway, but keeping as safeguard
+      return;
+    }
+
     const String mockDeviceId = 'ljonhonouuoi';
     context.read<AuthBloc>().add(
       VerifyOtpEvent(otpCode: otp, deviceId: mockDeviceId),
@@ -177,6 +190,8 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
     setState(() {});
   }
 
+  bool get _isOtpComplete => _controllers.every((c) => c.text.isNotEmpty);
+
   @override
   Widget build(BuildContext context) {
     final fieldBgColor = context.colors.pureWhite.withValues(alpha: 0.1);
@@ -195,6 +210,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
       },
       builder: (context, state) {
         final isLoading = state is AuthLoading;
+        final isEnabled = _isOtpComplete && !isLoading;
 
         return Scaffold(
           backgroundColor: context.colors.pureBlack,
@@ -398,6 +414,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                               ),
                                             );
                                             _startCountdown();
+                                            listenForCode();
                                           },
                                           child: Text(
                                             'Resend Code',
@@ -423,6 +440,8 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
           bottomNavigationBar: BlocBuilder<AuthBloc, AuthState>(
             builder: (context, state) {
               final isLoading = state is AuthLoading;
+              final isEnabled = _isOtpComplete && !isLoading;
+
               return Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
@@ -432,12 +451,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                       width: double.infinity,
                       height: 46,
                       child: ElevatedButton(
-                        onPressed: isLoading
-                            ? null
-                            : () => _verifyOtp(context),
+                        onPressed: isEnabled
+                            ? () => _verifyOtp(context)
+                            : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.primary,
                           foregroundColor: context.colors.pureWhite,
+                          disabledBackgroundColor: context.colors.primary.withValues(alpha: 0.3),
+                          disabledForegroundColor: context.colors.pureWhite.withValues(alpha: 0.5),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -446,26 +467,43 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              'Continue',
-                              style: context.titleMedium.copyWith(
-                                color: context.colors.pureWhite,
-                                fontWeight: FontWeight.w600,
+                            if (isLoading)
+                              SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: context.colors.pureWhite,
+                                ),
+                              )
+                            else ...[
+                              Text(
+                                'Continue',
+                                style: context.titleMedium.copyWith(
+                                  color: isEnabled 
+                                      ? context.colors.pureWhite 
+                                      : context.colors.pureWhite.withValues(alpha: 0.5),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            CommonSpaces.w8,
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: context.colors.pureWhite,
-                                shape: BoxShape.circle,
+                              CommonSpaces.w8,
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isEnabled 
+                                      ? context.colors.pureWhite 
+                                      : context.colors.pureWhite.withValues(alpha: 0.5),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  CommonIcons.arrowForward,
+                                  color: isEnabled 
+                                      ? context.colors.primary 
+                                      : context.colors.primary.withValues(alpha: 0.5),
+                                  size: 16,
+                                ),
                               ),
-                              child: Icon(
-                                CommonIcons.arrowForward,
-                                color: context.colors.primary,
-                                size: 16,
-                              ),
-                            ),
+                            ],
                           ],
                         ),
                       ),

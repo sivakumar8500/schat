@@ -138,3 +138,23 @@ class UpdateAttachmentPermissionsEvent extends ChatEvent {
     required this.allowView,
   });
 }
+
+class ToggleFavoriteEvent extends ChatEvent {
+  final bool isFavorite;
+  const ToggleFavoriteEvent({required this.isFavorite});
+}
+
+class SetDisappearingTimerEvent extends ChatEvent {
+  final int? seconds;
+  const SetDisappearingTimerEvent({this.seconds});
+}
+
+class CloseChatEvent extends ChatEvent {
+  const CloseChatEvent();
+}
+
+class ShowNotificationEvent extends ChatEvent {
+  final String message;
+  final bool isError;
+  const ShowNotificationEvent({required this.message, this.isError = false});
+}

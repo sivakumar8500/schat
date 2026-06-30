@@ -16,8 +16,8 @@ class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this._apiService, this._storageService);
 
   @override
-  Future<ApiResult<bool>> sendOtp(String mobile) async {
-    final request = SendOtpRequest(phoneNumber: mobile);
+  Future<ApiResult<bool>> sendOtp(String mobile, {String? appSignature}) async {
+    final request = SendOtpRequest(phoneNumber: mobile, appSignature: appSignature);
     return _apiService.post<bool>(
       CommonEndpoints.sendOtp,
       data: request.toJson(),

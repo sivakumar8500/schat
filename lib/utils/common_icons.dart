@@ -108,4 +108,15 @@ class CommonIcons {
   static const IconData music = Icons.music_note_rounded;
   static const IconData payment = Icons.payments_rounded;
   static const IconData attach = Icons.attach_file_rounded;
+
+  // Permission Icons
+  static const IconData visibility = Icons.visibility_rounded;
+  static const IconData visibilityOff = Icons.visibility_off_rounded;
+  static const IconData download = Icons.download_rounded;
+  static const IconData downloadOff = Icons.file_download_off_rounded;
+  static const IconData share = Icons.share_rounded;
+  static const IconData shareOff = Icons.not_interested_rounded;
+
+  // Navigation & UI
+  static const IconData minimize = Icons.keyboard_arrow_down_rounded;
 }

@@ -7,7 +7,13 @@ part of 'send_otp_request.dart';
 // **************************************************************************
 
 _SendOtpRequest _$SendOtpRequestFromJson(Map<String, dynamic> json) =>
-    _SendOtpRequest(phoneNumber: json['phone_number'] as String);
+    _SendOtpRequest(
+      phoneNumber: json['phone_number'] as String,
+      appSignature: json['app_signature'] as String?,
+    );
 
 Map<String, dynamic> _$SendOtpRequestToJson(_SendOtpRequest instance) =>
-    <String, dynamic>{'phone_number': instance.phoneNumber};
+    <String, dynamic>{
+      'phone_number': instance.phoneNumber,
+      'app_signature': instance.appSignature,
+    };

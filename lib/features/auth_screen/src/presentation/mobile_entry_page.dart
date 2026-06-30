@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/auth_screen/src/presentation/bloc/auth_bloc.dart';
 import 'package:schat/features/auth_screen/src/presentation/bloc/auth_event.dart';
@@ -50,9 +51,36 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
     super.dispose();
   }
 
-  void _sendOtp(BuildContext context) {
+  void _sendOtp(BuildContext context) async {
     final mobile = _mobileController.text.trim();
-    context.read<AuthBloc>().add(SendOtpEvent(phoneNumber: mobile));
+    
+    if (mobile.isEmpty) {
+      context.showErrorNotification('Please enter your mobile number.');
+      return;
+    }
+    
+    if (mobile.length != 10) {
+      context.showErrorNotification('Please enter a valid 10-digit number.');
+      return;
+    }
+
+    final firstDigit = int.tryParse(mobile[0]);
+    if (firstDigit == null || firstDigit < 6) {
+      context.showErrorNotification('Mobile number must start with 6, 7, 8, or 9.');
+      return;
+    }
+
+    if (RegExp(r'^0+$').hasMatch(mobile)) {
+      context.showErrorNotification('Please enter a valid mobile number.');
+      return;
+    }
+
+    final signature = await SmsAutoFill().getAppSignature;
+    if (context.mounted) {
+      context.read<AuthBloc>().add(
+        SendOtpEvent(phoneNumber: mobile, appSignature: signature),
+      );
+    }
   }
 
   @override
@@ -233,6 +261,10 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                               child: TextField(
                                                 controller: _mobileController,
                                                 keyboardType: TextInputType.phone,
+                                                inputFormatters: [
+                                                  FilteringTextInputFormatter.digitsOnly,
+                                                  LengthLimitingTextInputFormatter(10),
+                                                ],
                                                 maxLength: 10,
                                                 style: context.titleSmall
                                                     .copyWith(

@@ -7,6 +7,7 @@ part 'send_otp_request.g.dart';
 abstract class SendOtpRequest with _$SendOtpRequest {
   const factory SendOtpRequest({
     @JsonKey(name: 'phone_number') required String phoneNumber,
+    @JsonKey(name: 'app_signature') String? appSignature,
   }) = _SendOtpRequest;
 
   factory SendOtpRequest.fromJson(Map<String, dynamic> json) => _$SendOtpRequestFromJson(json);

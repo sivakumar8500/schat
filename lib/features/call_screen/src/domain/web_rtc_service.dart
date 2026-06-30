@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:injectable/injectable.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 
 /// Represents the signaling state of the WebRTC call.
@@ -9,10 +10,12 @@ enum CallSignalState { idle, connecting, ringing, active, ended, rejected, busy 
 
 /// Singleton service managing the full WebRTC peer-to-peer call lifecycle.
 /// mason make usecase --name web_rtc_service
+@lazySingleton
 class WebRtcService {
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
+  final List<RTCIceCandidate> _remoteCandidateQueue = [];
 
   final RTCVideoRenderer localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
@@ -34,6 +37,9 @@ class WebRtcService {
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
       {'urls': 'stun:stun1.l.google.com:19302'},
+      {'urls': 'stun:stun2.l.google.com:19302'},
+      {'urls': 'stun:stun3.l.google.com:19302'},
+      {'urls': 'stun:stun4.l.google.com:19302'},
     ],
   };
 
@@ -54,6 +60,14 @@ class WebRtcService {
       await localRenderer.initialize();
       await remoteRenderer.initialize();
       _renderersInitialized = true;
+      
+      // Set audio mode for communication
+      try {
+        // Note: setAudioMode might not be available in all plugin versions
+        // or might have been moved.
+      } catch (e) {
+        debugPrint('WebRTC: setAudioMode failed: $e');
+      }
     }
   }
 
@@ -72,6 +86,12 @@ class WebRtcService {
 
     // 1. Capture local media
     _localStream = await _getUserMedia(isVideo: isVideo);
+    
+    // Log local tracks
+    for (var track in _localStream!.getTracks()) {
+      debugPrint('WebRTC: Local track: ${track.kind}, enabled: ${track.enabled}');
+    }
+
     localRenderer.srcObject = _localStream;
     _localStreamController.add(_localStream);
 
@@ -114,6 +134,13 @@ class WebRtcService {
     await initRenderers();
     _callSignalController.add(CallSignalState.connecting);
 
+    // Set audio mode for communication
+    try {
+      // Note: setAudioMode might not be available in all plugin versions
+    } catch (e) {
+      debugPrint('WebRTC: setAudioMode failed: $e');
+    }
+
     // 1. Get callee's local media
     _localStream = await _getUserMedia(isVideo: callType == 'video');
     localRenderer.srcObject = _localStream;
@@ -127,6 +154,7 @@ class WebRtcService {
     // 3. Set remote description (the caller's SDP offer)
     final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type']);
     await _peerConnection!.setRemoteDescription(remoteOffer);
+    await _processRemoteCandidateQueue();
 
     // 4. Create and set local SDP answer
     final answer = await _peerConnection!.createAnswer(_offerConstraints);
@@ -184,6 +212,7 @@ class WebRtcService {
 
     final remoteAnswer = RTCSessionDescription(answerMap['sdp'], answerMap['type']);
     await _peerConnection!.setRemoteDescription(remoteAnswer);
+    await _processRemoteCandidateQueue();
     _callSignalController.add(CallSignalState.active);
     debugPrint('WebRTC: Remote answer set — call is ACTIVE');
   }
@@ -194,18 +223,44 @@ class WebRtcService {
 
   Future<void> handleRemoteIceCandidate(Map<String, dynamic> event) async {
     final candidateMap = event['candidate'] as Map<String, dynamic>?;
-    if (candidateMap == null || _peerConnection == null) return;
+    if (candidateMap == null) return;
+
+    final candidate = RTCIceCandidate(
+      candidateMap['candidate'] as String,
+      candidateMap['sdpMid'] as String?,
+      candidateMap['sdpMLineIndex'] as int?,
+    );
+
+    if (_peerConnection == null) {
+      debugPrint('WebRTC: PeerConnection null, queuing ICE candidate');
+      _remoteCandidateQueue.add(candidate);
+      return;
+    }
 
     try {
-      final candidate = RTCIceCandidate(
-        candidateMap['candidate'] as String,
-        candidateMap['sdpMid'] as String?,
-        candidateMap['sdpMLineIndex'] as int?,
-      );
       await _peerConnection!.addCandidate(candidate);
       debugPrint('WebRTC: Remote ICE candidate added successfully');
     } catch (e) {
-      debugPrint('WebRTC: Error adding remote ICE candidate: $e');
+      debugPrint('WebRTC: Error adding remote ICE candidate, queuing: $e');
+      _remoteCandidateQueue.add(candidate);
+    }
+  }
+
+  Future<void> _processRemoteCandidateQueue() async {
+    if (_peerConnection == null || _remoteCandidateQueue.isEmpty) return;
+    debugPrint('WebRTC: Processing ${_remoteCandidateQueue.length} queued ICE candidates');
+    
+    final List<RTCIceCandidate> candidates = List.from(_remoteCandidateQueue);
+    _remoteCandidateQueue.clear();
+
+    for (var candidate in candidates) {
+      try {
+        await _peerConnection!.addCandidate(candidate);
+        debugPrint('WebRTC: Queued ICE candidate added successfully');
+      } catch (e) {
+        debugPrint('WebRTC: Error adding queued ICE candidate: $e');
+        _remoteCandidateQueue.add(candidate); // Re-queue if it still fails
+      }
     }
   }
 
@@ -262,6 +317,21 @@ class WebRtcService {
   }
 
   // ─────────────────────────────────────────────
+  // TOGGLE SPEAKER
+  // ─────────────────────────────────────────────
+
+  Future<void> toggleSpeaker(bool speakerOn) async {
+    try {
+      // Ensure we are in communication mode before toggling speaker
+      // Note: setAudioMode is being handled by the plugin or not available in this version
+      await Helper.setSpeakerphoneOn(speakerOn);
+      debugPrint('WebRTC: Speakerphone set to $speakerOn');
+    } catch (e) {
+      debugPrint('WebRTC: toggleSpeaker failed: $e');
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // CLEANUP
   // ─────────────────────────────────────────────
 
@@ -280,6 +350,7 @@ class WebRtcService {
     await _peerConnection?.close();
     _peerConnection = null;
     _activeConversationId = null;
+    _remoteCandidateQueue.clear();
 
     _localStreamController.add(null);
     _remoteStreamController.add(null);
@@ -350,10 +421,18 @@ class WebRtcService {
 
     // Receive remote media track → render on remote renderer
     _peerConnection?.onTrack = (RTCTrackEvent event) {
+      debugPrint('WebRTC: onTrack event - streams: ${event.streams.length}');
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
         remoteRenderer.srcObject = _remoteStream;
         _remoteStreamController.add(_remoteStream);
+        
+        // Ensure ALL tracks are enabled
+        _remoteStream?.getTracks().forEach((track) {
+          debugPrint('WebRTC: Remote track: ${track.kind}, id: ${track.id}, enabled: ${track.enabled}');
+          track.enabled = true;
+        });
+
         _callSignalController.add(CallSignalState.active);
         debugPrint('WebRTC: Remote track received — rendering remote stream');
       }

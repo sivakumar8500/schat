@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$SendOtpRequest {
 
-@JsonKey(name: 'phone_number') String get phoneNumber;
+@JsonKey(name: 'phone_number') String get phoneNumber;@JsonKey(name: 'app_signature') String? get appSignature;
 /// Create a copy of SendOtpRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $SendOtpRequestCopyWith<SendOtpRequest> get copyWith => _$SendOtpRequestCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is SendOtpRequest&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SendOtpRequest&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.appSignature, appSignature) || other.appSignature == appSignature));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,phoneNumber);
+int get hashCode => Object.hash(runtimeType,phoneNumber,appSignature);
 
 @override
 String toString() {
-  return 'SendOtpRequest(phoneNumber: $phoneNumber)';
+  return 'SendOtpRequest(phoneNumber: $phoneNumber, appSignature: $appSignature)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $SendOtpRequestCopyWith<$Res>  {
   factory $SendOtpRequestCopyWith(SendOtpRequest value, $Res Function(SendOtpRequest) _then) = _$SendOtpRequestCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'phone_number') String phoneNumber
+@JsonKey(name: 'phone_number') String phoneNumber,@JsonKey(name: 'app_signature') String? appSignature
 });
 
 
@@ -65,10 +65,11 @@ class _$SendOtpRequestCopyWithImpl<$Res>
 
 /// Create a copy of SendOtpRequest
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? phoneNumber = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? phoneNumber = null,Object? appSignature = freezed,}) {
   return _then(_self.copyWith(
 phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
-as String,
+as String,appSignature: freezed == appSignature ? _self.appSignature : appSignature // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -153,10 +154,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber, @JsonKey(name: 'app_signature')  String? appSignature)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _SendOtpRequest() when $default != null:
-return $default(_that.phoneNumber);case _:
+return $default(_that.phoneNumber,_that.appSignature);case _:
   return orElse();
 
 }
@@ -174,10 +175,10 @@ return $default(_that.phoneNumber);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber, @JsonKey(name: 'app_signature')  String? appSignature)  $default,) {final _that = this;
 switch (_that) {
 case _SendOtpRequest():
-return $default(_that.phoneNumber);case _:
+return $default(_that.phoneNumber,_that.appSignature);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -194,10 +195,10 @@ return $default(_that.phoneNumber);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'phone_number')  String phoneNumber)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'phone_number')  String phoneNumber, @JsonKey(name: 'app_signature')  String? appSignature)?  $default,) {final _that = this;
 switch (_that) {
 case _SendOtpRequest() when $default != null:
-return $default(_that.phoneNumber);case _:
+return $default(_that.phoneNumber,_that.appSignature);case _:
   return null;
 
 }
@@ -209,10 +210,11 @@ return $default(_that.phoneNumber);case _:
 @JsonSerializable()
 
 class _SendOtpRequest implements SendOtpRequest {
-  const _SendOtpRequest({@JsonKey(name: 'phone_number') required this.phoneNumber});
+  const _SendOtpRequest({@JsonKey(name: 'phone_number') required this.phoneNumber, @JsonKey(name: 'app_signature') this.appSignature});
   factory _SendOtpRequest.fromJson(Map<String, dynamic> json) => _$SendOtpRequestFromJson(json);
 
 @override@JsonKey(name: 'phone_number') final  String phoneNumber;
+@override@JsonKey(name: 'app_signature') final  String? appSignature;
 
 /// Create a copy of SendOtpRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -227,16 +229,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SendOtpRequest&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _SendOtpRequest&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.appSignature, appSignature) || other.appSignature == appSignature));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,phoneNumber);
+int get hashCode => Object.hash(runtimeType,phoneNumber,appSignature);
 
 @override
 String toString() {
-  return 'SendOtpRequest(phoneNumber: $phoneNumber)';
+  return 'SendOtpRequest(phoneNumber: $phoneNumber, appSignature: $appSignature)';
 }
 
 
@@ -247,7 +249,7 @@ abstract mixin class _$SendOtpRequestCopyWith<$Res> implements $SendOtpRequestCo
   factory _$SendOtpRequestCopyWith(_SendOtpRequest value, $Res Function(_SendOtpRequest) _then) = __$SendOtpRequestCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'phone_number') String phoneNumber
+@JsonKey(name: 'phone_number') String phoneNumber,@JsonKey(name: 'app_signature') String? appSignature
 });
 
 
@@ -264,10 +266,11 @@ class __$SendOtpRequestCopyWithImpl<$Res>
 
 /// Create a copy of SendOtpRequest
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? phoneNumber = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? phoneNumber = null,Object? appSignature = freezed,}) {
   return _then(_SendOtpRequest(
 phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
-as String,
+as String,appSignature: freezed == appSignature ? _self.appSignature : appSignature // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

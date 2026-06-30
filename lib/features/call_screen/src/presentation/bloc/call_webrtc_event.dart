@@ -8,7 +8,12 @@ abstract class CallWebRtcEvent {
 class InitiateCallEvent extends CallWebRtcEvent {
   final String conversationId;
   final bool isVideo;
-  const InitiateCallEvent({required this.conversationId, required this.isVideo});
+  final String contactName;
+  const InitiateCallEvent({
+    required this.conversationId,
+    required this.isVideo,
+    this.contactName = '',
+  });
 }
 
 /// Callee answers an incoming call
@@ -70,4 +75,10 @@ class SwitchCameraCallEvent extends CallWebRtcEvent {
 /// Toggle speaker
 class ToggleSpeakerCallEvent extends CallWebRtcEvent {
   const ToggleSpeakerCallEvent();
+}
+
+/// Set minimized status
+class SetCallMinimizedEvent extends CallWebRtcEvent {
+  final bool isMinimized;
+  const SetCallMinimizedEvent(this.isMinimized);
 }

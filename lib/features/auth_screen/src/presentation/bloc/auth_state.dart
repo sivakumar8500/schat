@@ -50,15 +50,19 @@ class AuthSuccess extends AuthState {
 
 class AuthFailure extends AuthState {
   final String errorMessage;
-  const AuthFailure({required this.errorMessage});
+  final String? mobile;
+  final DateTime? timestamp;
+  const AuthFailure({required this.errorMessage, this.mobile, this.timestamp});
   
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AuthFailure &&
           runtimeType == other.runtimeType &&
-          errorMessage == other.errorMessage;
+          errorMessage == other.errorMessage &&
+          mobile == other.mobile &&
+          timestamp == other.timestamp;
 
   @override
-  int get hashCode => errorMessage.hashCode;
+  int get hashCode => errorMessage.hashCode ^ mobile.hashCode ^ timestamp.hashCode;
 }

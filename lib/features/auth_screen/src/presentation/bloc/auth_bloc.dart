@@ -23,10 +23,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       cleanPhone = cleanPhone.substring(2);
     }
 
-    if (cleanPhone.length != 10) {
+    if (cleanPhone.length != 10 || RegExp(r'^0+$').hasMatch(cleanPhone)) {
       emit(
-        const AuthFailure(
+        AuthFailure(
           errorMessage: 'Please enter a valid 10-digit number.',
+          timestamp: DateTime.now(),
         ),
       );
       return;
@@ -37,20 +38,34 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     final mobileToUse = cleanPhone;
 
     try {
-      final result = await _authRepository.sendOtp(mobileToUse);
+      final result = await _authRepository.sendOtp(
+        mobileToUse,
+        appSignature: event.appSignature,
+      );
       result.when(
         success: (success) {
           if (success) {
             emit(OtpSent(mobile: mobileToUse));
           } else {
-            emit(const AuthFailure(errorMessage: 'Failed to send OTP.'));
+            emit(AuthFailure(
+              errorMessage: 'Failed to send OTP.',
+              mobile: mobileToUse,
+              timestamp: DateTime.now(),
+            ));
           }
         },
-        failure: (message, statusCode) =>
-            emit(AuthFailure(errorMessage: message)),
+        failure: (message, statusCode) => emit(AuthFailure(
+          errorMessage: message,
+          mobile: mobileToUse,
+          timestamp: DateTime.now(),
+        )),
       );
     } catch (e) {
-      emit(AuthFailure(errorMessage: e.toString()));
+      emit(AuthFailure(
+        errorMessage: e.toString(),
+        mobile: mobileToUse,
+        timestamp: DateTime.now(),
+      ));
     }
   }
 
@@ -62,12 +77,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     String? mobile;
     if (currentState is OtpSent) {
       mobile = currentState.mobile;
+    } else if (currentState is AuthFailure) {
+      mobile = currentState.mobile;
     }
 
     if (mobile == null) {
       emit(
-        const AuthFailure(
+        AuthFailure(
           errorMessage: 'Session expired. Please request a new OTP.',
+          timestamp: DateTime.now(),
         ),
       );
       return;
@@ -76,9 +94,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(const AuthLoading());
     final otp = event.otpCode.trim();
     if (otp.length != 6 || int.tryParse(otp) == null) {
-      emit(const AuthFailure(errorMessage: 'OTP must be 6 digits.'));
-      // Keep state as OtpSent to allow retry
-      emit(OtpSent(mobile: mobile));
+      emit(AuthFailure(
+        errorMessage: 'OTP must be 6 digits.',
+        mobile: mobile,
+        timestamp: DateTime.now(),
+      ));
       return;
     }
 
@@ -93,18 +113,25 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           if (success) {
             emit(const AuthSuccess());
           } else {
-            emit(const AuthFailure(errorMessage: 'Invalid OTP.'));
-            emit(OtpSent(mobile: mobile!));
+            emit(AuthFailure(
+              errorMessage: 'Invalid OTP.',
+              mobile: mobile,
+              timestamp: DateTime.now(),
+            ));
           }
         },
-        failure: (message, statusCode) {
-          emit(AuthFailure(errorMessage: message));
-          emit(OtpSent(mobile: mobile!));
-        },
+        failure: (message, statusCode) => emit(AuthFailure(
+          errorMessage: message,
+          mobile: mobile,
+          timestamp: DateTime.now(),
+        )),
       );
     } catch (e) {
-      emit(AuthFailure(errorMessage: e.toString()));
-      emit(OtpSent(mobile: mobile));
+      emit(AuthFailure(
+        errorMessage: e.toString(),
+        mobile: mobile,
+        timestamp: DateTime.now(),
+      ));
     }
   }
 }
