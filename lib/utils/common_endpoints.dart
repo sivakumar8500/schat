@@ -35,6 +35,9 @@ class CommonEndpoints {
   
   // Message Actions
   static String forwardMessage(String messageId) => '/messages/$messageId/forward';
+  static String pinMessage(String messageId) => '/messages/$messageId/pin';
+  static String unpinMessage(String messageId) => '/messages/$messageId/unpin';
+  static String getPinnedMessages(String conversationId) => '/messages/$conversationId/pinned';
   static String editMessage(String messageId) => '/messages/$messageId';
   static String deleteMessage(String messageId) => '/messages/$messageId';
 

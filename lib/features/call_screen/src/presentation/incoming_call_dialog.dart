@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
@@ -21,6 +23,7 @@ class IncomingCallDialog extends StatefulWidget {
   final bool isVideo;
   final String conversationId;
   final String recipientId;
+  final String? profilePictureUrl;
 
   const IncomingCallDialog({
     super.key,
@@ -30,6 +33,7 @@ class IncomingCallDialog extends StatefulWidget {
     required this.isVideo,
     required this.conversationId,
     required this.recipientId,
+    this.profilePictureUrl,
   });
 
   @override
@@ -120,6 +124,8 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                   contactColor: widget.callerColor,
                   recipientId: widget.recipientId,
                   isOutgoing: false,
+                  profilePictureUrl: widget.profilePictureUrl,
+                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                 )
               : AudioCallPage(
                   conversationId: widget.conversationId,
@@ -127,6 +133,8 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                   contactColor: widget.callerColor,
                   recipientId: widget.recipientId,
                   isOutgoing: false,
+                  profilePictureUrl: widget.profilePictureUrl,
+                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                 ),
         ),
       ),
@@ -259,14 +267,34 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                           ],
                         ),
                         child: Center(
-                          child: Text(
-                            widget.callerName.substring(0, 1).toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 60,
-                              fontWeight: FontWeight.bold,
-                              color: widget.callerColor,
-                            ),
-                          ),
+                          child: (widget.profilePictureUrl != null &&
+                                  widget.profilePictureUrl!.isNotEmpty)
+                              ? ClipOval(
+                                  child: Image.network(
+                                    widget.profilePictureUrl!,
+                                    width: 140,
+                                    height: 140,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Text(
+                                      widget.callerName
+                                          .substring(0, 1)
+                                          .toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 60,
+                                        fontWeight: FontWeight.bold,
+                                        color: widget.callerColor,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  widget.callerName.substring(0, 1).toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 60,
+                                    fontWeight: FontWeight.bold,
+                                    color: widget.callerColor,
+                                  ),
+                                ),
                         ),
                       ),
                     ),

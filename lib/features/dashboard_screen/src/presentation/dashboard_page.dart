@@ -6,7 +6,7 @@ import 'package:schat/features/chat_search/src/presentation/chat_search_page.dar
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_chats_view.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
@@ -191,25 +191,28 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   CommonSpaces.w12,
                   Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        text: "Hello ",
-                        children: [
-                          TextSpan(
-                            text: _username,
-                            style: context.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          "S-Chat",
+                          style: context.h2.copyWith(
+                            fontSize: 22,
+                            color: context.colors.primary,
+                            fontWeight: FontWeight.w900,
                           ),
-                          const TextSpan(text: " 👋"),
-                        ],
-                      ),
-                      style: context.h2.copyWith(
-                        fontSize: 22,
-                        color: context.colors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          "How are you today?",
+                          style: context.bodyMedium.copyWith(
+                            color: context.colors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -255,7 +258,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   );
                 }
-              } else if (value == 'profile') {
+              } else if (value == 'settings') {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -265,7 +268,6 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                 );
-                
                 if (result == 'sync') {
                   setState(() {
                     _currentIndex = 3;
@@ -307,12 +309,12 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
               PopupMenuItem(
-                value: 'profile',
+                value: 'settings',
                 child: Row(
                   children: [
-                    Icon(Icons.person_outline_rounded, color: context.colors.primary, size: 20),
+                    Icon(CommonIcons.settings, color: context.colors.primary, size: 20),
                     CommonSpaces.w12,
-                    Text('Profile', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    Text('Settings', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
                   ],
                 ),
               ),
@@ -324,7 +326,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildSearchBar() {
-    final searchBgColor = context.colors.searchBackground;
+    final searchBgColor = context.colors.isDark 
+        ? context.colors.pureWhite.withValues(alpha: 0.1)
+        : context.colors.primary.withValues(alpha: 0.05);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: GestureDetector(
@@ -553,7 +557,24 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         const SizedBox(height: CommonSizes.p6),
-        Icon(CommonIcons.doneAll, color: context.colors.primary, size: 18),
+        if (chat.unreadCount > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: context.colors.primary,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              chat.unreadCount.toString(),
+              style: context.bodySmall.copyWith(
+                color: context.colors.pureWhite,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          )
+        else
+          Icon(CommonIcons.doneAll, color: context.colors.primary, size: 18),
       ],
     );
   }
@@ -723,8 +744,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ChatPage(
@@ -738,6 +759,9 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ),
         );
+        if (mounted) {
+          context.read<ChatsBloc>().add(const FetchChats());
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),

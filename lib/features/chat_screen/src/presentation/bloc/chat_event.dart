@@ -104,6 +104,16 @@ class PinMessageEvent extends ChatEvent {
   const PinMessageEvent({required this.messageId, required this.conversationId, required this.isPinned});
 }
 
+class ReceivePinMessageEvent extends ChatEvent {
+  final Map<String, dynamic> messageData;
+  const ReceivePinMessageEvent({required this.messageData});
+}
+
+class ReceiveUnpinMessageEvent extends ChatEvent {
+  final Map<String, dynamic> messageData;
+  const ReceiveUnpinMessageEvent({required this.messageData});
+}
+
 class ReceiveDeleteMessageEvent extends ChatEvent {
   final String messageId;
   final String conversationId;

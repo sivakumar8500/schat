@@ -19,7 +19,25 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         super(const ProfileInitial()) {
     on<LoadProfileEvent>(_onLoadProfile);
     on<UpdateProfileEvent>(_onUpdateProfile);
+    on<UpdateAboutEvent>(_onUpdateAbout);
     on<LogoutEvent>(_onLogout);
+  }
+
+  Future<void> _onUpdateAbout(UpdateAboutEvent event, Emitter<ProfileState> emit) async {
+    final currentState = state;
+    if (currentState is ProfileLoaded) {
+      emit(const ProfileLoading());
+      final request = UpdateProfileRequest(
+        username: currentState.username,
+        about: event.about,
+        profilePictureUrl: currentState.imagePath,
+      );
+      final result = await _profileRepository.updateProfile(request);
+      result.when(
+        success: (user) => emit(ProfileSuccess(user: user)),
+        failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+      );
+    }
   }
 
   Future<void> _onLoadProfile(LoadProfileEvent event, Emitter<ProfileState> emit) async {
@@ -76,10 +94,10 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     }
 
     final request = UpdateProfileRequest(
-      username: event.username,
-      firstName: event.firstName,
-      lastName: event.lastName,
-      about: event.about,
+      username: event.username.trim(),
+      firstName: "", // Set to empty string to avoid null constraint errors
+      lastName: "",
+      about: event.about ?? "",
       profilePictureUrl: profileImageUrl,
     );
 

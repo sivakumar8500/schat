@@ -79,6 +79,8 @@ class WebRtcService {
     required String conversationId,
     required bool isVideo,
     required ChatSocketRepository repository,
+    String? callerName,
+    String? profilePictureUrl,
   }) async {
     _activeConversationId = conversationId;
     await initRenderers();
@@ -109,6 +111,8 @@ class WebRtcService {
       'type': 'call_initiate',
       'conversation_id': conversationId,
       'call_type': isVideo ? 'video' : 'audio',
+      'caller_name': callerName,
+      'profile_picture_url': profilePictureUrl,
       'offer': {
         'type': offer.type,
         'sdp': offer.sdp,

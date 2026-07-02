@@ -18,6 +18,8 @@ class AudioCallPage extends StatefulWidget {
   final Color contactColor;
   final String recipientId;
   final bool isOutgoing;
+  final String? profilePictureUrl;
+  final String? myProfilePictureUrl;
 
   const AudioCallPage({
     super.key,
@@ -26,6 +28,8 @@ class AudioCallPage extends StatefulWidget {
     required this.contactColor,
     required this.recipientId,
     this.isOutgoing = true,
+    this.profilePictureUrl,
+    this.myProfilePictureUrl,
   });
 
   @override
@@ -60,6 +64,7 @@ class _AudioCallPageState extends State<AudioCallPage>
           conversationId: widget.conversationId,
           isVideo: false,
           contactName: widget.contactName,
+          profilePictureUrl: widget.profilePictureUrl,
         ));
       }
     });
@@ -183,95 +188,143 @@ class _AudioCallPageState extends State<AudioCallPage>
                   children: [
                     // ─── Header ───
                     _buildHeader(context),
-                    CommonSpaces.h8,
-
-                    // ─── Name + Status ───
-                    Text(
-                      state is CallActive ? state.contactName : widget.contactName,
-                      style: context.h2.copyWith(
-                        fontSize: 32,
-                        color: const Color(0xFF1A1A1A),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    CommonSpaces.h8,
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Text(
-                        _statusLabel(state),
-                        key: ValueKey(_statusLabel(state)),
-                        style: context.titleMedium.copyWith(
-                          color: state is CallActive
-                              ? const Color(0xFF34C759)
-                              : Colors.black54,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-
+                    
                     const Spacer(),
 
-                    // ─── Avatar with ripple rings ───
-                    SizedBox(
-                      width: 300,
-                      height: 300,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _ring1,
-                            builder: (_, _) => _buildRing(_ring1.value),
-                          ),
-                          AnimatedBuilder(
-                            animation: _ring2,
-                            builder: (_, _) => _buildRing(_ring2.value),
-                          ),
-                          AnimatedBuilder(
-                            animation: _ring3,
-                            builder: (_, _) => _buildRing(_ring3.value),
-                          ),
-                          ScaleTransition(
-                            scale: _pulseAnimation,
-                            child: Container(
-                              width: 160,
-                              height: 160,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: widget.contactColor.withValues(alpha: 0.18),
-                                border: Border.all(
-                                  color: widget.contactColor.withValues(alpha: 0.5),
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: widget.contactColor.withValues(alpha: 0.3),
-                                    blurRadius: 40,
-                                    spreadRadius: 8,
-                                  ),
-                                ],
+                    // ─── Avatar with ripple rings + Name & Status ───
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 300,
+                          height: 300,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              AnimatedBuilder(
+                                animation: _ring1,
+                                builder: (_, _) => _buildRing(_ring1.value),
                               ),
-                              child: Center(
-                                child: Text(
-                                  widget.contactName
-                                      .substring(0, 1)
-                                      .toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 72,
-                                    fontWeight: FontWeight.bold,
-                                    color: widget.contactColor,
+                              AnimatedBuilder(
+                                animation: _ring2,
+                                builder: (_, _) => _buildRing(_ring2.value),
+                              ),
+                              AnimatedBuilder(
+                                animation: _ring3,
+                                builder: (_, _) => _buildRing(_ring3.value),
+                              ),
+                              ScaleTransition(
+                                scale: _pulseAnimation,
+                                child: Container(
+                                  width: 160,
+                                  height: 160,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: widget.contactColor.withValues(alpha: 0.18),
+                                    border: Border.all(
+                                      color: widget.contactColor.withValues(alpha: 0.5),
+                                      width: 3,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: widget.contactColor.withValues(alpha: 0.3),
+                                        blurRadius: 40,
+                                        spreadRadius: 8,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: (widget.profilePictureUrl != null &&
+                                            widget.profilePictureUrl!.isNotEmpty)
+                                        ? ClipOval(
+                                            child: Image.network(
+                                              widget.profilePictureUrl!,
+                                              width: 160,
+                                              height: 160,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Text(
+                                                widget.contactName
+                                                    .substring(0, 1)
+                                                    .toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 72,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: widget.contactColor,
+                                                ),
+                                              ),
+                                            ),
+                                          )
+                                        : Text(
+                                            widget.contactName
+                                                .substring(0, 1)
+                                                .toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 72,
+                                              fontWeight: FontWeight.bold,
+                                              color: widget.contactColor,
+                                            ),
+                                          ),
                                   ),
                                 ),
                               ),
-                            ),
+                              // Active speaking wave bars
+                              if (state is CallActive)
+                                Positioned(
+                                  bottom: 60,
+                                  child: _buildSpeakingIndicator(),
+                                ),
+                            ],
                           ),
-                          // Active speaking wave bars
-                          if (state is CallActive)
-                            Positioned(
-                              bottom: 60,
-                              child: _buildSpeakingIndicator(),
-                            ),
-                        ],
-                      ),
+                        ),
+                        CommonSpaces.h24,
+                        Text(
+                          state is CallActive ? state.contactName : widget.contactName,
+                          textAlign: TextAlign.center,
+                          style: context.h2.copyWith(
+                            fontSize: 32,
+                            color: const Color(0xFF1A1A1A),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        CommonSpaces.h8,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Column(
+                            key: ValueKey(_statusLabel(state)),
+                            children: [
+                              Text(
+                                _statusLabel(state),
+                                textAlign: TextAlign.center,
+                                style: context.titleMedium.copyWith(
+                                  color: state is CallActive
+                                      ? const Color(0xFF34C759)
+                                      : Colors.black54,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (state is CallActive && state.isRemoteMuted)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(CommonIcons.micOff,
+                                          size: 14, color: Colors.redAccent),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Muted',
+                                        style: context.bodySmall.copyWith(
+                                          color: Colors.redAccent,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
 
                     const Spacer(),

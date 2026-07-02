@@ -52,6 +52,8 @@ abstract class ChatSocketRepository {
     required String contactName,
     required String phoneNumber,
   });
+  void pinMessage({required String messageId});
+  void unpinMessage({required String messageId});
   void sendScreenShareSignaling({
     required String type,
     required String conversationId,
@@ -324,6 +326,24 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         "contactName": contactName,
         "phoneNumber": phoneNumber,
       }
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void pinMessage({required String messageId}) {
+    final Map<String, dynamic> payload = {
+      "type": "pin_message",
+      "message_id": messageId,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void unpinMessage({required String messageId}) {
+    final Map<String, dynamic> payload = {
+      "type": "unpin_message",
+      "message_id": messageId,
     };
     emit('message', payload);
   }

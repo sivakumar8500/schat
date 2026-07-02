@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/call_screen/src/domain/web_rtc_service.dart';
 import 'package:schat/features/call_screen/src/domain/call_sound_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
@@ -38,14 +39,18 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<ToggleMuteCallEvent>(_onToggleMute);
     on<ToggleCameraCallEvent>(_onToggleCamera);
     on<SwitchCameraCallEvent>(_onSwitchCamera);
-    on<ToggleSpeakerCallEvent>(_onToggleSpeaker);
+    on  <ToggleSpeakerCallEvent>(_onToggleSpeaker);
     on<SetCallMinimizedEvent>(_onSetMinimized);
+    on<HandleRemoteVideoToggleEvent>(_onHandleRemoteVideoToggle);
+    on<HandleRemoteMuteUpdateEvent>(_onHandleRemoteMuteUpdate);
 
     // Listen for calls answered via system UI (CallKit/ConnectionService)
-    _notificationSubscription = _notificationService.onCallAnswered.listen((extra) {
-      add(AnswerCallEvent(extra));
-      _navigateToCallPage(extra);
-    });
+    if (!kIsWeb) {
+      _notificationSubscription = _notificationService.onCallAnswered.listen((extra) {
+        add(AnswerCallEvent(extra));
+        _navigateToCallPage(extra);
+      });
+    }
 
     // Listen to socket messages for call signaling
     _socketSubscription = _repository.onMessage.listen((data) {
@@ -77,6 +82,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         case 'call_disconnected':
           add(const HandleCallDisconnectedEvent());
           break;
+        case 'call_video_toggle':
+          add(HandleRemoteVideoToggleEvent(data['isVideoOff'] == true));
+          break;
+        case 'call_mute_status_updated':
+          add(HandleRemoteMuteUpdateEvent(
+            isMuted: data['is_muted'] == true,
+            muteType: data['mute_type'] ?? 'audio',
+          ));
+          break;
       }
     });
   }
@@ -89,16 +103,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     final callerName = extra['caller_name'] ?? 'Unknown';
     final conversationId = extra['conversation_id'] ?? '';
     final recipientId = extra['recipient_id'] ?? '';
+    final profilePictureUrl = extra['profile_picture_url'] ?? extra['profilePictureUrl'];
 
     // If we're already in a call state, prefer those details
     String finalName = callerName;
     String finalRecipient = recipientId;
+    String? finalPic = profilePictureUrl;
     if (state is CallActive) {
       finalName = (state as CallActive).contactName;
       finalRecipient = (state as CallActive).recipientId;
+      finalPic = (state as CallActive).profilePictureUrl;
     } else if (state is CallConnecting) {
       finalName = (state as CallConnecting).contactName;
       finalRecipient = (state as CallConnecting).recipientId;
+      finalPic = (state as CallConnecting).profilePictureUrl;
     }
 
     Navigator.of(context).push(
@@ -112,6 +130,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
                   contactColor: Colors.blue, // Default color
                   recipientId: finalRecipient,
                   isOutgoing: false,
+                  profilePictureUrl: finalPic,
+                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                 )
               : AudioCallPage(
                   conversationId: conversationId,
@@ -119,6 +139,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
                   contactColor: Colors.blue,
                   recipientId: finalRecipient,
                   isOutgoing: false,
+                  profilePictureUrl: finalPic,
                 ),
         ),
       ),
@@ -140,15 +161,22 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         contactName: event.contactName,
         recipientId: '', 
         isMinimized: false,
+        profilePictureUrl: event.profilePictureUrl,
       ));
       
       // Start back ring early so the caller hears it immediately
       _soundService.playBackRing();
 
+      final storage = getIt<StorageService>();
+      final myName = storage.getUsername();
+      final myPic = storage.getProfilePic();
+
       await _webRtcService.makeCall(
         conversationId: event.conversationId,
         isVideo: event.isVideo,
         repository: _repository,
+        callerName: myName,
+        profilePictureUrl: myPic,
       );
       debugPrint('CallWebRtcBloc: makeCall completed');
     } catch (e) {
@@ -190,6 +218,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         contactName: event.incomingEvent['caller_name'] ?? '',
         recipientId: event.incomingEvent['recipient_id'] ?? '',
         isMinimized: false,
+        profilePictureUrl: event.incomingEvent['profile_picture_url'] ?? event.incomingEvent['profilePictureUrl'],
       ));
       await _webRtcService.answerCall(
         incomingEvent: event.incomingEvent,
@@ -200,6 +229,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final isVideo = event.incomingEvent['call_type'] == 'video';
       final callerName = event.incomingEvent['caller_name'] ?? 'Unknown';
       final recipientId = event.incomingEvent['recipient_id'] ?? '';
+      final profilePic = event.incomingEvent['profile_picture_url'] ?? event.incomingEvent['profilePictureUrl'];
       
       // For audio calls, start on earpiece (speaker false), for video start on speaker
       await _webRtcService.toggleSpeaker(isVideo);
@@ -210,6 +240,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         recipientId: recipientId,
         isVideo: isVideo,
         isSpeakerOn: isVideo,
+        profilePictureUrl: profilePic,
       ));
     } catch (e) {
       debugPrint('CallWebRtcBloc: Error answering call: $e');
@@ -257,6 +288,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     final callType = event.incomingEvent['call_type'] as String? ?? 'audio';
     final callerName = event.incomingEvent['caller_name'] as String? ?? 'Unknown';
     final recipientId = event.incomingEvent['recipient_id'] as String? ?? '';
+    final profilePic = event.incomingEvent['profile_picture_url'] ?? event.incomingEvent['profilePictureUrl'];
     
     _soundService.playRingtone();
     emit(CallRinging(
@@ -264,6 +296,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       callerName: callerName,
       recipientId: recipientId,
       isVideo: callType == 'video',
+      profilePictureUrl: profilePic,
     ));
     debugPrint('CallWebRtcBloc: Incoming call — type=$callType');
 
@@ -283,6 +316,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     final isVideo = incomingEvent['call_type'] == 'video';
     final conversationId = incomingEvent['conversation_id'] ?? '';
     final recipientId = incomingEvent['recipient_id'] ?? '';
+    final profilePic = incomingEvent['profile_picture_url'] ?? incomingEvent['profilePictureUrl'];
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -296,6 +330,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
             isVideo: isVideo,
             conversationId: conversationId,
             recipientId: recipientId,
+            profilePictureUrl: profilePic,
           ),
         ),
       ),
@@ -319,6 +354,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       String recipientId = '';
       bool isVideo = false;
       bool isMinimized = false;
+      String? profilePic;
 
       if (currentState is CallConnecting) {
         conversationId = currentState.conversationId;
@@ -326,11 +362,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         recipientId = currentState.recipientId;
         isVideo = currentState.isVideo;
         isMinimized = currentState.isMinimized;
+        profilePic = currentState.profilePictureUrl;
       } else {
         conversationId = _webRtcService.activeConversationId ?? '';
         contactName = event.event['caller_name'] ?? 'Unknown';
         recipientId = event.event['recipient_id'] ?? '';
         isVideo = event.event['call_type'] == 'video';
+        profilePic = event.event['profile_picture_url'] ?? event.event['profilePictureUrl'];
       }
       
       // Initialize speaker state based on call type
@@ -343,6 +381,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         isVideo: isVideo,
         isSpeakerOn: isVideo,
         isMinimized: isMinimized,
+        profilePictureUrl: profilePic,
       ));
     } else {
       emit(CallRejected(reason: response == 'busy' ? 'User is busy' : 'Call declined'));
@@ -379,6 +418,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final current = state as CallActive;
       final newMuted = !current.isMuted;
       _webRtcService.toggleMute(newMuted);
+
+      // Send signaling to remote peer
+      _repository.emit('message', {
+        'type': 'call_toggle_mute',
+        'conversation_id': current.conversationId,
+        'is_muted': newMuted,
+        'mute_type': 'audio',
+      });
+
       emit(current.copyWith(isMuted: newMuted));
     }
   }
@@ -389,7 +437,35 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final current = state as CallActive;
       final newVideoOff = !current.isVideoOff;
       _webRtcService.toggleVideo(newVideoOff);
+      
+      // Send signaling to remote peer
+      _repository.emit('message', {
+        'type': 'call_toggle_mute',
+        'conversation_id': current.conversationId,
+        'is_muted': newVideoOff,
+        'mute_type': 'video',
+      });
+
       emit(current.copyWith(isVideoOff: newVideoOff));
+    }
+  }
+
+  void _onHandleRemoteVideoToggle(
+      HandleRemoteVideoToggleEvent event, Emitter<CallWebRtcState> emit) {
+    if (state is CallActive) {
+      emit((state as CallActive).copyWith(isRemoteVideoOff: event.isVideoOff));
+    }
+  }
+
+  void _onHandleRemoteMuteUpdate(
+      HandleRemoteMuteUpdateEvent event, Emitter<CallWebRtcState> emit) {
+    if (state is CallActive) {
+      final current = state as CallActive;
+      if (event.muteType == 'audio') {
+        emit(current.copyWith(isRemoteMuted: event.isMuted));
+      } else if (event.muteType == 'video') {
+        emit(current.copyWith(isRemoteVideoOff: event.isMuted));
+      }
     }
   }
 

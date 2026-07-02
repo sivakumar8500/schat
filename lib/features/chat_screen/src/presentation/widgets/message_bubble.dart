@@ -39,6 +39,7 @@ class MessageBubble extends StatelessWidget {
   final String? replyMessageBody;
   final String? replyMessageSenderName;
   final bool isEdited;
+  final bool isPinned;
   final bool isSelected;
   final bool isUploading;
   final bool isFailed;
@@ -67,6 +68,7 @@ class MessageBubble extends StatelessWidget {
     this.replyMessageBody,
     this.replyMessageSenderName,
     this.isEdited = false,
+    this.isPinned = false,
     this.isSelected = false,
     this.isUploading = false,
     this.isFailed = false,
@@ -226,6 +228,16 @@ class MessageBubble extends StatelessWidget {
                                     : context.colors.textSecondary,
                               ),
                             ),
+                          ],
+                          if (isPinned) ...[
+                            Icon(
+                              CommonIcons.pin,
+                              size: 10,
+                              color: isMe
+                                  ? context.colors.textLight.withValues(alpha: 0.7)
+                                  : context.colors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
                           ],
                           Text(
                             time,

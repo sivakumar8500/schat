@@ -1,4 +1,4 @@
-import 'package:schat/features/dashboard_screen/src/domain/last_message_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/last_message_model.dart';
 
 abstract class ChatsEvent {
   const ChatsEvent();
@@ -34,11 +34,13 @@ class NewMessageReceived extends ChatsEvent {
   final String conversationId;
   final LastMessageModel lastMessage;
   final String updatedAt;
+  final int? unreadCount;
 
   const NewMessageReceived({
     required this.conversationId,
     required this.lastMessage,
     required this.updatedAt,
+    this.unreadCount,
   });
 }
 

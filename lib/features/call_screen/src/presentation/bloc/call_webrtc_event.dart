@@ -9,10 +9,12 @@ class InitiateCallEvent extends CallWebRtcEvent {
   final String conversationId;
   final bool isVideo;
   final String contactName;
+  final String? profilePictureUrl;
   const InitiateCallEvent({
     required this.conversationId,
     required this.isVideo,
     this.contactName = '',
+    this.profilePictureUrl,
   });
 }
 
@@ -81,4 +83,17 @@ class ToggleSpeakerCallEvent extends CallWebRtcEvent {
 class SetCallMinimizedEvent extends CallWebRtcEvent {
   final bool isMinimized;
   const SetCallMinimizedEvent(this.isMinimized);
+}
+
+/// Remote party toggled their video
+class HandleRemoteVideoToggleEvent extends CallWebRtcEvent {
+  final bool isVideoOff;
+  const HandleRemoteVideoToggleEvent(this.isVideoOff);
+}
+
+/// Remote party updated their mute status (audio or video)
+class HandleRemoteMuteUpdateEvent extends CallWebRtcEvent {
+  final bool isMuted;
+  final String muteType;
+  const HandleRemoteMuteUpdateEvent({required this.isMuted, required this.muteType});
 }

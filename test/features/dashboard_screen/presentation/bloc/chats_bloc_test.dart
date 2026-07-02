@@ -8,6 +8,7 @@ import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_us
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
@@ -16,6 +17,7 @@ class MockGetChatsUseCase extends Mock implements GetChatsUseCase {}
 class MockDashboardRepository extends Mock implements DashboardRepository {}
 class MockContactsRepository extends Mock implements ContactsRepository {}
 class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
+class MockStorageService extends Mock implements StorageService {}
 
 void main() {
   late ChatsBloc chatsBloc;
@@ -23,18 +25,22 @@ void main() {
   late MockDashboardRepository mockDashboardRepository;
   late MockContactsRepository mockContactsRepository;
   late MockChatSocketRepository mockChatSocketRepository;
+  late MockStorageService mockStorageService;
 
   setUp(() {
     mockGetChatsUseCase = MockGetChatsUseCase();
     mockDashboardRepository = MockDashboardRepository();
     mockContactsRepository = MockContactsRepository();
     mockChatSocketRepository = MockChatSocketRepository();
+    mockStorageService = MockStorageService();
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
+    when(() => mockStorageService.getUserId()).thenReturn('user1');
     chatsBloc = ChatsBloc(
       mockGetChatsUseCase,
       mockDashboardRepository,
       mockContactsRepository,
       mockChatSocketRepository,
+      mockStorageService,
     );
   });
 
@@ -75,7 +81,7 @@ void main() {
       act: (bloc) => bloc.add(const FetchChats()),
       expect: () => [
         const ChatsLoading(),
-        ChatsLoaded(chatList),
+        isA<ChatsLoaded>().having((s) => s.chats, 'chats', chatList),
       ],
     );
 
@@ -89,7 +95,7 @@ void main() {
       act: (bloc) => bloc.add(const FetchChats()),
       expect: () => [
         const ChatsLoading(),
-        const ChatsError('Error fetching chats'),
+        isA<ChatsError>().having((s) => s.message, 'message', 'Error fetching chats'),
       ],
     );
   });

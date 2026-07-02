@@ -42,6 +42,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<DeleteMessagesEvent>(_onDeleteMessages);
     on<EditMessageEvent>(_onEditMessage);
     on<PinMessageEvent>(_onPinMessage);
+    on<ReceivePinMessageEvent>(_onReceivePinMessage);
+    on<ReceiveUnpinMessageEvent>(_onReceiveUnpinMessage);
     on<ReceiveDeleteMessageEvent>(_onReceiveDeleteMessage);
     on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
@@ -148,6 +150,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
               add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent));
             }
+          }
+        } else if (type == 'message_pinned' || type == 'pin_message') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ReceivePinMessageEvent(messageData: cleanData));
+          }
+        } else if (type == 'message_unpinned' || type == 'unpin_message') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ReceiveUnpinMessageEvent(messageData: cleanData));
           }
         } else if (type == 'file_viewed' || type == 'file_downloaded' || type == 'file_shared') {
           final userId = (cleanData['user_id'] ?? cleanData['userId'])?.toString();
@@ -287,6 +299,7 @@ else if (type == 'pong') {
     // 2. Fetch fresh messages from API in background
     try {
       final messages = await _chatRepository.getMessages(event.conversationId);
+      final pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
       
       // Save fresh messages to cache
       _saveToCache(event.conversationId, messages);
@@ -300,10 +313,11 @@ else if (type == 'pong') {
 
       final currentState = state;
       if (currentState is ChatLoaded) {
-        emit(currentState.copyWith(messages: messages));
+        emit(currentState.copyWith(messages: messages, pinnedMessages: pinnedMessages));
       } else {
         emit(ChatLoaded(
           messages: messages,
+          pinnedMessages: pinnedMessages,
           myId: myId,
           isRecipientOnline: _currentIsOnline,
           isRecipientTyping: _currentIsTyping,
@@ -511,6 +525,16 @@ else if (type == 'pong') {
   void _onPinMessage(PinMessageEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      if (event.isPinned) {
+        if (currentState.pinnedMessages.length >= 5) {
+          emit(currentState.copyWith(notificationMessage: 'Maximum 5 pinned messages allowed'));
+          return;
+        }
+        _socketRepository.pinMessage(messageId: event.messageId);
+      } else {
+        _socketRepository.unpinMessage(messageId: event.messageId);
+      }
+
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
           return msg.copyWith(isPinned: event.isPinned);
@@ -519,6 +543,62 @@ else if (type == 'pong') {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onReceivePinMessage(ReceivePinMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final messageData = event.messageData['message'];
+      if (messageData is Map) {
+        final pinnedMsg = MessageModel.fromJson(Map<String, dynamic>.from(messageData));
+        
+        final updatedMessages = currentState.messages.map((msg) {
+          if (msg.id == pinnedMsg.id) {
+            return pinnedMsg;
+          }
+          return msg;
+        }).toList();
+
+        final updatedPinned = List<MessageModel>.from(currentState.pinnedMessages);
+        final index = updatedPinned.indexWhere((m) => m.id == pinnedMsg.id);
+        if (index != -1) {
+          updatedPinned[index] = pinnedMsg;
+        } else {
+          updatedPinned.add(pinnedMsg);
+        }
+        // Sort by pinnedAt descending (latest first)
+        updatedPinned.sort((a, b) => (b.pinnedAt ?? 0).compareTo(a.pinnedAt ?? 0));
+        
+        emit(currentState.copyWith(
+          messages: updatedMessages,
+          pinnedMessages: updatedPinned,
+        ));
+        _saveToCache(_conversationId!, updatedMessages);
+      }
+    }
+  }
+
+  void _onReceiveUnpinMessage(ReceiveUnpinMessageEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final msgId = (event.messageData['message_id'] ?? event.messageData['messageId'])?.toString();
+      if (msgId != null) {
+        final updatedMessages = currentState.messages.map((msg) {
+          if (msg.id == msgId) {
+            return msg.copyWith(isPinned: false, pinnedAt: null);
+          }
+          return msg;
+        }).toList();
+
+        final updatedPinned = currentState.pinnedMessages.where((m) => m.id != msgId).toList();
+        
+        emit(currentState.copyWith(
+          messages: updatedMessages,
+          pinnedMessages: updatedPinned,
+        ));
+        _saveToCache(_conversationId!, updatedMessages);
+      }
     }
   }
 

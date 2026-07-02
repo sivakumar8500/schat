@@ -23,4 +23,7 @@ abstract class ChatRepository {
   Future<void> forwardMessage({required String messageId, required String targetConversationId});
   Future<void> setDisappearingTimer({required String conversationId, int? seconds});
   Future<void> deleteGroup(String groupId);
+  Future<void> pinMessage(String messageId);
+  Future<void> unpinMessage(String messageId);
+  Future<List<MessageModel>> getPinnedMessages(String conversationId);
 }

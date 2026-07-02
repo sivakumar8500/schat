@@ -38,9 +38,13 @@ class ProfileRepositoryImpl implements ProfileRepository {
 
   @override
   Future<ApiResult<UserModel>> updateProfile(UpdateProfileRequest request) async {
+    final Map<String, dynamic> data = request.toJson();
+    // Remove null values to prevent server-side errors on PATCH
+    data.removeWhere((key, value) => value == null);
+
     final result = await _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,
-      data: request.toJson(),
+      data: data,
       mapper: (json) => UserModel.fromJson(json),
     );
 

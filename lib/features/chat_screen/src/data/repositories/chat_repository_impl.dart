@@ -220,4 +220,46 @@ class ChatRepositoryImpl implements ChatRepository {
       failure: (error, statusCode) => throw Exception(error),
     );
   }
+
+  @override
+  Future<void> pinMessage(String messageId) async {
+    final result = await _apiService.post(
+      CommonEndpoints.pinMessage(messageId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> unpinMessage(String messageId) async {
+    final result = await _apiService.post(
+      CommonEndpoints.unpinMessage(messageId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<List<MessageModel>> getPinnedMessages(String conversationId) async {
+    final result = await _apiService.get<List<MessageModel>>(
+      CommonEndpoints.getPinnedMessages(conversationId),
+      mapper: (data) {
+        if (data is List) {
+          return data.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+        }
+        return [];
+      },
+    );
+
+    return result.when(
+      success: (messages) => messages,
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
 }

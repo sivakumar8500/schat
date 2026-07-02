@@ -53,10 +53,20 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _saveProfile(BuildContext context) {
+    final username = _usernameController.text.trim();
+    
+    if (username.isEmpty) {
+      context.showErrorNotification('Username cannot be empty');
+      return;
+    }
+
+    if (username.length < 3) {
+      context.showErrorNotification('Username must be at least 3 characters long');
+      return;
+    }
+
     context.read<ProfileBloc>().add(UpdateProfileEvent(
-          username: _usernameController.text,
-          // If we have a local file, we'd normally upload it first and get a URL.
-          // For now using the existing URL or local path as mock.
+          username: username,
           imagePath: _localImageFile?.path ?? _remoteImageUrl,
         ));
   }

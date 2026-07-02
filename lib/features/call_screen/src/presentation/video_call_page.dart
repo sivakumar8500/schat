@@ -18,6 +18,8 @@ class VideoCallPage extends StatefulWidget {
   final Color contactColor;
   final String recipientId;
   final bool isOutgoing;
+  final String? profilePictureUrl;
+  final String? myProfilePictureUrl;
 
   const VideoCallPage({
     super.key,
@@ -26,6 +28,8 @@ class VideoCallPage extends StatefulWidget {
     required this.contactColor,
     required this.recipientId,
     this.isOutgoing = true,
+    this.profilePictureUrl,
+    this.myProfilePictureUrl,
   });
 
   @override
@@ -59,6 +63,7 @@ class _VideoCallPageState extends State<VideoCallPage>
           conversationId: widget.conversationId,
           isVideo: true,
           contactName: widget.contactName,
+          profilePictureUrl: widget.profilePictureUrl,
         ));
       }
     });
@@ -144,12 +149,14 @@ class _VideoCallPageState extends State<VideoCallPage>
                   // ─── Remote Video (Full Screen) ───
                   Positioned.fill(
                     child: state is CallActive
-                        ? RTCVideoView(
-                            _webRtcService.remoteRenderer,
-                            objectFit: RTCVideoViewObjectFit
-                                .RTCVideoViewObjectFitCover,
-                            mirror: false,
-                          )
+                        ? (state.isRemoteVideoOff 
+                            ? _buildRemoteVideoOffPlaceholder(state)
+                            : RTCVideoView(
+                                _webRtcService.remoteRenderer,
+                                objectFit: RTCVideoViewObjectFit
+                                    .RTCVideoViewObjectFitCover,
+                                mirror: false,
+                              ))
                         : _buildWaitingScreen(),
                   ),
 
@@ -261,14 +268,32 @@ class _VideoCallPageState extends State<VideoCallPage>
             CircleAvatar(
               radius: 60,
               backgroundColor: widget.contactColor.withValues(alpha: 0.2),
-              child: Text(
-                widget.contactName.substring(0, 1).toUpperCase(),
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: widget.contactColor,
-                ),
-              ),
+              child: (widget.profilePictureUrl != null &&
+                      widget.profilePictureUrl!.isNotEmpty)
+                  ? ClipOval(
+                      child: Image.network(
+                        widget.profilePictureUrl!,
+                        width: 120,
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Text(
+                          widget.contactName.substring(0, 1).toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: widget.contactColor,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      widget.contactName.substring(0, 1).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: widget.contactColor,
+                      ),
+                    ),
             ),
             const SizedBox(height: 24),
             const SizedBox(
@@ -306,15 +331,33 @@ class _VideoCallPageState extends State<VideoCallPage>
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              statusText,
-              style: TextStyle(
-                color: state is CallActive
-                    ? const Color(0xFF34C759)
-                    : Colors.white70,
-                fontSize: 14,
-                shadows: const [Shadow(color: Colors.black45, blurRadius: 6)],
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    color: state is CallActive
+                        ? const Color(0xFF34C759)
+                        : Colors.white70,
+                    fontSize: 14,
+                    shadows: const [Shadow(color: Colors.black45, blurRadius: 6)],
+                  ),
+                ),
+                if (state is CallActive && state.isRemoteMuted) ...[
+                  const SizedBox(width: 8),
+                  const Icon(CommonIcons.micOff, size: 14, color: Colors.redAccent),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'MUTED',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -394,9 +437,23 @@ class _VideoCallPageState extends State<VideoCallPage>
             child: isVideoOff
                 ? Container(
                     color: Colors.black87,
-                    child: const Center(
-                      child: Icon(CommonIcons.videocamOff,
-                          color: Colors.white54, size: 32),
+                    child: Center(
+                      child: (widget.myProfilePictureUrl != null &&
+                              widget.myProfilePictureUrl!.isNotEmpty)
+                          ? ClipOval(
+                              child: Image.network(
+                                widget.myProfilePictureUrl!,
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    CommonIcons.person,
+                                    color: Colors.white54,
+                                    size: 48),
+                              ),
+                            )
+                          : const Icon(CommonIcons.person,
+                              color: Colors.white54, size: 48),
                     ),
                   )
                 : RTCVideoView(
@@ -406,6 +463,58 @@ class _VideoCallPageState extends State<VideoCallPage>
                         RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                   ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRemoteVideoOffPlaceholder(CallActive state) {
+    return Container(
+      color: Colors.black,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircleAvatar(
+              radius: 80,
+              backgroundColor: widget.contactColor.withValues(alpha: 0.2),
+              child: (widget.profilePictureUrl != null &&
+                      widget.profilePictureUrl!.isNotEmpty)
+                  ? ClipOval(
+                      child: Image.network(
+                        widget.profilePictureUrl!,
+                        width: 160,
+                        height: 160,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Text(
+                          widget.contactName.substring(0, 1).toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 64,
+                            fontWeight: FontWeight.bold,
+                            color: widget.contactColor,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      widget.contactName.substring(0, 1).toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 64,
+                        fontWeight: FontWeight.bold,
+                        color: widget.contactColor,
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Video Paused',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -14,18 +14,21 @@ class CallConnecting extends CallWebRtcState {
   final String contactName;
   final String recipientId;
   final bool isMinimized;
+  final String? profilePictureUrl;
   const CallConnecting({
     required this.conversationId,
     required this.isVideo,
     required this.contactName,
     this.recipientId = '',
     this.isMinimized = false,
+    this.profilePictureUrl,
   });
 
   CallConnecting copyWith({
     String? contactName,
     String? recipientId,
     bool? isMinimized,
+    String? profilePictureUrl,
   }) {
     return CallConnecting(
       conversationId: conversationId,
@@ -33,6 +36,7 @@ class CallConnecting extends CallWebRtcState {
       contactName: contactName ?? this.contactName,
       recipientId: recipientId ?? this.recipientId,
       isMinimized: isMinimized ?? this.isMinimized,
+      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
     );
   }
 }
@@ -43,11 +47,13 @@ class CallRinging extends CallWebRtcState {
   final String callerName;
   final String recipientId;
   final bool isVideo;
+  final String? profilePictureUrl;
   const CallRinging({
     required this.incomingEvent,
     required this.callerName,
     required this.recipientId,
     required this.isVideo,
+    this.profilePictureUrl,
   });
 }
 
@@ -59,7 +65,10 @@ class CallActive extends CallWebRtcState {
   final bool isMuted;
   final bool isSpeakerOn;
   final bool isVideoOff;
+  final bool isRemoteVideoOff;
+  final bool isRemoteMuted;
   final bool isMinimized;
+  final String? profilePictureUrl;
   const CallActive({
     required this.conversationId,
     required this.contactName,
@@ -68,7 +77,10 @@ class CallActive extends CallWebRtcState {
     this.isMuted = false,
     this.isSpeakerOn = true,
     this.isVideoOff = false,
+    this.isRemoteVideoOff = false,
+    this.isRemoteMuted = false,
     this.isMinimized = false,
+    this.profilePictureUrl,
   });
 
   CallActive copyWith({
@@ -77,7 +89,10 @@ class CallActive extends CallWebRtcState {
     bool? isMuted,
     bool? isSpeakerOn,
     bool? isVideoOff,
+    bool? isRemoteVideoOff,
+    bool? isRemoteMuted,
     bool? isMinimized,
+    String? profilePictureUrl,
   }) {
     return CallActive(
       conversationId: conversationId,
@@ -87,7 +102,10 @@ class CallActive extends CallWebRtcState {
       isMuted: isMuted ?? this.isMuted,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isVideoOff: isVideoOff ?? this.isVideoOff,
+      isRemoteVideoOff: isRemoteVideoOff ?? this.isRemoteVideoOff,
+      isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
       isMinimized: isMinimized ?? this.isMinimized,
+      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
     );
   }
 }

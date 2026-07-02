@@ -5,8 +5,9 @@ import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_us
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
-import 'package:schat/features/dashboard_screen/src/domain/last_message_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/last_message_model.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'chats_event.dart';
 import 'chats_state.dart';
 
@@ -16,6 +17,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   final DashboardRepository _chatRepository;
   final ContactsRepository _contactsRepository;
   final ChatSocketRepository _socketRepository;
+  final StorageService _storageService;
   StreamSubscription? _socketSubscription;
 
   ChatsBloc(
@@ -23,6 +25,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     this._chatRepository,
     this._contactsRepository,
     this._socketRepository,
+    this._storageService,
   ) : super(const ChatsInitial()) {
     on<FetchChats>(_onFetchChats);
     on<CreateChat>(_onCreateChat);
@@ -51,8 +54,13 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
   void _listenToSocket() {
     _socketSubscription = _socketRepository.onMessage.listen((data) {
-      if (data is Map) {
-        final cleanData = _cleanMap(data);
+      if (data == null) return;
+      
+      try {
+        final Map mapData = data is Map ? data : {};
+        if (mapData.isEmpty) return;
+        
+        final cleanData = _cleanMap(Map<dynamic, dynamic>.from(mapData));
         final type = cleanData['type']?.toString();
         
         if (type == 'user_status') {
@@ -67,11 +75,14 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           if (message is Map) {
             final convId = (message['conversationId'] ?? message['conversation_id'])?.toString();
             final updatedAt = (message['updatedAt'] ?? message['created_at'])?.toString();
+            final unreadCount = int.tryParse(cleanData['unread_count']?.toString() ?? '') ?? 
+                                int.tryParse(cleanData['unread']?.toString() ?? '');
             if (convId != null) {
               add(NewMessageReceived(
                 conversationId: convId,
                 lastMessage: LastMessageModel.fromJson(Map<String, dynamic>.from(message)),
                 updatedAt: updatedAt ?? DateTime.now().toIso8601String(),
+                unreadCount: unreadCount,
               ));
             }
           }
@@ -100,6 +111,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               add(RemoveChat(conversationId: convId));
            }
         }
+      } catch (e) {
+        // Log error
       }
     });
   }
@@ -123,18 +136,27 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
       final index = updatedChats.indexWhere((c) => c.id == event.conversationId);
+      final currentUserId = _storageService.getUserId();
       
       if (index != -1) {
         final chat = updatedChats.removeAt(index);
+        final isFromMe = event.lastMessage.senderId == currentUserId;
+        
+        int newUnreadCount = event.unreadCount ?? chat.unreadCount;
+        if (event.unreadCount == null && !isFromMe) {
+          newUnreadCount = chat.unreadCount + 1;
+        } else if (isFromMe) {
+          newUnreadCount = 0; // If I sent a message, I've seen it or it's my turn
+        }
+
         final updatedChat = chat.copyWith(
           lastMessage: event.lastMessage,
           updatedAt: event.updatedAt,
+          unreadCount: newUnreadCount,
         );
         updatedChats.insert(0, updatedChat);
         emit(ChatsLoaded(updatedChats));
       } else {
-        // If chat not in list, we might need to fetch it or ignore if it's a new conversation
-        // For now, let's just trigger a re-fetch to be safe or ignore.
         add(const FetchChats());
       }
     }

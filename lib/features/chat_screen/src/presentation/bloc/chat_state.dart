@@ -15,6 +15,7 @@ class ChatLoading extends ChatState {
 
 class ChatLoaded extends ChatState {
   final List<MessageModel> messages;
+  final List<MessageModel> pinnedMessages;
   final bool isMuted;
   final bool isLocked;
   final bool isFavorite;
@@ -26,6 +27,7 @@ class ChatLoaded extends ChatState {
 
   const ChatLoaded({
     required this.messages,
+    this.pinnedMessages = const [],
     this.isMuted = false,
     this.isLocked = false,
     this.isFavorite = false,
@@ -38,6 +40,7 @@ class ChatLoaded extends ChatState {
 
   ChatLoaded copyWith({
     List<MessageModel>? messages,
+    List<MessageModel>? pinnedMessages,
     bool? isMuted,
     bool? isLocked,
     bool? isFavorite,
@@ -49,6 +52,7 @@ class ChatLoaded extends ChatState {
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
+      pinnedMessages: pinnedMessages ?? this.pinnedMessages,
       isMuted: isMuted ?? this.isMuted,
       isLocked: isLocked ?? this.isLocked,
       isFavorite: isFavorite ?? this.isFavorite,

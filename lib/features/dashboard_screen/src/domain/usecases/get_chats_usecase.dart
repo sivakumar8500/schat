@@ -1,6 +1,6 @@
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 
 @lazySingleton

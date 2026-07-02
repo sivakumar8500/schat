@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
 import 'package:schat/features/profile_screen/src/presentation/profile_page.dart';
+import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -33,12 +33,74 @@ class ProfileSettingsPage extends StatefulWidget {
 class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   late String _currentUsername;
   String? _currentImageUrl;
+  String _currentAbout = "Hey there! I am using Schat.";
 
   @override
   void initState() {
     super.initState();
     _currentUsername = widget.username;
     _currentImageUrl = widget.profilePicUrl;
+  }
+
+  void _showUpdateAboutBottomSheet(BuildContext context) {
+    final controller = TextEditingController(text: _currentAbout);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Update About', style: context.titleLarge),
+              CommonSpaces.h16,
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 100,
+                decoration: InputDecoration(
+                  hintText: 'About',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              CommonSpaces.h16,
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final newAbout = controller.text.trim();
+                    if (newAbout.isNotEmpty) {
+                      context.read<ProfileBloc>().add(UpdateAboutEvent(about: newAbout));
+                      Navigator.pop(context);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: context.colors.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Save', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -58,8 +120,6 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
             context.showSuccessNotification('Contacts synced successfully');
           } else if (state is ContactsFailure) {
             context.showErrorNotification('Failed to sync contacts: ${state.errorMessage}');
-          } else if (state is ContactsPermissionDenied) {
-            context.showErrorNotification('Contacts permission denied');
           }
         },
         child: BlocConsumer<ProfileBloc, ProfileState>(
@@ -68,6 +128,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
               setState(() {
                 _currentUsername = state.username;
                 _currentImageUrl = state.imagePath;
+                _currentAbout = state.user?.about ?? "Hey there! I am using Schat.";
               });
             } else if (state is ProfileLogoutSuccess) {
               Navigator.pushAndRemoveUntil(
@@ -75,314 +136,208 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                 MaterialPageRoute(builder: (context) => const IntroPage()),
                 (Route<dynamic> route) => false,
               );
+            } else if (state is ProfileSuccess) {
+              context.read<ProfileBloc>().add(const LoadProfileEvent());
             }
           },
           builder: (context, state) {
-            return SafeArea(
-              child: Scaffold(
+            return Scaffold(
+              backgroundColor: context.colors.scaffoldBackground,
+              appBar: AppBar(
+                title: const Text('Settings'),
                 backgroundColor: context.colors.scaffoldBackground,
-                body: Stack(
-                  children: [
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.50,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: (_currentImageUrl != null &&
-                                    _currentImageUrl!.isNotEmpty)
-                                ? Image.network(
-                                    _currentImageUrl!,
-                                    fit: BoxFit.fill,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            Image.asset(
-                                              'assets/main_bg_img.png',
-                                              fit: BoxFit.cover,
-                                            ),
-                                  )
-                                : Image.asset(
-                                    'assets/main_bg_img.png',
-                                    fit: BoxFit.cover,
-                                  ),
-                          ),
-                        Positioned(
-                          bottom: -1,
-                          left: 0,
-                          right: 0,
-                          height: 150,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  context.colors.scaffoldBackground.withValues(alpha: 0),
-                                  context.colors.scaffoldBackground,
-                                ],
+                elevation: 0,
+                foregroundColor: context.colors.textPrimary,
+              ),
+              body: ListView(
+                children: [
+                  // Profile Header
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: GestureDetector(
+                      onTap: () {
+                        if (_currentImageUrl != null && _currentImageUrl!.isNotEmpty) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => FullScreenImagePage(
+                                imageUrl: _currentImageUrl!,
                               ),
                             ),
-                          ),
-                        ),
-                        // Back button and Title
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: SafeArea(
-                            bottom: false,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16.0,
-                                vertical: 8.0,
-                              ),
-                              child: Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      CommonIcons.arrowBack,
-                                      color: Colors.white,
-                                    ),
-                                    onPressed: () => Navigator.pop(context),
-                                  ),
-                                  const Expanded(
-                                    child: Center(
-                                      child: Text(
-                                        'Profile Settings',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.edit,
-                                      color: Colors.white,
-                                    ),
-                                    onPressed: () async {
-                                      await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const ProfilePage(isEditing: true),
-                                        ),
-                                      );
-                                      if (context.mounted) {
-                                        context.read<ProfileBloc>().add(
-                                          const LoadProfileEvent(),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding:  EdgeInsets.only(left: 32.0,right: 32,top: MediaQuery.of(context).size.height * 0.45,),
-                      child: SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.5,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              _currentUsername,
-                              style: context.h2,
-                            ),
-                            CommonSpaces.h40,
-                            _buildSettingsTile(
-                              context: context,
-                              icon:
-                                  getIt<ThemeController>().themeMode ==
-                                      ThemeMode.dark
-                                  ? Icons.light_mode
-                                  : Icons.dark_mode,
-                              title:
-                                  getIt<ThemeController>().themeMode ==
-                                      ThemeMode.dark
-                                  ? 'Light Mode'
-                                  : 'Dark Mode',
-                              trailing: Switch(
-                                value:
-                                    getIt<ThemeController>().themeMode ==
-                                    ThemeMode.dark,
-                                activeThumbColor: context.colors.primary,
-                                onChanged: (val) {
-                                  setState(() {
-                                    getIt<ThemeController>().toggleTheme();
-                                  });
-                                },
-                              ),
-                            ),
-                            CommonSpaces.h12,
-                            _buildSettingsTile(
-                              context: context,
-                              icon: Icons.format_size_rounded,
-                              title: 'Font Size',
-                              trailing: DropdownButton<String>(
-                                value: getIt<ThemeController>().fontSizeName,
-                                dropdownColor: context.colors.lightBackground,
-                                style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                underline: const SizedBox(),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'Small',
-                                    child: Text('Small'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'Medium',
-                                    child: Text('Medium'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'Large',
-                                    child: Text('Large'),
-                                  ),
-                                ],
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() {
-                                      getIt<ThemeController>().setFontSize(val);
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                            CommonSpaces.h12,
-                            _buildSettingsTile(
-                              context: context,
-                              icon: Icons.sync_rounded,
-                              title: 'Sync Contacts',
-                              onTap: () {
-                                Navigator.pop(context, 'sync');
-                              },
-                              trailing: Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                color: context.colors.textPrimary,
-                                size: 16,
-                              ),
-                            ),
-                            CommonSpaces.h12,
-                            const _LogoutButton(),
-                            CommonSpaces.h20,
-                          ],
-                        ),
+                          );
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 30,
+                        backgroundImage: (_currentImageUrl != null && _currentImageUrl!.isNotEmpty)
+                            ? NetworkImage(_currentImageUrl!)
+                            : null,
+                        child: (_currentImageUrl == null || _currentImageUrl!.isEmpty)
+                            ? const Icon(Icons.person, size: 30)
+                            : null,
                       ),
                     ),
+                    title: Text(_currentUsername, style: context.titleLarge),
+                    subtitle: Text(_currentAbout, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.green),
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ProfilePage(isEditing: true),
+                          ),
+                        );
+                        if (context.mounted) {
+                          context.read<ProfileBloc>().add(const LoadProfileEvent());
+                        }
+                      },
+                    ),
+                  ),
+                  const Divider(),
+                  
+                  _buildSectionHeader('Account'),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.info_outline,
+                    title: 'About',
+                    subtitle: _currentAbout,
+                    onTap: () => _showUpdateAboutBottomSheet(context),
+                  ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.sync,
+                    title: 'Sync Contacts',
+                    onTap: () => Navigator.pop(context, 'sync'),
+                  ),
+
+                  _buildSectionHeader('App Settings'),
+                  _buildListTile(
+                    context: context,
+                    icon: getIt<ThemeController>().themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
+                    title: 'Theme',
+                    subtitle: getIt<ThemeController>().themeMode == ThemeMode.dark ? 'Dark Mode' : 'Light Mode',
+                    trailing: Switch(
+                      value: getIt<ThemeController>().themeMode == ThemeMode.dark,
+                      activeColor: context.colors.primary,
+                      onChanged: (val) {
+                        setState(() {
+                          getIt<ThemeController>().toggleTheme();
+                        });
+                      },
+                    ),
+                  ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.format_size,
+                    title: 'Font Size',
+                    subtitle: getIt<ThemeController>().fontSizeName,
+                    onTap: () => _showFontSizeDialog(context),
+                  ),
+
+                  const Divider(),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.logout,
+                    title: 'Logout',
+                    iconColor: Colors.red,
+                    textColor: Colors.red,
+                    onTap: () => _showLogoutDialog(context),
                   ),
                 ],
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-  Widget _buildSettingsTile({
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          color: context.colors.primary,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListTile({
     required BuildContext context,
     required IconData icon,
     required String title,
-    required Widget trailing,
+    String? subtitle,
+    Widget? trailing,
     VoidCallback? onTap,
+    Color? iconColor,
+    Color? textColor,
   }) {
-    return Material(
-      color: context.colors.textPrimary.withValues(alpha:0.05),
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        onTap: onTap,
-        leading: Icon(icon, color: context.colors.textPrimary),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: context.colors.textPrimary,
-            fontWeight: FontWeight.bold,
-          ),
+    return ListTile(
+      onTap: onTap,
+      leading: Icon(icon, color: iconColor ?? context.colors.textPrimary),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: textColor ?? context.colors.textPrimary,
+          fontWeight: FontWeight.w600,
         ),
-        trailing: trailing,
       ),
+      subtitle: subtitle != null ? Text(subtitle) : null,
+      trailing: trailing ?? const Icon(Icons.chevron_right, size: 20),
     );
   }
-}
 
-class _LogoutButton extends StatelessWidget {
-  const _LogoutButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: context.colors.error.withValues(alpha:0.1),
-      borderRadius: BorderRadius.circular(16),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        onTap: () {
-          showDialog(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              backgroundColor: context.colors.scaffoldBackground,
-              title: Text(
-                'Logout',
-                style: context.titleMedium,
-              ),
-              content: Text(
-                'Are you sure you want to logout?',
-                style: context.bodyMedium,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: Text(
-                    'Cancel',
-                    style: context.bodyMedium,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    context.read<ProfileBloc>().add(const LogoutEvent());
-                  },
-                  child: Text(
-                    'Logout',
-                    style: context.bodyMedium.copyWith(
-                      color: context.colors.error,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-        leading: Icon(CommonIcons.logout, color: context.colors.error),
-        title: Text(
-          'Logout from account',
-          style: TextStyle(
-            color: context.colors.error,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        trailing: Icon(
-          Icons.arrow_forward_ios_rounded,
-          color: context.colors.error,
-          size: 16,
+  void _showFontSizeDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Font Size'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: ['Small', 'Medium', 'Large'].map((size) {
+            return RadioListTile<String>(
+              title: Text(size),
+              value: size,
+              groupValue: getIt<ThemeController>().fontSizeName,
+              onChanged: (val) {
+                if (val != null) {
+                  getIt<ThemeController>().setFontSize(val);
+                  Navigator.pop(context);
+                  setState(() {});
+                }
+              },
+            );
+          }).toList(),
         ),
       ),
     );
   }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              context.read<ProfileBloc>().add(const LogoutEvent());
+            },
+            child: const Text('Logout', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
 }
-
-
-

@@ -18,6 +18,7 @@ class MessageModel {
   final String? replyMessageBody;
   final bool isEdited;
   final bool isPinned;
+  final int? pinnedAt;
 
   // Background upload tracking
   final Uint8List? attachmentBytes;
@@ -47,6 +48,7 @@ class MessageModel {
     this.replyMessageBody,
     this.isEdited = false,
     this.isPinned = false,
+    this.pinnedAt,
     this.attachmentBytes,
     this.attachmentName,
     this.isUploading = false,
@@ -126,6 +128,7 @@ class MessageModel {
       }(),
       isEdited: (json['isEdited'] ?? json['is_edited']) as bool? ?? false,
       isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
+      pinnedAt: json['pinnedAt'] ?? json['pinned_at'],
       attachmentBytes: null,
       attachmentName: parsedAttachmentName,
       isUploading: false,
@@ -157,6 +160,7 @@ class MessageModel {
     'replyMessageBody': replyMessageBody,
     'isEdited': isEdited,
     'isPinned': isPinned,
+    'pinnedAt': pinnedAt,
     'attachmentName': attachmentName,
     'fileSize': fileSize,
     'isFailed': isFailed,
@@ -183,6 +187,7 @@ class MessageModel {
     String? replyMessageBody,
     bool? isEdited,
     bool? isPinned,
+    int? pinnedAt,
     Uint8List? attachmentBytes,
     String? attachmentName,
     bool? isUploading,
@@ -208,6 +213,7 @@ class MessageModel {
       replyMessageBody: replyMessageBody ?? this.replyMessageBody,
       isEdited: isEdited ?? this.isEdited,
       isPinned: isPinned ?? this.isPinned,
+      pinnedAt: pinnedAt ?? this.pinnedAt,
       attachmentBytes: attachmentBytes ?? this.attachmentBytes,
       attachmentName: attachmentName ?? this.attachmentName,
       isUploading: isUploading ?? this.isUploading,

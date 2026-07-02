@@ -29,12 +29,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'contact_profile_page.dart';
+import 'full_screen_image_page.dart';
 import 'group_info_page.dart';
 import 'shared_media_page.dart';
 import 'package:schat/utils/permission_helper.dart';
@@ -91,9 +92,7 @@ class _ChatPageState extends State<ChatPage> {
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
   MessageModel? _editingMessage;
-  Box? _pinnedBox;
-  MessageModel? _pinnedMessage;
-
+  
   String? _selectedAttachmentPath;
   String? _selectedAttachmentName;
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
@@ -145,7 +144,6 @@ class _ChatPageState extends State<ChatPage> {
     _callWebRtcBloc = getIt<CallWebRtcBloc>();
     // _listenForCallEvents(); // CallWebRtcBloc now listens to socket internally
 
-    _initHive();
     _setupScreenshotListener();
 
     // Listen to preview player events
@@ -164,19 +162,6 @@ class _ChatPageState extends State<ChatPage> {
         });
       }
     });
-  }
-
-  void _initHive() async {
-    final box = await Hive.openBox('pinned_messages');
-    if (mounted) {
-      setState(() {
-        _pinnedBox = box;
-        final cached = box.get(widget.conversationId);
-        if (cached != null) {
-          _pinnedMessage = MessageModel.fromJson(Map<String, dynamic>.from(cached));
-        }
-      });
-    }
   }
 
 
@@ -239,11 +224,14 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Widget _buildPinnedMessageBanner() {
-    if (_pinnedMessage == null) return const SizedBox.shrink();
+  Widget _buildPinnedMessageBanner(ChatState state) {
+    if (state is! ChatLoaded || state.pinnedMessages.isEmpty) return const SizedBox.shrink();
+
+    final latestPinned = state.pinnedMessages.first;
+    final totalPinned = state.pinnedMessages.length;
 
     return GestureDetector(
-      onTap: () => _scrollToMessage(_pinnedMessage!.id),
+      onTap: () => _scrollToMessage(latestPinned.id),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
@@ -265,14 +253,14 @@ class _ChatPageState extends State<ChatPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Pinned Message',
+                    totalPinned > 1 ? 'Pinned Messages ($totalPinned)' : 'Pinned Message',
                     style: context.bodySmall.copyWith(
                       fontWeight: FontWeight.bold,
                       color: context.colors.primary,
                     ),
                   ),
                   Text(
-                    _pinnedMessage!.content,
+                    latestPinned.content.isEmpty ? (latestPinned.mediaType ?? 'Attachment') : latestPinned.content,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: context.bodyMedium.copyWith(
@@ -282,27 +270,108 @@ class _ChatPageState extends State<ChatPage> {
                 ],
               ),
             ),
+            if (totalPinned > 1)
+              IconButton(
+                icon: Icon(Icons.keyboard_arrow_down, color: context.colors.textSecondary),
+                onPressed: () => _showPinnedMessagesList(context, state.pinnedMessages),
+              ),
             IconButton(
               icon: Icon(CommonIcons.close, color: context.colors.textSecondary, size: 18),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              onPressed: () async {
+              onPressed: () {
                 _chatBloc.add(PinMessageEvent(
-                  messageId: _pinnedMessage!.id,
+                  messageId: latestPinned.id,
                   conversationId: widget.conversationId,
                   isPinned: false,
                 ));
-                if (_pinnedBox != null) {
-                  await _pinnedBox!.delete(widget.conversationId);
-                }
-                setState(() {
-                  _pinnedMessage = null;
-                });
               },
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showPinnedMessagesList(BuildContext context, List<MessageModel> pinnedMessages) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: context.colors.textHint.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(CommonIcons.pin, color: context.colors.primary, size: 24),
+                  CommonSpaces.w12,
+                  Text(
+                    'Pinned Messages',
+                    style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              CommonSpaces.h16,
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: pinnedMessages.length,
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final msg = pinnedMessages[index];
+                    return ListTile(
+                      onTap: () {
+                        Navigator.pop(context);
+                        _scrollToMessage(msg.id);
+                      },
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        msg.content.isEmpty ? (msg.mediaType ?? 'Attachment') : msg.content,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.bodyMedium,
+                      ),
+                      subtitle: Text(
+                        _formatTime(msg.createdAt),
+                        style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(CommonIcons.close, size: 20),
+                        onPressed: () {
+                          _chatBloc.add(PinMessageEvent(
+                            messageId: msg.id,
+                            conversationId: widget.conversationId,
+                            isPinned: false,
+                          ));
+                          if (pinnedMessages.length == 1) {
+                            Navigator.pop(context);
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+              CommonSpaces.h20,
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -723,20 +792,6 @@ class _ChatPageState extends State<ChatPage> {
         conversationId: widget.conversationId,
         isPinned: shouldPin,
       ));
-      
-      if (_pinnedBox != null) {
-        if (shouldPin) {
-          await _pinnedBox!.put(widget.conversationId, msg.copyWith(isPinned: true).toJson());
-          setState(() {
-            _pinnedMessage = msg.copyWith(isPinned: true);
-          });
-        } else {
-          await _pinnedBox!.delete(widget.conversationId);
-          setState(() {
-            _pinnedMessage = null;
-          });
-        }
-      }
     } else if (result == 'Forward') {
       _showForwardBottomSheet(context, msg);
     } else if (result == 'Info') {
@@ -1139,11 +1194,14 @@ class _ChatPageState extends State<ChatPage> {
                                                 messageId: messageId,
                                                 targetConversationId: chat.id,
                                               );
+                                              // If API succeeds, we assume server broadcasts it to all participants.
+                                              // We do NOT need to send via socket manually in this case.
+                                              return;
                                             } catch (e) {
                                               debugPrint('Forward API failed fallback to socket: $e');
                                             }
                                           }
-                                          // Always send socket message to ensure immediate visibility for the receiver
+                                          // Send socket message only if API is skipped (temp message) or fails
                                           _sendForwardSocketMessage(socketRepo, chat.id, msg);
                                         },
                                         failure: (_, __) {},
@@ -2150,7 +2208,7 @@ class _ChatPageState extends State<ChatPage> {
               children: [
                 SafeArea(
                   bottom: false,
-                  child: _buildPinnedMessageBanner(),
+                  child: _buildPinnedMessageBanner(state),
                 ),
                 Expanded(
                   child: isLoading
@@ -2229,6 +2287,7 @@ class _ChatPageState extends State<ChatPage> {
                                     replyMessageBody: replyBody ?? msg.replyMessageBody,
                                     replyMessageSenderName: replySenderName,
                                     isEdited: msg.isEdited,
+                                    isPinned: msg.isPinned,
                                     isSelected: _selectedMessageIds.contains(msg.id),
                                     isUploading: msg.isUploading,
                                     isFailed: msg.isFailed,
@@ -2432,73 +2491,108 @@ class _ChatPageState extends State<ChatPage> {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => BlocProvider.value(
-                value: _chatBloc,
-                child: ContactProfilePage(
+          if (widget.isGroup) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => GroupInfoPage(
                   conversationId: widget.conversationId,
-                  contactName: widget.contactName,
-                  contactColor: widget.contactColor,
-                  isOnline: isOnline,
+                  groupName: widget.contactName,
+                  groupColor: widget.contactColor,
                 ),
               ),
-            ),
-          );
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BlocProvider.value(
+                  value: _chatBloc,
+                  child: ContactProfilePage(
+                    conversationId: widget.conversationId,
+                    contactName: widget.contactName,
+                    contactColor: widget.contactColor,
+                    isOnline: isOnline,
+                  ),
+                ),
+              ),
+            );
+          }
         },
         child: Row(
           children: [
-            Stack(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: widget.contactColor.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: ClipOval(
-                    child: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
-                        ? Image.network(
-                            widget.profilePictureUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Center(
-                                child: Text(
-                                  widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
-                                  style: context.titleMedium.copyWith(
-                                    color: widget.contactColor,
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        : Center(
-                            child: Text(
-                              widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
-                              style: context.titleMedium.copyWith(
-                                color: widget.contactColor,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                if (isOnline)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: context.colors.success,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.colors.scaffoldBackground, width: 2),
+            GestureDetector(
+              onTap: () {
+                if (widget.profilePictureUrl != null &&
+                    widget.profilePictureUrl!.isNotEmpty) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FullScreenImagePage(
+                        imageUrl: widget.profilePictureUrl!,
                       ),
                     ),
+                  );
+                }
+              },
+              child: Stack(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: widget.contactColor.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: ClipOval(
+                      child: (widget.profilePictureUrl != null &&
+                              widget.profilePictureUrl!.isNotEmpty)
+                          ? Image.network(
+                              widget.profilePictureUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Text(
+                                    widget.contactName.isNotEmpty
+                                        ? widget.contactName.substring(0, 1)
+                                        : '?',
+                                    style: context.titleMedium.copyWith(
+                                      color: widget.contactColor,
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                          : Center(
+                              child: Text(
+                                widget.contactName.isNotEmpty
+                                    ? widget.contactName.substring(0, 1)
+                                    : '?',
+                                style: context.titleMedium.copyWith(
+                                  color: widget.contactColor,
+                                ),
+                              ),
+                            ),
+                    ),
                   ),
-              ],
+                  if (isOnline)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: context.colors.success,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: context.colors.scaffoldBackground,
+                              width: 2),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             CommonSpaces.w12,
             Expanded(
@@ -2513,12 +2607,12 @@ class _ChatPageState extends State<ChatPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    isTyping 
-                        ? 'Typing...' 
-                        : (isOnline ? 'Online' : 'Offline'),
+                    isTyping
+                        ? 'Typing...'
+                        : (widget.isGroup ? 'Group Chat' : (isOnline ? 'Online' : 'Offline')),
                     style: context.bodyMedium.copyWith(
-                      color: (isTyping || isOnline)
-                          ? context.colors.success 
+                      color: (isTyping || (!widget.isGroup && isOnline))
+                          ? context.colors.success
                           : context.colors.textHint,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -2556,6 +2650,8 @@ class _ChatPageState extends State<ChatPage> {
                     contactColor: widget.contactColor,
                     recipientId: widget.recipientId,
                     isOutgoing: !isAlreadyInCall,
+                    profilePictureUrl: widget.profilePictureUrl,
+                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                   ),
                 ),
               ),
@@ -2587,6 +2683,8 @@ class _ChatPageState extends State<ChatPage> {
                     contactColor: widget.contactColor,
                     recipientId: widget.recipientId,
                     isOutgoing: !isAlreadyInCall,
+                    profilePictureUrl: widget.profilePictureUrl,
+                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                   ),
                 ),
               ),
