@@ -29,6 +29,7 @@ abstract class ChatSocketRepository {
   });
   void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
+  void sendDeliveryReceipt(String conversationId, String messageId);
   void editMessage({required String messageId, required String text});
   void deleteMessage({
     required String conversationId,
@@ -245,6 +246,18 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   void sendReadReceipt(String conversationId, String messageId) {
     final Map<String, dynamic> payload = {
       "type": "read_receipt",
+      "conversationId": conversationId,
+      "conversation_id": conversationId,
+      "messageId": messageId,
+      "message_id": messageId,
+    };
+    emit('message', payload);
+  }
+
+  @override
+  void sendDeliveryReceipt(String conversationId, String messageId) {
+    final Map<String, dynamic> payload = {
+      "type": "delivery_receipt",
       "conversationId": conversationId,
       "conversation_id": conversationId,
       "messageId": messageId,

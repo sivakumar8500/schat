@@ -26,7 +26,7 @@ Map<String, dynamic> _normalizeLastMessage(Map<String, dynamic> json) {
   // Handle the specific logic from the previous manual implementation
   String contentText = '';
   String? mediaUrl;
-  String? mediaType = json['type']?.toString() ?? json['media_type']?.toString();
+  String? mediaType = (json['type']?.toString() ?? json['media_type']?.toString())?.toLowerCase();
 
   final dynamic contentData = json['content'];
   if (contentData is Map) {

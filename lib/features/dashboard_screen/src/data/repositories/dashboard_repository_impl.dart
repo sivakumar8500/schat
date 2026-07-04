@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
@@ -13,18 +14,29 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ApiResult<List<ChatModel>>> getChats() async {
+    debugPrint('DEBUG: DashboardRepository.getChats() calling API');
     final result = await _apiService.get<List<ChatModel>>(
       CommonEndpoints.getChats,
       mapper: (json) {
+        debugPrint('DEBUG: DashboardRepository.getChats() mapping result: ${json.runtimeType}');
+        List<dynamic> list = [];
         if (json is List) {
-          return json.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList();
+          list = json;
+        } else if (json is Map && json['conversations'] is List) {
+          list = json['conversations'] as List;
         }
-        return [];
+        return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
       },
     );
     return result.when(
-      success: (chats) => ApiResult.success(chats),
-      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+      success: (chats) {
+        debugPrint('DEBUG: DashboardRepository.getChats() SUCCESS: ${chats.length} chats');
+        return ApiResult.success(chats);
+      },
+      failure: (message, statusCode) {
+        debugPrint('DEBUG: DashboardRepository.getChats() FAILURE: $message, status: $statusCode');
+        return ApiResult.failure(message, statusCode: statusCode);
+      },
     );
   }
 
@@ -87,6 +99,70 @@ class DashboardRepositoryImpl implements DashboardRepository {
     return result.when(
       success: (chat) => ApiResult.success(chat),
       failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> hideChat(String conversationId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.hideChat(conversationId),
+      mapper: (_) => null,
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> unhideChat(String conversationId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.unhideChat(conversationId),
+      mapper: (_) => null,
+    );
+  }
+
+  @override
+  Future<ApiResult<List<ChatModel>>> getHiddenChats() async {
+    final result = await _apiService.get<List<ChatModel>>(
+      CommonEndpoints.getChats,
+      mapper: (json) {
+        debugPrint('DEBUG: DashboardRepository.getHiddenChats() mapping result: ${json.runtimeType}');
+        List<dynamic> list = [];
+        if (json is Map) {
+          list = (json['hiddenConversations'] ?? json['hidedConversations']) as List? ?? [];
+        }
+        return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      },
+    );
+    return result;
+  }
+
+  @override
+  Future<ApiResult<void>> muteChat(String conversationId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.muteChat(conversationId),
+      mapper: (_) {},
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> unmuteChat(String conversationId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.unmuteChat(conversationId),
+      mapper: (_) {},
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> deleteChat(String conversationId) async {
+    return _apiService.delete<void>(
+      CommonEndpoints.deleteChat(conversationId),
+      mapper: (_) {},
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> deleteGroup(String groupId) async {
+    return _apiService.delete<void>(
+      CommonEndpoints.deleteGroup(groupId),
+      mapper: (_) {},
     );
   }
 }

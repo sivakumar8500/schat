@@ -62,22 +62,91 @@ void main() {
 
   testWidgets('renders correctly', (WidgetTester tester) async {
     await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Complete '), findsOneWidget);
-    expect(find.text('Profile'), findsWidgets);
+    expect(find.text('Complete Profile'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Save Profile'), findsOneWidget);
     expect(find.byIcon(CommonIcons.person), findsOneWidget);
   });
 
   testWidgets('shows validation error when username is empty', (WidgetTester tester) async {
-    when(() => mockProfileRepository.updateProfile(any())).thenAnswer((_) async => const Failure('Please enter a username'));
-
     await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Save Profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Username cannot be empty'), findsOneWidget);
+  });
+
+  testWidgets('shows validation error when username is < 3 characters', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'ab');
+    await tester.tap(find.text('Save Profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Username must be at least 3 characters long'), findsOneWidget);
+  });
+
+  testWidgets('shows validation error when username does not start with alphabetical char', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '1abc');
+    await tester.tap(find.text('Save Profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Username must start with an alphabetical character'), findsOneWidget);
+  });
+
+  testWidgets('shows validation error when username starts with special character', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '@abc');
+    await tester.tap(find.text('Save Profile'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Username must start with an alphabetical character'), findsOneWidget);
+  });
+
+  testWidgets('limits username textfield length to 60', (WidgetTester tester) async {
+    await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
+
+    final textFieldFinder = find.byType(TextField);
+    final longUsername = 'a' * 100;
+    await tester.enterText(textFieldFinder, longUsername);
     await tester.pump();
 
-    expect(find.text('Please enter a username'), findsOneWidget);
+    final TextField textField = tester.widget(textFieldFinder);
+    expect(textField.controller?.text.length, 60);
+  });
+
+  testWidgets('submits successfully when username starts with alphabetical char and is valid', (WidgetTester tester) async {
+    final now = DateTime.now().toIso8601String();
+    when(() => mockProfileRepository.updateProfile(any())).thenAnswer((_) async => Success(
+          UserModel(
+            id: '1', 
+            phoneNumber: '1234567890', 
+            isSubscribed: false,
+            isActive: true,
+            isOnline: true,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ));
+
+    await tester.pumpWidget(createWidgetUnderTest());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'a1@ _#');
+    await tester.tap(find.text('Save Profile'));
+    await tester.pumpAndSettle();
+
+    verify(() => mockProfileRepository.updateProfile(any())).called(1);
   });
 }

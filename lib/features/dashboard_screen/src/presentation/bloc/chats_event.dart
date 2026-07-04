@@ -61,3 +61,15 @@ class RemoveChat extends ChatsEvent {
     required this.conversationId,
   });
 }
+
+class CallLogUpdated extends ChatsEvent {
+  final String conversationId;
+  final String messageId;
+  final Map<String, dynamic> callMeta;
+
+  const CallLogUpdated({
+    required this.conversationId,
+    required this.messageId,
+    required this.callMeta,
+  });
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
@@ -12,10 +13,15 @@ import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:hive/hive.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:convert';
 
 class ContactProfilePage extends StatefulWidget {
   final String conversationId;
@@ -44,11 +50,117 @@ class ContactProfilePage extends StatefulWidget {
 class _ContactProfilePageState extends State<ContactProfilePage> {
   List<ChatMediaModel> _mediaList = [];
   bool _isLoadingMedia = true;
+  bool _isBlocked = false;
+  UserModel? _recipientUser;
+  bool _isLoadingUser = false;
 
   @override
   void initState() {
     super.initState();
     _fetchSharedMedia();
+    _checkBlockedStatus();
+    _fetchUserDetails();
+  }
+
+  Future<void> _fetchUserDetails() async {
+    if (widget.recipientId == null) return;
+    setState(() => _isLoadingUser = true);
+    try {
+      final result = await getIt<ProfileRepository>().getUserById(widget.recipientId!);
+      result.when(
+        success: (user) {
+          if (mounted) setState(() => _recipientUser = user);
+        },
+        failure: (_, __) {},
+      );
+    } catch (_) {}
+    if (mounted) setState(() => _isLoadingUser = false);
+  }
+
+  Future<void> _checkBlockedStatus() async {
+    if (widget.recipientId == null) return;
+    try {
+      final box = await Hive.openBox('blocked_users_box');
+      final String? jsonString = box.get('blocked_list');
+      if (jsonString != null) {
+        final List<dynamic> blockedList = jsonDecode(jsonString);
+        setState(() {
+          _isBlocked = blockedList.any((e) => e['id'] == widget.recipientId);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> _blockUser() async {
+    if (widget.recipientId == null) return false;
+    try {
+      final result = await getIt<ProfileRepository>().blockUser(widget.recipientId!);
+      return await result.when(
+        success: (_) async {
+          final box = await Hive.openBox('blocked_users_box');
+          final String? jsonString = box.get('blocked_list');
+          List<dynamic> blockedList = [];
+          if (jsonString != null) {
+            blockedList = jsonDecode(jsonString);
+          }
+          
+          final exists = blockedList.any((e) => e['id'] == widget.recipientId);
+          if (!exists) {
+            blockedList.add({
+              'id': widget.recipientId,
+              'name': widget.contactName,
+              'profilePictureUrl': widget.profilePictureUrl,
+              'colorValue': widget.contactColor.value,
+            });
+            await box.put('blocked_list', jsonEncode(blockedList));
+          }
+          return true;
+        },
+        failure: (error, _) {
+          if (mounted) {
+            context.showErrorNotification('Failed to block: $error');
+          }
+          return false;
+        },
+      );
+    } catch (e) {
+      debugPrint('Error blocking user: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _unblockUser() async {
+    if (widget.recipientId == null) return false;
+    try {
+      final result = await getIt<ProfileRepository>().unblockUser(widget.recipientId!);
+      return await result.when(
+        success: (_) async {
+          final box = await Hive.openBox('blocked_users_box');
+          final String? jsonString = box.get('blocked_list');
+          if (jsonString != null) {
+            final List<dynamic> blockedList = jsonDecode(jsonString);
+            blockedList.removeWhere((e) => e['id'] == widget.recipientId);
+            await box.put('blocked_list', jsonEncode(blockedList));
+          }
+          setState(() {
+            _isBlocked = false;
+          });
+          if (mounted) {
+            context.showSuccessNotification('${widget.contactName} unblocked');
+          }
+          return true;
+        },
+        failure: (error, _) {
+          if (mounted) {
+            context.showErrorNotification('Failed to unblock: $error');
+          }
+          return false;
+        },
+      );
+    } catch (e) {
+      debugPrint('Error unblocking user: $e');
+      return false;
+    }
   }
 
   Future<void> _fetchSharedMedia() async {
@@ -103,8 +215,12 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             children: [
               // Header Section
               _buildHeaderSection(),
+              const Divider(height: 1),
+
+              // User Info Section
+              _buildUserInfoSection(),
               const Divider(height: 32),
-              
+
               // Media Section
               _buildMediaSection(context),
               const Divider(height: 32),
@@ -126,6 +242,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   Widget _buildHeaderSection() {
     return Column(
       children: [
+        CommonSpaces.h24,
         GestureDetector(
           onTap: () {
             if (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty) {
@@ -175,9 +292,150 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             _buildRoundActionButton(icon: Icons.videocam, label: 'Video', onTap: _startVideoCall),
             CommonSpaces.w32,
             _buildRoundActionButton(icon: Icons.message, label: 'Message', onTap: () => Navigator.pop(context)),
+            if (_recipientUser?.phoneNumber.isNotEmpty == true) ...[
+              CommonSpaces.w32,
+              _buildRoundActionButton(
+                icon: Icons.call,
+                label: 'Call',
+                onTap: () => _callPhone(_recipientUser!.phoneNumber),
+              ),
+            ],
           ],
         ),
+        CommonSpaces.h24,
       ],
+    );
+  }
+
+  /// Dials a phone number using the device's dialer.
+  void _callPhone(String rawPhone) {
+    // Strip country code / non-digits, keep last 10 digits.
+    final digitsOnly = rawPhone.replaceAll(RegExp(r'[^\d]'), '');
+    final phone = digitsOnly.length > 10
+        ? digitsOnly.substring(digitsOnly.length - 10)
+        : digitsOnly;
+    if (phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    canLaunchUrl(uri).then((can) {
+      if (can) launchUrl(uri);
+    });
+  }
+
+  /// Builds the user info section with phone, username, about, and subscription.
+  Widget _buildUserInfoSection() {
+    if (_isLoadingUser) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final user = _recipientUser;
+    if (user == null) return const SizedBox.shrink();
+
+    final phone = user.phoneNumber;
+    final username = user.username ?? '';
+    final about = user.about ?? '';
+    final subscriptionType = user.subscriptionType ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (phone.isNotEmpty)
+          _buildInfoTile(
+            icon: Icons.phone_outlined,
+            label: 'Phone',
+            value: phone,
+            trailing: IconButton(
+              icon: Icon(Icons.call, color: context.colors.primary),
+              tooltip: 'Call $phone',
+              onPressed: () => _callPhone(phone),
+            ),
+          ),
+        if (username.isNotEmpty)
+          _buildInfoTile(
+            icon: Icons.alternate_email_rounded,
+            label: 'Username',
+            value: username,
+          ),
+        if (about.isNotEmpty)
+          _buildInfoTile(
+            icon: Icons.info_outline_rounded,
+            label: 'About',
+            value: about,
+          ),
+        if (subscriptionType.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.workspace_premium_rounded, color: context.colors.primary, size: 22),
+                CommonSpaces.w12,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Subscription',
+                      style: context.bodySmall.copyWith(color: context.colors.textHint),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: subscriptionType.toLowerCase() == 'platinum'
+                              ? [const Color(0xFF8EC5FC), const Color(0xFFE0C3FC)]
+                              : [const Color(0xFFFFD700), const Color(0xFFFFA500)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        subscriptionType,
+                        style: context.bodySmall.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        CommonSpaces.h8,
+      ],
+    );
+  }
+
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+    Widget? trailing,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: context.colors.primary, size: 22),
+          CommonSpaces.w12,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: context.bodySmall.copyWith(color: context.colors.textHint),
+                ),
+                CommonSpaces.h2,
+                Text(value, style: context.bodyMedium),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing,
+        ],
+      ),
     );
   }
 
@@ -221,51 +479,135 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                       builder: (context) => SharedMediaPage(
                         conversationId: widget.conversationId,
                         initialMediaList: _mediaList,
+                        shouldFetch: false,
                       ),
                     ),
                   );
                 },
-                child: const Text('View All'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'See all',
+                      style: TextStyle(
+                        color: context.colors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_ios_rounded,
+                        size: 13, color: context.colors.primary),
+                  ],
+                ),
               ),
             ],
           ),
         ),
         if (_isLoadingMedia)
-          const Center(child: CircularProgressIndicator())
-        else if (_mediaList.isEmpty)
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text('No shared media'),
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_mediaList.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.photo_library_outlined,
+                      size: 44, color: context.colors.textHint.withValues(alpha: 0.4)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No shared media yet',
+                    style: context.bodyMedium.copyWith(color: context.colors.textHint),
+                  ),
+                ],
+              ),
+            ),
           )
         else
-          SizedBox(
-            height: 100,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _mediaList.length,
-              itemBuilder: (context, index) {
-                final media = _mediaList[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      color: context.colors.lightBackground,
-                      child: Image.network(
-                        _resolveUrl(media.url),
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.image),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+          _buildMediaPreviewGrid(context),
       ],
+    );
+  }
+
+  Widget _buildMediaPreviewGrid(BuildContext context) {
+    // Prefer image media for the preview; fall back to all media
+    final imageMedia = _mediaList
+        .where((m) =>
+            m.mediaType.toUpperCase().contains('IMAGE') ||
+            m.mediaType.toUpperCase().contains('CHAT_IMAGE') ||
+            m.mimeType.toLowerCase().startsWith('image/'))
+        .toList();
+
+    // Show up to 6 items in horizontal scroll
+    final previewItems =
+        (imageMedia.isNotEmpty ? imageMedia : _mediaList).take(6).toList();
+
+    void goToAllMedia() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SharedMediaPage(
+            conversationId: widget.conversationId,
+            initialMediaList: _mediaList,
+            shouldFetch: false,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 50,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: previewItems.length,
+          itemBuilder: (context, index) {
+            final media = previewItems[index];
+            final isImage = media.mediaType.toUpperCase().contains('IMAGE') ||
+                media.mimeType.toLowerCase().startsWith('image/');
+
+            return GestureDetector(
+              onTap: goToAllMedia,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    color: context.colors.lightBackground,
+                    child: isImage
+                        ? Image.network(
+                            _resolveUrl(media.url),
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.broken_image_rounded,
+                              size: 24,
+                              color: context.colors.textHint,
+                            ),
+                          )
+                        : Icon(
+                            media.mediaType.toUpperCase().contains('VIDEO')
+                                ? Icons.videocam_rounded
+                                : media.mediaType.toUpperCase().contains('VOICE') ||
+                                        media.mediaType.toUpperCase().contains('AUDIO')
+                                    ? Icons.mic_rounded
+                                    : Icons.insert_drive_file_rounded,
+                            color: context.colors.primary,
+                            size: 24,
+                          ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -273,12 +615,37 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     return Column(
       children: [
         ListTile(
-          leading: const Icon(Icons.notifications_off_outlined),
-          title: const Text('Mute Notifications'),
-          trailing: Switch(
-            value: isMuted,
-            onChanged: (val) => context.read<ChatBloc>().add(ToggleMuteEvent(isMuted: val)),
+          leading: Icon(
+            isMuted ? Icons.notifications_active_rounded : Icons.notifications_off_rounded,
+            color: isMuted ? context.colors.primary : context.colors.textSecondary,
           ),
+          title: Text(
+            isMuted ? 'Unmute Notifications' : 'Mute Notifications',
+            style: context.bodyLarge,
+          ),
+          subtitle: Text(
+            isMuted
+                ? 'Tap to turn notifications back on'
+                : 'Tap to silence notifications for this chat',
+            style: context.bodySmall.copyWith(color: context.colors.textHint),
+          ),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isMuted
+                  ? context.colors.primary.withValues(alpha: 0.12)
+                  : context.colors.textHint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              isMuted ? 'Muted' : 'Active',
+              style: context.bodySmall.copyWith(
+                color: isMuted ? context.colors.primary : context.colors.textHint,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          onTap: () => _showMuteConfirmationDialog(context, isMuted),
         ),
         ListTile(
           leading: const Icon(Icons.lock_outline),
@@ -298,13 +665,78 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
+  void _showMuteConfirmationDialog(BuildContext context, bool isMuted) {
+    final action = isMuted ? 'Unmute' : 'Mute';
+    final icon = isMuted ? Icons.notifications_active_rounded : Icons.notifications_off_rounded;
+
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).colorScheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(icon, color: Theme.of(ctx).colorScheme.primary, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '$action Notifications?',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          isMuted
+              ? 'You will start receiving notifications from ${widget.contactName} again.'
+              : 'You will no longer receive notifications from ${widget.contactName}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx, true);
+              context.read<ChatBloc>().add(ToggleMuteEvent(isMuted: !isMuted));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    isMuted
+                        ? 'Notifications unmuted for ${widget.contactName}'
+                        : 'Notifications muted for ${widget.contactName}',
+                  ),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDestructiveSection(BuildContext context) {
     return Column(
       children: [
         ListTile(
-          leading: const Icon(CommonIcons.block, color: Colors.red),
-          title: Text('Block ${widget.contactName}', style: const TextStyle(color: Colors.red)),
-          onTap: () => _showBlockConfirmationDialog(context),
+          leading: Icon(CommonIcons.block, color: _isBlocked ? Colors.green : Colors.red),
+          title: Text(_isBlocked ? 'Unblock ${widget.contactName}' : 'Block ${widget.contactName}', style: TextStyle(color: _isBlocked ? Colors.green : Colors.red)),
+          onTap: () {
+            if (_isBlocked) {
+              _unblockUser();
+            } else {
+              _showBlockConfirmationDialog(context);
+            }
+          },
         ),
         ListTile(
           leading: const Icon(CommonIcons.report, color: Colors.red),
@@ -431,9 +863,17 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              context.showSuccessNotification('${widget.contactName} blocked');
+              final success = await _blockUser();
+              if (success) {
+                setState(() {
+                  _isBlocked = true;
+                });
+                if (mounted) {
+                  context.showSuccessNotification('${widget.contactName} blocked');
+                }
+              }
             },
             child: const Text('Block', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -483,6 +923,8 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             contactColor: widget.contactColor,
             recipientId: widget.recipientId ?? '',
             isOutgoing: true,
+            profilePictureUrl: widget.profilePictureUrl,
+            myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
           ),
         ),
       ),
@@ -503,6 +945,8 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             contactColor: widget.contactColor,
             recipientId: widget.recipientId ?? '',
             isOutgoing: true,
+            profilePictureUrl: widget.profilePictureUrl,
+            myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
           ),
         ),
       ),

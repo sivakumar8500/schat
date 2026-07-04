@@ -9,6 +9,7 @@ class StorageService {
   static const String _usernameKey = 'username';
   static const String _profilePicKey = 'profile_pic_url';
   static const String _hasSyncedContactsKey = 'has_synced_contacts';
+  static const String _emailKey = 'email';
 
   final SharedPreferences _prefs;
 
@@ -70,5 +71,17 @@ class StorageService {
   bool hasToken() {
     final token = getAccessToken();
     return token != null && token.isNotEmpty;
+  }
+
+  Future<void> saveEmail(String? email) async {
+    if (email != null && email.isNotEmpty) {
+      await _prefs.setString(_emailKey, email);
+    } else {
+      await _prefs.remove(_emailKey);
+    }
+  }
+
+  String? getEmail() {
+    return _prefs.getString(_emailKey);
   }
 }

@@ -9,6 +9,9 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_eve
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_fontstyles.dart';
 
 /// 1-to-1 Video Call Page — renders real RTCVideoView for remote and local streams.
 /// mason make page --name video_call
@@ -102,7 +105,8 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   void _onHangUp(BuildContext context) {
     context.read<CallWebRtcBloc>().add(HangUpCallEvent(widget.conversationId));
-    Navigator.of(context).pop();
+    // Do NOT pop here — the BlocListener below will pop once CallEnded is emitted.
+    // This ensures call_hangup is sent to the server before the page is disposed.
   }
 
   @override
@@ -131,7 +135,7 @@ class _VideoCallPageState extends State<VideoCallPage>
         if (state is CallActive && _timer == null) {
           _startTimer();
         }
-        if (state is CallEnded || state is CallRejected) {
+        if (state is CallEnded || state is CallRejected || state is CallError) {
           Navigator.of(context).maybePop();
         }
       },
@@ -141,7 +145,7 @@ class _VideoCallPageState extends State<VideoCallPage>
           final isVideoOff = state is CallActive ? state.isVideoOff : false;
 
           return Scaffold(
-            backgroundColor: Colors.black,
+            backgroundColor: context.colors.pureBlack,
             body: GestureDetector(
               onTap: _showControls,
               child: Stack(
@@ -168,8 +172,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                           begin: Alignment.topCenter,
                           end: Alignment.center,
                           colors: [
-                            Colors.black.withValues(alpha: 0.5),
-                            Colors.transparent,
+                            context.colors.pureBlack.withValues(alpha: 0.5),
+                            context.colors.transparent,
                           ],
                         ),
                       ),
@@ -186,8 +190,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.7),
-                            Colors.transparent,
+                            context.colors.pureBlack.withValues(alpha: 0.7),
+                            context.colors.transparent,
                           ],
                         ),
                       ),
@@ -253,60 +257,68 @@ class _VideoCallPageState extends State<VideoCallPage>
   }
 
   Widget _buildWaitingScreen() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF2C3E50), Color(0xFF000000)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 60,
-              backgroundColor: widget.contactColor.withValues(alpha: 0.2),
-              child: (widget.profilePictureUrl != null &&
-                      widget.profilePictureUrl!.isNotEmpty)
-                  ? ClipOval(
-                      child: Image.network(
-                        widget.profilePictureUrl!,
-                        width: 120,
-                        height: 120,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Text(
-                          widget.contactName.substring(0, 1).toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: widget.contactColor,
-                          ),
-                        ),
-                      ),
-                    )
-                  : Text(
-                      widget.contactName.substring(0, 1).toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: widget.contactColor,
-                      ),
-                    ),
+    return Stack(
+      children: [
+        if (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty) ...[
+          Positioned.fill(
+            child: Image.network(
+              widget.profilePictureUrl!,
+              fit: BoxFit.cover,
             ),
-            const SizedBox(height: 24),
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                color: Colors.white54,
-                strokeWidth: 2,
+          ),
+          // Dark overlay (no blur)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.45),
+            ),
+          ),
+        ] else ...[
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF2C3E50), Color(0xFF000000)],
+                ),
               ),
             ),
-          ],
+          ),
+        ],
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  CommonIcons.videocam,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              CommonSpaces.h32,
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: context.colors.pureWhite.withValues(alpha: 0.54),
+                  strokeWidth: 2,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -323,35 +335,35 @@ class _VideoCallPageState extends State<VideoCallPage>
           children: [
             Text(
               state is CallActive ? state.contactName : widget.contactName,
-              style: const TextStyle(
-                color: Colors.white,
+              style: context.titleMedium.copyWith(
+                color: context.colors.pureWhite,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+                shadows: [Shadow(color: context.colors.pureBlack.withValues(alpha: 0.54), blurRadius: 8)],
               ),
             ),
-            const SizedBox(height: 4),
+            CommonSpaces.h4,
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   statusText,
-                  style: TextStyle(
+                  style: context.bodyMedium.copyWith(
                     color: state is CallActive
-                        ? const Color(0xFF34C759)
-                        : Colors.white70,
+                        ? context.colors.success
+                        : context.colors.pureWhite.withValues(alpha: 0.70),
                     fontSize: 14,
-                    shadows: const [Shadow(color: Colors.black45, blurRadius: 6)],
+                    shadows: [Shadow(color: context.colors.pureBlack.withValues(alpha: 0.45), blurRadius: 6)],
                   ),
                 ),
                 if (state is CallActive && state.isRemoteMuted) ...[
-                  const SizedBox(width: 8),
-                  const Icon(CommonIcons.micOff, size: 14, color: Colors.redAccent),
-                  const SizedBox(width: 4),
-                  const Text(
+                  CommonSpaces.w8,
+                  Icon(CommonIcons.micOff, size: 14, color: context.colors.error),
+                  CommonSpaces.w4,
+                  Text(
                     'MUTED',
-                    style: TextStyle(
-                      color: Colors.redAccent,
+                    style: context.bodySmall.copyWith(
+                      color: context.colors.error,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -373,7 +385,7 @@ class _VideoCallPageState extends State<VideoCallPage>
             icon: CommonIcons.addCall,
             onTap: () {},
           ),
-          const SizedBox(height: 12),
+          CommonSpaces.h12,
           _buildFrostedButton(
             icon: CommonIcons.flipCamera,
             onTap: () => context
@@ -395,18 +407,18 @@ class _VideoCallPageState extends State<VideoCallPage>
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.2),
+          color: context.colors.pureWhite.withValues(alpha: 0.2),
           shape: BoxShape.circle,
           border: Border.all(
-              color: Colors.white.withValues(alpha: 0.3), width: 1),
+              color: context.colors.pureWhite.withValues(alpha: 0.3), width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
+              color: context.colors.pureBlack.withValues(alpha: 0.2),
               blurRadius: 8,
             ),
           ],
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
+        child: Icon(icon, color: context.colors.pureWhite, size: 20),
       ),
     );
   }
@@ -420,13 +432,13 @@ class _VideoCallPageState extends State<VideoCallPage>
           width: 110,
           height: 160,
           decoration: BoxDecoration(
-            color: Colors.grey[900],
+            color: context.colors.videoCallBarBackground,
             borderRadius: BorderRadius.circular(16),
             border:
-                Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
+                Border.all(color: context.colors.pureWhite.withValues(alpha: 0.3), width: 2),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: context.colors.pureBlack.withValues(alpha: 0.4),
                 blurRadius: 16,
                 offset: const Offset(0, 4),
               ),
@@ -436,7 +448,7 @@ class _VideoCallPageState extends State<VideoCallPage>
             borderRadius: BorderRadius.circular(14),
             child: isVideoOff
                 ? Container(
-                    color: Colors.black87,
+                    color: context.colors.pureBlack.withValues(alpha: 0.87),
                     child: Center(
                       child: (widget.myProfilePictureUrl != null &&
                               widget.myProfilePictureUrl!.isNotEmpty)
@@ -446,14 +458,14 @@ class _VideoCallPageState extends State<VideoCallPage>
                                 width: 80,
                                 height: 80,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
+                                errorBuilder: (ctx, err, stack) => Icon(
                                     CommonIcons.person,
-                                    color: Colors.white54,
+                                    color: context.colors.pureWhite.withValues(alpha: 0.54),
                                     size: 48),
                               ),
                             )
-                          : const Icon(CommonIcons.person,
-                              color: Colors.white54, size: 48),
+                          : Icon(CommonIcons.person,
+                              color: context.colors.pureWhite.withValues(alpha: 0.54), size: 48),
                     ),
                   )
                 : RTCVideoView(
@@ -469,54 +481,62 @@ class _VideoCallPageState extends State<VideoCallPage>
   }
 
   Widget _buildRemoteVideoOffPlaceholder(CallActive state) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 80,
-              backgroundColor: widget.contactColor.withValues(alpha: 0.2),
-              child: (widget.profilePictureUrl != null &&
-                      widget.profilePictureUrl!.isNotEmpty)
-                  ? ClipOval(
-                      child: Image.network(
-                        widget.profilePictureUrl!,
-                        width: 160,
-                        height: 160,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Text(
-                          widget.contactName.substring(0, 1).toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 64,
-                            fontWeight: FontWeight.bold,
-                            color: widget.contactColor,
-                          ),
-                        ),
-                      ),
-                    )
-                  : Text(
-                      widget.contactName.substring(0, 1).toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 64,
-                        fontWeight: FontWeight.bold,
-                        color: widget.contactColor,
-                      ),
-                    ),
+    return Stack(
+      children: [
+        if (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty) ...[
+          Positioned.fill(
+            child: Image.network(
+              widget.profilePictureUrl!,
+              fit: BoxFit.cover,
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Video Paused',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+          ),
+          // Dark overlay (no blur)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.45),
+            ),
+          ),
+        ] else ...[
+          Positioned.fill(
+            child: Container(
+              color: context.colors.pureBlack,
+            ),
+          ),
+        ],
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  CommonIcons.videocamOff,
+                  color: Colors.white,
+                  size: 40,
+                ),
               ),
-            ),
-          ],
+              CommonSpaces.h24,
+              Text(
+                'Video Paused',
+                style: context.bodyMedium.copyWith(
+                  color: context.colors.pureWhite.withValues(alpha: 0.7),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -527,11 +547,11 @@ class _VideoCallPageState extends State<VideoCallPage>
       padding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
+        color: context.colors.videoCallBarBackground,
         borderRadius: BorderRadius.circular(100),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
+            color: context.colors.pureBlack.withValues(alpha: 0.35),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -540,11 +560,6 @@ class _VideoCallPageState extends State<VideoCallPage>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildBarButton(
-            icon: CommonIcons.moreHoriz,
-            isActive: false,
-            onTap: () {},
-          ),
           _buildBarButton(
             icon: isVideoOff ? CommonIcons.videocamOff : CommonIcons.videocam,
             isActive: isVideoOff,
@@ -593,11 +608,11 @@ class _VideoCallPageState extends State<VideoCallPage>
         height: size,
         decoration: BoxDecoration(
           color: isActive
-              ? (activeColor ?? const Color(0xFF3A3A3C))
-              : const Color(0xFF3A3A3C),
+              ? (activeColor ?? context.colors.videoCallButtonBackground)
+              : context.colors.videoCallButtonBackground,
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: Colors.white, size: size * 0.42),
+        child: Icon(icon, color: context.colors.pureWhite, size: size * 0.42),
       ),
     );
   }

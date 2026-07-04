@@ -97,3 +97,8 @@ class HandleRemoteMuteUpdateEvent extends CallWebRtcEvent {
   final String muteType;
   const HandleRemoteMuteUpdateEvent({required this.isMuted, required this.muteType});
 }
+
+class HandleCallErrorEvent extends CallWebRtcEvent {
+  final String error;
+  const HandleCallErrorEvent(this.error);
+}

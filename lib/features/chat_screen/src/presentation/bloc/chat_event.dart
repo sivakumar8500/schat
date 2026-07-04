@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
 abstract class ChatEvent {
   const ChatEvent();
@@ -83,6 +84,12 @@ class MarkMessageReadEvent extends ChatEvent {
   const MarkMessageReadEvent({required this.messageId, required this.conversationId});
 }
 
+class MarkMessageDeliveredEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  const MarkMessageDeliveredEvent({required this.messageId, required this.conversationId});
+}
+
 class DeleteMessagesEvent extends ChatEvent {
   final List<String> messageIds;
   final String conversationId;
@@ -124,7 +131,8 @@ class ReceiveEditMessageEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
   final String newContent;
-  const ReceiveEditMessageEvent({required this.messageId, required this.conversationId, required this.newContent});
+  final String? updatedAt;
+  const ReceiveEditMessageEvent({required this.messageId, required this.conversationId, required this.newContent, this.updatedAt});
 }
 
 class ChangeBackgroundColorEvent extends ChatEvent {
@@ -159,6 +167,31 @@ class SetDisappearingTimerEvent extends ChatEvent {
   const SetDisappearingTimerEvent({this.seconds});
 }
 
+class UpdateGroupInfoEvent extends ChatEvent {
+  final String groupId;
+  final String? name;
+  final String? description;
+  final String? iconUrl;
+  const UpdateGroupInfoEvent({required this.groupId, this.name, this.description, this.iconUrl});
+}
+
+class AddGroupParticipantsEvent extends ChatEvent {
+  final String groupId;
+  final List<String> userIds;
+  const AddGroupParticipantsEvent({required this.groupId, required this.userIds});
+}
+
+class RemoveGroupParticipantEvent extends ChatEvent {
+  final String groupId;
+  final String userId;
+  const RemoveGroupParticipantEvent({required this.groupId, required this.userId});
+}
+
+class ReceiveCallLogUpdateEvent extends ChatEvent {
+  final Map<String, dynamic> callLogData;
+  const ReceiveCallLogUpdateEvent({required this.callLogData});
+}
+
 class CloseChatEvent extends ChatEvent {
   const CloseChatEvent();
 }
@@ -167,4 +200,24 @@ class ShowNotificationEvent extends ChatEvent {
   final String message;
   final bool isError;
   const ShowNotificationEvent({required this.message, this.isError = false});
+}
+
+class ClearChatEvent extends ChatEvent {
+  final String conversationId;
+  const ClearChatEvent({required this.conversationId});
+}
+
+class LoadThemesEvent extends ChatEvent {
+  const LoadThemesEvent();
+}
+
+class UpdateThemeEvent extends ChatEvent {
+  final String? themeColorId; // null to remove theme
+  final ThemeColorModel? themeColor;
+  const UpdateThemeEvent({this.themeColorId, this.themeColor});
+}
+
+class LoadMoreMessagesEvent extends ChatEvent {
+  final String conversationId;
+  const LoadMoreMessagesEvent({required this.conversationId});
 }

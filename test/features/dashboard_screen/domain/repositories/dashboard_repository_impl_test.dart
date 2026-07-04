@@ -3,7 +3,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/dashboard_screen/src/data/repositories/dashboard_repository_impl.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 class MockApiService extends Mock implements ApiService {}
@@ -72,6 +72,82 @@ void main() {
 
       // assert
       expect(result, isA<Failure<List<ChatModel>>>());
+      expect((result as Failure).message, 'Error');
+    });
+  });
+
+  group('deleteChat', () {
+    test('should return Success<void> when API call is successful', () async {
+      // arrange
+      when(() => mockApiService.call<void>(
+            path: any(named: 'path'),
+            method: any(named: 'method'),
+            mapper: any(named: 'mapper'),
+          )).thenAnswer((_) async => ApiResult.success(null));
+
+      // act
+      final result = await repository.deleteChat('chat_id_123');
+
+      // assert
+      expect(result, isA<Success<void>>());
+      verify(() => mockApiService.call<void>(
+            path: CommonEndpoints.deleteChat('chat_id_123'),
+            method: 'DELETE',
+            mapper: any(named: 'mapper'),
+          ));
+    });
+
+    test('should return Failure<void> when API call fails', () async {
+      // arrange
+      when(() => mockApiService.call<void>(
+            path: any(named: 'path'),
+            method: any(named: 'method'),
+            mapper: any(named: 'mapper'),
+          )).thenAnswer((_) async => ApiResult.failure('Error'));
+
+      // act
+      final result = await repository.deleteChat('chat_id_123');
+
+      // assert
+      expect(result, isA<Failure<void>>());
+      expect((result as Failure).message, 'Error');
+    });
+  });
+
+  group('deleteGroup', () {
+    test('should return Success<void> when API call is successful', () async {
+      // arrange
+      when(() => mockApiService.call<void>(
+            path: any(named: 'path'),
+            method: any(named: 'method'),
+            mapper: any(named: 'mapper'),
+          )).thenAnswer((_) async => ApiResult.success(null));
+
+      // act
+      final result = await repository.deleteGroup('group_id_123');
+
+      // assert
+      expect(result, isA<Success<void>>());
+      verify(() => mockApiService.call<void>(
+            path: CommonEndpoints.deleteGroup('group_id_123'),
+            method: 'DELETE',
+            mapper: any(named: 'mapper'),
+          ));
+    });
+
+    test('should return Failure<void> when API call fails', () async {
+      // arrange
+      when(() => mockApiService.call<void>(
+            path: any(named: 'path'),
+            method: any(named: 'method'),
+            mapper: any(named: 'mapper'),
+          )).thenAnswer((_) async => ApiResult.failure('Error'));
+
+      // act
+      final result = await repository.deleteGroup('group_id_123');
+
+      // assert
+      expect(result, isA<Failure<void>>());
       expect((result as Failure).message, 'Error');
     });
   });

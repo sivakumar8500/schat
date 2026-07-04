@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_endpoints.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/utils/common_spaces.dart';
 
 class SharedMediaPage extends StatefulWidget {
   final String conversationId;
   final List<ChatMediaModel> initialMediaList;
+  final bool shouldFetch;
 
   const SharedMediaPage({
     super.key,
     required this.conversationId,
     required this.initialMediaList,
+    this.shouldFetch = true,
   });
 
   @override
@@ -32,12 +36,35 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _mediaList = widget.initialMediaList;
+    // Show whatever was passed immediately, then fetch all from API
+    _mediaList = List.of(widget.initialMediaList);
+    if (widget.shouldFetch) {
+      _fetchAllMedia();
+    }
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text.trim().toLowerCase();
       });
     });
+  }
+
+  bool _isLoading = false;
+
+  Future<void> _fetchAllMedia() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = getIt<ChatRepository>();
+      final all = await repo.getConversationMedia(widget.conversationId);
+      if (mounted) {
+        setState(() {
+          _mediaList = all;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Keep the initial list on error
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -105,9 +132,19 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
 
   String _formatDate(String dateStr) {
     try {
-      final dt = DateTime.parse(dateStr).toLocal();
+      DateTime date;
+      final parsedInt = int.tryParse(dateStr);
+      if (parsedInt != null) {
+        if (dateStr.length <= 10) {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        date = DateTime.parse(dateStr).toLocal();
+      }
       final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+      return '${months[date.month - 1]} ${date.day}, ${date.year}';
     } catch (_) {
       return dateStr;
     }
@@ -120,9 +157,12 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
         return false;
       }
 
-      final isImage = item.mediaType == 'CHAT_IMAGE' || item.mimeType.startsWith('image/');
-      final isVideo = item.mediaType == 'CHAT_VIDEO' || item.mimeType.startsWith('video/');
-      final isAudio = item.mediaType == 'VOICE_NOTE' || item.mimeType.startsWith('audio/');
+      final typeUpper = item.mediaType.toUpperCase();
+      final mimeLower = item.mimeType.toLowerCase();
+
+      final isImage = typeUpper.contains('IMAGE') || mimeLower.startsWith('image/');
+      final isVideo = typeUpper.contains('VIDEO') || mimeLower.startsWith('video/');
+      final isAudio = typeUpper.contains('VOICE') || typeUpper.contains('AUDIO') || mimeLower.startsWith('audio/');
 
       if (tabType == 'media') {
         return isImage || isVideo;
@@ -143,14 +183,31 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
         backgroundColor: context.colors.scaffoldBackground,
         elevation: 0,
         iconTheme: IconThemeData(color: context.colors.textPrimary),
-        title: Text(
-          'Shared Media',
-          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Shared Media',
+              style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+            ),
+            if (!_isLoading && _mediaList.isNotEmpty)
+              Text(
+                '${_mediaList.length} item${_mediaList.length == 1 ? '' : 's'}',
+                style: context.bodySmall.copyWith(color: context.colors.textHint),
+              ),
+          ],
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(110.0),
+          preferredSize: Size.fromHeight(_isLoading ? 114.0 : 110.0),
           child: Column(
             children: [
+              // Slim loading bar at top when fetching from server
+              if (_isLoading)
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  color: context.colors.primary,
+                  backgroundColor: context.colors.primary.withValues(alpha: 0.1),
+                ),
               // Search Bar
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -189,12 +246,18 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _buildMediaTab(),
-          _buildDocsTab(),
-          _buildAudioTab(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildMediaTab(),
+                _buildDocsTab(),
+                _buildAudioTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -241,11 +304,11 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.black45,
+                      decoration: BoxDecoration(
+                        color: context.colors.pureBlack.withValues(alpha: 0.45),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(CommonIcons.playCircle, color: Colors.white, size: 28),
+                      child: Icon(CommonIcons.playCircle, color: context.colors.pureWhite, size: 28),
                     ),
                   ),
                 ),
@@ -340,7 +403,7 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(CommonIcons.gallery, size: 64, color: context.colors.textHint.withValues(alpha: 0.4)),
-          const SizedBox(height: CommonSizes.p12),
+          CommonSpaces.h12,
           Text(
             message,
             style: context.bodyMedium.copyWith(color: context.colors.textSecondary),

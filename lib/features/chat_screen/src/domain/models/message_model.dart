@@ -1,5 +1,35 @@
 import 'dart:typed_data';
 
+class CallMeta {
+  final String callType; // "audio" or "video"
+  final int duration; // seconds
+  final String status; // "completed", "missed", "rejected", "busy"
+  final String startTime;
+
+  const CallMeta({
+    required this.callType,
+    required this.duration,
+    required this.status,
+    required this.startTime,
+  });
+
+  factory CallMeta.fromJson(Map<String, dynamic> json) {
+    return CallMeta(
+      callType: (json['callType'] ?? json['call_type'] ?? 'audio').toString(),
+      duration: int.tryParse(json['duration']?.toString() ?? '0') ?? 0,
+      status: (json['status'] ?? 'completed').toString(),
+      startTime: (json['start_time'] ?? json['startTime'] ?? DateTime.now().toIso8601String()).toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'callType': callType,
+    'duration': duration,
+    'status': status,
+    'start_time': startTime,
+  };
+}
+
 class MessageModel {
   final String id;
   final String conversationId;
@@ -9,6 +39,7 @@ class MessageModel {
   final String? mediaType;
   final bool isDeleted;
   final bool isRead;
+  final bool isDelivered;
   final String createdAt;
   final String updatedAt;
   
@@ -32,6 +63,9 @@ class MessageModel {
   final bool allowDownload;
   final bool allowView;
 
+  // Call support
+  final CallMeta? callMeta;
+
   const MessageModel({
     required this.id,
     required this.conversationId,
@@ -41,6 +75,7 @@ class MessageModel {
     this.mediaType,
     required this.isDeleted,
     this.isRead = false,
+    this.isDelivered = false,
     required this.createdAt,
     required this.updatedAt,
     this.isReply = false,
@@ -57,12 +92,13 @@ class MessageModel {
     this.allowDownload = true,
     this.allowView = true,
     this.fileSize,
+    this.callMeta,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
     String contentText = '';
     String? mediaUrl;
-    String? mediaType = json['type'] as String?;
+    String? mediaType = (json['type'] as String?)?.toLowerCase();
 
     final dynamic contentData = json['content'];
     if (contentData is Map) {
@@ -106,15 +142,22 @@ class MessageModel {
     final String? parsedAttachmentName = (json['attachmentName'] ?? json['attachment_name'] ?? json['file_name'] ?? 
         (contentData is Map ? (contentData['fileName'] ?? contentData['file_name'] ?? contentData['name']) : null)) as String?;
 
+    CallMeta? callMeta;
+    final dynamic rawCallMeta = json['callMeta'] ?? json['call_meta'];
+    if (rawCallMeta is Map) {
+      callMeta = CallMeta.fromJson(Map<String, dynamic>.from(rawCallMeta));
+    }
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
       senderId: (json['senderId'] ?? json['sender_id'] ?? json['sender'])?.toString() ?? '',
       content: contentText,
       mediaUrl: mediaUrl,
-      mediaType: mediaType ?? (json['media_type'] as String?),
+      mediaType: (mediaType ?? (json['media_type'] as String?))?.toLowerCase(),
       isDeleted: (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false,
       isRead: (json['isRead'] ?? json['is_read']) as bool? ?? false,
+      isDelivered: (json['isDelivered'] ?? json['is_delivered']) as bool? ?? false,
       createdAt: (json['createdAt'] ?? json['created_at'])?.toString() ?? '',
       updatedAt: (json['updatedAt'] ?? json['updated_at'])?.toString() ?? '',
       isReply: (json['isReply'] ?? json['is_reply']) as bool? ?? false,
@@ -137,6 +180,7 @@ class MessageModel {
       allowDownload: allowDownload,
       allowView: allowView,
       fileSize: fileSize,
+      callMeta: callMeta,
     );
   }
 
@@ -153,6 +197,7 @@ class MessageModel {
     'type': mediaType,
     'isDeleted': isDeleted,
     'isRead': isRead,
+    'isDelivered': isDelivered,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'isReply': isReply,
@@ -169,6 +214,7 @@ class MessageModel {
       'allowDownload': allowDownload,
       'allowView': allowView,
     },
+    if (callMeta != null) 'callMeta': callMeta!.toJson(),
   };
 
   MessageModel copyWith({
@@ -180,6 +226,7 @@ class MessageModel {
     String? mediaType,
     bool? isDeleted,
     bool? isRead,
+    bool? isDelivered,
     String? createdAt,
     String? updatedAt,
     bool? isReply,
@@ -196,6 +243,7 @@ class MessageModel {
     bool? allowDownload,
     bool? allowView,
     int? fileSize,
+    CallMeta? callMeta,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -206,6 +254,7 @@ class MessageModel {
       mediaType: mediaType ?? this.mediaType,
       isDeleted: isDeleted ?? this.isDeleted,
       isRead: isRead ?? this.isRead,
+      isDelivered: isDelivered ?? this.isDelivered,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isReply: isReply ?? this.isReply,
@@ -222,6 +271,8 @@ class MessageModel {
       allowDownload: allowDownload ?? this.allowDownload,
       allowView: allowView ?? this.allowView,
       fileSize: fileSize ?? this.fileSize,
+      callMeta: callMeta ?? this.callMeta,
     );
   }
 }
+

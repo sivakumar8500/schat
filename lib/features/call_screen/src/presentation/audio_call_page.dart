@@ -149,7 +149,8 @@ class _AudioCallPageState extends State<AudioCallPage>
 
   void _onHangUp(BuildContext context) {
     context.read<CallWebRtcBloc>().add(HangUpCallEvent(widget.conversationId));
-    Navigator.of(context).pop();
+    // Do NOT pop here — the BlocListener below will pop once CallEnded is emitted.
+    // This ensures call_hangup is sent to the server before the page is disposed.
   }
 
   @override
@@ -159,7 +160,7 @@ class _AudioCallPageState extends State<AudioCallPage>
         if (state is CallActive && _timer == null) {
           _startTimer();
         }
-        if (state is CallEnded || state is CallRejected) {
+        if (state is CallEnded || state is CallRejected || state is CallError) {
           Navigator.of(context).maybePop();
         }
       },
@@ -169,23 +170,29 @@ class _AudioCallPageState extends State<AudioCallPage>
           final isSpeaker = state is CallActive ? state.isSpeakerOn : false;
 
           return Scaffold(
-            body: Container(
-              width: double.infinity,
-              height: double.infinity,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFFF0FDF4),
-                    widget.contactColor.withValues(alpha: 0.08),
-                    const Color(0xFFE8F5E9),
-                  ],
+            body: Stack(
+              children: [
+                // Background
+                Positioned.fill(
+                  child: (widget.profilePictureUrl != null &&
+                          widget.profilePictureUrl!.isNotEmpty)
+                      ? Image.network(
+                          widget.profilePictureUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, err, stack) => _buildFallbackBackground(),
+                        )
+                      : _buildFallbackBackground(),
                 ),
-              ),
-              child: SafeArea(
-                child: Column(
-                  children: [
+                // Dark overlay (no blur)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.45),
+                  ),
+                ),
+                // Content
+                SafeArea(
+                  child: Column(
+                    children: [
                     // ─── Header ───
                     _buildHeader(context),
                     
@@ -216,54 +223,28 @@ class _AudioCallPageState extends State<AudioCallPage>
                               ScaleTransition(
                                 scale: _pulseAnimation,
                                 child: Container(
-                                  width: 160,
-                                  height: 160,
+                                  width: 150,
+                                  height: 150,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: widget.contactColor.withValues(alpha: 0.18),
+                                    color: Colors.white.withValues(alpha: 0.12),
                                     border: Border.all(
-                                      color: widget.contactColor.withValues(alpha: 0.5),
-                                      width: 3,
+                                      color: Colors.white.withValues(alpha: 0.25),
+                                      width: 2,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: widget.contactColor.withValues(alpha: 0.3),
-                                        blurRadius: 40,
-                                        spreadRadius: 8,
+                                        color: Colors.black.withValues(alpha: 0.15),
+                                        blurRadius: 20,
                                       ),
                                     ],
                                   ),
-                                  child: Center(
-                                    child: (widget.profilePictureUrl != null &&
-                                            widget.profilePictureUrl!.isNotEmpty)
-                                        ? ClipOval(
-                                            child: Image.network(
-                                              widget.profilePictureUrl!,
-                                              width: 160,
-                                              height: 160,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => Text(
-                                                widget.contactName
-                                                    .substring(0, 1)
-                                                    .toUpperCase(),
-                                                style: TextStyle(
-                                                  fontSize: 72,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: widget.contactColor,
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                        : Text(
-                                            widget.contactName
-                                                .substring(0, 1)
-                                                .toUpperCase(),
-                                            style: TextStyle(
-                                              fontSize: 72,
-                                              fontWeight: FontWeight.bold,
-                                              color: widget.contactColor,
-                                            ),
-                                          ),
+                                  child: const Center(
+                                    child: Icon(
+                                      CommonIcons.phone,
+                                      color: Colors.white,
+                                      size: 56,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -282,7 +263,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                           textAlign: TextAlign.center,
                           style: context.h2.copyWith(
                             fontSize: 32,
-                            color: const Color(0xFF1A1A1A),
+                            color: Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -298,7 +279,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                                 style: context.titleMedium.copyWith(
                                   color: state is CallActive
                                       ? const Color(0xFF34C759)
-                                      : Colors.black54,
+                                      : Colors.white.withValues(alpha: 0.70),
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -335,11 +316,12 @@ class _AudioCallPageState extends State<AudioCallPage>
                   ],
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
+            ],
+          ),
+        );
+      },
+    ),
+  );
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -353,11 +335,11 @@ class _AudioCallPageState extends State<AudioCallPage>
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.06),
+                color: Colors.white.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: Colors.black54, size: 26),
+                  color: Colors.white, size: 26),
             ),
           ),
           const Spacer(),
@@ -365,11 +347,11 @@ class _AudioCallPageState extends State<AudioCallPage>
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.06),
+              color: Colors.white.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: const Icon(CommonIcons.addCall,
-                color: Colors.black54, size: 20),
+                color: Colors.white, size: 20),
           ),
         ],
       ),
@@ -385,7 +367,7 @@ class _AudioCallPageState extends State<AudioCallPage>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: widget.contactColor.withValues(alpha: 0.6),
+            color: Colors.white.withValues(alpha: 0.25),
             width: 1.5,
           ),
         ),
@@ -432,12 +414,6 @@ class _AudioCallPageState extends State<AudioCallPage>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // More
-          _buildPillButton(
-            icon: CommonIcons.moreHoriz,
-            isActive: false,
-            onTap: () {},
-          ),
           // Camera (switch to video)
           _buildPillButton(
             icon: CommonIcons.videocam,
@@ -492,6 +468,22 @@ class _AudioCallPageState extends State<AudioCallPage>
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: size * 0.42),
+      ),
+    );
+  }
+
+  Widget _buildFallbackBackground() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF1E293B),
+            widget.contactColor.withValues(alpha: 0.2),
+            const Color(0xFF0F172A),
+          ],
+        ),
       ),
     );
   }

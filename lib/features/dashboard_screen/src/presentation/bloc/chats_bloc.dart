@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
@@ -33,6 +34,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<NewMessageReceived>(_onNewMessageReceived);
     on<MessageEdited>(_onMessageEdited);
     on<RemoveChat>(_onRemoveChat);
+    on<CallLogUpdated>(_onCallLogUpdated);
 
     _listenToSocket();
   }
@@ -77,6 +79,14 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             final updatedAt = (message['updatedAt'] ?? message['created_at'])?.toString();
             final unreadCount = int.tryParse(cleanData['unread_count']?.toString() ?? '') ?? 
                                 int.tryParse(cleanData['unread']?.toString() ?? '');
+            final senderId = (message['senderId'] ?? message['sender_id'] ?? message['sender'])?.toString();
+            final msgId = (message['id'] ?? message['messageId'] ?? message['_id'])?.toString();
+            final myId = _storageService.getUserId() ?? '';
+            
+            if (convId != null && msgId != null && senderId != myId && senderId != null) {
+              _socketRepository.sendDeliveryReceipt(convId, msgId);
+            }
+            
             if (convId != null) {
               add(NewMessageReceived(
                 conversationId: convId,
@@ -110,6 +120,17 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               // Check if it's 1-on-1 and other user left
               add(RemoveChat(conversationId: convId));
            }
+        } else if (type == 'call_log_updated') {
+          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
+          final msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString();
+          final callMeta = cleanData['call_meta'] ?? cleanData['callMeta'];
+          if (convId != null && msgId != null && callMeta is Map) {
+             add(CallLogUpdated(
+               conversationId: convId, 
+               messageId: msgId, 
+               callMeta: Map<String, dynamic>.from(callMeta),
+             ));
+          }
         }
       } catch (e) {
         // Log error
@@ -118,17 +139,34 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   }
 
   Future<void> _onFetchChats(FetchChats event, Emitter<ChatsState> emit) async {
-    emit(const ChatsLoading());
-    final result = await _getChatsUseCase.execute();
-    result.when(
-      success: (chats) {
-        // Sort by updatedAt descending
-        final sortedChats = List<ChatModel>.from(chats)
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        emit(ChatsLoaded(sortedChats));
-      },
-      failure: (error, statusCode) => emit(ChatsError(error)),
-    );
+    debugPrint('DEBUG: ChatsBloc _onFetchChats triggered');
+    if (state is! ChatsLoaded) {
+      emit(const ChatsLoading());
+    }
+    try {
+      final result = await _getChatsUseCase.execute();
+      debugPrint('DEBUG: ChatsBloc _getChatsUseCase result received');
+      result.when(
+        success: (chats) {
+          debugPrint('DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}');
+          // Sort by updatedAt descending
+          final sortedChats = List<ChatModel>.from(chats)
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+          emit(ChatsLoaded(sortedChats));
+        },
+        failure: (error, statusCode) {
+          debugPrint('DEBUG: ChatsBloc _onFetchChats FAILURE: $error, status: $statusCode');
+          if (state is! ChatsLoaded) {
+            emit(ChatsError(error));
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('DEBUG: ChatsBloc _onFetchChats EXCEPTION: $e');
+      if (state is! ChatsLoaded) {
+        emit(ChatsError(e.toString()));
+      }
+    }
   }
 
   void _onNewMessageReceived(NewMessageReceived event, Emitter<ChatsState> emit) {
@@ -181,6 +219,35 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       final List<ChatModel> updatedChats = currentState.chats
           .where((c) => c.id != event.conversationId)
           .toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onCallLogUpdated(CallLogUpdated event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (chat.id == event.conversationId && chat.lastMessage?.id == event.messageId) {
+          final callType = event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
+          final status = (event.callMeta['status'] ?? 'completed').toString().toLowerCase();
+          final String content;
+          
+          if (status == 'missed') {
+            content = 'Missed $callType call';
+          } else if (status == 'rejected' || status == 'busy' || status == 'reject' || status == 'decline' || status == 'declined') {
+            content = 'Declined $callType call';
+          } else {
+            content = '$callType call';
+          }
+          
+          final updatedLastMessage = chat.lastMessage?.copyWith(
+            mediaType: 'call',
+            content: content,
+          );
+          return chat.copyWith(lastMessage: updatedLastMessage);
+        }
+        return chat;
+      }).toList();
       emit(ChatsLoaded(updatedChats));
     }
   }

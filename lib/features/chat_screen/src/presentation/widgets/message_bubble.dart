@@ -23,6 +23,12 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart' show CallMeta;
+import 'dart:async' show StreamSubscription;
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
+
 class MessageBubble extends StatelessWidget {
   final String messageId;
   final String conversationId;
@@ -30,6 +36,7 @@ class MessageBubble extends StatelessWidget {
   final String time;
   final bool isMe;
   final bool isRead;
+  final bool isDelivered;
   final bool isDeleted;
   final String type;
   final String? attachmentPath;
@@ -50,6 +57,8 @@ class MessageBubble extends StatelessWidget {
   final bool allowView;
   final VoidCallback? onSharePressed;
   final int? fileSize;
+  final CallMeta? callMeta;
+  final bool isRecipientOnline;
 
   const MessageBubble({
     super.key,
@@ -59,6 +68,7 @@ class MessageBubble extends StatelessWidget {
     required this.time,
     required this.isMe,
     this.isRead = false,
+    this.isDelivered = false,
     this.isDeleted = false,
     this.type = 'text',
     this.attachmentPath,
@@ -79,6 +89,8 @@ class MessageBubble extends StatelessWidget {
     this.allowView = true,
     this.onSharePressed,
     this.fileSize,
+    this.callMeta,
+    this.isRecipientOnline = false,
   });
 
   @override
@@ -99,20 +111,19 @@ class MessageBubble extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 16),
-                    const SizedBox(width: 4),
-                    const Text(
+                    Icon(CommonIcons.errorOutline, color: context.colors.error, size: 16),
+                    CommonSpaces.w4,
+                    Text(
                       'Resend',
-                      style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 12,
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.error,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              CommonSpaces.w8,
             ],
             if (!isMe) ...[
               CircleAvatar(
@@ -237,7 +248,7 @@ class MessageBubble extends StatelessWidget {
                                   ? context.colors.textLight.withValues(alpha: 0.7)
                                   : context.colors.textSecondary,
                             ),
-                            const SizedBox(width: 4),
+                            CommonSpaces.w4,
                           ],
                           Text(
                             time,
@@ -250,12 +261,33 @@ class MessageBubble extends StatelessWidget {
                           ),
                           if (isMe) ...[
                             CommonSpaces.w4,
-                            Icon(
-                              isRead ? CommonIcons.doneAll : CommonIcons.done,
-                              size: 14,
-                              color: isRead
-                                  ? context.colors.blueAccent
-                                  : context.colors.textLight.withValues(alpha: 0.7),
+                            Builder(
+                              builder: (context) {
+                                final isPending = messageId.startsWith('temp_') || isUploading;
+                                if (isPending && !isFailed) {
+                                  return Icon(
+                                    Icons.access_time_rounded,
+                                    size: 11,
+                                    color: context.colors.textLight.withValues(alpha: 0.7),
+                                  );
+                                }
+                                
+                                final IconData iconData = isRead 
+                                    ? CommonIcons.doneAll 
+                                    : ((isGroup || isRecipientOnline || isDelivered) 
+                                        ? CommonIcons.doneAll 
+                                        : CommonIcons.done);
+                                
+                                final Color iconColor = isRead
+                                    ? const Color(0xFF25D366) // WhatsApp-style bright green read receipt
+                                    : context.colors.textLight.withValues(alpha: 0.7);
+                                
+                                return Icon(
+                                  iconData,
+                                  size: 14,
+                                  color: iconColor,
+                                );
+                              },
                             ),
                           ],
                         ],
@@ -272,7 +304,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildAttachment(BuildContext context) {
-    if (attachmentPath == null && attachmentBytes == null) {
+    if (attachmentPath == null && attachmentBytes == null && type != 'call') {
       return const SizedBox.shrink();
     }
 
@@ -362,14 +394,14 @@ class MessageBubble extends StatelessWidget {
             imageContent,
             Positioned.fill(
               child: Container(
-                color: Colors.black.withValues(alpha: 0.4),
+                color: context.colors.pureBlack.withValues(alpha: 0.4),
               ),
             ),
-            const SizedBox(
+            SizedBox(
               width: 32,
               height: 32,
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
                 strokeWidth: 3,
               ),
             ),
@@ -388,11 +420,11 @@ class MessageBubble extends StatelessWidget {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    color: Colors.black.withValues(alpha: 0.35),
+                    color: context.colors.pureBlack.withValues(alpha: 0.35),
                     alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.lock_outline,
-                      color: Colors.white,
+                    child: Icon(
+                      CommonIcons.lockOutline,
+                      color: context.colors.pureWhite,
                       size: 36,
                     ),
                   ),
@@ -497,13 +529,74 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else if (type == 'contact') {
+      final path = attachmentPath ?? '';
+      final parts = path.split(':');
+      final bool isSchatUser = parts.length > 2 && parts[2].isNotEmpty;
+      final String phone = parts.length > 1 ? parts[1] : '';
+      final String? contactUserId = isSchatUser ? parts[2] : null;
+
+      final String nameText = attachmentName ?? 'Contact';
+      String displayName = nameText;
+      String displayPhone = phone;
+
+      if (nameText.contains(' · ')) {
+        final nameParts = nameText.split(' · ');
+        displayName = nameParts[0].trim();
+        if (displayPhone.isEmpty && nameParts.length > 1) {
+          displayPhone = nameParts[1].trim();
+        }
+      }
+
+      // Sanitize phone for dialer: take only first number (if comma/semicolon separated),
+      // strip all non-digit characters, then take the last 10 digits (local number only).
+      String _sanitizePhone(String raw) {
+        // Take the first phone if multiple are stored (e.g. "0712345678, 0798765432")
+        final first = raw.split(RegExp(r'[,;]')).first.trim();
+        final digitsOnly = first.replaceAll(RegExp(r'[^\d]'), '');
+        // Keep only last 10 digits to strip country codes (+91, 0 prefix, etc.)
+        return digitsOnly.length > 10
+            ? digitsOnly.substring(digitsOnly.length - 10)
+            : digitsOnly;
+      }
+
+      final cleanedPhone = _sanitizePhone(phone.isNotEmpty ? phone : displayPhone);
+
       result = GestureDetector(
-        onTap: () async {
-          if (attachmentPath != null && attachmentPath!.startsWith('contact:')) {
-            final phone = attachmentPath!.replaceFirst('contact:', '');
-            final Uri telUri = Uri(scheme: 'tel', path: phone);
-            if (await canLaunchUrl(telUri)) {
-              await launchUrl(telUri);
+        onTap: () {
+          if (isSchatUser && contactUserId != null) {
+            final chatsBloc = getIt<ChatsBloc>();
+            chatsBloc.add(CreateChat(
+              participantId: contactUserId,
+              contactName: displayName,
+            ));
+            StreamSubscription? sub;
+            sub = chatsBloc.stream.listen((state) {
+              state.maybeWhen(
+                chatCreated: (chat, contactName, profilePictureUrl) {
+                  sub?.cancel();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatPage(
+                        conversationId: chat.id,
+                        contactName: contactName,
+                        contactColor: context.colors.primary,
+                        isOnline: false,
+                        recipientId: chat.recipient.id,
+                        profilePictureUrl: profilePictureUrl,
+                      ),
+                    ),
+                  );
+                },
+                orElse: () {},
+              );
+            });
+          } else {
+            if (cleanedPhone.isNotEmpty) {
+              final Uri telUri = Uri(scheme: 'tel', path: cleanedPhone);
+              canLaunchUrl(telUri).then((can) {
+                if (can) launchUrl(telUri);
+              });
             }
           }
         },
@@ -530,28 +623,111 @@ class MessageBubble extends StatelessWidget {
                     ? context.colors.pureWhite.withValues(alpha: 0.3)
                     : context.colors.primary.withValues(alpha: 0.15),
                 child: Icon(
-                  CommonIcons.person,
+                  isSchatUser ? Icons.chat_rounded : CommonIcons.person,
                   color: isMe ? context.colors.pureWhite : context.colors.primary,
                   size: 20,
                 ),
               ),
               CommonSpaces.w8,
               Flexible(
-                child: Text(
-                  attachmentName ?? 'Contact',
-                  style: context.bodyMedium.copyWith(
-                    color: isMe
-                        ? context.colors.pureWhite
-                        : context.colors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      displayName,
+                      style: context.bodyMedium.copyWith(
+                        color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (displayPhone.isNotEmpty) ...[
+                      CommonSpaces.h2,
+                      Text(
+                        displayPhone,
+                        style: context.bodySmall.copyWith(
+                          color: isSchatUser 
+                              ? (isMe ? context.colors.pureWhite.withOpacity(0.7) : context.colors.textSecondary)
+                              : (isMe ? context.colors.pureWhite.withOpacity(0.4) : context.colors.textHint), // blur/muted color!
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      );
+    } else if (type == 'call') {
+      final statusLower = callMeta?.status.toLowerCase() ?? '';
+      final isMissed = statusLower == 'missed';
+      final isDeclined = statusLower == 'rejected' || statusLower == 'reject' || statusLower == 'busy' || statusLower == 'decline' || statusLower == 'declined';
+      final isErrorState = isMissed || isDeclined;
+      final isVideo = callMeta?.callType.toLowerCase() == 'video';
+      final duration = callMeta?.duration ?? 0;
+      
+      result = Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isMe
+              ? context.colors.pureWhite.withValues(alpha: 0.15)
+              : context.colors.lightBackground,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isErrorState 
+                    ? context.colors.error.withValues(alpha: 0.1) 
+                    : (isMe ? context.colors.pureWhite.withValues(alpha: 0.2) : context.colors.primary.withValues(alpha: 0.1)),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isVideo 
+                    ? (isErrorState ? CommonIcons.missedVideoCall : CommonIcons.videocam) 
+                    : (isErrorState ? CommonIcons.phoneMissed : CommonIcons.phone),
+                color: isErrorState 
+                    ? context.colors.error 
+                    : (isMe ? context.colors.pureWhite : context.colors.primary),
+                size: 20,
+              ),
+            ),
+            CommonSpaces.w12,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isVideo ? 'Video Call' : 'Voice Call',
+                  style: context.bodyMedium.copyWith(
+                    color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  isMissed 
+                      ? 'Missed' 
+                      : (isDeclined ? 'Declined' : (duration > 0 ? _formatCallDuration(duration) : 'Completed')),
+                  style: context.bodySmall.copyWith(
+                    color: isErrorState 
+                        ? context.colors.error 
+                        : (isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       );
     } else {
@@ -571,13 +747,13 @@ class MessageBubble extends StatelessWidget {
     }
 
     if (isMe) {
-      final activeBg = Colors.white.withValues(alpha: 0.2);
-      final activeIcon = Colors.white;
-      final activeBorder = Colors.white.withValues(alpha: 0.4);
+      final activeBg = context.colors.pureWhite.withValues(alpha: 0.2);
+      final activeIcon = context.colors.pureWhite;
+      final activeBorder = context.colors.pureWhite.withValues(alpha: 0.4);
 
-      final inactiveBg = Colors.white.withValues(alpha: 0.05);
-      final inactiveIcon = Colors.white.withValues(alpha: 0.4);
-      final inactiveBorder = Colors.white.withValues(alpha: 0.15);
+      final inactiveBg = context.colors.pureWhite.withValues(alpha: 0.05);
+      final inactiveIcon = context.colors.pureWhite.withValues(alpha: 0.4);
+      final inactiveBorder = context.colors.pureWhite.withValues(alpha: 0.15);
 
       return Padding(
         padding: const EdgeInsets.only(top: 8.0),
@@ -679,7 +855,7 @@ class MessageBubble extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(right: 8.0, top: 4.0, bottom: 4.0),
       child: Material(
-        color: Colors.transparent,
+        color: context.colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(20),
@@ -689,7 +865,7 @@ class MessageBubble extends StatelessWidget {
               color: backgroundColor,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: borderColor ?? Colors.transparent,
+                color: borderColor ?? context.colors.transparent,
                 width: 1,
               ),
             ),
@@ -712,7 +888,7 @@ class MessageBubble extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.lock_outline, color: context.colors.textSecondary, size: 20),
+              Icon(CommonIcons.lockOutline, color: context.colors.textSecondary, size: 20),
               CommonSpaces.w8,
               Flexible(
                 child: Text(
@@ -885,40 +1061,40 @@ class MessageBubble extends StatelessWidget {
     if (type == 'video') {
       typeColor = const Color(0xFF1565C0); // Blue for video
       badgeText = extension.isNotEmpty ? extension.toUpperCase() : 'VIDEO';
-      fileIcon = Icons.play_circle_filled;
+      fileIcon = CommonIcons.playCircle;
     } else {
       switch (extension) {
         case 'pdf':
           typeColor = const Color(0xFFE53935); // Red for PDF
           badgeText = 'PDF';
-          fileIcon = Icons.picture_as_pdf;
+          fileIcon = CommonIcons.pictureAsPdf;
           break;
         case 'doc':
         case 'docx':
           typeColor = const Color(0xFF1E88E5); // Blue for Word
           badgeText = 'DOC';
-          fileIcon = Icons.description;
+          fileIcon = CommonIcons.description;
           break;
         case 'xls':
         case 'xlsx':
           typeColor = const Color(0xFF43A047); // Green for Excel
           badgeText = 'XLS';
-          fileIcon = Icons.table_chart;
+          fileIcon = CommonIcons.tableChart;
           break;
         case 'csv':
           typeColor = const Color(0xFF00897B); // Teal for CSV
           badgeText = 'CSV';
-          fileIcon = Icons.grid_on;
+          fileIcon = CommonIcons.gridOn;
           break;
         case 'json':
           typeColor = const Color(0xFF8E24AA); // Purple for JSON
           badgeText = 'JSON';
-          fileIcon = Icons.code;
+          fileIcon = CommonIcons.codeIcon;
           break;
         default:
           typeColor = const Color(0xFF757575); // Grey for other files
           badgeText = extension.isNotEmpty ? extension.toUpperCase() : 'FILE';
-          fileIcon = Icons.insert_drive_file;
+          fileIcon = CommonIcons.document;
           break;
       }
     }
@@ -974,12 +1150,12 @@ class MessageBubble extends StatelessWidget {
               ),
               alignment: Alignment.center,
               child: isUploading
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
                       ),
                     )
                   : Column(
@@ -987,14 +1163,14 @@ class MessageBubble extends StatelessWidget {
                       children: [
                         Icon(
                           fileIcon,
-                          color: Colors.white,
+                          color: context.colors.pureWhite,
                           size: 20,
                         ),
-                        const SizedBox(height: 2),
+                        CommonSpaces.h2,
                         Text(
                           badgeText,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.pureWhite,
                             fontSize: 9,
                             fontWeight: FontWeight.w900,
                           ),
@@ -1019,7 +1195,7 @@ class MessageBubble extends StatelessWidget {
                       fontSize: 13,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  CommonSpaces.h4,
                   Text(
                     sizeLabel,
                     style: context.bodySmall.copyWith(
@@ -1048,6 +1224,14 @@ class MessageBubble extends StatelessWidget {
       i++;
     }
     return "${w.toStringAsFixed(1)} ${suffixes[i]}";
+  }
+
+  String _formatCallDuration(int seconds) {
+    if (seconds < 60) return '$seconds sec';
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    if (remainingSeconds == 0) return '$minutes min';
+    return '$minutes min $remainingSeconds sec';
   }
 
   Widget _fileChip(BuildContext context, IconData icon, String label) {
@@ -1128,7 +1312,7 @@ class MessageBubble extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.block,
+              CommonIcons.block,
               size: 16,
               color: deletedStyle.color,
             ),
@@ -1170,11 +1354,11 @@ class MessageBubble extends StatelessWidget {
       }
 
       final url = message.substring(match.start, match.end);
-      final linkColor = isMe ? Colors.cyanAccent : Colors.blue.shade700;
+      final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
 
       spans.add(TextSpan(
         text: url,
-        style: TextStyle(
+        style: context.bodyMedium.copyWith(
           color: linkColor,
           decoration: TextDecoration.underline,
         ),
@@ -1323,7 +1507,7 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         child: Container(
           height: 180,
           width: 220,
-          color: Colors.black12,
+          color: context.colors.pureBlack.withValues(alpha: 0.12),
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -1339,16 +1523,16 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
                   ),
                 ),
               if (!_isInitialized)
-                const Icon(Icons.play_circle_outline, color: Colors.white54, size: 50),
+                Icon(CommonIcons.playCircleOutline, color: context.colors.pureWhite.withValues(alpha: 0.54), size: 50),
               if (widget.isUploading)
                 Container(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
+                  color: context.colors.pureBlack.withValues(alpha: 0.3),
+                  child: Center(
+                    child: CircularProgressIndicator(color: context.colors.pureWhite),
                   ),
                 ),
               if (_isInitialized && !widget.isUploading)
-                const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
+                Icon(CommonIcons.playArrowRounded, color: context.colors.pureWhite, size: 40),
             ],
           ),
         ),
@@ -1467,10 +1651,10 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = widget.isMe ? Colors.white : context.colors.primary;
-    final inactiveColor = widget.isMe ? Colors.white.withValues(alpha: 0.4) : context.colors.textHint;
-    final buttonBg = widget.isMe ? Colors.white : context.colors.primary;
-    final buttonIconColor = widget.isMe ? context.colors.primary : Colors.white;
+    final activeColor = widget.isMe ? context.colors.pureWhite : context.colors.primary;
+    final inactiveColor = widget.isMe ? context.colors.pureWhite.withValues(alpha: 0.4) : context.colors.textHint;
+    final buttonBg = widget.isMe ? context.colors.pureWhite : context.colors.primary;
+    final buttonIconColor = widget.isMe ? context.colors.primary : context.colors.pureWhite;
 
     final double progress = _duration.inMilliseconds > 0 
         ? _position.inMilliseconds / _duration.inMilliseconds 
@@ -1493,7 +1677,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                _isPlaying ? Icons.pause : Icons.play_arrow,
+                _isPlaying ? CommonIcons.pause : CommonIcons.playArrow,
                 color: buttonIconColor,
                 size: 20,
               ),
@@ -1533,7 +1717,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
             _isPlaying || _position != Duration.zero 
                 ? _formatDuration(_position)
                 : (_duration != Duration.zero ? _formatDuration(_duration) : "00:00"),
-            style: TextStyle(
+            style: context.bodySmall.copyWith(
               color: activeColor,
               fontSize: 11,
               fontWeight: FontWeight.bold,

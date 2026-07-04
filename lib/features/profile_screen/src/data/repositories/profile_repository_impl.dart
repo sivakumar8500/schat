@@ -60,6 +60,14 @@ class ProfileRepositoryImpl implements ProfileRepository {
   }
 
   @override
+  Future<ApiResult<UserModel>> getUserById(String userId) async {
+    return _apiService.get<UserModel>(
+      CommonEndpoints.getUserProfile(userId),
+      mapper: (json) => UserModel.fromJson(json),
+    );
+  }
+
+  @override
   Future<String?> uploadProfilePicture({
     required String filePath,
     required String fileName,
@@ -146,13 +154,53 @@ class ProfileRepositoryImpl implements ProfileRepository {
         mapper: (data) => Map<String, dynamic>.from(data as Map),
       );
 
-      return completeResult.when(
-        success: (_) => objectKey,
+      String resolvedUrl = completeResult.when(
+        success: (data) => data['url']?.toString() ?? data['file_url']?.toString() ?? '',
         failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
       );
+
+      if (resolvedUrl.isEmpty) {
+        try {
+          final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+          final portSuffix = serverUri.hasPort ? ':${serverUri.port}' : '';
+          resolvedUrl = '${serverUri.scheme}://${serverUri.host}$portSuffix/$objectKey';
+        } catch (_) {
+          resolvedUrl = objectKey;
+        }
+      }
+      return resolvedUrl;
     } catch (e) {
       debugPrint('Error in uploadProfilePicture: $e');
       rethrow;
     }
+  }
+
+  @override
+  Future<ApiResult<void>> blockUser(String userId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.blockUser(userId),
+      mapper: (_) => null,
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> unblockUser(String userId) async {
+    return _apiService.post<void>(
+      CommonEndpoints.unblockUser(userId),
+      mapper: (_) => null,
+    );
+  }
+
+  @override
+  Future<ApiResult<List<UserModel>>> getBlockedUsers() async {
+    return _apiService.get<List<UserModel>>(
+      CommonEndpoints.getBlockedUsers,
+      mapper: (json) {
+        if (json is List) {
+          return json.map((e) => UserModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        return [];
+      },
+    );
   }
 }

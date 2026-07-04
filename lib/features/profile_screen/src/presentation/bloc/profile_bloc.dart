@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/update_profile_request.dart';
@@ -61,10 +63,28 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     
     String? profileImageUrl = event.imagePath;
 
-    // Handle media upload if imagePath is a local file
-    if (event.imagePath != null && 
-        !event.imagePath!.startsWith('http') && 
-        !event.imagePath!.startsWith('https')) {
+    // Handle media upload
+    if (event.fileBytes != null) {
+      try {
+        final uploadedKey = await _profileRepository.uploadProfilePicture(
+          filePath: event.imagePath ?? '',
+          fileName: 'profile_pic.png',
+          mimeType: 'image/png',
+          fileSizeBytes: event.fileBytes!.length,
+          fileBytes: event.fileBytes,
+        );
+        if (uploadedKey != null) {
+          profileImageUrl = uploadedKey;
+        }
+      } catch (e) {
+        emit(ProfileFailure(errorMessage: 'Failed to upload profile picture: $e'));
+        return;
+      }
+    } else if (event.imagePath != null && 
+               !event.imagePath!.startsWith('http') && 
+               !event.imagePath!.startsWith('https') &&
+               !event.imagePath!.startsWith('blob:') &&
+               !kIsWeb) {
       try {
         final file = File(event.imagePath!);
         if (await file.exists()) {
@@ -92,11 +112,10 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         return;
       }
     }
-
     final request = UpdateProfileRequest(
       username: event.username.trim(),
-      firstName: "", // Set to empty string to avoid null constraint errors
-      lastName: "",
+      firstName: null,
+      lastName: null,
       about: event.about ?? "",
       profilePictureUrl: profileImageUrl,
     );

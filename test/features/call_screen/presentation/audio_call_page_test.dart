@@ -55,6 +55,8 @@ void main() {
         isMuted: true,
         isSpeakerOn: false,
         isVideoOff: false,
+        contactName: 'Alice',
+        recipientId: 'test_recipient',
       ),
     );
 

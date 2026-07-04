@@ -4,7 +4,7 @@ class CommonIcons {
   CommonIcons._();
 
   // Asset paths
-  static const String logo = 'assets/icons/logo.png';
+  static const String logo = 'assets/images/app_logo.png';
   static const String defaultAvatar = 'assets/icons/default_avatar.png';
   static const String home = 'assets/home_page/home.png';
   static const String statusIcon = 'assets/home_page/status.png';
@@ -119,4 +119,19 @@ class CommonIcons {
 
   // Navigation & UI
   static const IconData minimize = Icons.keyboard_arrow_down_rounded;
+
+  // New Icon Mappings
+  static const IconData lockOutline = Icons.lock_outline;
+  static const IconData pause = Icons.pause;
+  static const IconData playArrow = Icons.play_arrow;
+  static const IconData playCircleOutline = Icons.play_circle_outline;
+  static const IconData playArrowRounded = Icons.play_arrow_rounded;
+  static const IconData pictureAsPdf = Icons.picture_as_pdf;
+  static const IconData description = Icons.description;
+  static const IconData tableChart = Icons.table_chart;
+  static const IconData gridOn = Icons.grid_on;
+  static const IconData codeIcon = Icons.code;
+  static const IconData missedVideoCall = Icons.missed_video_call_rounded;
+  static const IconData phoneMissed = Icons.phone_missed_rounded;
+  static const IconData personAdd = Icons.person_add_alt_1_rounded;
 }

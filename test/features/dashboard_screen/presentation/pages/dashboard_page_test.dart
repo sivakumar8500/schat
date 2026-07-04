@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hive/hive.dart';
 import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/theme_controller.dart';
@@ -38,6 +40,7 @@ void main() {
   late MockProfileRepository mockProfileRepository;
   late MockStorageService mockStorageService;
   late MockChatSocketRepository mockChatSocketRepository;
+  late Directory tempDir;
 
   setUp(() async {
     await getIt.reset();
@@ -84,12 +87,26 @@ void main() {
     when(() => statusRepo.getMutedUpdates()).thenAnswer((_) async => []);
     getIt.registerSingleton<StatusRepository>(statusRepo);
     SharedPreferences.setMockInitialValues({});
+
+    // Initialize Hive to a temporary directory for test environment
+    tempDir = await Directory.systemTemp.createTemp();
+    Hive.init(tempDir.path);
+  });
+
+  tearDown(() async {
+    await Hive.close();
+    if (await tempDir.exists()) {
+      await tempDir.delete(recursive: true);
+    }
   });
 
   Widget createWidgetUnderTest() {
     return MaterialApp(
-      home: BlocProvider<ChatSocketBloc>.value(
-        value: mockChatSocketBloc,
+      home: MultiBlocProvider(
+        providers: [
+          BlocProvider<ChatSocketBloc>.value(value: mockChatSocketBloc),
+          BlocProvider<ChatsBloc>.value(value: mockChatsBloc),
+        ],
         child: const DashboardPage(),
       ),
     );

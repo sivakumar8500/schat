@@ -40,7 +40,7 @@ void main() {
 
     // Verify UI
     expect(find.text('Schat'), findsOneWidget);
-    expect(find.byIcon(CommonIcons.chatBubble), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
     // Let the timer finish

@@ -22,10 +22,17 @@ import 'package:url_launcher/url_launcher.dart';
 class UserListPage extends StatefulWidget {
   final bool forceSync;
   final bool showOnlySynced;
+  final bool isPicker;
+  final int maxSelection;
+  final List<String>? excludeUserIds;
+
   const UserListPage({
     super.key,
     this.forceSync = false,
     this.showOnlySynced = false,
+    this.isPicker = false,
+    this.maxSelection = 10,
+    this.excludeUserIds,
   });
 
   @override
@@ -37,6 +44,7 @@ class _UserListPageState extends State<UserListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   late ContactsBloc _contactsBloc;
+  final List<UserModel> _selectedUsers = [];
 
   final String _appLink = 'https://schat.app';
   final String _inviteTitle = 'Join Schat - Secure Messaging';
@@ -44,7 +52,7 @@ class _UserListPageState extends State<UserListPage> {
   @override
   void initState() {
     super.initState();
-    _contactsBloc = ContactsBloc();
+    _contactsBloc = getIt<ContactsBloc>();
     if (widget.forceSync) {
       _contactsBloc.add(const SyncContactsEvent());
     } else {
@@ -63,7 +71,6 @@ class _UserListPageState extends State<UserListPage> {
   @override
   void dispose() {
     _searchController.dispose();
-    _contactsBloc.close();
     super.dispose();
   }
 
@@ -223,8 +230,8 @@ class _UserListPageState extends State<UserListPage> {
         BlocProvider.value(
           value: _contactsBloc,
         ),
-        BlocProvider(
-          create: (context) => getIt<ChatsBloc>(),
+        BlocProvider.value(
+          value: getIt<ChatsBloc>(),
         ),
       ],
       child: BlocListener<ChatsBloc, ChatsState>(
@@ -263,7 +270,25 @@ class _UserListPageState extends State<UserListPage> {
               backgroundColor: context.colors.scaffoldBackground,
               elevation: 0,
               automaticallyImplyLeading: false,
-              title: Text('New Chat', style: context.h1.copyWith(fontSize: 26)),
+              leading: widget.isPicker
+                  ? IconButton(
+                      icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  : null,
+              title: Text(widget.isPicker ? 'Select Participants' : 'New Chat', style: context.h1.copyWith(fontSize: 26)),
+              actions: [
+                if (widget.isPicker)
+                  TextButton(
+                    onPressed: _selectedUsers.isEmpty ? null : () => Navigator.pop(context, _selectedUsers),
+                    child: Text('Done (${_selectedUsers.length})', 
+                      style: context.bodyLarge.copyWith(
+                        color: _selectedUsers.isEmpty ? context.colors.textHint : context.colors.primary,
+                        fontWeight: FontWeight.bold
+                      )
+                    ),
+                  ),
+              ],
               bottom: TabBar(
                 indicatorColor: context.colors.primary,
                 labelColor: context.colors.primary,
@@ -282,11 +307,17 @@ class _UserListPageState extends State<UserListPage> {
                   children: [
                     _buildSearchBar(),
                     Expanded(
-                      child: TabBarView(
-                        children: [
-                          _buildSchatUsersTab(context, state),
-                          _buildAllContactsTab(context, state),
-                        ],
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          _contactsBloc.add(const SyncContactsEvent());
+                          await Future.delayed(const Duration(seconds: 1));
+                        },
+                        child: TabBarView(
+                          children: [
+                            _buildSchatUsersTab(context, state),
+                            _buildAllContactsTab(context, state),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -305,6 +336,9 @@ class _UserListPageState extends State<UserListPage> {
     } else if (state is ContactsLoaded) {
       final query = _searchQuery.toLowerCase();
       final syncedUsers = state.syncedContacts.where((user) {
+        if (widget.excludeUserIds != null && widget.excludeUserIds!.contains(user.id)) {
+          return false;
+        }
         if (query.isEmpty) return true;
         final name = (user.username ?? '').toLowerCase();
         final phone = user.phoneNumber.toLowerCase();
@@ -316,6 +350,7 @@ class _UserListPageState extends State<UserListPage> {
       }
 
       return ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: syncedUsers.length,
         itemBuilder: (context, index) => _buildSyncedUserTile(context, syncedUsers[index]),
@@ -356,6 +391,7 @@ class _UserListPageState extends State<UserListPage> {
       }
 
       return ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: inviteContacts.length,
         itemBuilder: (context, index) => _buildInviteContactTile(context, inviteContacts[index]),
@@ -365,8 +401,11 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildPermissionDeniedState(BuildContext context) {
-    return Center(
-      child: Padding(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        alignment: Alignment.center,
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -389,8 +428,11 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildEmptyState(BuildContext context, {required bool isSchatOnly}) {
-    return Center(
-      child: Padding(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 32.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -436,12 +478,15 @@ class _UserListPageState extends State<UserListPage> {
 
 
   Widget _buildSearchBar() {
+    final searchBgColor = context.colors.isDark
+        ? context.colors.pureWhite.withValues(alpha: 0.1)
+        : context.colors.primary.withValues(alpha: 0.05);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: Container(
         height: 52,
         decoration: BoxDecoration(
-          color: context.colors.searchBackground,
+          color: searchBgColor,
           borderRadius: BorderRadius.circular(26),
         ),
         child: TextField(
@@ -481,9 +526,23 @@ class _UserListPageState extends State<UserListPage> {
 
   Widget _buildSyncedUserTile(BuildContext context, UserModel user) {
     final name = user.username ?? user.phoneNumber;
+    final isSelected = _selectedUsers.any((u) => u.id == user.id);
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       onTap: () {
+        if (widget.isPicker) {
+          setState(() {
+            if (isSelected) {
+              _selectedUsers.removeWhere((u) => u.id == user.id);
+            } else {
+              if (_selectedUsers.length < widget.maxSelection) {
+                _selectedUsers.add(user);
+              }
+            }
+          });
+          return;
+        }
         _pendingParticipantId = user.id;
         context.read<ChatsBloc>().add(CreateChat(
           participantId: user.id,
@@ -494,8 +553,8 @@ class _UserListPageState extends State<UserListPage> {
       leading: Stack(
         children: [
           Container(
-            width: 56,
-            height: 56,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: context.colors.primary.withValues(alpha: 0.15),
               shape: BoxShape.circle,
@@ -512,7 +571,7 @@ class _UserListPageState extends State<UserListPage> {
                             style: context.bodyMedium.copyWith(
                               color: context.colors.primary,
                               fontWeight: FontWeight.bold,
-                              fontSize: 18,
+                              fontSize: 16,
                             ),
                           ),
                         );
@@ -524,7 +583,7 @@ class _UserListPageState extends State<UserListPage> {
                         style: context.bodyMedium.copyWith(
                           color: context.colors.primary,
                           fontWeight: FontWeight.bold,
-                          fontSize: 18,
+                          fontSize: 16,
                         ),
                       ),
                     ),
@@ -535,14 +594,14 @@ class _UserListPageState extends State<UserListPage> {
               right: 2,
               bottom: 2,
               child: Container(
-                width: 14,
-                height: 14,
+                width: 11,
+                height: 11,
                 decoration: BoxDecoration(
                   color: context.colors.success,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: context.colors.scaffoldBackground,
-                    width: 2.5,
+                    width: 2,
                   ),
                 ),
               ),
@@ -559,11 +618,28 @@ class _UserListPageState extends State<UserListPage> {
         overflow: TextOverflow.ellipsis,
         style: context.bodySmall.copyWith(color: context.colors.textSecondary),
       ),
-      trailing: Icon(
-        CommonIcons.chatBubble, 
-        color: context.colors.primary, 
-        size: 20
-      ),
+      trailing: widget.isPicker
+          ? Checkbox(
+              value: isSelected,
+              onChanged: (val) {
+                setState(() {
+                  if (val == true) {
+                    if (_selectedUsers.length < widget.maxSelection) {
+                      _selectedUsers.add(user);
+                    }
+                  } else {
+                    _selectedUsers.removeWhere((u) => u.id == user.id);
+                  }
+                });
+              },
+              activeColor: context.colors.primary,
+              shape: const CircleBorder(),
+            )
+          : Icon(
+              CommonIcons.chatBubble, 
+              color: context.colors.primary, 
+              size: 20
+            ),
     );
   }
 

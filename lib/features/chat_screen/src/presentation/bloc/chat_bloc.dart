@@ -23,6 +23,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   bool _currentIsOnline = false;
   bool _currentIsTyping = false;
 
+  int _messagesSkip = 0;
+  bool _hasReachedMax = false;
+  bool _isFetchingMore = false;
+
   ChatBloc({
     ChatRepository? chatRepository,
     StorageService? storageService,
@@ -39,6 +43,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateUserStatusEvent>(_onUpdateUserStatus);
     on<UpdateTypingIndicatorEvent>(_onUpdateTypingIndicator);
     on<MarkMessageReadEvent>(_onMarkMessageRead);
+    on<MarkMessageDeliveredEvent>(_onMarkMessageDelivered);
     on<DeleteMessagesEvent>(_onDeleteMessages);
     on<EditMessageEvent>(_onEditMessage);
     on<PinMessageEvent>(_onPinMessage);
@@ -51,15 +56,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<MarkMessageFailedEvent>(_onMarkMessageFailed);
     on<ToggleFavoriteEvent>(_onToggleFavorite);
     on<SetDisappearingTimerEvent>(_onSetDisappearingTimer);
+    on<UpdateGroupInfoEvent>(_onUpdateGroupInfo);
+    on<AddGroupParticipantsEvent>(_onAddGroupParticipants);
+    on<RemoveGroupParticipantEvent>(_onRemoveGroupParticipant);
+    on<ReceiveCallLogUpdateEvent>(_onReceiveCallLogUpdate);
     on<CloseChatEvent>((event, emit) => emit(const ChatDeleted()));
-    on<ShowNotificationEvent>((event, emit) {
+    on<ShowNotificationEvent>((event, emit) async {
       final currentState = state;
       if (currentState is ChatLoaded) {
         emit(currentState.copyWith(notificationMessage: event.message));
         // Reset notification message after emission so it doesn't show again on next build
-        emit(currentState.copyWith(notificationMessage: null));
+        await Future.delayed(Duration.zero);
+        final latestState = state;
+        if (latestState is ChatLoaded) {
+          emit(latestState.copyWith(notificationMessage: null));
+        }
       }
     });
+    on<ClearChatEvent>(_onClearChat);
+    on<LoadThemesEvent>(_onLoadThemes);
+    on<UpdateThemeEvent>(_onUpdateTheme);
+    on<LoadMoreMessagesEvent>(_onLoadMoreMessages);
 
     _listenToSocket();
   }
@@ -125,6 +142,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(MarkMessageReadEvent(messageId: msgId, conversationId: convId!));
           }
+        } else if (type == 'delivery_receipt' || type == 'message_delivered') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(MarkMessageDeliveredEvent(messageId: msgId, conversationId: convId!));
+          }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
@@ -140,15 +163,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final msgId = (message['id'] ?? message['messageId'])?.toString();
             final contentMap = message['content'];
             final newContent = contentMap is Map ? contentMap['text']?.toString() : message['content']?.toString();
+            final updatedAt = (message['updatedAt'] ?? message['updated_at'])?.toString();
             if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId ?? _conversationId!, newContent: newContent));
+              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId ?? _conversationId!, newContent: newContent, updatedAt: updatedAt));
             }
           } else {
             final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
             final contentMap = cleanData['content'];
             final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
+            final updatedAt = (cleanData['updatedAt'] ?? cleanData['updated_at'])?.toString();
             if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent));
+              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent, updatedAt: updatedAt));
             }
           }
         } else if (type == 'message_pinned' || type == 'pin_message') {
@@ -242,8 +267,25 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               allowView: allowView,
             ));
           }
-        }
-else if (type == 'pong') {
+        } else if (type == 'call_log_updated') {
+          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ReceiveCallLogUpdateEvent(callLogData: cleanData));
+          }
+        } else if (type == 'error') {
+          final errorMsg = cleanData['message']?.toString() ?? 'An error occurred';
+          add(ShowNotificationEvent(message: errorMsg));
+          final currentState = state;
+          if (currentState is ChatLoaded) {
+            final lastTempIndex = currentState.messages.lastIndexWhere(
+              (msg) => msg.senderId == currentState.myId && (msg.id.startsWith('temp_') || msg.isUploading),
+            );
+            if (lastTempIndex != -1) {
+              final failedMsgId = currentState.messages[lastTempIndex].id;
+              add(MarkMessageFailedEvent(messageId: failedMsgId, conversationId: _conversationId!));
+            }
+          }
+        } else if (type == 'pong') {
           debugPrint('DEBUG: ChatBloc received Heartbeat PONG');
         } else {
           debugPrint('DEBUG: ChatBloc ignored event type: $type');
@@ -261,8 +303,13 @@ else if (type == 'pong') {
     _recipientId = event.recipientId;
     _currentIsOnline = event.initialIsOnline ?? false;
 
+    _messagesSkip = 0;
+    _hasReachedMax = false;
+    _isFetchingMore = false;
+
     final myId = _storageService.getUserId() ?? '';
     Color? savedColor;
+    bool isMuted = false;
     
     // 1. Try loading from cache first
     List<MessageModel> cachedMessages = [];
@@ -280,6 +327,12 @@ else if (type == 'pong') {
       if (cachedColorVal != null) {
         savedColor = Color(cachedColorVal);
       }
+
+      final muteBox = await Hive.openBox('muted_chats_box');
+      final List<dynamic>? mutedList = muteBox.get('muted_list');
+      if (mutedList != null) {
+        isMuted = mutedList.contains(event.conversationId);
+      }
     } catch (e) {
       debugPrint('Error loading cached messages: $e');
     }
@@ -288,6 +341,7 @@ else if (type == 'pong') {
       emit(ChatLoaded(
         messages: cachedMessages,
         myId: myId,
+        isMuted: isMuted,
         isRecipientOnline: _currentIsOnline,
         isRecipientTyping: _currentIsTyping,
         customBgColor: savedColor,
@@ -298,7 +352,11 @@ else if (type == 'pong') {
 
     // 2. Fetch fresh messages from API in background
     try {
-      final messages = await _chatRepository.getMessages(event.conversationId);
+      final messages = await _chatRepository.getMessages(event.conversationId, limit: 50, skip: 0);
+      _messagesSkip = messages.length;
+      if (messages.length < 50) {
+        _hasReachedMax = true;
+      }
       final pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
       
       // Save fresh messages to cache
@@ -319,6 +377,7 @@ else if (type == 'pong') {
           messages: messages,
           pinnedMessages: pinnedMessages,
           myId: myId,
+          isMuted: isMuted,
           isRecipientOnline: _currentIsOnline,
           isRecipientTyping: _currentIsTyping,
           customBgColor: savedColor,
@@ -330,6 +389,44 @@ else if (type == 'pong') {
       } else {
         debugPrint('Error reloading messages from API: $e');
       }
+    }
+  }
+
+  Future<void> _onLoadMoreMessages(LoadMoreMessagesEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded || _hasReachedMax || _isFetchingMore) {
+      return;
+    }
+
+    _isFetchingMore = true;
+
+    try {
+      final moreMessages = await _chatRepository.getMessages(
+        event.conversationId,
+        limit: 50,
+        skip: _messagesSkip,
+      );
+
+      if (moreMessages.isEmpty) {
+        _hasReachedMax = true;
+        _isFetchingMore = false;
+        return;
+      }
+
+      _messagesSkip += moreMessages.length;
+      if (moreMessages.length < 50) {
+        _hasReachedMax = true;
+      }
+
+      // Prepend the older messages to the existing list.
+      final updatedMessages = List<MessageModel>.from(moreMessages)..addAll(currentState.messages);
+
+      emit(currentState.copyWith(messages: updatedMessages));
+      _isFetchingMore = false;
+      _saveToCache(event.conversationId, updatedMessages);
+    } catch (e) {
+      debugPrint('Error loading more messages: $e');
+      _isFetchingMore = false;
     }
   }
 
@@ -412,11 +509,26 @@ else if (type == 'pong') {
     }
   }
 
-  void _onToggleMute(ToggleMuteEvent event, Emitter<ChatState> emit) {
+  Future<void> _onToggleMute(ToggleMuteEvent event, Emitter<ChatState> emit) async {
     final currentState = state;
     if (currentState is ChatLoaded && _conversationId != null) {
       _chatRepository.toggleMute(conversationId: _conversationId!, isMuted: event.isMuted);
       emit(currentState.copyWith(isMuted: event.isMuted));
+      
+      try {
+        final box = await Hive.openBox('muted_chats_box');
+        final List<dynamic> list = List.from(box.get('muted_list') ?? []);
+        if (event.isMuted) {
+          if (!list.contains(_conversationId)) {
+            list.add(_conversationId);
+          }
+        } else {
+          list.remove(_conversationId);
+        }
+        await box.put('muted_list', list);
+      } catch (e) {
+        debugPrint('Error saving muted status: $e');
+      }
     }
   }
 
@@ -431,6 +543,44 @@ else if (type == 'pong') {
   void _onSetDisappearingTimer(SetDisappearingTimerEvent event, Emitter<ChatState> emit) {
     if (_conversationId != null) {
       _chatRepository.setDisappearingTimer(conversationId: _conversationId!, seconds: event.seconds);
+    }
+  }
+
+  Future<void> _onUpdateGroupInfo(UpdateGroupInfoEvent event, Emitter<ChatState> emit) async {
+    try {
+      await _chatRepository.updateGroupInfo(
+        groupId: event.groupId,
+        name: event.name,
+        description: event.description,
+        iconUrl: event.iconUrl,
+      );
+      add(const ShowNotificationEvent(message: 'Group updated successfully'));
+    } catch (e) {
+      add(ShowNotificationEvent(message: 'Failed to update group: $e', isError: true));
+    }
+  }
+
+  Future<void> _onAddGroupParticipants(AddGroupParticipantsEvent event, Emitter<ChatState> emit) async {
+    try {
+      await _chatRepository.addGroupParticipants(
+        groupId: event.groupId,
+        userIds: event.userIds,
+      );
+      add(const ShowNotificationEvent(message: 'Participants added'));
+    } catch (e) {
+      add(ShowNotificationEvent(message: 'Failed to add participants: $e', isError: true));
+    }
+  }
+
+  Future<void> _onRemoveGroupParticipant(RemoveGroupParticipantEvent event, Emitter<ChatState> emit) async {
+    try {
+      await _chatRepository.removeGroupParticipant(
+        groupId: event.groupId,
+        userId: event.userId,
+      );
+      add(const ShowNotificationEvent(message: 'Participant removed'));
+    } catch (e) {
+      add(ShowNotificationEvent(message: 'Failed to remove participant: $e', isError: true));
     }
   }
 
@@ -479,6 +629,20 @@ else if (type == 'pong') {
     }
   }
 
+  void _onMarkMessageDelivered(MarkMessageDeliveredEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(isDelivered: true);
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
   void _onDeleteMessages(DeleteMessagesEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
@@ -505,9 +669,10 @@ else if (type == 'pong') {
   void _onEditMessage(EditMessageEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final now = DateTime.now().toIso8601String();
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
-          return msg.copyWith(content: event.newContent, isEdited: true);
+          return msg.copyWith(content: event.newContent, isEdited: true, updatedAt: now);
         }
         return msg;
       }).toList();
@@ -619,9 +784,10 @@ else if (type == 'pong') {
   void _onReceiveEditMessage(ReceiveEditMessageEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final editedAt = event.updatedAt ?? DateTime.now().toIso8601String();
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
-          return msg.copyWith(content: event.newContent, isEdited: true);
+          return msg.copyWith(content: event.newContent, isEdited: true, updatedAt: editedAt);
         }
         return msg;
       }).toList();
@@ -672,6 +838,102 @@ else if (type == 'pong') {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onReceiveCallLogUpdate(ReceiveCallLogUpdateEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'])?.toString();
+      final callMetaMap = event.callLogData['call_meta'] ?? event.callLogData['callMeta'];
+      
+      if (msgId != null && callMetaMap is Map) {
+        final callMeta = CallMeta.fromJson(Map<String, dynamic>.from(callMetaMap));
+        final updatedMessages = currentState.messages.map((msg) {
+          if (msg.id == msgId) {
+            return msg.copyWith(callMeta: callMeta, mediaType: 'call');
+          }
+          return msg;
+        }).toList();
+        
+        emit(currentState.copyWith(messages: updatedMessages));
+        _saveToCache(_conversationId!, updatedMessages);
+      }
+    }
+  }
+
+  Future<void> _onClearChat(ClearChatEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+    try {
+      final clearedAt = await _chatRepository.clearChat(event.conversationId);
+
+      // Filter messages: keep only those whose createdAt is AFTER clearedAt
+      List<MessageModel> remaining;
+      if (clearedAt != null) {
+        final clearedAtMs = DateTime.tryParse(clearedAt)?.millisecondsSinceEpoch;
+        if (clearedAtMs != null) {
+          remaining = currentState.messages.where((msg) {
+            final msgMs = DateTime.tryParse(msg.createdAt)?.millisecondsSinceEpoch;
+            return msgMs != null && msgMs > clearedAtMs;
+          }).toList();
+        } else {
+          remaining = [];
+        }
+      } else {
+        remaining = [];
+      }
+
+      // Wipe the Hive cache for this conversation
+      Hive.openBox('cached_messages').then((box) => box.delete(event.conversationId));
+
+      emit(currentState.copyWith(
+        messages: remaining,
+        pinnedMessages: [],
+        notificationMessage: 'Chat cleared',
+      ));
+      // Reset notification toast
+      emit(currentState.copyWith(
+        messages: remaining,
+        pinnedMessages: [],
+        notificationMessage: null,
+      ));
+    } catch (e) {
+      debugPrint('Error clearing chat: $e');
+      emit(currentState.copyWith(
+        notificationMessage: 'Failed to clear chat',
+      ));
+      emit(currentState.copyWith(notificationMessage: null));
+    }
+  }
+
+  Future<void> _onLoadThemes(LoadThemesEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+    try {
+      final themes = await _chatRepository.getThemes();
+      emit(currentState.copyWith(availableThemes: themes));
+    } catch (e) {
+      debugPrint('Error loading themes: $e');
+    }
+  }
+
+  Future<void> _onUpdateTheme(UpdateThemeEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded || _conversationId == null) return;
+    try {
+      await _chatRepository.updateTheme(
+        conversationId: _conversationId!,
+        themeColorId: event.themeColorId,
+      );
+      if (event.themeColorId == null) {
+        emit(currentState.copyWith(clearThemeColor: true));
+      } else {
+        emit(currentState.copyWith(themeColor: event.themeColor));
+      }
+    } catch (e) {
+      debugPrint('Error updating theme: $e');
+      add(ShowNotificationEvent(message: 'Failed to update theme', isError: true));
     }
   }
 

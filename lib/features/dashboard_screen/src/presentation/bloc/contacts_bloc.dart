@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:injectable/injectable.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/storage/storage_service.dart';
@@ -11,20 +12,18 @@ import 'package:schat/injection.dart';
 import 'contacts_event.dart';
 import 'contacts_state.dart';
 
+@lazySingleton
 class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   final ContactsRepository _contactsRepository;
   final ChatSocketRepository _socketRepository;
   final StorageService _storageService;
   StreamSubscription? _socketSubscription;
 
-  ContactsBloc({
-    ContactsRepository? contactsRepository,
-    ChatSocketRepository? socketRepository,
-    StorageService? storageService,
-  }) : _contactsRepository = contactsRepository ?? getIt<ContactsRepository>(),
-       _socketRepository = socketRepository ?? getIt<ChatSocketRepository>(),
-       _storageService = storageService ?? getIt<StorageService>(),
-       super(const ContactsInitial()) {
+  ContactsBloc(
+    this._contactsRepository,
+    this._socketRepository,
+    this._storageService,
+  ) : super(const ContactsInitial()) {
     on<LoadContacts>(_onLoadContacts);
     on<SyncContactsEvent>(_onSyncContacts);
     on<RemoveContact>(_onRemoveContact);
@@ -125,7 +124,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     LoadContacts event,
     Emitter<ContactsState> emit,
   ) async {
-    emit(const ContactsLoading());
+    if (state is! ContactsLoaded) {
+      emit(const ContactsLoading());
+    }
     try {
       final status = await Permission.contacts.status;
 
@@ -156,7 +157,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         }
       }
     } catch (e) {
-      emit(ContactsFailure(errorMessage: e.toString()));
+      if (state is! ContactsLoaded) {
+        emit(ContactsFailure(errorMessage: e.toString()));
+      }
     }
   }
 
@@ -208,7 +211,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   ) async {
     final currentState = state;
     if (currentState is ContactsLoaded || state is ContactsInitial) {
-      emit(const ContactsLoading());
+      if (currentState is! ContactsLoaded) {
+        emit(const ContactsLoading());
+      }
       try {
         final status = await Permission.contacts.request();
         if (!status.isGranted) {
@@ -237,7 +242,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
             await _storageService.setHasSyncedContacts(true);
           } else {
             final failure = result as Failure;
-            emit(ContactsFailure(errorMessage: failure.message));
+            if (state is! ContactsLoaded) {
+              emit(ContactsFailure(errorMessage: failure.message));
+            }
             final filteredSynced = (currentState is ContactsLoaded)
                 ? currentState.syncedContacts
                       .where((u) => !hidden.contains(u.phoneNumber))
@@ -266,7 +273,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
           );
         }
       } catch (e) {
-        emit(ContactsFailure(errorMessage: e.toString()));
+        if (state is! ContactsLoaded) {
+          emit(ContactsFailure(errorMessage: e.toString()));
+        }
       }
     } else {
       add(const LoadContacts());

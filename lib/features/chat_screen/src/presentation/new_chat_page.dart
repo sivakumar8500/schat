@@ -185,10 +185,12 @@ class _NewChatPageState extends State<NewChatPage> {
   Widget build(BuildContext context) {
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (context) => ContactsBloc()..add(const LoadContacts()),
+        BlocProvider.value(
+          value: getIt<ContactsBloc>()..add(const LoadContacts()),
         ),
-        BlocProvider(create: (context) => getIt<ChatsBloc>()),
+        BlocProvider.value(
+          value: getIt<ChatsBloc>(),
+        ),
       ],
       child: BlocListener<ChatsBloc, ChatsState>(
         listener: (context, state) {

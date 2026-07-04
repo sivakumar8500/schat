@@ -6,6 +6,8 @@ import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
+import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
+import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/message_bubble.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -14,12 +16,19 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/domain/usecases/connect_socket_usecase.dart';
 import 'package:schat/injection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/utils/common_icons.dart';
+import 'package:flutter/services.dart';
+import 'package:bloc_test/bloc_test.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 
 class MockChatRepository extends Mock implements ChatRepository {}
 class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
 class MockConnectSocketUseCase extends Mock implements ConnectSocketUseCase {}
 class MockChatSocketBloc extends Mock implements ChatSocketBloc {}
 class MockStorageService extends Mock implements StorageService {}
+class MockCallWebRtcBloc extends MockBloc<CallWebRtcEvent, CallWebRtcState> implements CallWebRtcBloc {}
 
 void main() {
   setUpAll(() {
@@ -38,6 +47,7 @@ void main() {
   late MockChatSocketRepository mockChatSocketRepository;
   late MockConnectSocketUseCase mockConnectSocketUseCase;
   late MockStorageService mockStorageService;
+  late MockCallWebRtcBloc mockCallWebRtcBloc;
   late Directory tempDir;
 
   setUp(() async {
@@ -46,15 +56,43 @@ void main() {
     mockChatSocketRepository = MockChatSocketRepository();
     mockConnectSocketUseCase = MockConnectSocketUseCase();
     mockStorageService = MockStorageService();
+    mockCallWebRtcBloc = MockCallWebRtcBloc();
     
     getIt.registerSingleton<ChatRepository>(mockChatRepository);
     getIt.registerSingleton<ChatSocketRepository>(mockChatSocketRepository);
     getIt.registerSingleton<StorageService>(mockStorageService);
+    getIt.registerSingleton<CallWebRtcBloc>(mockCallWebRtcBloc);
     getIt.registerFactory<ChatSocketBloc>(() => ChatSocketBloc(mockConnectSocketUseCase, mockChatSocketRepository));
 
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
     when(() => mockChatSocketRepository.sendReadReceipt(any(), any())).thenAnswer((_) {});
     when(() => mockStorageService.getUserId()).thenReturn('my_id');
+    when(() => mockCallWebRtcBloc.state).thenReturn(const CallIdle());
+    when(() => mockCallWebRtcBloc.stream).thenAnswer((_) => const Stream.empty());
+    when(() => mockChatRepository.getPinnedMessages(any())).thenAnswer((_) async => []);
+
+    // Setup mock method channels to avoid MissingPluginException
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('com.llfbandit.record/messages'),
+      (message) async => null,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers'),
+      (message) async => null,
+    );
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('xyz.luan/audioplayers.global'),
+      (message) async => null,
+    );
+
+    messenger.allMessagesHandler = (String channel, Future<ByteData?>? Function(ByteData?)? handler, ByteData? message) async {
+      if (channel.startsWith('xyz.luan/audioplayers/events/') ||
+          channel == 'xyz.luan/audioplayers.global/events') {
+        return const StandardMethodCodec().encodeSuccessEnvelope(null);
+      }
+      return handler != null ? handler(message) : null;
+    };
 
     // Initialize Hive to a temporary directory for test environment
     tempDir = await Directory.systemTemp.createTemp();
@@ -62,6 +100,7 @@ void main() {
   });
 
   tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.allMessagesHandler = null;
     await Hive.close();
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
@@ -84,7 +123,7 @@ void main() {
   }
 
   testWidgets('ChatPage shows messages', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: '1',
@@ -112,7 +151,7 @@ void main() {
   });
 
   testWidgets('ChatPage toggles media attachment grid when clicking + button', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [],
     );
 
@@ -123,36 +162,36 @@ void main() {
     });
 
     // Grid should not be visible initially
-    expect(find.text('Document'), findsNothing);
-    expect(find.text('Camera'), findsNothing);
+    expect(find.text('Documents'), findsNothing);
+    expect(find.text('Video'), findsNothing);
     expect(find.text('Gallery'), findsNothing);
 
     // Click the + button
-    final plusButton = find.byIcon(Icons.add_rounded);
+    final plusButton = find.byIcon(CommonIcons.attach);
     expect(plusButton, findsOneWidget);
     await tester.tap(plusButton);
     await tester.pump();
 
     // Now the grid and items should be visible
-    expect(find.text('Document'), findsOneWidget);
-    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Documents'), findsOneWidget);
+    expect(find.text('Video'), findsOneWidget);
     expect(find.text('Gallery'), findsOneWidget);
     expect(find.text('Audio'), findsOneWidget);
     expect(find.text('Location'), findsOneWidget);
     expect(find.text('Contact'), findsOneWidget);
 
     // Click the close button (the + button toggled to close)
-    final closeButton = find.byIcon(Icons.close);
+    final closeButton = find.byIcon(CommonIcons.close);
     expect(closeButton, findsOneWidget);
     await tester.tap(closeButton);
     await tester.pump();
 
     // Now grid items should not be visible anymore
-    expect(find.text('Document'), findsNothing);
+    expect(find.text('Documents'), findsNothing);
   });
 
   testWidgets('ChatPage renders receiver message bubble with correct permission controls', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: 'msg_allow_all',
@@ -192,13 +231,13 @@ void main() {
     });
 
     // Check message action counts
-    expect(find.byIcon(Icons.visibility), findsNWidgets(2));
-    expect(find.byIcon(Icons.download), findsOneWidget); // Only 1 (from msg_allow_all)
-    expect(find.byIcon(Icons.share), findsOneWidget); // Only 1 (from msg_allow_all)
+    expect(find.byIcon(CommonIcons.visibility), findsNWidgets(2));
+    expect(find.byIcon(CommonIcons.download), findsOneWidget); // Only 1 (from msg_allow_all)
+    expect(find.byIcon(CommonIcons.share), findsOneWidget); // Only 1 (from msg_allow_all)
   });
 
   testWidgets('ChatPage renders rich reply preview with file name when replying to file message', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: 'parent_file_msg',
@@ -241,7 +280,7 @@ void main() {
   });
 
   testWidgets('ChatPage filters out deleted messages from the chat list', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: 'deleted_msg_1',
@@ -277,7 +316,7 @@ void main() {
   });
 
   testWidgets('ChatPage renders link messages with clickable blue styling', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: 'link_msg',
@@ -325,7 +364,7 @@ void main() {
   });
 
   testWidgets('ChatPage renders Resend button when isFailed is true', (WidgetTester tester) async {
-    when(() => mockChatRepository.getMessages(any())).thenAnswer(
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip'))).thenAnswer(
       (_) async => [
         const MessageModel(
           id: 'failed_msg',
@@ -348,7 +387,7 @@ void main() {
 
     // Check that 'Resend' button is displayed
     expect(find.text('Resend'), findsOneWidget);
-    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(find.byIcon(CommonIcons.errorOutline), findsOneWidget);
   });
 
   test('MessageModel.fromJson handles dynamic decodings of content map', () {
@@ -369,5 +408,59 @@ void main() {
     final message = MessageModel.fromJson(rawJson);
     expect(message.content, 'Dynamic map decoded content');
     expect(message.mediaUrl, 'some_key');
+  });
+
+  testWidgets('ChatPage loads more messages when LoadMoreMessagesEvent is added', (WidgetTester tester) async {
+    when(() => mockChatRepository.getMessages(
+          any(),
+          limit: any(named: 'limit'),
+          skip: any(named: 'skip'),
+        )).thenAnswer((invocation) async {
+      final skip = invocation.namedArguments[#skip] as int?;
+      if (skip == 0 || skip == null) {
+        return List.generate(50, (index) => MessageModel(
+          id: '${index + 2}',
+          conversationId: 'conv_1',
+          senderId: 'other',
+          content: 'Message ${index + 2}',
+          isDeleted: false,
+          createdAt: '2026-06-14T10:02:00Z',
+          updatedAt: '2026-06-14T10:02:00Z',
+        ));
+      } else {
+        return [
+          const MessageModel(
+            id: '1',
+            conversationId: 'conv_1',
+            senderId: 'other',
+            content: 'Message 1',
+            isDeleted: false,
+            createdAt: '2026-06-14T10:01:00Z',
+            updatedAt: '2026-06-14T10:01:00Z',
+          ),
+        ];
+      }
+    });
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await Future.delayed(const Duration(milliseconds: 500));
+      await tester.pump();
+    });
+
+    expect(find.text('Message 51'), findsOneWidget);
+    expect(find.text('Message 1'), findsNothing);
+
+    // Scroll to the top of the list to trigger lazy loading
+    final ListView listView = tester.widget(find.byType(ListView));
+    listView.controller!.jumpTo(listView.controller!.position.maxScrollExtent);
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await Future.delayed(const Duration(milliseconds: 500));
+      await tester.pump();
+    });
+
+    expect(find.text('Message 1'), findsOneWidget);
   });
 }

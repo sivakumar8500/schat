@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
 abstract class ChatState {
   const ChatState();
@@ -24,6 +25,9 @@ class ChatLoaded extends ChatState {
   final bool isRecipientTyping;
   final Color? customBgColor;
   final String? notificationMessage;
+  // Theme from server API
+  final ThemeColorModel? themeColor;
+  final List<ThemeColorModel> availableThemes;
 
   const ChatLoaded({
     required this.messages,
@@ -36,6 +40,8 @@ class ChatLoaded extends ChatState {
     this.isRecipientTyping = false,
     this.customBgColor,
     this.notificationMessage,
+    this.themeColor,
+    this.availableThemes = const [],
   });
 
   ChatLoaded copyWith({
@@ -49,6 +55,9 @@ class ChatLoaded extends ChatState {
     bool? isRecipientTyping,
     Color? customBgColor,
     String? notificationMessage,
+    ThemeColorModel? themeColor,
+    bool clearThemeColor = false,
+    List<ThemeColorModel>? availableThemes,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
@@ -61,6 +70,8 @@ class ChatLoaded extends ChatState {
       isRecipientTyping: isRecipientTyping ?? this.isRecipientTyping,
       customBgColor: customBgColor ?? this.customBgColor,
       notificationMessage: notificationMessage,
+      themeColor: clearThemeColor ? null : (themeColor ?? this.themeColor),
+      availableThemes: availableThemes ?? this.availableThemes,
     );
   }
 }

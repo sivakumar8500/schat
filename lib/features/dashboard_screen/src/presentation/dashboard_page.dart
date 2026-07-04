@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/chat_search/src/presentation/chat_search_page.dart';
@@ -8,6 +10,8 @@ import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_c
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/presentation/pages/hidden_chats_page.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
@@ -41,6 +45,8 @@ class _DashboardPageState extends State<DashboardPage> {
   String? _profilePicUrl;
   final Set<String> _hiddenChatIds = {};
   final Set<String> _deletedChatIds = {};
+  final Set<String> _selectedChatIds = {};
+  final Set<String> _mutedChatIds = {};
   bool _shouldSyncContacts = false;
   bool _onlyShowSynced = false;
 
@@ -48,8 +54,355 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _loadProfile();
+    _loadMutedChats();
     // Initialize socket connection when dashboard is loaded
     context.read<ChatSocketBloc>().add(const ConnectSocket());
+  }
+
+  Future<void> _loadMutedChats() async {
+    try {
+      final box = await Hive.openBox('muted_chats_box');
+      final List<dynamic>? list = box.get('muted_list');
+      if (list != null) {
+        setState(() {
+          _mutedChatIds.addAll(list.cast<String>());
+        });
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildSelectionHeader() {
+    const compactDensity = VisualDensity.compact;
+    const tightPadding = EdgeInsets.all(6);
+
+    return Container(
+      color: context.colors.primary.withValues(alpha: 0.08),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+            visualDensity: compactDensity,
+            padding: tightPadding,
+            onPressed: () => setState(() => _selectedChatIds.clear()),
+          ),
+          CommonSpaces.w8,
+          Flexible(
+            child: Text(
+              '${_selectedChatIds.length} selected',
+              overflow: TextOverflow.ellipsis,
+              style: context.titleLarge.copyWith(
+                fontWeight: FontWeight.bold,
+                color: context.colors.textPrimary,
+              ),
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: Icon(
+              _selectedChatIds.every((id) => _mutedChatIds.contains(id))
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_off_rounded,
+              color: context.colors.textPrimary,
+            ),
+            tooltip: _selectedChatIds.every((id) => _mutedChatIds.contains(id))
+                ? 'Unmute Notifications'
+                : 'Mute Notifications',
+            visualDensity: compactDensity,
+            padding: tightPadding,
+            onPressed: _handleMuteSelected,
+          ),
+          IconButton(
+            icon: Icon(Icons.archive_rounded, color: context.colors.textPrimary),
+            tooltip: 'Hide Chats',
+            visualDensity: compactDensity,
+            padding: tightPadding,
+            onPressed: _handleHideSelected,
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.block, color: context.colors.textPrimary),
+            tooltip: 'Block Recipient',
+            visualDensity: compactDensity,
+            padding: tightPadding,
+            onPressed: _handleBlockSelected,
+          ),
+          IconButton(
+            icon: Icon(CommonIcons.deleteOutline, color: context.colors.error),
+            tooltip: 'Delete Chats',
+            visualDensity: compactDensity,
+            padding: tightPadding,
+            onPressed: _handleDeleteSelected,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleMuteSelected() async {
+    final allMuted = _selectedChatIds.every((id) => _mutedChatIds.contains(id));
+    final selectedIds = Set<String>.from(_selectedChatIds);
+    final count = selectedIds.length;
+    final action = allMuted ? 'Unmute' : 'Mute';
+    final actionLower = allMuted ? 'unmute' : 'mute';
+
+    // Confirmation popup
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).colorScheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              allMuted ? Icons.notifications_active_rounded : Icons.notifications_off_rounded,
+              color: context.colors.primary,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Text('$action Notifications?', style: context.titleLarge.copyWith(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to $actionLower notifications for $count ${count == 1 ? 'chat' : 'chats'}?',
+          style: context.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // Optimistic UI update
+    setState(() {
+      if (allMuted) {
+        _mutedChatIds.removeAll(selectedIds);
+      } else {
+        _mutedChatIds.addAll(selectedIds);
+      }
+      _selectedChatIds.clear();
+    });
+
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final id in selectedIds) {
+      try {
+        final result = allMuted
+            ? await getIt<DashboardRepository>().unmuteChat(id)
+            : await getIt<DashboardRepository>().muteChat(id);
+        result.when(
+          success: (_) => successCount++,
+          failure: (error, _) {
+            failCount++;
+            debugPrint('Mute/Unmute failed for $id: $error');
+          },
+        );
+      } catch (e) {
+        failCount++;
+        debugPrint('Mute/Unmute exception for $id: $e');
+      }
+    }
+
+    // Persist muted state locally
+    try {
+      final box = await Hive.openBox('muted_chats_box');
+      await box.put('muted_list', _mutedChatIds.toList());
+    } catch (_) {}
+
+    if (mounted) {
+      if (failCount == 0) {
+        context.showSuccessNotification(
+          allMuted
+              ? '$count ${count == 1 ? 'chat' : 'chats'} unmuted'
+              : '$count ${count == 1 ? 'chat' : 'chats'} muted',
+        );
+      } else {
+        context.showInfoNotification(
+          '$successCount succeeded, $failCount failed',
+        );
+      }
+      // Refresh the chat list to sync server state
+      context.read<ChatsBloc>().add(const FetchChats());
+    }
+  }
+
+  Future<void> _handleHideSelected() async {
+    final count = _selectedChatIds.length;
+    setState(() {
+      _hiddenChatIds.addAll(_selectedChatIds);
+    });
+    for (final id in _selectedChatIds) {
+      await getIt<DashboardRepository>().hideChat(id);
+    }
+    if (mounted) {
+      context.showSuccessNotification('$count chats hidden');
+      context.read<ChatsBloc>().add(const FetchChats());
+    }
+    setState(() => _selectedChatIds.clear());
+  }
+
+  Future<void> _handleBlockSelected() async {
+    final count = _selectedChatIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.scaffoldBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Block Contacts?',
+          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Block the recipients of the $count selected chats? They will no longer be able to message or call you.',
+          style: context.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Block', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final currentState = context.read<ChatsBloc>().state;
+      if (currentState is ChatsLoaded) {
+        final box = await Hive.openBox('blocked_users_box');
+        final String? jsonString = box.get('blocked_list');
+        List<dynamic> blockedList = [];
+        if (jsonString != null) {
+          blockedList = jsonDecode(jsonString);
+        }
+
+        int blockedCount = 0;
+        for (final id in _selectedChatIds) {
+          final chat = currentState.chats.firstWhere((c) => c.id == id);
+          if (!chat.isGroup) {
+            final result = await getIt<ProfileRepository>().blockUser(chat.recipient.id);
+            await result.when(
+              success: (_) {
+                final exists = blockedList.any((e) => e['id'] == chat.recipient.id);
+                if (!exists) {
+                  blockedList.add({
+                    'id': chat.recipient.id,
+                    'name': chat.recipient.username ?? chat.recipient.phoneNumber,
+                    'profilePictureUrl': chat.recipient.profilePictureUrl,
+                    'colorValue': context.colors.primary.value,
+                  });
+                  blockedCount++;
+                }
+              },
+              failure: (error, _) {
+                debugPrint('Failed to block user ${chat.recipient.id}: $error');
+              },
+            );
+          }
+        }
+        await box.put('blocked_list', jsonEncode(blockedList));
+        if (mounted) {
+          context.showSuccessNotification(
+            blockedCount > 0 ? '$blockedCount recipients blocked' : 'Recipients already blocked',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error blocking from selection: $e');
+    }
+
+    setState(() => _selectedChatIds.clear());
+  }
+
+  Future<void> _handleDeleteSelected() async {
+    final count = _selectedChatIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.scaffoldBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Chats?',
+          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Delete the $count selected chats? This action cannot be undone.',
+          style: context.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final chatsState = context.read<ChatsBloc>().state;
+    List<ChatModel> selectedChats = [];
+    if (chatsState is ChatsLoaded) {
+      selectedChats = chatsState.chats.where((c) => _selectedChatIds.contains(c.id)).toList();
+    }
+
+    final selectedIds = Set<String>.from(_selectedChatIds);
+
+    setState(() {
+      _deletedChatIds.addAll(selectedIds);
+      _selectedChatIds.clear();
+    });
+
+    try {
+      for (final chat in selectedChats) {
+        if (chat.isGroup) {
+          final result = await getIt<DashboardRepository>().deleteGroup(chat.id);
+          result.when(
+            success: (_) {},
+            failure: (error, statusCode) {
+              debugPrint('Failed to delete group ${chat.id}: $error');
+            },
+          );
+        } else {
+          final result = await getIt<DashboardRepository>().deleteChat(chat.id);
+          result.when(
+            success: (_) {},
+            failure: (error, statusCode) {
+              debugPrint('Failed to delete chat ${chat.id}: $error');
+            },
+          );
+        }
+      }
+      if (mounted) {
+        context.showSuccessNotification('$count chats deleted');
+        context.read<ChatsBloc>().add(const FetchChats());
+      }
+    } catch (e) {
+      debugPrint('Error deleting chats: $e');
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -101,33 +454,83 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatsTab() {
-    return BlocProvider(
-      create: (context) => getIt<ChatsBloc>()..add(const FetchChats()),
+    return BlocListener<ChatsBloc, ChatsState>(
+      listener: (context, state) {
+        if (state is ChatsLoaded) {
+          setState(() {
+            _hiddenChatIds.clear();
+            // Sync muted state from server
+            final serverMuted = state.chats
+                .where((c) => c.isMuted)
+                .map((c) => c.id)
+                .toSet();
+            _mutedChatIds
+              ..addAll(serverMuted)
+              ..removeWhere((id) =>
+                  state.chats.any((c) => c.id == id) &&
+                  !serverMuted.contains(id));
+          });
+          // Persist in local storage
+          Hive.openBox('muted_chats_box').then((box) {
+            box.put('muted_list', _mutedChatIds.toList());
+          }).catchError((_) {});
+        }
+      },
       child: BlocBuilder<ChatsBloc, ChatsState>(
         builder: (context, state) {
+          debugPrint('DEBUG: DashboardPage ChatsBloc state: ${state.runtimeType}');
+          final isSelectionMode = _selectedChatIds.isNotEmpty;
           return Column(
             children: [
-              _buildHeader(),
-              _buildSearchBar(),
+              isSelectionMode ? _buildSelectionHeader() : _buildHeader(),
+              if (!isSelectionMode) _buildSearchBar(),
               Expanded(
-                child: state.maybeWhen(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (message) => const SizedBox.shrink(),
-                  loaded: (chatList) {
-                    if (chatList.isEmpty) {
-                      return EmptyChatsView(
-                        onChatNowPressed: () {
-                          setState(() {
-                            _currentIndex = 3;
-                          });
-                        },
-                      );
-                    }
-                    return _buildChatList(chatList);
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    context.read<ChatsBloc>().add(const FetchChats());
+                    await Future.delayed(const Duration(seconds: 1));
                   },
-                  orElse: () =>
-                      const Center(child: CircularProgressIndicator()),
+                  child: state.maybeWhen(
+                    loading: () {
+                      debugPrint('DEBUG: DashboardPage showing loading');
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                    error: (message) {
+                      debugPrint('DEBUG: DashboardPage showing error: $message');
+                      return SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: Container(
+                          height: MediaQuery.of(context).size.height * 0.7,
+                          alignment: Alignment.center,
+                          child: Text('Error: $message'),
+                        ),
+                      );
+                    },
+                    loaded: (chatList) {
+                      debugPrint('DEBUG: DashboardPage showing loaded with ${chatList.length} chats');
+                      if (chatList.isEmpty) {
+                        return SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: Container(
+                            height: MediaQuery.of(context).size.height * 0.7,
+                            alignment: Alignment.center,
+                            child: EmptyChatsView(
+                              onChatNowPressed: () {
+                                setState(() {
+                                  _currentIndex = 3;
+                                });
+                              },
+                            ),
+                          ),
+                        );
+                      }
+                      return _buildChatList(chatList);
+                    },
+                    orElse: () {
+                      debugPrint('DEBUG: DashboardPage state orElse: ${state.runtimeType}');
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                  ),
                 ),
               ),
             ],
@@ -237,8 +640,8 @@ class _DashboardPageState extends State<DashboardPage> {
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (dialogCtx) => BlocProvider(
-                    create: (context) => ContactsBloc()..add(const LoadContacts()),
+                  builder: (dialogCtx) => BlocProvider.value(
+                    value: getIt<ContactsBloc>()..add(const LoadContacts()),
                     child: const CreateGroupBottomSheet(),
                   ),
                 );
@@ -279,6 +682,13 @@ class _DashboardPageState extends State<DashboardPage> {
                   });
                 }
                 _loadProfile();
+              } else if (value == 'hidden_chats') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const HiddenChatsPage(),
+                  ),
+                );
               }
             },
             itemBuilder: (context) => [
@@ -305,6 +715,16 @@ class _DashboardPageState extends State<DashboardPage> {
                     Icon(Icons.group_add_rounded, color: context.colors.primary, size: 20),
                     CommonSpaces.w12,
                     Text('Create Group', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'hidden_chats',
+                child: Row(
+                  children: [
+                    Icon(Icons.archive_rounded, color: context.colors.primary, size: 20),
+                    CommonSpaces.w12,
+                    Text('Hidden Chats', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
                   ],
                 ),
               ),
@@ -583,8 +1003,11 @@ class _DashboardPageState extends State<DashboardPage> {
     final visibleChats = chatList
         .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
         .toList();
+    
+    debugPrint('DEBUG: DashboardPage building chat list with ${visibleChats.length} visible chats');
 
     return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(top: 12, bottom: 80),
       itemCount: visibleChats.length,
       itemBuilder: (context, index) {
@@ -611,130 +1034,7 @@ class _DashboardPageState extends State<DashboardPage> {
     required String name,
     required String message,
   }) {
-    return Dismissible(
-      key: ValueKey(chat.id),
-      // Allow swiping both directions
-      direction: DismissDirection.horizontal,
-      // Threshold before the background snaps in
-      dismissThresholds: const {
-        DismissDirection.startToEnd: 0.3,
-        DismissDirection.endToStart: 0.3,
-      },
-      confirmDismiss: (direction) async {
-        if (direction == DismissDirection.endToStart) {
-          // Swipe left → Delete
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: context.colors.scaffoldBackground,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Text(
-                'Delete Chat',
-                style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-              ),
-              content: Text(
-                'Remove this chat from your list?',
-                style: context.bodyMedium,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text('Delete', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-          );
-          if (confirm == true) {
-            setState(() => _deletedChatIds.add(chat.id));
-            return true;
-          }
-          return false;
-        } else {
-          // Swipe right → Hide
-          setState(() => _hiddenChatIds.add(chat.id));
-          return true;
-        }
-      },
-      onDismissed: (_) {},
-      // Background shown when swiping RIGHT (hide action on the left)
-      background: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.textSecondary.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 24),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: context.colors.textSecondary.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.visibility_off_rounded,
-                color: context.colors.textSecondary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              'Hide',
-              style: context.bodyMedium.copyWith(
-                color: context.colors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-      // Secondary background shown when swiping LEFT (delete action on the right)
-      secondaryBackground: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.error.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Text(
-              'Delete',
-              style: context.bodyMedium.copyWith(
-                color: context.colors.error,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: context.colors.error.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.delete_rounded,
-                color: context.colors.error,
-                size: 20,
-              ),
-            ),
-          ],
-        ),
-      ),
-      child: _buildChatTile(chat: chat, name: name, message: message),
-    );
+    return _buildChatTile(chat: chat, name: name, message: message);
   }
 
   Widget _buildChatTile({
@@ -742,28 +1042,51 @@ class _DashboardPageState extends State<DashboardPage> {
     required String name,
     required String message,
   }) {
+    final isSelected = _selectedChatIds.contains(chat.id);
+    final isSelectionMode = _selectedChatIds.isNotEmpty;
+
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatPage(
-              conversationId: chat.id,
-              contactName: name,
-              contactColor: context.colors.primary,
-              isOnline: chat.recipient.isOnline,
-              profilePictureUrl: chat.recipient.profilePictureUrl,
-              recipientId: chat.recipient.id,
-              isGroup: chat.isGroup,
+        if (isSelectionMode) {
+          setState(() {
+            if (isSelected) {
+              _selectedChatIds.remove(chat.id);
+            } else {
+              _selectedChatIds.add(chat.id);
+            }
+          });
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatPage(
+                conversationId: chat.id,
+                contactName: name,
+                contactColor: context.colors.primary,
+                isOnline: chat.recipient.isOnline,
+                profilePictureUrl: chat.recipient.profilePictureUrl,
+                recipientId: chat.recipient.id,
+                isGroup: chat.isGroup,
+              ),
             ),
-          ),
-        );
-        if (mounted) {
-          context.read<ChatsBloc>().add(const FetchChats());
+          );
+          if (mounted) {
+            context.read<ChatsBloc>().add(const FetchChats());
+          }
         }
       },
-      child: Padding(
+      onLongPress: () {
+        setState(() {
+          if (isSelected) {
+            _selectedChatIds.remove(chat.id);
+          } else {
+            _selectedChatIds.add(chat.id);
+          }
+        });
+      },
+      child: Container(
+        color: isSelected ? context.colors.primary.withValues(alpha: 0.08) : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         child: Row(
           children: [
@@ -785,17 +1108,27 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                   CommonSpaces.h4,
-                  Text(
-                    message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.bodyMedium.copyWith(
-                      color: context.colors.textSecondary.withValues(
-                        alpha: 0.7,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          message,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.bodyMedium.copyWith(
+                            color: isSelected 
+                                ? context.colors.primary 
+                                : context.colors.textSecondary.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.normal,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
-                      fontWeight: FontWeight.normal,
-                      fontSize: 14,
-                    ),
+                      if (_mutedChatIds.contains(chat.id)) ...[
+                        CommonSpaces.w8,
+                        Icon(Icons.notifications_off_rounded, size: 16, color: context.colors.textHint),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -842,11 +1175,11 @@ class _DashboardPageState extends State<DashboardPage> {
         showUnselectedLabels: true,
         elevation: 0,
         selectedLabelStyle: context.bodyMedium.copyWith(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelStyle: context.bodyMedium.copyWith(
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.normal,
         ),
         items: [
@@ -881,8 +1214,8 @@ class _DashboardPageState extends State<DashboardPage> {
           CommonSpaces.h6,
           Image.asset(
             iconPath,
-            width: 24,
-            height: 24,
+            width: 20,
+            height: 20,
             color: isActive ? context.colors.primary : context.colors.textHint,
           ),
         ],

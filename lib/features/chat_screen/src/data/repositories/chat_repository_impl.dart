@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 import 'package:http/http.dart' as http;
@@ -15,10 +16,16 @@ class ChatRepositoryImpl implements ChatRepository {
   ChatRepositoryImpl(this._apiService);
 
   @override
-  Future<List<MessageModel>> getMessages(String conversationId) async {
+  Future<List<MessageModel>> getMessages(String conversationId, {int? limit, int? skip}) async {
+    final queryParams = <String, dynamic>{
+      'limit': limit ?? 50,
+    };
+    if (skip != null) {
+      queryParams['skip'] = skip;
+    }
     final result = await _apiService.get<List<MessageModel>>(
       '${CommonEndpoints.getMessages}$conversationId',
-      queryParameters: {'limit': 50},
+      queryParameters: queryParams,
       mapper: (data) {
         if (data is List) {
           return data.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
@@ -127,22 +134,39 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<List<ChatMediaModel>> getConversationMedia(String conversationId) async {
+  Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit}) async {
     final result = await _apiService.get<List<ChatMediaModel>>(
       CommonEndpoints.getConversationMedia(conversationId),
+      queryParameters: {'limit': limit ?? 50},
       mapper: (data) {
+        // Handle direct list response
         if (data is List) {
           return data
               .map((json) => ChatMediaModel.fromJson(Map<String, dynamic>.from(json as Map)))
               .toList();
         }
+        // Handle wrapped/paginated responses: {"items": [...]} / {"media": [...]} / {"data": [...]}
+        if (data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          final listData = map['items'] ?? map['media'] ?? map['data'] ??
+              map['results'] ?? map['content'];
+          if (listData is List) {
+            return listData
+                .map((json) => ChatMediaModel.fromJson(Map<String, dynamic>.from(json as Map)))
+                .toList();
+          }
+        }
+        debugPrint('[ChatRepo] getConversationMedia: unexpected response type: ${data.runtimeType}');
         return [];
       },
     );
 
     return result.when(
       success: (mediaList) => mediaList,
-      failure: (error, statusCode) => throw Exception(error),
+      failure: (error, statusCode) {
+        debugPrint('[ChatRepo] getConversationMedia failed [$statusCode]: $error');
+        return [];        // Return empty instead of throwing so UI shows empty state
+      },
     );
   }
 
@@ -222,6 +246,49 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> updateGroupInfo({required String groupId, String? name, String? description, String? iconUrl}) async {
+    final Map<String, dynamic> data = {};
+    if (name != null) data['name'] = name;
+    if (description != null) data['description'] = description;
+    if (iconUrl != null) data['icon_url'] = iconUrl;
+
+    final result = await _apiService.patch(
+      CommonEndpoints.updateGroup(groupId),
+      data: data,
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> addGroupParticipants({required String groupId, required List<String> userIds}) async {
+    final result = await _apiService.post(
+      CommonEndpoints.addGroupParticipants(groupId),
+      data: {'participant_ids': userIds},
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> removeGroupParticipant({required String groupId, required String userId}) async {
+    final result = await _apiService.delete(
+      CommonEndpoints.removeGroupParticipant(groupId, userId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
   Future<void> pinMessage(String messageId) async {
     final result = await _apiService.post(
       CommonEndpoints.pinMessage(messageId),
@@ -259,6 +326,56 @@ class ChatRepositoryImpl implements ChatRepository {
 
     return result.when(
       success: (messages) => messages,
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<String?> clearChat(String conversationId) async {
+    final result = await _apiService.post<Map<String, dynamic>>(
+      CommonEndpoints.clearChat(conversationId),
+      mapper: (data) => Map<String, dynamic>.from(data as Map),
+    );
+
+    return result.when(
+      success: (data) {
+        // Server returns ConversationResponse; extract clearedAt timestamp
+        return data['clearedAt']?.toString() ??
+            data['cleared_at']?.toString();
+      },
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<List<ThemeColorModel>> getThemes() async {
+    final result = await _apiService.get<List<ThemeColorModel>>(
+      CommonEndpoints.getThemes,
+      mapper: (data) {
+        if (data is List) {
+          return data
+              .map((json) => ThemeColorModel.fromJson(Map<String, dynamic>.from(json as Map)))
+              .toList();
+        }
+        return [];
+      },
+    );
+
+    return result.when(
+      success: (themes) => themes,
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> updateTheme({required String conversationId, String? themeColorId}) async {
+    final result = await _apiService.put(
+      CommonEndpoints.updateTheme(conversationId),
+      data: {'themeColorId': themeColorId},
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
       failure: (error, statusCode) => throw Exception(error),
     );
   }

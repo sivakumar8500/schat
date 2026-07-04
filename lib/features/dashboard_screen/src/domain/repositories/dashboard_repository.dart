@@ -17,4 +17,14 @@ abstract class DashboardRepository {
     String? groupDescription,
     required List<String> participantIds,
   });
+
+  Future<ApiResult<void>> hideChat(String conversationId);
+  Future<ApiResult<void>> unhideChat(String conversationId);
+  Future<ApiResult<List<ChatModel>>> getHiddenChats();
+
+  Future<ApiResult<void>> muteChat(String conversationId);
+  Future<ApiResult<void>> unmuteChat(String conversationId);
+
+  Future<ApiResult<void>> deleteChat(String conversationId);
+  Future<ApiResult<void>> deleteGroup(String groupId);
 }

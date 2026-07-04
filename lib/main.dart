@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,6 +8,7 @@ import 'package:schat/common/widgets/internet_connection_popup_widget.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_event.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:schat/utils/common_fonts.dart';
@@ -19,8 +18,12 @@ import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
-import 'package:schat/utils/common_notifications.dart';
 import 'injection.dart';
+
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
@@ -73,14 +76,30 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   StreamSubscription? _screenshotSubscription;
   StreamSubscription? _recordSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _setupSecurityListeners();
+  }
+
+  /// Reconnect the WebSocket when the app comes back to the foreground.
+  /// This handles the case where the user accepts a call via the CallKit
+  /// notification and the app resumes from a background/killed state.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final repo = getIt<ChatSocketRepository>();
+      if (!repo.isConnected) {
+        debugPrint('MyApp: App resumed — reconnecting socket...');
+        repo.connect();
+      }
+    }
   }
 
   void _setupSecurityListeners() {
@@ -89,6 +108,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _screenshotSubscription?.cancel();
     _recordSubscription?.cancel();
     super.dispose();
@@ -110,6 +130,12 @@ class _MyAppState extends State<MyApp> {
             ),
             BlocProvider<CallWebRtcBloc>(
               create: (context) => getIt<CallWebRtcBloc>(),
+            ),
+            BlocProvider.value(
+              value: getIt<ChatsBloc>()..add(const FetchChats()),
+            ),
+            BlocProvider.value(
+              value: getIt<ContactsBloc>()..add(const LoadContacts()),
             ),
           ],
           child: MaterialApp(

@@ -29,6 +29,6 @@ abstract class UserModel with _$UserModel {
 
 Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   final normalizedJson = Map<String, dynamic>.from(json);
-  normalizedJson['_id'] = (json['id'] ?? json['_id'])?.toString() ?? '';
+  normalizedJson['_id'] = (json['id'] ?? json['_id'] ?? json['user_id'])?.toString() ?? '';
   return normalizedJson;
 }

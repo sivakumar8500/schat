@@ -17,6 +17,10 @@ abstract class ChatModel with _$ChatModel {
     required RecipientModel recipient,
     @JsonKey(name: 'last_message') LastMessageModel? lastMessage,
     @JsonKey(name: 'unread_count') @Default(0) int unreadCount,
+    @JsonKey(name: 'isHidden') @Default(false) bool isHidden,
+    @JsonKey(name: 'isHided') @Default(false) bool isHided,
+    @JsonKey(name: 'is_muted') @Default(false) bool isMuted,
+    @JsonKey(name: 'is_favorite') @Default(false) bool isFavorite,
   }) = _ChatModel;
 
   factory ChatModel.fromJson(Map<String, dynamic> json) => _$ChatModelFromJson(_normalizeChatJson(json));

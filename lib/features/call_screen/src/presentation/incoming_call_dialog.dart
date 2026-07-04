@@ -1,11 +1,14 @@
 // mason make widget --name incoming_call_dialog
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -148,27 +151,57 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     Navigator.of(context).pop();
   }
 
+  /// Called when the caller cancels before the callee answers.
+  void _onCallerHungUp(BuildContext context) {
+    // Stop ringtone
+    context.read<CallWebRtcBloc>(); // ensure bloc is available
+    // Dismiss the CallKit / system notification if any
+    FlutterCallkitIncoming.endAllCalls();
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return BlocListener<CallWebRtcBloc, CallWebRtcState>(
+      listenWhen: (previous, current) {
+        // Dismiss if call ended / errored while we are still ringing
+        return current is CallEnded ||
+            current is CallError ||
+            current is CallIdle;
+      },
+      listener: (context, state) {
+        _onCallerHungUp(context);
+      },
+      child: Scaffold(
       backgroundColor: Colors.transparent,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF1A1A2E),
-              const Color(0xFF16213E),
-              const Color(0xFF0F3460),
-            ],
+      body: Stack(
+        children: [
+          // Background
+          Positioned.fill(
+            child: (widget.profilePictureUrl != null &&
+                    widget.profilePictureUrl!.isNotEmpty)
+                ? Image.network(
+                    widget.profilePictureUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => _buildFallbackBackground(),
+                  )
+                : _buildFallbackBackground(),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
+          // Blur and overlay
+          Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+          ),
+          // Content
+          SafeArea(
+            child: Column(
+              children: [
               CommonSpaces.h60,
 
               // Call type label
@@ -224,7 +257,7 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
 
               const Spacer(),
 
-              // Avatar with ripple rings
+              // Calling icon with ripple rings
               SizedBox(
                 width: 280,
                 height: 280,
@@ -246,55 +279,31 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                       animation: _ring3,
                       builder: (_, _) => _buildRing(_ring3.value),
                     ),
-                    // Avatar
+                    // Ringing Icon
                     ScaleTransition(
                       scale: _pulseAnimation,
                       child: Container(
-                        width: 140,
-                        height: 140,
+                        width: 130,
+                        height: 130,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: widget.callerColor.withValues(alpha: 0.25),
+                          color: Colors.white.withValues(alpha: 0.12),
                           border: Border.all(
-                              color: widget.callerColor.withValues(alpha: 0.6),
-                              width: 3),
+                              color: Colors.white.withValues(alpha: 0.25),
+                              width: 2),
                           boxShadow: [
                             BoxShadow(
-                              color: widget.callerColor.withValues(alpha: 0.4),
-                              blurRadius: 30,
-                              spreadRadius: 5,
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 20,
                             ),
                           ],
                         ),
                         child: Center(
-                          child: (widget.profilePictureUrl != null &&
-                                  widget.profilePictureUrl!.isNotEmpty)
-                              ? ClipOval(
-                                  child: Image.network(
-                                    widget.profilePictureUrl!,
-                                    width: 140,
-                                    height: 140,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Text(
-                                      widget.callerName
-                                          .substring(0, 1)
-                                          .toUpperCase(),
-                                      style: TextStyle(
-                                        fontSize: 60,
-                                        fontWeight: FontWeight.bold,
-                                        color: widget.callerColor,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : Text(
-                                  widget.callerName.substring(0, 1).toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 60,
-                                    fontWeight: FontWeight.bold,
-                                    color: widget.callerColor,
-                                  ),
-                                ),
+                          child: Icon(
+                            widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
+                            color: Colors.white,
+                            size: 48,
+                          ),
                         ),
                       ),
                     ),
@@ -334,7 +343,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
             ],
           ),
         ),
-      ),
+      ],
+    ),
+    ),
     );
   }
 
@@ -347,7 +358,7 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
-            color: widget.callerColor.withValues(alpha: 0.5),
+            color: Colors.white.withValues(alpha: 0.25),
             width: 2,
           ),
         ),
@@ -391,6 +402,22 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackBackground() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF1A1A2E),
+            Color(0xFF16213E),
+            Color(0xFF0F3460),
+          ],
+        ),
       ),
     );
   }

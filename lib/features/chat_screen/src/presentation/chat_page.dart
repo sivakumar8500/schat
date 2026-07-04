@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -34,6 +33,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_b
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
+import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
 import 'group_info_page.dart';
@@ -42,6 +42,7 @@ import 'package:schat/utils/permission_helper.dart';
 import '../../../call_screen/call_screen.dart';
 import '../domain/models/message_model.dart';
 import '../domain/models/chat_media_model.dart';
+import '../domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
@@ -402,9 +403,9 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          CommonSpaces.w10,
           Icon(CommonIcons.mic, color: context.colors.error, size: 20),
-          const SizedBox(width: 8),
+          CommonSpaces.w8,
           Text(
             _formatRecordingDuration(_recordDurationSeconds),
             style: context.bodyMedium.copyWith(
@@ -452,7 +453,7 @@ class _ChatPageState extends State<ChatPage> {
                   child: Icon(CommonIcons.close, color: context.colors.error, size: 18),
                 ),
               ),
-              const SizedBox(width: 12),
+              CommonSpaces.w12,
               // Play/Pause + waveform + duration
               Expanded(
                 child: GestureDetector(
@@ -473,12 +474,12 @@ class _ChatPageState extends State<ChatPage> {
                         // Play / Pause icon
                         Icon(
                           _isPlayingPreview
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
+                              ? CommonIcons.pause
+                              : CommonIcons.playArrowRounded,
                           color: context.colors.primary,
                           size: 22,
                         ),
-                        const SizedBox(width: 8),
+                        CommonSpaces.w8,
                         // Waveform bars (progress-tinted)
                         Expanded(
                           child: LayoutBuilder(builder: (context, constraints) {
@@ -509,7 +510,7 @@ class _ChatPageState extends State<ChatPage> {
                             );
                           }),
                         ),
-                        const SizedBox(width: 8),
+                        CommonSpaces.w8,
                         Text(
                           _isPlayingPreview
                               ? _formatRecordingDuration(_previewPositionSecs)
@@ -524,7 +525,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              CommonSpaces.w12,
               // Send button
               GestureDetector(
                 onTap: _sendRecordedVoice,
@@ -723,7 +724,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showMessageMenu(BuildContext context, MessageModel msg, bool isMe, Offset? tapPosition) async {
+  void _showMessageMenu(BuildContext context, MessageModel msg, bool isMe, Offset? tapPosition, bool isRecipientOnline) async {
     final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
     final position = RelativeRect.fromRect(
       Rect.fromLTWH(
@@ -751,6 +752,7 @@ class _ChatPageState extends State<ChatPage> {
       ]);
     } else {
       menuItems.addAll([
+        _menuPopupItem(context, 'Reply', CommonIcons.reply),
         _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
         _menuPopupItem(context, 'Forward', CommonIcons.forward),
         _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
@@ -795,7 +797,7 @@ class _ChatPageState extends State<ChatPage> {
     } else if (result == 'Forward') {
       _showForwardBottomSheet(context, msg);
     } else if (result == 'Info') {
-      _showMessageInfo(context, msg);
+      _showMessageInfo(context, msg, isRecipientOnline);
     } else if (result == 'Select') {
       setState(() {
         _selectedMessageIds.add(msg.id);
@@ -836,11 +838,13 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showMessageInfo(BuildContext context, MessageModel msg) {
+  void _showMessageInfo(BuildContext context, MessageModel msg, bool isRecipientOnline) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
+        final isDelivered = msg.isRead || msg.isDelivered || widget.isGroup || isRecipientOnline;
+        
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           decoration: BoxDecoration(
@@ -906,8 +910,31 @@ class _ChatPageState extends State<ChatPage> {
                   Row(
                     children: [
                       Icon(
-                        msg.isRead ? CommonIcons.doneAll : CommonIcons.done,
-                        color: msg.isRead ? context.colors.primary : context.colors.textSecondary,
+                        isDelivered ? CommonIcons.doneAll : CommonIcons.done,
+                        color: isDelivered ? context.colors.primary : context.colors.textSecondary,
+                        size: 20,
+                      ),
+                      CommonSpaces.w12,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Delivered', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
+                            Text(
+                              isDelivered ? 'Delivered' : 'Pending delivery',
+                              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  CommonSpaces.h16,
+                  Row(
+                    children: [
+                      Icon(
+                        CommonIcons.doneAll,
+                        color: msg.isRead ? const Color(0xFF25D366) : context.colors.textSecondary,
                         size: 20,
                       ),
                       CommonSpaces.w12,
@@ -1506,7 +1533,7 @@ class _ChatPageState extends State<ChatPage> {
         filePath: path,
         fileName: name,
         mediaType: 'VOICE_NOTE',
-        mimeType: 'audio/m4a',
+        mimeType: 'audio/mpeg',
         fileSizeBytes: size,
         fileBytes: bytes,
       );
@@ -1536,7 +1563,7 @@ class _ChatPageState extends State<ChatPage> {
           fileKey: fileKey,
           fileName: name,
           fileSize: size,
-          mimeType: 'audio/m4a',
+          mimeType: 'audio/mpeg',
           duration: durationSecs.toDouble(),
           security: {
             'allowShare': allowShare,
@@ -2145,7 +2172,7 @@ class _ChatPageState extends State<ChatPage> {
               size: 16,
               color: isActive ? context.colors.primary : context.colors.textHint,
             ),
-            const SizedBox(width: 6),
+            CommonSpaces.w6,
             Text(
               label,
               style: context.bodySmall.copyWith(
@@ -2182,8 +2209,20 @@ class _ChatPageState extends State<ChatPage> {
           if (state is ChatError) {
             context.showErrorNotification(state.errorMessage);
           } else if (state is ChatDeleted) {
-            context.showInfoNotification('This conversation has been deleted');
-            Navigator.of(context).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'This conversation has been deleted',
+                  style: context.bodyMedium.copyWith(color: context.colors.pureWhite),
+                ),
+                backgroundColor: context.colors.primary,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+            if (ModalRoute.of(context)?.isCurrent == true) {
+              Navigator.of(context).pop();
+            }
           } else if (state is ChatLoaded && state.notificationMessage != null) {
             context.showInfoNotification(state.notificationMessage!);
           }
@@ -2199,117 +2238,198 @@ class _ChatPageState extends State<ChatPage> {
             return true;
           }).toList();
           final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
-          final customBgColor = state is ChatLoaded ? state.customBgColor : null;
+          // Use server API theme color first, then fall back to local customBgColor
+          final apiThemeColor = state is ChatLoaded ? state.themeColor?.toColor() : null;
+          final customBgColor = apiThemeColor ?? (state is ChatLoaded ? state.customBgColor : null);
 
           return Scaffold(
             backgroundColor: customBgColor ?? context.colors.scaffoldBackground,
             appBar: _buildAppBar(context, state),
-            body: Column(
-              children: [
-                SafeArea(
-                  bottom: false,
-                  child: _buildPinnedMessageBanner(state),
-                ),
-                Expanded(
-                  child: isLoading
-                      ? Center(child: CircularProgressIndicator(color: context.colors.primary))
-                      : displayedMessages.isEmpty 
-                          ? _buildEmptyScreen(context)
-                          : ListView.builder(
-                              controller: _scrollController,
-                              reverse: true,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              itemCount: displayedMessages.length + (isOtherUserTyping ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (isOtherUserTyping && index == 0) {
-                                  return _buildTypingIndicator();
-                                }
-
-                                final adjustedIndex = isOtherUserTyping ? index - 1 : index;
-                                
-                                // Since reverse is true, index 0 is the bottom-most item.
-                                // Assuming the 'displayedMessages' list is ordered oldest-to-newest,
-                                // we access it from the end.
-                                final msg = displayedMessages[displayedMessages.length - 1 - adjustedIndex];
-                                final isMe = state is ChatLoaded && msg.senderId == state.myId;
-                                
-                                String? replySenderName;
-                                String? replyBody;
-                                if (msg.isReply && msg.replyMessageId != null) {
-                                  try {
-                                    final parent = messages.firstWhere((m) => m.id == msg.replyMessageId);
-                                    replySenderName = (state is ChatLoaded && parent.senderId == state.myId)
-                                        ? 'You'
-                                        : widget.contactName;
-                                    replyBody = _getReplyMessageBody(parent);
-                                  } catch (_) {
-                                    replySenderName = isMe ? widget.contactName : 'You';
-                                    replyBody = msg.replyMessageBody;
-                                  }
-                                }
-
-                                return GestureDetector(
-                                  onTapDown: (details) {
-                                    _tapPosition = details.globalPosition;
-                                  },
-                                  onLongPress: () {
-                                    if (msg.isDeleted) return;
-                                    if (_selectedMessageIds.isEmpty) {
-                                      _showMessageMenu(context, msg, isMe, _tapPosition);
-                                    }
-                                  },
-                                  onTap: () {
-                                    if (msg.isDeleted) return;
-                                    if (_selectedMessageIds.isNotEmpty) {
-                                      setState(() {
-                                        if (_selectedMessageIds.contains(msg.id)) {
-                                          _selectedMessageIds.remove(msg.id);
-                                        } else {
-                                          _selectedMessageIds.add(msg.id);
-                                        }
-                                      });
-                                    }
-                                  },
-                                  child: MessageBubble(
-                                    messageId: msg.id,
-                                    conversationId: widget.conversationId,
-                                    message: msg.content,
-                                    time: _formatTime(msg.createdAt),
-                                    isMe: isMe,
-                                    isRead: msg.isRead,
-                                    isDeleted: msg.isDeleted,
-                                    isGroup: widget.isGroup,
-                                    type: msg.mediaType ?? 'text',
-                                    attachmentPath: msg.mediaUrl,
-                                    attachmentName: msg.attachmentName ?? (msg.content.isNotEmpty ? msg.content : 'File'),
-                                    attachmentBytes: msg.attachmentBytes,
-                                    isReply: msg.isReply,
-                                    replyMessageBody: replyBody ?? msg.replyMessageBody,
-                                    replyMessageSenderName: replySenderName,
-                                    isEdited: msg.isEdited,
-                                    isPinned: msg.isPinned,
-                                    isSelected: _selectedMessageIds.contains(msg.id),
-                                    isUploading: msg.isUploading,
-                                    isFailed: msg.isFailed,
-                                    onResendPressed: () => _resendMessage(msg),
-                                    allowShare: msg.allowShare,
-                                    allowDownload: msg.allowDownload,
-                                    allowView: msg.allowView,
-                                    onSharePressed: () => _showForwardBottomSheet(context, msg),
-                                    fileSize: msg.fileSize,
-                                  ),
-                                );
-                              },
-                            ),
-                ),
-                Container(
-                  color: Colors.transparent,
-                  child: SafeArea(
-                    top: false,
-                    child: _buildBottomSection(context),
+            body: Container(
+              decoration: BoxDecoration(
+                image: customBgColor != null
+                    ? null
+                    : DecorationImage(
+                        image: const AssetImage('assets/images/chat_bg.png'),
+                        fit: BoxFit.cover,
+                        opacity: context.colors.isDark ? 0.05 : 0.08,
+                        colorFilter: context.colors.isDark
+                            ? const ColorFilter.matrix(<double>[
+                                -1.0, 0.0, 0.0, 0.0, 255.0, // red
+                                0.0, -1.0, 0.0, 0.0, 255.0, // green
+                                0.0, 0.0, -1.0, 0.0, 255.0, // blue
+                                0.0, 0.0, 0.0, 1.0, 0.0,   // alpha
+                              ])
+                            : null,
+                      ),
+              ),
+              child: Column(
+                children: [
+                  SafeArea(
+                    bottom: false,
+                    child: _buildPinnedMessageBanner(state),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (ScrollNotification notification) {
+                        if (notification is ScrollUpdateNotification) {
+                          if (_scrollController.hasClients) {
+                            final pixels = _scrollController.position.pixels;
+                            final maxScroll = _scrollController.position.maxScrollExtent;
+                            if (pixels >= maxScroll - 200) {
+                              _chatBloc.add(LoadMoreMessagesEvent(conversationId: widget.conversationId));
+                            }
+                          }
+                        }
+                        return false;
+                      },
+                      child: isLoading
+                          ? Center(child: CircularProgressIndicator(color: context.colors.primary))
+                          : displayedMessages.isEmpty 
+                              ? SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                                  controller: _scrollController,
+                                  child: Container(
+                                    height: MediaQuery.of(context).size.height * 0.7,
+                                    alignment: Alignment.center,
+                                    child: _buildEmptyScreen(context),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  controller: _scrollController,
+                                  reverse: true,
+                                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                itemCount: displayedMessages.length + (isOtherUserTyping ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (isOtherUserTyping && index == 0) {
+                                    return _buildTypingIndicator();
+                                  }
+
+                                  final adjustedIndex = isOtherUserTyping ? index - 1 : index;
+                                  
+                                  // Since reverse is true, index 0 is the bottom-most item.
+                                  // Assuming the 'displayedMessages' list is ordered oldest-to-newest,
+                                  // we access it from the end.
+                                  final msg = displayedMessages[displayedMessages.length - 1 - adjustedIndex];
+                                  final isMe = state is ChatLoaded && msg.senderId == state.myId;
+                                  
+                                  String? replySenderName;
+                                  String? replyBody;
+                                  if (msg.isReply && msg.replyMessageId != null) {
+                                    try {
+                                      final parent = messages.firstWhere((m) => m.id == msg.replyMessageId);
+                                      replySenderName = (state is ChatLoaded && parent.senderId == state.myId)
+                                          ? 'You'
+                                          : widget.contactName;
+                                      replyBody = _getReplyMessageBody(parent);
+                                    } catch (_) {
+                                      replySenderName = isMe ? widget.contactName : 'You';
+                                      replyBody = msg.replyMessageBody;
+                                    }
+                                  }
+
+                                  // --- Date separator logic ---
+                                  // In a reversed list, the message OLDER than current is at adjustedIndex + 1.
+                                  final msgDate = _parseMessageDate(msg.createdAt);
+                                  final msgDay = msgDate != null
+                                      ? DateTime(msgDate.year, msgDate.month, msgDate.day)
+                                      : null;
+
+                                  bool showDateSeparator = false;
+                                  if (msgDay != null) {
+                                    final olderIndex = adjustedIndex + 1;
+                                    if (olderIndex < displayedMessages.length) {
+                                      final olderMsg = displayedMessages[displayedMessages.length - 1 - olderIndex];
+                                      final olderDate = _parseMessageDate(olderMsg.createdAt);
+                                      if (olderDate != null) {
+                                        final olderDay = DateTime(olderDate.year, olderDate.month, olderDate.day);
+                                        showDateSeparator = msgDay != olderDay;
+                                      }
+                                    } else {
+                                      // This is the oldest visible message — always show its date.
+                                      showDateSeparator = true;
+                                    }
+                                  }
+
+                                  final bubble = GestureDetector(
+                                    onTapDown: (details) {
+                                      _tapPosition = details.globalPosition;
+                                    },
+                                    onLongPress: () {
+                                      if (msg.isDeleted) return;
+                                      if (_selectedMessageIds.isEmpty) {
+                                        _showMessageMenu(context, msg, isMe, _tapPosition, state is ChatLoaded ? state.isRecipientOnline : false);
+                                      }
+                                    },
+                                    onTap: () {
+                                      if (msg.isDeleted) return;
+                                      if (_selectedMessageIds.isNotEmpty) {
+                                        setState(() {
+                                          if (_selectedMessageIds.contains(msg.id)) {
+                                            _selectedMessageIds.remove(msg.id);
+                                          } else {
+                                            _selectedMessageIds.add(msg.id);
+                                          }
+                                        });
+                                      }
+                                    },
+                                    child: MessageBubble(
+                                      messageId: msg.id,
+                                      conversationId: widget.conversationId,
+                                      message: msg.content,
+                                      time: _formatTime(msg.isEdited && msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt),
+                                      isMe: isMe,
+                                      isRead: msg.isRead,
+                                      isDelivered: msg.isDelivered,
+                                      isDeleted: msg.isDeleted,
+                                      isGroup: widget.isGroup,
+                                      type: msg.mediaType ?? 'text',
+                                      attachmentPath: msg.mediaUrl,
+                                      attachmentName: msg.attachmentName ?? (msg.content.isNotEmpty ? msg.content : 'File'),
+                                      attachmentBytes: msg.attachmentBytes,
+                                      isReply: msg.isReply,
+                                      replyMessageBody: replyBody ?? msg.replyMessageBody,
+                                      replyMessageSenderName: replySenderName,
+                                      isEdited: msg.isEdited,
+                                      isPinned: msg.isPinned,
+                                      isSelected: _selectedMessageIds.contains(msg.id),
+                                      isUploading: msg.isUploading,
+                                      isFailed: msg.isFailed,
+                                      onResendPressed: () => _resendMessage(msg),
+                                      allowShare: msg.allowShare,
+                                      allowDownload: msg.allowDownload,
+                                      allowView: msg.allowView,
+                                      onSharePressed: () => _showForwardBottomSheet(context, msg),
+                                      fileSize: msg.fileSize,
+                                      callMeta: msg.callMeta,
+                                      isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
+                                    ),
+                                  );
+
+                                  if (showDateSeparator && msgDay != null) {
+                                    return Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _buildDateSeparator(_getDateLabel(msgDay)),
+                                        bubble,
+                                      ],
+                                    );
+                                  }
+                                  return bubble;
+                                },
+                              ),
+                    ),
+                  ),
+                  Container(
+                    color: Colors.transparent,
+                    child: SafeArea(
+                      top: false,
+                      child: _buildBottomSection(context),
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -2357,6 +2477,76 @@ class _ChatPageState extends State<ChatPage> {
             'Send a message to start the conversation',
             style: context.bodySmall.copyWith(color: context.colors.textHint),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Parses a createdAt string (unix timestamp or ISO 8601) into a local DateTime.
+  DateTime? _parseMessageDate(String createdAt) {
+    try {
+      final parsedInt = int.tryParse(createdAt);
+      if (parsedInt != null) {
+        if (createdAt.length <= 10) {
+          return DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          return DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        return DateTime.parse(createdAt).toLocal();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns "Today", "Yesterday", or a formatted date string for a given day.
+  String _getDateLabel(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final target = DateTime(day.year, day.month, day.day);
+
+    if (target == today) return 'Today';
+    if (target == yesterday) return 'Yesterday';
+
+    // Format: "Mon, 2 Jun 2025"
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final weekday = weekdays[day.weekday - 1];
+    final month = months[day.month - 1];
+    return '$weekday, ${day.day} $month ${day.year}';
+  }
+
+  /// Builds a centered date chip separator, e.g. "Today", "Yesterday", "Mon, 2 Jun 2025".
+  Widget _buildDateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(indent: 16, endIndent: 8)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: context.colors.lightBackground,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: context.colors.border,
+                width: 0.5,
+              ),
+            ),
+            child: Text(
+              label,
+              style: context.bodySmall.copyWith(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider(indent: 8, endIndent: 16)),
         ],
       ),
     );
@@ -2495,10 +2685,13 @@ class _ChatPageState extends State<ChatPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => GroupInfoPage(
-                  conversationId: widget.conversationId,
-                  groupName: widget.contactName,
-                  groupColor: widget.contactColor,
+                builder: (context) => BlocProvider.value(
+                  value: _chatBloc,
+                  child: GroupInfoPage(
+                    conversationId: widget.conversationId,
+                    groupName: widget.contactName,
+                    groupColor: widget.contactColor,
+                  ),
                 ),
               ),
             );
@@ -2755,8 +2948,8 @@ class _ChatPageState extends State<ChatPage> {
                 context: context,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
-                builder: (dialogCtx) => BlocProvider(
-                  create: (context) => ContactsBloc()..add(const LoadContacts()),
+                builder: (dialogCtx) => BlocProvider.value(
+                  value: getIt<ContactsBloc>()..add(const LoadContacts()),
                   child: const CreateGroupBottomSheet(),
                 ),
               );
@@ -2776,6 +2969,37 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 );
               }
+            } else if (value == 'clear_chat') {
+              // Show confirmation dialog before clearing
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: Theme.of(ctx).colorScheme.surface,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: const Text('Clear chat?', style: TextStyle(fontWeight: FontWeight.bold)),
+                  content: const Text(
+                    'This will clear all messages in this chat for you only. This action cannot be undone.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Clear'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                _chatBloc.add(ClearChatEvent(conversationId: widget.conversationId));
+              }
             }
           },
           itemBuilder: (BuildContext context) {
@@ -2790,6 +3014,7 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('favourite', isFav ? Icons.star_rounded : Icons.star_outline_rounded, isFav ? 'Remove from favorites' : 'Add to favorites'),
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
                 _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
+                _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
               ];
             } else {
               return [
@@ -2800,6 +3025,7 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
                 _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
+                _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
               ];
             }
           },
@@ -2934,16 +3160,16 @@ class _ChatPageState extends State<ChatPage> {
                       children: [
                         IconButton(
                           icon: Icon(CommonIcons.camera, color: context.colors.primary, size: 24),
-                          onPressed: () => _pickImage(ImageSource.camera),
-                        ),
+                          onPressed: () => _showCameraOptions(context),
+                        )
                       ],
                     ),
-                  const SizedBox(width: 4),
+                  CommonSpaces.w4,
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          CommonSpaces.w8,
           if (!_isTyping)
             _buildMicButton(),
           if (_isTyping)
@@ -2983,7 +3209,7 @@ class _ChatPageState extends State<ChatPage> {
         color: const Color(0xFF7F56D9),
         onTap: () {
           setState(() => _showAttachmentGrid = false);
-          _pickFile(FileType.custom, allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt']);
+          _pickFile(FileType.any);
         },
       ),
       _AttachmentGridItem(
@@ -3164,7 +3390,7 @@ class _ChatPageState extends State<ChatPage> {
       case 'wav':
         return 'audio/wav';
       case 'm4a':
-        return 'audio/m4a';
+        return 'audio/mpeg';
       case 'mp4':
         return 'video/mp4';
       case 'webm':
@@ -3198,6 +3424,54 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _handleContactSelected(String name, String phone) async {
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+
+    // Set initial preview status assuming non-schat first (immediate UI feedback)
+    setState(() {
+      _selectedAttachmentPath = 'contact:$phone';
+      _selectedAttachmentName = '$name · $phone';
+      _selectedAttachmentType = 'contact';
+      _selectedAttachmentBytes = null;
+      _selectedAttachmentSize = 0;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
+      _attachmentAllowView = true;
+      _isTyping = true;
+    });
+
+    if (cleanPhone.isEmpty) return;
+
+    try {
+      // 1. Check local cache
+      final cached = await getIt<ContactsRepository>().getCachedContacts();
+      final matched = cached.firstWhereOrNull((u) => u.phoneNumber.replaceAll(RegExp(r'\D'), '') == cleanPhone);
+      if (matched != null) {
+        if (mounted) {
+          setState(() {
+            _selectedAttachmentPath = 'contact:$phone:${matched.id}';
+          });
+        }
+        return;
+      }
+
+      // 2. Check server
+      final result = await getIt<ContactsRepository>().syncContacts([phone]);
+      result.when(
+        success: (users) {
+          if (users.isNotEmpty && mounted) {
+            setState(() {
+              _selectedAttachmentPath = 'contact:$phone:${users.first.id}';
+            });
+          }
+        },
+        failure: (_, __) {},
+      );
+    } catch (e) {
+      debugPrint('Error checking contact: $e');
+    }
+  }
+
   Future<void> _pickImage(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
@@ -3221,6 +3495,148 @@ class _ChatPageState extends State<ChatPage> {
       _attachmentAllowView = true;
       _isTyping = true;
     });
+  }
+
+  /// Shows a bottom sheet with Photo / Video options when the camera icon is tapped.
+  void _showCameraOptions(BuildContext ctx) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ctx.colors.lightBackground,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle bar
+                Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: ctx.colors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text(
+                    'Camera',
+                    style: ctx.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: ctx.colors.textPrimary,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                // Photo option
+                ListTile(
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9E00FF).withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.photo_camera_rounded, color: Color(0xFF9E00FF), size: 22),
+                  ),
+                  title: Text(
+                    'Take Photo',
+                    style: ctx.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: ctx.colors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Capture a photo and send',
+                    style: ctx.bodySmall.copyWith(color: ctx.colors.textHint),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                // Video option
+                ListTile(
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF04438).withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.videocam_rounded, color: Color(0xFFF04438), size: 22),
+                  ),
+                  title: Text(
+                    'Record Video',
+                    style: ctx.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: ctx.colors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Record a video and send',
+                    style: ctx.bodySmall.copyWith(color: ctx.colors.textHint),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickVideo(ImageSource.camera);
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Records/picks a video from [source] and sets it as a pending attachment.
+  Future<void> _pickVideo(ImageSource source) async {
+    if (kIsWeb) {
+      // Web: fall back to file picker for video
+      setState(() => _showAttachmentGrid = false);
+      _pickFile(FileType.video);
+      return;
+    }
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? video = await picker.pickVideo(
+        source: source,
+        maxDuration: const Duration(minutes: 5),
+      );
+      if (video == null || !mounted) return;
+
+      final String name = video.name.isEmpty ? 'video_${DateTime.now().millisecondsSinceEpoch}.mp4' : video.name;
+      final int size = await video.length();
+      if (!mounted) return;
+
+      final Uint8List bytes = await video.readAsBytes();
+      if (!mounted) return;
+
+      setState(() {
+        _selectedAttachmentPath = video.path;
+        _selectedAttachmentBytes = bytes;
+        _selectedAttachmentName = name;
+        _selectedAttachmentType = 'video';
+        _selectedAttachmentSize = size;
+        _attachmentAllowShare = true;
+        _attachmentAllowDownload = true;
+        _attachmentAllowView = true;
+        _isTyping = true;
+      });
+    } catch (e) {
+      debugPrint('Video picker error: $e');
+      if (mounted) {
+        context.showErrorNotification('Failed to record video: $e');
+      }
+    }
   }
 
   Future<void> _pickFile(FileType type, {List<String>? allowedExtensions}) async {
@@ -3297,7 +3713,7 @@ class _ChatPageState extends State<ChatPage> {
                 Text('Share Location', style: ctx.titleMedium),
               ],
             ),
-            const SizedBox(height: CommonSizes.p20),
+            CommonSpaces.h20,
             // Map placeholder
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
@@ -3324,7 +3740,7 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ),
             ),
-            const SizedBox(height: CommonSizes.p16),
+            CommonSpaces.h16,
             Row(
               children: [
                 Expanded(
@@ -3517,17 +3933,7 @@ class _ChatPageState extends State<ChatPage> {
                                 ),
                                 onTap: () {
                                   Navigator.pop(ctx);
-                                  setState(() {
-                                    _selectedAttachmentPath = 'contact:$phone';
-                                    _selectedAttachmentName = '$name · $phone';
-                                    _selectedAttachmentType = 'contact';
-                                    _selectedAttachmentBytes = null;
-                                    _selectedAttachmentSize = 0;
-                                    _attachmentAllowShare = true;
-                                    _attachmentAllowDownload = true;
-                                    _attachmentAllowView = true;
-                                    _isTyping = true;
-                                  });
+                                  _handleContactSelected(name, phone);
                                 },
                               );
                             },
@@ -3645,161 +4051,181 @@ class _ChatPageState extends State<ChatPage> {
       case 'image': return 'image/jpeg';
       case 'video': return 'video/mp4';
       case 'audio':
-      case 'voice_note': return 'audio/m4a';
+      case 'voice_note': return 'audio/mpeg';
       default: return 'application/octet-stream';
     }
   }
 
-  List<Color> _generateHarmoniousColors(bool isDark) {
-    final random = Random();
-    return List.generate(10, (index) {
-      final double hue = random.nextDouble() * 360;
-      final double saturation = 0.4 + random.nextDouble() * 0.25; // 40% - 65%
-      final double lightness = isDark
-          ? 0.12 + random.nextDouble() * 0.08 // 12% - 20% for dark background readability
-          : 0.88 + random.nextDouble() * 0.06; // 88% - 94% for light background readability
-      return HSLColor.fromAHSL(1.0, hue, saturation, lightness).toColor();
-    });
-  }
+
 
   void _showBackgroundColorBottomSheet(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorsList = _generateHarmoniousColors(isDark);
-    
+    // Fire LoadThemesEvent to populate themes from server
+    _chatBloc.add(const LoadThemesEvent());
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (sheetCtx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: context.colors.scaffoldBackground,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 20),
-                          decoration: BoxDecoration(
-                            color: context.colors.textHint.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Choose Wallpaper',
-                            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(sheetCtx);
-                              // Reset to default
-                              _chatBloc.add(ChangeBackgroundColorEvent(
-                                color: context.colors.scaffoldBackground,
-                                conversationId: widget.conversationId,
-                              ));
-                              // Notify other user to reset as well
-                              context.read<ChatSocketBloc>().add(SendMessage(
-                                conversationId: widget.conversationId,
-                                type: 'change_background_color',
-                                text: context.colors.scaffoldBackground.toARGB32().toString(),
-                              ));
-                            },
-                            child: Text(
-                              'Reset',
-                              style: TextStyle(
-                                color: context.colors.primary,
-                                fontWeight: FontWeight.bold,
-                              ),
+        return BlocProvider.value(
+          value: _chatBloc,
+          child: BlocBuilder<ChatBloc, ChatState>(
+            builder: (context, state) {
+              final themes = state is ChatLoaded ? state.availableThemes : <ThemeColorModel>[];
+              final selectedThemeId = state is ChatLoaded ? state.themeColor?.id : null;
+              final isLoading = themes.isEmpty;
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: context.colors.scaffoldBackground,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Drag handle
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: 20),
+                            decoration: BoxDecoration(
+                              color: context.colors.textHint.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                        ],
-                      ),
-                      CommonSpaces.h8,
-                      Text(
-                        'Select a custom background color to personalize this chat.',
-                        style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-                      ),
-                      CommonSpaces.h20,
-                      // Grid of 10 colors
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 5,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
                         ),
-                        itemCount: colorsList.length,
-                        itemBuilder: (context, index) {
-                          final color = colorsList[index];
-                          final isSelected = _chatBloc.state is ChatLoaded &&
-                              (_chatBloc.state as ChatLoaded).customBgColor?.toARGB32() == color.toARGB32();
-                              
-                          return GestureDetector(
-                            onTap: () {
-                              Navigator.pop(sheetCtx);
-                              
-                              // Local update and Hive save
-                              _chatBloc.add(ChangeBackgroundColorEvent(
-                                color: color,
-                                conversationId: widget.conversationId,
-                              ));
-                              
-                              // Send change via socket
-                              context.read<ChatSocketBloc>().add(SendMessage(
-                                conversationId: widget.conversationId,
-                                type: 'change_background_color',
-                                text: color.toARGB32().toString(),
-                              ));
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isSelected ? context.colors.primary : Colors.transparent,
-                                  width: 3,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.palette_outlined,
+                                  color: context.colors.primary,
+                                  size: 24,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
+                                CommonSpaces.w10,
+                                Text(
+                                  'Chat Theme',
+                                  style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            if (selectedThemeId != null)
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(sheetCtx);
+                                  _chatBloc.add(const UpdateThemeEvent(themeColorId: null));
+                                },
+                                child: Text(
+                                  'Remove',
+                                  style: TextStyle(
+                                    color: context.colors.error,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        CommonSpaces.h8,
+                        Text(
+                          'Choose a theme color for this chat. Only you will see this change.',
+                          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                        ),
+                        CommonSpaces.h20,
+                        if (isLoading)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 32),
+                              child: CircularProgressIndicator(color: context.colors.primary),
+                            ),
+                          )
+                        else if (themes.isEmpty)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 32),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.palette_outlined,
+                                      size: 48, color: context.colors.textHint.withValues(alpha: 0.5)),
+                                  CommonSpaces.h12,
+                                  Text(
+                                    'No themes available',
+                                    style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
                                   ),
                                 ],
                               ),
-                              child: isSelected
-                                  ? Icon(
-                                      Icons.check_circle_rounded,
-                                      color: context.colors.primary,
-                                      size: 24,
-                                    )
-                                  : null,
                             ),
-                          );
-                        },
-                      ),
-                      CommonSpaces.h12,
-                    ],
+                          )
+                        else
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 5,
+                              mainAxisSpacing: 16,
+                              crossAxisSpacing: 16,
+                            ),
+                            itemCount: themes.length,
+                            itemBuilder: (context, index) {
+                              final theme = themes[index];
+                              final isSelected = theme.id == selectedThemeId;
+                              final themeColor = theme.toColor();
+
+                              return Tooltip(
+                                message: theme.name,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Navigator.pop(sheetCtx);
+                                    _chatBloc.add(UpdateThemeEvent(
+                                      themeColorId: theme.id,
+                                      themeColor: theme,
+                                    ));
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    decoration: BoxDecoration(
+                                      color: themeColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? context.colors.primary
+                                            : Colors.transparent,
+                                        width: 3,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: themeColor.withValues(alpha: 0.4),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
+                                    ),
+                                    child: isSelected
+                                        ? Icon(
+                                            Icons.check_circle_rounded,
+                                            color: context.colors.primary,
+                                            size: 24,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        CommonSpaces.h12,
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );

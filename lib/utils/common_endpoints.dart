@@ -24,7 +24,10 @@ class CommonEndpoints {
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
   static String getGroupDetails(String groupId) => '/groups/$groupId';
+  static String updateGroup(String groupId) => '/groups/$groupId';
   static String deleteGroup(String groupId) => '/groups/$groupId';
+  static String addGroupParticipants(String groupId) => '/groups/$groupId/members';
+  static String removeGroupParticipant(String groupId, String userId) => '/groups/$groupId/members/$userId';
 
   // Chat Actions
   static String favoriteChat(String conversationId) => '/chats/$conversationId/favorite';
@@ -45,4 +48,21 @@ class CommonEndpoints {
   static const String requestUpload = '/media/request-upload';
   static String completeUpload(String mediaId) => '/media/$mediaId/complete';
   static String getConversationMedia(String conversationId) => '/chats/$conversationId/media';
+
+  // User Blocking
+  static String blockUser(String targetUserId) => '/users/block/$targetUserId';
+  static String unblockUser(String targetUserId) => '/users/unblock/$targetUserId';
+  static const String getBlockedUsers = '/users/blocked';
+
+  // Hide / Unhide Conversations
+  static String hideChat(String conversationId) => '/chats/$conversationId/hide';
+  static String unhideChat(String conversationId) => '/chats/$conversationId/unhide';
+  static String deleteChat(String conversationId) => '/chats/$conversationId';
+
+  // Clear Chat
+  static String clearChat(String conversationId) => '/chats/$conversationId/clear';
+
+  // Conversation Theme Colors
+  static const String getThemes = '/chats/themes';
+  static String updateTheme(String conversationId) => '/chats/$conversationId/theme';
 }

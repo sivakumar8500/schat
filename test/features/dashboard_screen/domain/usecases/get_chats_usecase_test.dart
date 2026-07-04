@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/network/api_result.dart';
-import 'package:schat/features/dashboard_screen/src/domain/chat_model.dart';
-import 'package:schat/features/dashboard_screen/src/domain/recipient_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/recipient_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart';
 

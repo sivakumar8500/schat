@@ -128,6 +128,7 @@ void main() {
       mockChatSocketRepository = MockChatSocketRepository();
 
       when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
+      when(() => mockChatRepositoryInstance.getPinnedMessages(any())).thenAnswer((_) async => []);
       when(() => mockStorageService.getUserId()).thenReturn('me');
 
       chatBloc = ChatBloc(
@@ -143,7 +144,11 @@ void main() {
 
     test('ReceiveMessageEvent updates temporary message to real UUID if message is from self', () async {
       // First, simulate loading messages
-      when(() => mockChatRepositoryInstance.getMessages('conv_1')).thenAnswer((_) async => []);
+      when(() => mockChatRepositoryInstance.getMessages(
+        'conv_1',
+        limit: any(named: 'limit'),
+        skip: any(named: 'skip'),
+      )).thenAnswer((_) async => []);
       chatBloc.add(const LoadMessagesEvent(conversationId: 'conv_1', recipientId: 'recipient_1'));
       await expectLater(chatBloc.stream, emitsThrough(isA<ChatLoaded>()));
 

@@ -65,6 +65,16 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
+    if (username.length > 60) {
+      context.showErrorNotification('Username cannot exceed 60 characters');
+      return;
+    }
+
+    if (!RegExp(r'^[a-zA-Z]').hasMatch(username)) {
+      context.showErrorNotification('Username must start with an alphabetical character');
+      return;
+    }
+
     context.read<ProfileBloc>().add(UpdateProfileEvent(
           username: username,
           imagePath: _localImageFile?.path ?? _remoteImageUrl,
@@ -281,7 +291,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                     CommonSpaces.h24,
                                     _buildLabel('Username'),
                                     CommonSpaces.h12,
-                                    _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline),
+                                    _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline, maxLength: 60),
                                     if (_errorText != null) ...[
                                       CommonSpaces.h16,
                                       Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
@@ -352,12 +362,13 @@ class _ProfilePageState extends State<ProfilePage> {
     return Text(text, style: context.titleSmall.copyWith(color: Colors.white));
   }
 
-  Widget _buildTextField(TextEditingController controller, String hint, {IconData? prefixIcon, int maxLines = 1}) {
+  Widget _buildTextField(TextEditingController controller, String hint, {IconData? prefixIcon, int maxLines = 1, int? maxLength}) {
     return Container(
       decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        maxLength: maxLength,
         style: context.titleSmall.copyWith(color: Colors.white),
         decoration: InputDecoration(
           hintText: hint,
@@ -365,6 +376,7 @@ class _ProfilePageState extends State<ProfilePage> {
           prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: Colors.white.withValues(alpha: 0.5)) : null,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          counterText: "",
         ),
       ),
     );

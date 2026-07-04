@@ -58,4 +58,6 @@ class ThemeColors {
   Color get optionCamera => const Color(0xFFE91E63);
   Color get videoCallGradientStart => const Color(0xFF2C3E50);
   Color get videoCallGradientEnd => const Color(0xFF000000);
+  Color get videoCallBarBackground => const Color(0xFF1C1C1E);
+  Color get videoCallButtonBackground => const Color(0xFF3A3A3C);
 }

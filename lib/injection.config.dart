@@ -34,6 +34,12 @@ import 'features/chat_screen/src/data/repositories/chat_repository_impl.dart'
     as _i715;
 import 'features/chat_screen/src/domain/repositories/chat_repository.dart'
     as _i649;
+import 'features/chat_screen/src/domain/usecases/get_pinned_messages_usecase.dart'
+    as _i258;
+import 'features/chat_screen/src/domain/usecases/pin_message_usecase.dart'
+    as _i694;
+import 'features/chat_screen/src/domain/usecases/unpin_message_usecase.dart'
+    as _i312;
 import 'features/chat_socket_screen/src/domain/chat_socket_repository.dart'
     as _i411;
 import 'features/chat_socket_screen/src/domain/usecases/connect_socket_usecase.dart'
@@ -52,6 +58,8 @@ import 'features/dashboard_screen/src/domain/usecases/get_chats_usecase.dart'
     as _i127;
 import 'features/dashboard_screen/src/presentation/bloc/chats_bloc.dart'
     as _i236;
+import 'features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart'
+    as _i14;
 import 'features/payment_screen/src/data/repositories/payment_repository_impl.dart'
     as _i39;
 import 'features/payment_screen/src/domain/repositories/payment_repository.dart'
@@ -179,6 +187,15 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i702.SubscriptionRepository>(
       () => _i819.SubscriptionRepositoryImpl(gh<_i374.ApiService>()),
     );
+    gh.lazySingleton<_i258.GetPinnedMessagesUseCase>(
+      () => _i258.GetPinnedMessagesUseCase(gh<_i649.ChatRepository>()),
+    );
+    gh.lazySingleton<_i694.PinMessageUseCase>(
+      () => _i694.PinMessageUseCase(gh<_i649.ChatRepository>()),
+    );
+    gh.lazySingleton<_i312.UnpinMessageUseCase>(
+      () => _i312.UnpinMessageUseCase(gh<_i649.ChatRepository>()),
+    );
     gh.lazySingleton<_i1069.ContactsRepository>(
       () => _i1069.ContactsRepositoryImpl(gh<_i374.ApiService>()),
     );
@@ -192,6 +209,13 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i236.ChatsBloc(
         gh<_i127.GetChatsUseCase>(),
         gh<_i198.DashboardRepository>(),
+        gh<_i1069.ContactsRepository>(),
+        gh<_i411.ChatSocketRepository>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
+    gh.lazySingleton<_i14.ContactsBloc>(
+      () => _i14.ContactsBloc(
         gh<_i1069.ContactsRepository>(),
         gh<_i411.ChatSocketRepository>(),
         gh<_i263.StorageService>(),
