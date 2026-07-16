@@ -85,6 +85,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<ApiResult<ChatModel>> createGroup({
     required String groupName,
     String? groupDescription,
+    String? groupPictureUrl,
+    String? groupImageUrl,
     required List<String> participantIds,
   }) async {
     final result = await _apiService.post<ChatModel>(
@@ -92,6 +94,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
       data: {
         'group_name': groupName,
         'group_description': groupDescription ?? '',
+        'groupPictureUrl': groupPictureUrl ?? '',
+        'groupImageUrl': groupImageUrl ?? '',
         'participant_ids': participantIds,
       },
       mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 import 'package:schat/features/chat_screen/src/presentation/contact_profile_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
@@ -14,6 +16,8 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
 
 class GroupInfoPage extends StatefulWidget {
@@ -40,6 +44,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
   Map<String, dynamic>? _groupData;
   List<UserModel> _participants = [];
   bool _isAdmin = false;
+  int? _disappearingTimer;
 
   @override
   void initState() {
@@ -56,6 +61,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
         setState(() {
           _isAdmin = false;
           _groupData = data;
+          _disappearingTimer = data['timer_seconds'] ?? data['disappearing_timer'];
           final participantsData = data['participants'];
           if (participantsData is List) {
             _participants = participantsData.map((p) {
@@ -86,97 +92,124 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     }
   }
 
-  Future<void> _editGroupName() async {
-    final controller = TextEditingController(text: _groupData?['name'] ?? widget.groupName);
-    final newName = await showDialog<String>(
+  Future<void> _editGroupName() => _showEditGroupBottomSheet();
+  Future<void> _editGroupDescription() => _showEditGroupBottomSheet();
+  Future<void> _updateGroupIcon() => _showEditGroupBottomSheet();
+
+  Future<void> _showEditGroupBottomSheet() async {
+    final currentName = _groupData?['name'] ?? widget.groupName;
+    final currentDesc = _groupData?['description'] ?? _groupData?['group_description'] ?? widget.groupDescription;
+    final currentIcon = _groupData?['groupPictureUrl'] ?? _groupData?['groupImageUrl'] ?? _groupData?['icon_url'] ?? _groupData?['group_picture_url'];
+
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Group Name'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Enter group name'),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _EditGroupBottomSheet(
+        groupId: widget.conversationId,
+        currentName: currentName,
+        currentDescription: currentDesc,
+        currentIconUrl: currentIcon,
+        groupColor: widget.groupColor,
       ),
     );
 
-    if (newName != null && newName.isNotEmpty && newName != (_groupData?['name'] ?? widget.groupName)) {
-      if (mounted) {
-        context.read<ChatBloc>().add(UpdateGroupInfoEvent(
-          groupId: widget.conversationId,
-          name: newName,
-        ));
-        setState(() {
-          if (_groupData != null) {
-            _groupData!['name'] = newName;
+    if (result != null && mounted) {
+      final String newName = result['name'];
+      final String newDesc = result['description'];
+      final String? newIcon = result['iconUrl'];
+
+      context.read<ChatBloc>().add(UpdateGroupInfoEvent(
+        groupId: widget.conversationId,
+        name: newName != currentName ? newName : null,
+        description: newDesc != currentDesc ? newDesc : null,
+        iconUrl: newIcon != currentIcon ? newIcon : null,
+      ));
+
+      setState(() {
+        if (_groupData != null) {
+          _groupData!['name'] = newName;
+          _groupData!['description'] = newDesc;
+          _groupData!['group_description'] = newDesc;
+          if (newIcon != null) {
+            _groupData!['icon_url'] = newIcon;
+            _groupData!['groupPictureUrl'] = newIcon;
+            _groupData!['groupImageUrl'] = newIcon;
           }
-        });
-      }
+        }
+      });
     }
   }
 
-  Future<void> _updateGroupIcon() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (image != null) {
-      try {
-        final repo = getIt<ChatRepository>();
-        final iconUrl = await repo.uploadMedia(
-          conversationId: widget.conversationId,
-          filePath: image.path,
-          fileName: image.name,
-          mediaType: 'GROUP_ICON',
-          mimeType: 'image/jpeg',
-          fileSizeBytes: await image.length(),
-        );
-
-        if (iconUrl != null && mounted) {
-          context.read<ChatBloc>().add(UpdateGroupInfoEvent(
-            groupId: widget.conversationId,
-            iconUrl: iconUrl,
-          ));
-          _fetchGroupDetails(); // Refresh to show new icon
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to upload icon: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  void _removeParticipant(String userId) {
-    showDialog(
+  void _removeParticipant(String userId, String userName) {
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Participant'),
-        content: const Text('Are you sure you want to remove this participant from the group?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<ChatBloc>().add(RemoveGroupParticipantEvent(
-                groupId: widget.conversationId,
-                userId: userId,
-              ));
-              setState(() {
-                _participants.removeWhere((u) => u.id == userId);
-              });
-            },
-            child: const Text('Remove', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+        ),
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            CommonSpaces.h16,
+            Text(
+              'Remove Participant',
+              style: context.titleLarge.copyWith(fontWeight: FontWeight.bold, color: Colors.red),
+            ),
+            CommonSpaces.h12,
+            Text(
+              'Are you sure you want to remove $userName from this group?',
+              style: context.bodyLarge.copyWith(color: context.colors.textPrimary),
+            ),
+            CommonSpaces.h24,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                ),
+                CommonSpaces.w12,
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    context.read<ChatBloc>().add(RemoveGroupParticipantEvent(
+                      groupId: widget.conversationId,
+                      userId: userId,
+                    ));
+                    setState(() {
+                      _participants.removeWhere((u) => u.id == userId);
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Remove', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -244,14 +277,39 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
 
     return BlocListener<ChatBloc, ChatState>(
       listener: (context, state) {
-        if (state is ChatLoaded && state.notificationMessage != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.notificationMessage!)),
-          );
-          if (state.notificationMessage!.contains('successfully') || 
-              state.notificationMessage!.contains('added') || 
-              state.notificationMessage!.contains('removed')) {
-            _fetchGroupDetails();
+        if (state is ChatLoaded) {
+          if (state.notificationMessage != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.notificationMessage!)),
+            );
+            if (state.notificationMessage!.contains('successfully') || 
+                state.notificationMessage!.contains('added') || 
+                state.notificationMessage!.contains('removed') ||
+                state.notificationMessage!.contains('promoted') ||
+                state.notificationMessage!.contains('admin') ||
+                state.notificationMessage!.contains('rights')) {
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (mounted) {
+                  _fetchGroupDetails();
+                }
+              });
+            }
+          }
+          if (_groupData != null) {
+            final stateName = state.groupName;
+            final statePic = state.groupPictureUrl;
+            if (stateName != null && stateName != _groupData!['name']) {
+              setState(() {
+                _groupData!['name'] = stateName;
+              });
+            }
+            if (statePic != null) {
+              setState(() {
+                _groupData!['icon_url'] = statePic;
+                _groupData!['groupPictureUrl'] = statePic;
+                _groupData!['groupImageUrl'] = statePic;
+              });
+            }
           }
         }
       },
@@ -282,11 +340,6 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             ]),
                           ),
                         ),
-                        if (_isAdmin)
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                            onPressed: _editGroupName,
-                          ),
                       ],
                     ),
                     background: GestureDetector(
@@ -296,26 +349,19 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                         children: [
                           Container(
                             color: widget.groupColor,
-                            child: (_groupData?['icon_url'] != null && _groupData!['icon_url'].toString().isNotEmpty)
-                                ? Image.network(_groupData!['icon_url'], fit: BoxFit.cover)
-                                : Center(
-                              child: Icon(
-                                Icons.group_rounded,
-                                size: 100,
-                                color: Colors.white.withValues(alpha: 0.5),
-                              ),
-                            ),
+                            child: (() {
+                              final groupPic = _groupData?['groupPictureUrl'] ?? _groupData?['groupImageUrl'] ?? _groupData?['icon_url'] ?? _groupData?['group_picture_url'];
+                              return (groupPic != null && groupPic.toString().isNotEmpty)
+                                  ? Image.network(groupPic.toString(), fit: BoxFit.cover)
+                                  : Center(
+                                      child: Icon(
+                                        Icons.group_rounded,
+                                        size: 100,
+                                        color: Colors.white.withValues(alpha: 0.5),
+                                      ),
+                                    );
+                            })(),
                           ),
-                          if (_isAdmin)
-                            Positioned(
-                              bottom: 16,
-                              right: 16,
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: const BoxDecoration(color: Colors.black38, shape: BoxShape.circle),
-                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -324,21 +370,54 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                     icon: const Icon(CommonIcons.arrowBack, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
+                  actions: [
+                    if (_isAdmin)
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.white),
+                        tooltip: 'Edit Group Details',
+                        onPressed: _showEditGroupBottomSheet,
+                      ),
+                  ],
                 ),
 
                 SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      if (description != null && description.isNotEmpty)
+                      if ((description != null && description.isNotEmpty) || _isAdmin)
                         _buildSectionCard(
                           innerCardColor,
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Group description', style: context.bodyMedium.copyWith(color: context.colors.primary)),
-                              CommonSpaces.h8,
-                              Text(description, style: context.bodyLarge),
-                            ],
+                          InkWell(
+                            onTap: _isAdmin ? _editGroupDescription : null,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('Group description', style: context.bodyMedium.copyWith(color: context.colors.primary)),
+                                      if (_isAdmin)
+                                        Icon(Icons.edit, color: context.colors.primary, size: 18),
+                                    ],
+                                  ),
+                                  CommonSpaces.h8,
+                                  Text(
+                                    (description != null && description.isNotEmpty)
+                                        ? description
+                                        : 'Add group description...',
+                                    style: context.bodyLarge.copyWith(
+                                      color: (description != null && description.isNotEmpty)
+                                          ? context.colors.textPrimary
+                                          : context.colors.textHint,
+                                      fontStyle: (description != null && description.isNotEmpty)
+                                          ? FontStyle.normal
+                                          : FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
 
@@ -373,7 +452,8 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             _buildSettingsTile(
                               icon: Icons.timer_outlined,
                               title: 'Disappearing messages',
-                              trailing: Text('Off', style: context.bodyMedium.copyWith(color: context.colors.textHint)),
+                              trailing: Text(_getDisappearingText(_disappearingTimer), style: context.bodyMedium.copyWith(color: context.colors.textHint)),
+                              onTap: _isAdmin ? () => _showDisappearingMessagesBottomSheet(context) : null,
                             ),
                           ],
                         ),
@@ -400,13 +480,24 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                 ),
                                 title: Text('Add participants', style: context.bodyLarge.copyWith(color: context.colors.textPrimary)),
                                 onTap: () async {
-                                  final List<UserModel>? selectedUsers = await Navigator.push<List<UserModel>>(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => UserListPage(
-                                        showOnlySynced: true,
-                                        isPicker: true,
-                                        excludeUserIds: _participants.map((u) => u.id).toList(),
+                                  final List<UserModel>? selectedUsers = await showModalBottomSheet<List<UserModel>>(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (dialogCtx) => BlocProvider.value(
+                                      value: getIt<ContactsBloc>(),
+                                      child: Container(
+                                        height: MediaQuery.of(context).size.height * 0.85,
+                                        decoration: BoxDecoration(
+                                          color: context.colors.scaffoldBackground,
+                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                                        ),
+                                        clipBehavior: Clip.antiAliasWithSaveLayer,
+                                        child: UserListPage(
+                                          showOnlySynced: true,
+                                          isPicker: true,
+                                          excludeUserIds: _participants.map((u) => u.id).toList(),
+                                        ),
                                       ),
                                     ),
                                   );
@@ -423,39 +514,119 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             // Real participants
                             ..._participants.map((user) {
                               final isMe = user.id == _myId;
-                              final name = user.firstName ?? user.username ?? 'User';
-                              final isAdminParticipant = _groupData?['participants']?.any((p) => (p['user_id'] == user.id || (p['user'] is Map && p['user']['id'] == user.id)) && p['is_admin'] == true) ?? false;
+                              final name = user.displayName;
+
+                              final isAdminParticipant = _groupData?['participants']?.any((p) => 
+                                  (p['user_id'] == user.id || 
+                                   p['id'] == user.id || 
+                                   p['_id'] == user.id || 
+                                   (p['user'] is Map && p['user']['id'] == user.id)) && 
+                                  p['is_admin'] == true
+                              ) ?? false;
                               
                               return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: context.colors.primary.withValues(alpha: 0.1),
-                                  child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
-                                      ? ClipOval(child: Image.network(user.profilePictureUrl!, fit: BoxFit.cover))
-                                      : Text(
-                                          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-                                          style: TextStyle(color: context.colors.primary),
+                                leading: Stack(
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: context.colors.primary.withValues(alpha: 0.1),
+                                      child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                                          ? ClipOval(
+                                              child: Image.network(
+                                                user.profilePictureUrl!,
+                                                fit: BoxFit.cover,
+                                                width: double.infinity,
+                                                height: double.infinity,
+                                                errorBuilder: (context, error, stackTrace) => Text(
+                                                  name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                                                  style: TextStyle(color: context.colors.primary),
+                                                ),
+                                              ),
+                                            )
+                                          : Text(
+                                              name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                                              style: TextStyle(color: context.colors.primary),
+                                            ),
+                                    ),
+                                    if (user.isOnline)
+                                      Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Container(
+                                          width: 12,
+                                          height: 12,
+                                          decoration: BoxDecoration(
+                                            color: context.colors.success,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: context.colors.scaffoldBackground,
+                                              width: 2,
+                                            ),
+                                          ),
                                         ),
+                                      ),
+                                  ],
                                 ),
-                                title: Text(isMe ? 'You' : name, style: context.bodyLarge),
-                                subtitle: Text(user.about ?? 'Hey there! I am using Schat.', style: context.bodySmall),
+                                title: Text(isMe ? '$name (You)' : name, style: context.bodyLarge),
+                                subtitle: Text(
+                                  isAdminParticipant
+                                      ? 'Group Admin'
+                                      : (user.phoneNumber.isNotEmpty 
+                                          ? user.phoneNumber 
+                                          : (user.about != null && user.about!.isNotEmpty 
+                                              ? user.about! 
+                                              : 'Hey there! I am using Schat.')),
+                                  style: context.bodySmall.copyWith(
+                                    color: isAdminParticipant ? context.colors.primary : context.colors.textSecondary,
+                                    fontWeight: isAdminParticipant ? FontWeight.w500 : null,
+                                  ),
+                                ),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (isAdminParticipant) 
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        margin: const EdgeInsets.only(right: 8),
-                                        decoration: BoxDecoration(
-                                          border: Border.all(color: context.colors.primary),
-                                          borderRadius: BorderRadius.circular(4),
+                                     if (_isAdmin && !isMe) ...[
+                                       IconButton(
+                                         icon: Icon(
+                                           isAdminParticipant
+                                               ? Icons.shield_outlined
+                                               : Icons.shield,
+                                           color: context.colors.primary,
+                                         ),
+                                         tooltip: isAdminParticipant
+                                             ? 'Dismiss as admin'
+                                             : 'Make group admin',
+                                         onPressed: () {
+                                           if (isAdminParticipant) {
+                                             context.read<ChatBloc>().add(
+                                               DemoteGroupAdminEvent(
+                                                 groupId: widget.conversationId,
+                                                 userId: user.id,
+                                               ),
+                                             );
+                                           } else {
+                                             context.read<ChatBloc>().add(
+                                               PromoteGroupAdminEvent(
+                                                 groupId: widget.conversationId,
+                                                 userId: user.id,
+                                               ),
+                                             );
+                                           }
+                                           setState(() {
+                                             if (_groupData != null && _groupData!['participants'] is List) {
+                                               final list = _groupData!['participants'] as List;
+                                               for (var p in list) {
+                                                 if (p is Map && (p['user_id'] == user.id || p['id'] == user.id || p['_id'] == user.id || (p['user'] is Map && p['user']['id'] == user.id))) {
+                                                   p['is_admin'] = !isAdminParticipant;
+                                                 }
+                                               }
+                                             }
+                                           });
+                                         },
+                                       ),
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20),
+                                          onPressed: () => _removeParticipant(user.id, name),
                                         ),
-                                        child: Text('Group Admin', style: context.bodySmall.copyWith(color: context.colors.primary, fontSize: 9)),
-                                      ),
-                                    if (_isAdmin && !isMe)
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 20),
-                                        onPressed: () => _removeParticipant(user.id),
-                                      ),
+                                     ],
                                   ],
                                 ),
                                 onTap: isMe ? null : () {
@@ -535,11 +706,350 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     required IconData icon,
     required String title,
     required Widget trailing,
+    VoidCallback? onTap,
   }) {
     return ListTile(
       leading: Icon(icon, color: context.colors.textSecondary),
       title: Text(title, style: context.bodyLarge),
       trailing: trailing,
+      onTap: onTap,
+    );
+  }
+
+  String _getDisappearingText(int? seconds) {
+    if (seconds == null || seconds == 0) return 'Off';
+    if (seconds == 1800) return '30 minutes';
+    if (seconds == 86400) return '24 hours';
+    if (seconds == 604800) return '7 days';
+    if (seconds == 2592000) return '30 days';
+    if (seconds < 3600) {
+      return '${(seconds / 60).round()} minutes';
+    } else if (seconds < 86400) {
+      return '${(seconds / 3600).round()} hours';
+    } else {
+      return '${(seconds / 86400).round()} days';
+    }
+  }
+
+  void _showDisappearingMessagesBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Material(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: context.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.timer_outlined, color: context.colors.primary, size: 24),
+                    CommonSpaces.w12,
+                    Text(
+                      'Disappearing messages',
+                      style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                CommonSpaces.h16,
+                Text(
+                  'For more privacy and storage, all new messages will disappear from this chat for everyone after the selected duration.',
+                  style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                ),
+                CommonSpaces.h24,
+                _buildDisappearingOption(context, 'Off', 0),
+                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '24 hours', 86400),
+                _buildDisappearingOption(context, '7 days', 604800),
+                _buildDisappearingOption(context, '30 days', 2592000),
+                CommonSpaces.h20,
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label, style: context.bodyLarge),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () async {
+        int? finalSeconds = seconds == 0 ? null : seconds;
+        String finalLabel = label;
+        
+        if (isCustomTimeOption) {
+          final now = DateTime.now();
+          final TimeOfDay? picked = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
+            helpText: 'Select auto-delete time today (before midnight)',
+          );
+          if (picked != null) {
+            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+            
+            if (target.isAfter(now)) {
+              finalSeconds = target.difference(now).inSeconds;
+              finalLabel = 'Custom (${picked.format(context)})';
+            } else {
+              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
+              finalSeconds = 1800;
+              finalLabel = '30 minutes';
+            }
+          } else {
+            finalSeconds = 1800;
+            finalLabel = '30 minutes';
+          }
+        }
+        
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+        
+        context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: finalSeconds));
+        setState(() {
+          _disappearingTimer = finalSeconds;
+        });
+        context.showInfoNotification('Disappearing messages set to $finalLabel');
+      },
+    );
+  }
+}
+
+class _EditGroupBottomSheet extends StatefulWidget {
+  final String groupId;
+  final String currentName;
+  final String? currentDescription;
+  final String? currentIconUrl;
+  final Color groupColor;
+
+  const _EditGroupBottomSheet({
+    required this.groupId,
+    required this.currentName,
+    this.currentDescription,
+    this.currentIconUrl,
+    required this.groupColor,
+  });
+
+  @override
+  State<_EditGroupBottomSheet> createState() => _EditGroupBottomSheetState();
+}
+
+class _EditGroupBottomSheetState extends State<_EditGroupBottomSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  XFile? _selectedImage;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.currentName);
+    _descriptionController = TextEditingController(text: widget.currentDescription ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (image != null) {
+      setState(() {
+        _selectedImage = image;
+      });
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Group name cannot be empty')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      String? uploadedUrl = widget.currentIconUrl;
+      if (_selectedImage != null) {
+        final bytes = await _selectedImage!.readAsBytes();
+        uploadedUrl = await getIt<ProfileRepository>().uploadProfilePicture(
+          filePath: _selectedImage!.path,
+          fileName: _selectedImage!.name,
+          mimeType: 'image/jpeg',
+          fileSizeBytes: bytes.length,
+          fileBytes: bytes,
+        );
+      }
+
+      if (mounted) {
+        Navigator.pop(context, {
+          'name': name,
+          'description': _descriptionController.text.trim(),
+          'iconUrl': uploadedUrl,
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save changes: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.scaffoldBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.colors.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          CommonSpaces.h16,
+          Text(
+            'Edit Group Details',
+            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+          ),
+          CommonSpaces.h20,
+          Center(
+            child: GestureDetector(
+              onTap: _isLoading ? null : _pickImage,
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 45,
+                    backgroundColor: widget.groupColor.withValues(alpha: 0.1),
+                    backgroundImage: _selectedImage != null
+                        ? FileImage(File(_selectedImage!.path))
+                        : (widget.currentIconUrl != null && widget.currentIconUrl!.isNotEmpty)
+                            ? NetworkImage(widget.currentIconUrl!)
+                            : null,
+                    child: (_selectedImage == null && (widget.currentIconUrl == null || widget.currentIconUrl!.isEmpty))
+                        ? Icon(Icons.group_rounded, size: 45, color: widget.groupColor)
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: context.colors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          CommonSpaces.h20,
+          TextField(
+            controller: _nameController,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: 'Group Name',
+              filled: true,
+              fillColor: context.colors.lightBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          CommonSpaces.h16,
+          TextField(
+            controller: _descriptionController,
+            enabled: !_isLoading,
+            maxLines: 3,
+            decoration: InputDecoration(
+              labelText: 'Description (Optional)',
+              filled: true,
+              fillColor: context.colors.lightBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          CommonSpaces.h24,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _isLoading ? null : () => Navigator.pop(context),
+                child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+              ),
+              CommonSpaces.w12,
+              ElevatedButton(
+                onPressed: _isLoading ? null : _saveChanges,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: context.colors.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Save', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

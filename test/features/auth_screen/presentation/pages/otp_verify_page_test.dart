@@ -42,8 +42,8 @@ void main() {
     await tester.pumpWidget(createWidgetUnderTest());
 
     // Verify key titles and texts exist
-    expect(find.text('Enter the '), findsOneWidget);
-    expect(find.text('Code'), findsNWidgets(2));
+    expect(find.text('Enter the Code'), findsOneWidget);
+    expect(find.text('Code'), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(6));
     expect(find.text('Continue'), findsOneWidget);
     expect(find.textContaining('Resend the code in'), findsOneWidget);

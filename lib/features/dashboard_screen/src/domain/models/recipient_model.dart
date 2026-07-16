@@ -5,6 +5,7 @@ part 'recipient_model.g.dart';
 
 @freezed
 abstract class RecipientModel with _$RecipientModel {
+  const RecipientModel._();
   const factory RecipientModel({
     @JsonKey(name: '_id', includeIfNull: false) @Default('') String id,
     @JsonKey(name: 'phone_number') @Default('') String phoneNumber,
@@ -20,7 +21,18 @@ abstract class RecipientModel with _$RecipientModel {
     @JsonKey(name: 'subscription_type') String? subscriptionType,
     @JsonKey(name: 'created_at') @Default('') String createdAt,
     @JsonKey(name: 'updated_at') @Default('') String updatedAt,
+    @JsonKey(name: 'contactName') String? contactName,
   }) = _RecipientModel;
+
+  String get displayName {
+    if (contactName != null && contactName!.isNotEmpty) {
+      return contactName!;
+    }
+    if (username != null && username!.isNotEmpty) {
+      return username!;
+    }
+    return phoneNumber;
+  }
 
   factory RecipientModel.fromJson(Map<String, dynamic> json) => _$RecipientModelFromJson(_normalizeRecipientJson(json));
 

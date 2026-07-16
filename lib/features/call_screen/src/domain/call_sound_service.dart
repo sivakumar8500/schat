@@ -30,11 +30,11 @@ class CallSoundService {
     try {
       await _backRingPlayer.stop();
       await _backRingPlayer.setVolume(1.0);
-      final source = AssetSource('audio/calling.mp3');
+      final source = AssetSource('audio/calling.mpeg');
       await _backRingPlayer.play(source);
-      debugPrint('CallSoundService: Playing calling.mp3');
+      debugPrint('CallSoundService: Playing calling.mpeg');
     } catch (e) {
-      debugPrint('CallSoundService: Error playing calling.mp3: $e');
+      debugPrint('CallSoundService: Error playing calling.mpeg: $e');
     }
   }
 

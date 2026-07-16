@@ -298,12 +298,16 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                             ),
                           ],
                         ),
-                        child: Center(
-                          child: Icon(
-                            widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
-                            color: Colors.white,
-                            size: 48,
-                          ),
+                        child: ClipOval(
+                          child: (widget.profilePictureUrl != null &&
+                                  widget.profilePictureUrl!.isNotEmpty)
+                              ? Image.network(
+                                  widget.profilePictureUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, err, stack) =>
+                                      _buildFallbackIcon(),
+                                )
+                              : _buildFallbackIcon(),
                         ),
                       ),
                     ),
@@ -402,6 +406,16 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackIcon() {
+    return Center(
+      child: Icon(
+        widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
+        color: Colors.white,
+        size: 48,
       ),
     );
   }

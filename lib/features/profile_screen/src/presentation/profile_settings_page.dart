@@ -22,6 +22,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
+import 'package:schat/features/chat_socket_screen/chat_socket_screen.dart';
 
 class ProfileSettingsPage extends StatefulWidget {
   final String username;
@@ -44,6 +45,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   String _currentEmail = "";
   XFile? _localImageFile;
   final ImagePicker _picker = ImagePicker();
+  int? _defaultDisappearingTimer;
 
   @override
   void initState() {
@@ -51,6 +53,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     _currentUsername = widget.username;
     _currentImageUrl = widget.profilePicUrl;
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
+    _defaultDisappearingTimer = null;
   }
 
   void _showEditProfileBottomSheet(BuildContext context) {
@@ -241,24 +244,9 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider<ProfileBloc>(
-          create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
-        ),
-        BlocProvider<ContactsBloc>.value(
-          value: getIt<ContactsBloc>(),
-        ),
-      ],
-      child: BlocListener<ContactsBloc, ContactsState>(
-        listener: (context, state) {
-          if (state is ContactsLoaded) {
-            context.showSuccessNotification('Contacts synced successfully');
-          } else if (state is ContactsFailure) {
-            context.showErrorNotification('Failed to sync contacts: ${state.errorMessage}');
-          }
-        },
-        child: BlocConsumer<ProfileBloc, ProfileState>(
+    return BlocProvider<ProfileBloc>(
+      create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
+      child: BlocConsumer<ProfileBloc, ProfileState>(
           listener: (context, state) {
             if (state is ProfileLoaded) {
               setState(() {
@@ -266,6 +254,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                 _currentImageUrl = state.imagePath;
                 _currentAbout = state.user?.about ?? "Hey there! I am using Schat.";
                 _currentEmail = getIt<StorageService>().getEmail() ?? "";
+                _defaultDisappearingTimer = state.user?.defaultDisappearingTimer;
               });
             } else if (state is ProfileLogoutSuccess) {
               Navigator.pushAndRemoveUntil(
@@ -372,6 +361,23 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     subtitle: getIt<ThemeController>().fontSizeName,
                     onTap: () => _showFontSizeDialog(context),
                   ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.timer_outlined,
+                    title: 'Disappearing Messages',
+                    subtitle: _getDisappearingTimerText(_defaultDisappearingTimer),
+                    onTap: () => _showDisappearingMessagesBottomSheet(context),
+                  ),
+                  _buildListTile(
+                    context: context,
+                    icon: CommonIcons.wifi,
+                    title: 'WebSocket Tester',
+                    subtitle: 'Test connection & event logs',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ChatSocketPage()),
+                    ),
+                  ),
 
                   const Divider(),
                   _buildListTile(
@@ -385,8 +391,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                 ],
               ),
             );
-          },
-        ),
+        },
       ),
     );
   }
@@ -476,6 +481,95 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
           ),
         ],
       ),
+    );
+  }
+
+  String _getDisappearingTimerText(int? seconds) {
+    if (seconds == null || seconds == 0) {
+      return 'Off';
+    }
+    if (seconds == 86400) {
+      return '1 day';
+    }
+    if (seconds == 604800) {
+      return '7 days';
+    }
+    if (seconds == 2592000) {
+      return '30 days';
+    }
+    final days = seconds ~/ 86400;
+    if (days == 1) return '1 day';
+    if (days % 7 == 0) return '${days ~/ 7} weeks';
+    return '$days days';
+  }
+
+  void _showDisappearingMessagesBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: sheetCtx.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(Icons.timer_outlined, color: sheetCtx.colors.primary, size: 24),
+                  CommonSpaces.w12,
+                  Text(
+                    'Disappearing messages',
+                    style: sheetCtx.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              CommonSpaces.h16,
+              Text(
+                'For more privacy and storage, all new messages will disappear from new chats you start after the selected duration.',
+                style: sheetCtx.bodyMedium.copyWith(color: sheetCtx.colors.textSecondary),
+              ),
+              CommonSpaces.h24,
+              _buildDisappearingOption(sheetCtx, 'Off', null),
+              _buildDisappearingOption(sheetCtx, '1 day', 86400),
+              _buildDisappearingOption(sheetCtx, '7 days', 604800),
+              _buildDisappearingOption(sheetCtx, '30 days', 2592000),
+              CommonSpaces.h20,
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDisappearingOption(BuildContext sheetCtx, String label, int? seconds) {
+    final bool isSelected = _defaultDisappearingTimer == seconds;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label, style: sheetCtx.bodyLarge),
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: sheetCtx.colors.primary)
+          : const Icon(Icons.chevron_right_rounded),
+      onTap: () {
+        Navigator.pop(sheetCtx);
+        context.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
+        context.showInfoNotification('Default disappearing messages set to $label');
+      },
     );
   }
 }

@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$UpdateProfileRequest {
 
- String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;
+ String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;@JsonKey(name: 'defaultDisappearingTimer') int? get defaultDisappearingTimer;
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $UpdateProfileRequestCopyWith<UpdateProfileRequest> get copyWith => _$UpdateProf
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateProfileRequest&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UpdateProfileRequest&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,username,firstName,lastName,profilePictureUrl,about);
+int get hashCode => Object.hash(runtimeType,username,firstName,lastName,profilePictureUrl,about,defaultDisappearingTimer);
 
 @override
 String toString() {
-  return 'UpdateProfileRequest(username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about)';
+  return 'UpdateProfileRequest(username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, defaultDisappearingTimer: $defaultDisappearingTimer)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $UpdateProfileRequestCopyWith<$Res>  {
   factory $UpdateProfileRequestCopyWith(UpdateProfileRequest value, $Res Function(UpdateProfileRequest) _then) = _$UpdateProfileRequestCopyWithImpl;
 @useResult
 $Res call({
- String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about
+ String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer
 });
 
 
@@ -65,14 +65,15 @@ class _$UpdateProfileRequestCopyWithImpl<$Res>
 
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? defaultDisappearingTimer = freezed,}) {
   return _then(_self.copyWith(
 username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,firstName: freezed == firstName ? _self.firstName : firstName // ignore: cast_nullable_to_non_nullable
 as String?,lastName: freezed == lastName ? _self.lastName : lastName // ignore: cast_nullable_to_non_nullable
 as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
 as String?,about: freezed == about ? _self.about : about // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,defaultDisappearingTimer: freezed == defaultDisappearingTimer ? _self.defaultDisappearingTimer : defaultDisappearingTimer // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -157,10 +158,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest() when $default != null:
-return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about);case _:
+return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
   return orElse();
 
 }
@@ -178,10 +179,10 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)  $default,) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest():
-return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about);case _:
+return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -198,10 +199,10 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)?  $default,) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest() when $default != null:
-return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about);case _:
+return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
   return null;
 
 }
@@ -213,7 +214,7 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 @JsonSerializable()
 
 class _UpdateProfileRequest implements UpdateProfileRequest {
-  const _UpdateProfileRequest({this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about});
+  const _UpdateProfileRequest({this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about, @JsonKey(name: 'defaultDisappearingTimer') this.defaultDisappearingTimer});
   factory _UpdateProfileRequest.fromJson(Map<String, dynamic> json) => _$UpdateProfileRequestFromJson(json);
 
 @override final  String? username;
@@ -221,6 +222,7 @@ class _UpdateProfileRequest implements UpdateProfileRequest {
 @override@JsonKey(name: 'last_name') final  String? lastName;
 @override@JsonKey(name: 'profile_picture_url') final  String? profilePictureUrl;
 @override final  String? about;
+@override@JsonKey(name: 'defaultDisappearingTimer') final  int? defaultDisappearingTimer;
 
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -235,16 +237,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UpdateProfileRequest&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UpdateProfileRequest&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,username,firstName,lastName,profilePictureUrl,about);
+int get hashCode => Object.hash(runtimeType,username,firstName,lastName,profilePictureUrl,about,defaultDisappearingTimer);
 
 @override
 String toString() {
-  return 'UpdateProfileRequest(username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about)';
+  return 'UpdateProfileRequest(username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, defaultDisappearingTimer: $defaultDisappearingTimer)';
 }
 
 
@@ -255,7 +257,7 @@ abstract mixin class _$UpdateProfileRequestCopyWith<$Res> implements $UpdateProf
   factory _$UpdateProfileRequestCopyWith(_UpdateProfileRequest value, $Res Function(_UpdateProfileRequest) _then) = __$UpdateProfileRequestCopyWithImpl;
 @override @useResult
 $Res call({
- String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about
+ String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer
 });
 
 
@@ -272,14 +274,15 @@ class __$UpdateProfileRequestCopyWithImpl<$Res>
 
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? defaultDisappearingTimer = freezed,}) {
   return _then(_UpdateProfileRequest(
 username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,firstName: freezed == firstName ? _self.firstName : firstName // ignore: cast_nullable_to_non_nullable
 as String?,lastName: freezed == lastName ? _self.lastName : lastName // ignore: cast_nullable_to_non_nullable
 as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
 as String?,about: freezed == about ? _self.about : about // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,defaultDisappearingTimer: freezed == defaultDisappearingTimer ? _self.defaultDisappearingTimer : defaultDisappearingTimer // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

@@ -18,6 +18,8 @@ class GroupBloc extends Bloc<GroupEvent, GroupState> {
     final result = await _repository.createGroup(
       groupName: event.name,
       groupDescription: event.description,
+      groupPictureUrl: event.groupPictureUrl,
+      groupImageUrl: event.groupImageUrl,
       participantIds: event.participantIds,
     );
 

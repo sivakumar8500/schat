@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:injectable/injectable.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/core/network/api_result.dart';
@@ -52,13 +53,19 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       if (data is Map) {
         final cleanData = _cleanMap(data);
         final type = cleanData['type']?.toString();
-        if (type == 'user_status') {
+        if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
           final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
               ?.toString();
           final status = cleanData['status']?.toString();
+          final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
+          final lastSeen = cleanData['last_seen']?.toString();
           if (userId != null) {
             add(
-              UpdateContactStatus(userId: userId, isOnline: status == 'online'),
+              UpdateContactStatus(
+                userId: userId,
+                isOnline: isOnline,
+                lastSeen: lastSeen,
+              ),
             );
           }
         }
@@ -74,7 +81,10 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     if (currentState is ContactsLoaded) {
       final updatedSynced = currentState.syncedContacts.map((user) {
         if (user.id == event.userId) {
-          return user.copyWith(isOnline: event.isOnline);
+          return user.copyWith(
+            isOnline: event.isOnline,
+            lastSeen: event.lastSeen ?? user.lastSeen,
+          );
         }
         return user;
       }).toList();
@@ -128,6 +138,28 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       emit(const ContactsLoading());
     }
     try {
+      if (kIsWeb) {
+        var cachedUsers = await _contactsRepository.getCachedContacts();
+        if (cachedUsers.isEmpty) {
+          final serverResult = await _contactsRepository.fetchSyncedContacts();
+          if (serverResult is Success<List<UserModel>>) {
+            cachedUsers = serverResult.data;
+          }
+        }
+        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+        final filteredCached = cachedUsers
+            .where((u) => !hidden.contains(u.phoneNumber))
+            .toList();
+        emit(
+          ContactsLoaded(
+            contacts: const [],
+            syncedContacts: filteredCached,
+            hiddenPhoneNumbers: hidden,
+          ),
+        );
+        return;
+      }
+
       final status = await Permission.contacts.status;
 
       if (status.isGranted) {
@@ -166,8 +198,15 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   Future<void> _loadAndSync(Emitter<ContactsState> emit) async {
     try {
       final contacts = await _contactsRepository.getContacts();
-      final cachedUsers = await _contactsRepository.getCachedContacts();
+      var cachedUsers = await _contactsRepository.getCachedContacts();
       final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+
+      if (cachedUsers.isEmpty) {
+        final serverResult = await _contactsRepository.fetchSyncedContacts();
+        if (serverResult is Success<List<UserModel>>) {
+          cachedUsers = serverResult.data;
+        }
+      }
 
       final filteredCached = cachedUsers
           .where((u) => !hidden.contains(u.phoneNumber))
@@ -182,9 +221,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       );
 
       if (!_storageService.hasSyncedContacts()) {
-        final List<String> phoneNumbers = _extractPhoneNumbers(contacts);
-        if (phoneNumbers.isNotEmpty) {
-          final result = await _contactsRepository.syncContacts(phoneNumbers);
+        final syncData = _extractSyncData(contacts);
+        if (syncData.isNotEmpty) {
+          final result = await _contactsRepository.syncContacts(syncData);
           if (result is Success<List<UserModel>>) {
             final filteredResult = result.data
                 .where((u) => !hidden.contains(u.phoneNumber))
@@ -215,6 +254,23 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         emit(const ContactsLoading());
       }
       try {
+        if (kIsWeb) {
+          final serverResult = await _contactsRepository.fetchSyncedContacts();
+          final cachedUsers = serverResult is Success<List<UserModel>> ? serverResult.data : await _contactsRepository.getCachedContacts();
+          final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+          final filteredCached = cachedUsers
+              .where((u) => !hidden.contains(u.phoneNumber))
+              .toList();
+          emit(
+            ContactsLoaded(
+              contacts: const [],
+              syncedContacts: filteredCached,
+              hiddenPhoneNumbers: hidden,
+            ),
+          );
+          return;
+        }
+
         final status = await Permission.contacts.request();
         if (!status.isGranted) {
           emit(const ContactsPermissionDenied());
@@ -222,11 +278,11 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         }
 
         final contacts = await _contactsRepository.getContacts();
-        final List<String> phoneNumbers = _extractPhoneNumbers(contacts);
+        final syncData = _extractSyncData(contacts);
         final hidden = await _contactsRepository.getHiddenPhoneNumbers();
 
-        if (phoneNumbers.isNotEmpty) {
-          final result = await _contactsRepository.syncContacts(phoneNumbers);
+        if (syncData.isNotEmpty) {
+          final result = await _contactsRepository.syncContacts(syncData);
 
           if (result is Success<List<UserModel>>) {
             final filteredResult = result.data
@@ -301,5 +357,33 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       }
     }
     return phoneNumbers;
+  }
+
+  List<Map<String, String>> _extractSyncData(dynamic contacts) {
+    final List<Map<String, String>> syncData = [];
+    if (contacts == null) return syncData;
+
+    final Set<String> addedPhones = {};
+
+    for (var contact in contacts) {
+      if (contact.phones == null) continue;
+      final displayName = contact.displayName ?? '';
+      for (var phone in contact.phones) {
+        String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
+        if (normalized.length >= 10) {
+          if (normalized.length > 10) {
+            normalized = normalized.substring(normalized.length - 10);
+          }
+          if (!addedPhones.contains(normalized)) {
+            addedPhones.add(normalized);
+            syncData.add({
+              'phone_number': normalized,
+              'contact_name': displayName,
+            });
+          }
+        }
+      }
+    }
+    return syncData;
   }
 }

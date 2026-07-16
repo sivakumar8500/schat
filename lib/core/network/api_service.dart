@@ -24,13 +24,25 @@ class ApiService {
         options: (options ?? Options()).copyWith(method: method),
       );
 
-      if (response.data != null) {
-        if (mapper != null) {
-          return ApiResult.success(mapper(response.data));
+      final statusCode = response.statusCode ?? 200;
+      final isSuccess = statusCode >= 200 && statusCode < 300;
+
+      if (isSuccess) {
+        if (response.data != null) {
+          if (mapper != null) {
+            return ApiResult.success(mapper(response.data));
+          }
+          return ApiResult.success(response.data as T);
+        } else {
+          if (mapper != null) {
+            try {
+              return ApiResult.success(mapper(null));
+            } catch (_) {}
+          }
+          return ApiResult.success(null as T);
         }
-        return ApiResult.success(response.data as T);
       } else {
-        return ApiResult.failure('Empty response');
+        return ApiResult.failure('Request failed with status code $statusCode', statusCode: statusCode);
       }
     } on DioException catch (e) {
       String errorMessage = 'Something went wrong';

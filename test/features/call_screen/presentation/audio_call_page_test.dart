@@ -3,20 +3,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:get_it/get_it.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/core/network/connectivity_repository.dart';
 
 class MockCallWebRtcBloc extends MockBloc<CallWebRtcEvent, CallWebRtcState>
     implements CallWebRtcBloc {}
 
+class MockConnectivityRepository extends Mock implements ConnectivityRepository {}
+
 void main() {
+  final getIt = GetIt.instance;
   late MockCallWebRtcBloc mockCallWebRtcBloc;
 
-  setUp(() {
+  setUp(() async {
+    await getIt.reset();
     mockCallWebRtcBloc = MockCallWebRtcBloc();
+    when(() => mockCallWebRtcBloc.stream).thenAnswer((_) => const Stream.empty());
+    getIt.registerSingleton<CallWebRtcBloc>(mockCallWebRtcBloc);
+
+    final mockConnectivityRepository = MockConnectivityRepository();
+    when(() => mockConnectivityRepository.currentConnectivity).thenAnswer((_) async => [ConnectivityResult.wifi]);
+    when(() => mockConnectivityRepository.onConnectivityChanged).thenAnswer((_) => const Stream.empty());
+    getIt.registerSingleton<ConnectivityRepository>(mockConnectivityRepository);
   });
 
   Widget createWidgetUnderTest() {
@@ -42,7 +56,7 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     expect(find.text('Alice'), findsOneWidget);
-    expect(find.text('A'), findsOneWidget); // Initial in avatar
+    expect(find.byIcon(CommonIcons.phone), findsOneWidget);
     expect(find.byIcon(CommonIcons.mic), findsOneWidget);
     expect(find.byIcon(CommonIcons.callEnd), findsOneWidget);
   });

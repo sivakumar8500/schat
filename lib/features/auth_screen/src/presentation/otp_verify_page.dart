@@ -12,6 +12,8 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 
 class OtpVerifyPage extends StatefulWidget {
@@ -70,6 +72,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   void _setupFocusNodes() {
     for (int i = 0; i < 6; i++) {
+      _focusNodes[i].addListener(() {
+        if (mounted) setState(() {});
+      });
       _focusNodes[i].onKeyEvent = (node, event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.backspace) {
@@ -121,9 +126,9 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
       return;
     }
 
-    const String mockDeviceId = 'ljonhonouuoi';
+    final deviceId = getIt<StorageService>().getOrGenerateDeviceId();
     context.read<AuthBloc>().add(
-      VerifyOtpEvent(otpCode: otp, deviceId: mockDeviceId),
+      VerifyOtpEvent(otpCode: otp, deviceId: deviceId),
     );
   }
 
@@ -195,6 +200,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
   @override
   Widget build(BuildContext context) {
     final fieldBgColor = context.colors.pureWhite.withValues(alpha: 0.1);
+    final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
@@ -214,305 +220,312 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
         return Scaffold(
           backgroundColor: context.colors.pureBlack,
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: IntrinsicHeight(
-                    child: Column(
+          resizeToAvoidBottomInset: true,
+          body: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+               CommonSpaces.h20,
+                  Expanded(
+                    child: Stack(
                       children: [
-                        const Spacer(),
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.35,
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: Image.asset(
-                                  'assets/main_bg_img.png',
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                bottom: -1,
-                                left: 0,
-                                right: 0,
-                                height: 150,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        context.colors.pureBlack.withValues(
-                                          alpha: 0,
-                                        ),
-                                        context.colors.pureBlack,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Positioned.fill(
+                          child: Image.asset(
+                            'assets/neon_speech_globe.png',
+                            fit: BoxFit.cover,
                           ),
                         ),
-                        CommonSpaces.h20,
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: InkWell(
-                                      onTap: () => Navigator.pop(context),
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(4.0),
-                                        child: Icon(
-                                          CommonIcons.arrowBack,
-                                          color: context.colors.pureWhite,
-                                          size: 24,
-                                        ),
-                                      ),
-                                    ),
+                        Positioned(
+                          bottom: -1,
+                          left: 0,
+                          right: 0,
+                          height: 150,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  context.colors.pureBlack.withValues(
+                                    alpha: 0,
                                   ),
-                                  CommonSpaces.w12,
-                                  Expanded(
-                                    child: Text.rich(
-                                      TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: "Enter the ",
-                                            style: context.h1.copyWith(
-                                              fontSize: 32,
-                                              color: context.colors.pureWhite,
-                                            ),
-                                          ),
-                                          TextSpan(
-                                            text: "Code",
-                                            style: context.h1Italic.copyWith(
-                                              fontSize: 30,
-                                              color: context.colors.pureWhite,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
+                                  context.colors.pureBlack,
                                 ],
                               ),
-                              CommonSpaces.h8,
-                              Text(
-                                "Sent to ${widget.mobileNumber}",
-                                style: context.bodyMedium.copyWith(
-                                  color: context.colors.pureWhite.withValues(alpha: 0.6),
-                                ),
-                              ),
-                              CommonSpaces.h24,
-                              Text(
-                                'Code',
-                                style: context.titleSmall.copyWith(
-                                  color: context.colors.pureWhite,
-                                ),
-                              ),
-                              CommonSpaces.h12,
-                              AutofillGroup(
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: List.generate(6, (index) {
-                                    final controller = _controllers[index];
-                                    final isFilled = controller.text.isNotEmpty;
-                                    return Container(
-                                      width: 48,
-                                      height: 56,
-                                      decoration: BoxDecoration(
-                                        color: isFilled
-                                            ? context.colors.primary
-                                            : fieldBgColor,
-                                        borderRadius: BorderRadius.circular(12),
-                                        boxShadow: isFilled
-                                            ? [
-                                                BoxShadow(
-                                                  color: context.colors.primary
-                                                      .withValues(alpha: 0.25),
-                                                  blurRadius: 8,
-                                                  offset: const Offset(0, 4),
-                                                ),
-                                              ]
-                                            : [],
-                                      ),
-                                      child: Center(
-                                        child: TextField(
-                                          controller: controller,
-                                          focusNode: _focusNodes[index],
-                                          keyboardType: TextInputType.number,
-                                          textAlign: TextAlign.center,
-                                          style: context.titleLarge.copyWith(
-                                            fontSize: 22,
-                                            color: context.colors.pureWhite,
-                                          ),
-                                          autofillHints: const [
-                                            AutofillHints.oneTimeCode,
-                                          ],
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                          ],
-                                          decoration: InputDecoration(
-                                            counterText: '',
-                                            border: InputBorder.none,
-                                            hintText: isFilled ? '' : '·',
-                                            hintStyle: context.titleLarge.copyWith(
-                                              color: context.colors.pureWhite.withValues(
-                                                alpha: 0.3,
-                                              ),
-                                              fontSize: 24,
-                                            ),
-                                          ),
-                                          onChanged: (value) {
-                                            _handleOtpInput(value, index);
-                                          },
-                                        ),
-                                      ),
-                                    );
-                                  }),
-                                ),
-                              ),
-                              CommonSpaces.h12,
-                              Row(
-                                children: [
-                                  Icon(
-                                    CommonIcons.history,
-                                    size: 16,
-                                    color: context.colors.pureWhite.withValues(alpha: 0.5),
-                                  ),
-                                  CommonSpaces.w6,
-                                  _secondsRemaining > 0
-                                      ? Text(
-                                          'Resend the code in: ${(_secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(_secondsRemaining % 60).toString().padLeft(2, '0')}',
-                                          style: context.bodyMedium.copyWith(
-                                            color: context.colors.pureWhite.withValues(
-                                              alpha: 0.7,
-                                            ),
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        )
-                                      : InkWell(
-                                          onTap: () {
-                                            context.read<AuthBloc>().add(
-                                              SendOtpEvent(
-                                                phoneNumber:
-                                                    widget.mobileNumber,
-                                              ),
-                                            );
-                                            _startCountdown();
-                                            listenForCode();
-                                          },
-                                          child: Text(
-                                            'Resend Code',
-                                            style: context.bodyMedium.copyWith(
-                                              color: context.colors.primary,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                ],
-                              ),
-                            ],
+                            ),
                           ),
                         ),
-                        CommonSpaces.h20,
                       ],
                     ),
                   ),
-                ),
-              );
-            },
-          ),
-          bottomNavigationBar: BlocBuilder<AuthBloc, AuthState>(
-            builder: (context, state) {
-              final isLoading = state is AuthLoading;
-              final isEnabled = _isOtpComplete && !isLoading;
-
-              return Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: isEnabled
-                            ? () => _verifyOtp(context)
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: context.colors.primary,
-                          foregroundColor: context.colors.pureWhite,
-                          disabledBackgroundColor: context.colors.primary.withValues(alpha: 0.3),
-                          disabledForegroundColor: context.colors.pureWhite.withValues(alpha: 0.5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(24),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (isLoading)
-                              SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: context.colors.pureWhite,
-                                ),
-                              )
-                            else ...[
-                              Text(
-                                'Continue',
-                                style: context.titleMedium.copyWith(
-                                  color: isEnabled 
-                                      ? context.colors.pureWhite 
-                                      : context.colors.pureWhite.withValues(alpha: 0.5),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              CommonSpaces.w8,
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: isEnabled 
-                                      ? context.colors.pureWhite 
-                                      : context.colors.pureWhite.withValues(alpha: 0.5),
-                                  shape: BoxShape.circle,
-                                ),
+           
+                
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: InkWell(
+                              onTap: () => Navigator.pop(context),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4.0),
                                 child: Icon(
-                                  CommonIcons.arrowForward,
-                                  color: isEnabled 
-                                      ? context.colors.primary 
-                                      : context.colors.primary.withValues(alpha: 0.5),
-                                  size: 16,
+                                  CommonIcons.arrowBack,
+                                  color: context.colors.pureWhite,
+                                  size: 24,
                                 ),
                               ),
-                            ],
-                          ],
+                            ),
+                          ),
+                          CommonSpaces.w12,
+                          Expanded(
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: "Enter the ",
+                                    style: context.h1.copyWith(
+                                      fontSize: 32,
+                                      color: context.colors.pureWhite,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: "Code",
+                                    style: context.h1Italic.copyWith(
+                                      fontSize: 30,
+                                      color: context.colors.pureWhite,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      CommonSpaces.h8,
+                      Text(
+                        "Sent to ${widget.mobileNumber}",
+                        style: context.bodyMedium.copyWith(
+                          color: context.colors.pureWhite.withValues(alpha: 0.6),
                         ),
                       ),
-                    ),
-                    CommonSpaces.h14,
-                  ],
+                      CommonSpaces.h24,
+                      Text(
+                        'Code',
+                        style: context.titleSmall.copyWith(
+                          color: context.colors.pureWhite,
+                        ),
+                      ),
+                      CommonSpaces.h12,
+                      AutofillGroup(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(6, (index) {
+                            final controller = _controllers[index];
+                            final isFilled = controller.text.isNotEmpty;
+                            final hasFocus = _focusNodes[index].hasFocus;
+                            return Container(
+                              width: 48,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: fieldBgColor,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: hasFocus 
+                                      ? context.colors.primary 
+                                      : (isFilled ? context.colors.primary.withValues(alpha: 0.6) : context.colors.primary.withValues(alpha: 0.15)),
+                                  width: hasFocus ? 2 : 1,
+                                ),
+                                boxShadow: (hasFocus || isFilled)
+                                    ? [
+                                        BoxShadow(
+                                          color: context.colors.primary.withValues(alpha: 0.2),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : [],
+                              ),
+                              child: Center(
+                                child: TextField(
+                                  controller: controller,
+                                  focusNode: _focusNodes[index],
+                                  autofocus: index == 0,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  style: context.titleLarge.copyWith(
+                                    fontSize: 22,
+                                    color: (isFilled || hasFocus) ? context.colors.primary : context.colors.pureWhite,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  autofillHints: const [
+                                    AutofillHints.oneTimeCode,
+                                  ],
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.digitsOnly,
+                                  ],
+                                  decoration: InputDecoration(
+                                    counterText: '',
+                                    border: InputBorder.none,
+                                    hintText: isFilled ? '' : '·',
+                                    hintStyle: context.titleLarge.copyWith(
+                                      color: context.colors.pureWhite.withValues(
+                                        alpha: 0.3,
+                                      ),
+                                      fontSize: 24,
+                                    ),
+                                  ),
+                                  onChanged: (value) {
+                                    _handleOtpInput(value, index);
+                                  },
+                                ),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                      CommonSpaces.h12,
+                      Row(
+                        children: [
+                          Icon(
+                            CommonIcons.history,
+                            size: 16,
+                            color: context.colors.pureWhite.withValues(alpha: 0.5),
+                          ),
+                          CommonSpaces.w6,
+                          _secondsRemaining > 0
+                              ? Text(
+                                  'Resend the code in: ${(_secondsRemaining ~/ 60).toString().padLeft(2, '0')}:${(_secondsRemaining % 60).toString().padLeft(2, '0')}',
+                                  style: context.bodyMedium.copyWith(
+                                    color: context.colors.pureWhite.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : InkWell(
+                                  onTap: () {
+                                    context.read<AuthBloc>().add(
+                                      SendOtpEvent(
+                                        phoneNumber:
+                                            widget.mobileNumber,
+                                      ),
+                                    );
+                                    _startCountdown();
+                                    listenForCode();
+                                  },
+                                  child: Text(
+                                    'Resend Code',
+                                    style: context.bodyMedium.copyWith(
+                                      color: context.colors.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              );
-            },
+                if (isKeyboardOpen)
+                    CommonSpaces.h20,
+              ],
+            ),
+          ),
+          bottomNavigationBar: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: isEnabled
+                          ? [
+                              BoxShadow(
+                                color: context.colors.primary.withValues(alpha: 0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : [],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: isEnabled
+                          ? () => _verifyOtp(context)
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.colors.primary,
+                        foregroundColor: context.colors.isDark ? Colors.black : context.colors.pureWhite,
+                        disabledBackgroundColor: context.colors.primary.withValues(alpha: 0.2),
+                        disabledForegroundColor: context.colors.pureWhite.withValues(alpha: 0.3),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isLoading)
+                            SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  context.colors.isDark ? Colors.black : Colors.white,
+                                ),
+                              ),
+                            )
+                          else ...[
+                            Text(
+                              'Continue',
+                              style: context.titleMedium.copyWith(
+                                color: isEnabled
+                                    ? (context.colors.isDark ? Colors.black : context.colors.pureWhite)
+                                    : context.colors.pureWhite.withValues(alpha: 0.4),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            CommonSpaces.w8,
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: isEnabled
+                                    ? (context.colors.isDark ? Colors.black : context.colors.pureWhite)
+                                    : context.colors.pureWhite.withValues(alpha: 0.4),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                CommonIcons.arrowForward,
+                                color: isEnabled
+                                    ? context.colors.primary
+                                    : context.colors.primary.withValues(alpha: 0.4),
+                                size: 16,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  CommonSpaces.h14,
+                ],
+              ),
+            ),
           ),
         );
       },

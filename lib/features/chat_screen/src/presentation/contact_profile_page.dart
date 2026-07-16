@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -239,7 +240,29 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
+  String _formatLastSeen(String lastSeenStr) {
+    try {
+      DateTime date;
+      final parsedInt = int.tryParse(lastSeenStr);
+      if (parsedInt != null) {
+        if (lastSeenStr.length <= 10) {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        date = DateTime.parse(lastSeenStr).toLocal();
+      }
+      return 'last seen ${timeago.format(date)}';
+    } catch (e) {
+      return 'Offline';
+    }
+  }
+
   Widget _buildHeaderSection() {
+    final isOnline = _recipientUser?.isOnline ?? widget.isOnline;
+    final lastSeenStr = _recipientUser?.lastSeen;
+
     return Column(
       children: [
         CommonSpaces.h24,
@@ -277,9 +300,13 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         Text(widget.contactName, style: context.h3),
         CommonSpaces.h4,
         Text(
-          widget.isOnline ? 'Online' : 'Offline',
+          isOnline
+              ? 'Online'
+              : (lastSeenStr != null && lastSeenStr.isNotEmpty
+                  ? _formatLastSeen(lastSeenStr)
+                  : 'Offline'),
           style: context.bodyMedium.copyWith(
-            color: widget.isOnline ? context.colors.primary : context.colors.textHint,
+            color: isOnline ? context.colors.primary : context.colors.textHint,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -756,65 +783,97 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          decoration: BoxDecoration(
-            color: context.colors.scaffoldBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: context.colors.textHint.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+        return Material(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: context.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              Row(
-                children: [
-                  Icon(Icons.timer_outlined, color: context.colors.primary, size: 24),
-                  CommonSpaces.w12,
-                  Text(
-                    'Disappearing messages',
-                    style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              CommonSpaces.h16,
-              Text(
-                'For more privacy and storage, all new messages will disappear from this chat for everyone after the selected duration.',
-                style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-              ),
-              CommonSpaces.h24,
-              _buildDisappearingOption(context, 'Off', 0),
-              _buildDisappearingOption(context, '24 hours', 86400),
-              _buildDisappearingOption(context, '7 days', 604800),
-              _buildDisappearingOption(context, '90 days', 7776000),
-              CommonSpaces.h20,
-            ],
+                Row(
+                  children: [
+                    Icon(Icons.timer_outlined, color: context.colors.primary, size: 24),
+                    CommonSpaces.w12,
+                    Text(
+                      'Disappearing messages',
+                      style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                CommonSpaces.h16,
+                Text(
+                  'For more privacy and storage, all new messages will disappear from this chat for everyone after the selected duration.',
+                  style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                ),
+                CommonSpaces.h24,
+                _buildDisappearingOption(context, 'Off', 0),
+                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '24 hours', 86400),
+                _buildDisappearingOption(context, '7 days', 604800),
+                _buildDisappearingOption(context, '30 days', 2592000),
+                CommonSpaces.h20,
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int seconds) {
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
       trailing: const Icon(CommonIcons.arrowForward, size: 14),
-      onTap: () {
-        Navigator.pop(context);
-        context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: seconds == 0 ? null : seconds));
-        context.showInfoNotification('Disappearing messages set to $label');
+      onTap: () async {
+        int? finalSeconds = seconds == 0 ? null : seconds;
+        String finalLabel = label;
+        
+        if (isCustomTimeOption) {
+          final now = DateTime.now();
+          final TimeOfDay? picked = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
+            helpText: 'Select auto-delete time today (before midnight)',
+          );
+          if (picked != null) {
+            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+            
+            if (target.isAfter(now)) {
+              finalSeconds = target.difference(now).inSeconds;
+              finalLabel = 'Custom (${picked.format(context)})';
+            } else {
+              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
+              finalSeconds = 1800;
+              finalLabel = '30 minutes';
+            }
+          } else {
+            finalSeconds = 1800;
+            finalLabel = '30 minutes';
+          }
+        }
+        
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+        
+        context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: finalSeconds));
+        context.showInfoNotification('Disappearing messages set to $finalLabel');
       },
     );
   }

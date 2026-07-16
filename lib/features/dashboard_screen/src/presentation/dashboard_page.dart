@@ -31,6 +31,7 @@ import 'package:schat/utils/theme_controller.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
+import 'package:schat/features/subscription_screen/subscription_screen.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -69,6 +70,16 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     } catch (_) {}
+  }
+
+  bool _shouldShowBlockAction() {
+    final chatsState = context.read<ChatsBloc>().state;
+    if (chatsState is ChatsLoaded) {
+      final selectedChats = chatsState.chats.where((c) => _selectedChatIds.contains(c.id));
+      if (selectedChats.isEmpty) return false;
+      return selectedChats.every((c) => !c.isGroup);
+    }
+    return false;
   }
 
   Widget _buildSelectionHeader() {
@@ -119,13 +130,14 @@ class _DashboardPageState extends State<DashboardPage> {
             padding: tightPadding,
             onPressed: _handleHideSelected,
           ),
-          IconButton(
-            icon: Icon(CommonIcons.block, color: context.colors.textPrimary),
-            tooltip: 'Block Recipient',
-            visualDensity: compactDensity,
-            padding: tightPadding,
-            onPressed: _handleBlockSelected,
-          ),
+          if (_shouldShowBlockAction())
+            IconButton(
+              icon: Icon(CommonIcons.block, color: context.colors.textPrimary),
+              tooltip: 'Block Recipient',
+              visualDensity: compactDensity,
+              padding: tightPadding,
+              onPressed: _handleBlockSelected,
+            ),
           IconButton(
             icon: Icon(CommonIcons.deleteOutline, color: context.colors.error),
             tooltip: 'Delete Chats',
@@ -306,7 +318,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 if (!exists) {
                   blockedList.add({
                     'id': chat.recipient.id,
-                    'name': chat.recipient.username ?? chat.recipient.phoneNumber,
+                    'name': chat.recipient.displayName,
                     'profilePictureUrl': chat.recipient.profilePictureUrl,
                     'colorValue': context.colors.primary.value,
                   });
@@ -423,6 +435,13 @@ class _DashboardPageState extends State<DashboardPage> {
               _username = user.username ?? 'David';
               _profilePicUrl = user.profilePictureUrl;
             });
+            if (!user.isSubscribed) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => SubscriptionPage()),
+                (Route<dynamic> route) => false,
+              );
+            }
           }
         },
         failure: (_, statusCode) {},
@@ -474,6 +493,15 @@ class _DashboardPageState extends State<DashboardPage> {
           Hive.openBox('muted_chats_box').then((box) {
             box.put('muted_list', _mutedChatIds.toList());
           }).catchError((_) {});
+        } else if (state is ChatsError) {
+          final msg = state.message.toLowerCase();
+          if (msg.contains('subscription') || msg.contains('payment required')) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => SubscriptionPage()),
+              (Route<dynamic> route) => false,
+            );
+          }
         }
       },
       child: BlocBuilder<ChatsBloc, ChatsState>(
@@ -657,6 +685,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         isOnline: false,
                         recipientId: chat.id,
                         isGroup: true,
+                        initialThemeColor: chat.themeColor,
                       ),
                     ),
                   );
@@ -792,6 +821,33 @@ class _DashboardPageState extends State<DashboardPage> {
     final color = context.colors.primary;
 
     if (isGroup) {
+      final groupPic = chat.recipient.profilePictureUrl;
+      if (groupPic != null && groupPic.isNotEmpty) {
+        return Stack(
+          children: [
+            Container(
+              width: CommonSizes.p38,
+              height: CommonSizes.p38,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: ClipOval(
+                child: Image.network(
+                  groupPic,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Icon(Icons.group_rounded, color: color, size: 24),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
       return SizedBox(
         width: CommonSizes.p48,
         height: CommonSizes.p48,
@@ -853,7 +909,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     final imageUrl = chat.recipient.profilePictureUrl;
-    final name = chat.recipient.username ?? chat.recipient.phoneNumber;
+    final name = chat.recipient.displayName;
     final isOnline = chat.recipient.isOnline;
 
     return Stack(
@@ -1014,11 +1070,17 @@ class _DashboardPageState extends State<DashboardPage> {
         final chat = visibleChats[index];
         final name = chat.isGroup
             ? (chat.groupName ?? 'Group')
-            : (chat.recipient.username ?? chat.recipient.phoneNumber);
-        final message =
-            chat.lastMessage?.content ??
-            chat.groupDescription ??
-            'No messages yet';
+            : chat.recipient.displayName;
+        final String message;
+        if (chat.isTyping) {
+          message = 'typing...';
+        } else if (chat.lastMessage != null && chat.lastMessage!.isDeleted) {
+          final myId = getIt<StorageService>().getUserId() ?? '';
+          final isMe = chat.lastMessage!.senderId == myId;
+          message = isMe ? 'You deleted this message' : 'This message was deleted';
+        } else {
+          message = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
+        }
 
         return _buildSwipeableChat(
           chat: chat,
@@ -1068,6 +1130,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 profilePictureUrl: chat.recipient.profilePictureUrl,
                 recipientId: chat.recipient.id,
                 isGroup: chat.isGroup,
+                initialThemeColor: chat.themeColor,
               ),
             ),
           );
@@ -1116,10 +1179,12 @@ class _DashboardPageState extends State<DashboardPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.bodyMedium.copyWith(
-                            color: isSelected 
-                                ? context.colors.primary 
-                                : context.colors.textSecondary.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.normal,
+                            color: chat.isTyping
+                                ? const Color(0xFF34C759)
+                                : (isSelected 
+                                    ? context.colors.primary 
+                                    : context.colors.textSecondary.withValues(alpha: 0.7)),
+                            fontWeight: chat.isTyping ? FontWeight.w600 : FontWeight.normal,
                             fontSize: 14,
                           ),
                         ),
@@ -1162,7 +1227,9 @@ class _DashboardPageState extends State<DashboardPage> {
         onTap: (index) {
           setState(() {
             _currentIndex = index;
-            if (index == 3) {
+            if (index == 0) {
+              context.read<ChatsBloc>().add(const FetchChats());
+            } else if (index == 3) {
               _onlyShowSynced = false; // Reset to show all when tapped manually
             }
           });

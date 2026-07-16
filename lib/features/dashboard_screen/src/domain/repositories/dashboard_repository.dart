@@ -15,6 +15,8 @@ abstract class DashboardRepository {
   Future<ApiResult<ChatModel>> createGroup({
     required String groupName,
     String? groupDescription,
+    String? groupPictureUrl,
+    String? groupImageUrl,
     required List<String> participantIds,
   });
 

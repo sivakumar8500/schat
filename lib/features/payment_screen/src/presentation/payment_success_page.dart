@@ -6,6 +6,8 @@ import 'package:schat/utils/common_spaces.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
+import 'package:schat/features/permissions_screen/permissions_screen.dart';
+import 'package:schat/utils/permission_helper.dart';
 
 class PaymentSuccessPage extends StatefulWidget {
   const PaymentSuccessPage({super.key});
@@ -50,10 +52,14 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> with SingleTick
     });
   }
 
-  void _navigateToDashboard() {
+  void _navigateToDashboard() async {
+    final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
+    if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const DashboardPage()),
+      MaterialPageRoute(
+        builder: (context) => showPermissions ? const PermissionsPage() : const DashboardPage(),
+      ),
       (route) => false, // Remove all previous routes so user can't hit 'Back' to payment
     );
   }

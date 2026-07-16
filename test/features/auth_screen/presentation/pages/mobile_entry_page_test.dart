@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:schat/core/network/api_result.dart';
@@ -16,6 +17,17 @@ void main() {
     // Clear and register mock
     await getIt.reset();
     getIt.registerSingleton<AuthRepository>(mockAuthRepository);
+
+    // Mock sms_autofill method channel calls
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('sms_autofill'), (message) async {
+      if (message.method == 'getAppSignature') {
+        return 'mock_signature';
+      } else if (message.method == 'hint') {
+        return null;
+      }
+      return null;
+    });
   });
 
   Widget createWidgetUnderTest() {
@@ -28,8 +40,7 @@ void main() {
     await tester.pumpWidget(createWidgetUnderTest());
 
     // Verify redesigned elements
-    expect(find.text("Let's "), findsOneWidget);
-    expect(find.text("you in."), findsOneWidget);
+    expect(find.text("Let's get you in."), findsOneWidget);
     expect(find.text('Phone number'), findsOneWidget);
     expect(find.text('+91'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
@@ -43,11 +54,11 @@ void main() {
     await tester.tap(find.text('Continue'));
     await tester.pump();
 
-    expect(find.text('Please enter a valid 10-digit number.'), findsOneWidget);
+    expect(find.text('Please enter your mobile number.'), findsOneWidget);
   });
 
   testWidgets('navigates to OtpVerifyPage on valid input directly', (WidgetTester tester) async {
-    when(() => mockAuthRepository.sendOtp(any()))
+    when(() => mockAuthRepository.sendOtp(any(), appSignature: any(named: 'appSignature')))
         .thenAnswer((_) async => const Success(true));
 
     await tester.pumpWidget(createWidgetUnderTest());
@@ -60,6 +71,6 @@ void main() {
     await tester.pumpAndSettle(); // Wait for navigation
 
     // Should have navigated to OtpVerifyPage
-    expect(find.text('Enter the '), findsOneWidget);
+    expect(find.text('Enter the Code'), findsOneWidget);
   });
 }

@@ -14,6 +14,7 @@ _UpdateProfileRequest _$UpdateProfileRequestFromJson(
   lastName: json['last_name'] as String?,
   profilePictureUrl: json['profile_picture_url'] as String?,
   about: json['about'] as String?,
+  defaultDisappearingTimer: (json['defaultDisappearingTimer'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$UpdateProfileRequestToJson(
@@ -24,4 +25,5 @@ Map<String, dynamic> _$UpdateProfileRequestToJson(
   'last_name': instance.lastName,
   'profile_picture_url': instance.profilePictureUrl,
   'about': instance.about,
+  'defaultDisappearingTimer': instance.defaultDisappearingTimer,
 };

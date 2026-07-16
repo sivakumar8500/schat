@@ -8,6 +8,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
@@ -31,6 +32,7 @@ import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'package:collection/collection.dart';
@@ -59,6 +61,11 @@ class ChatPage extends StatefulWidget {
   final String? profilePictureUrl;
   final String recipientId;
   final bool isGroup;
+  final ThemeColorModel? initialThemeColor;
+  final String? initialSharedText;
+  final String? initialSharedFilePath;
+  final String? initialSharedFileName;
+  final String? initialSharedFileType;
 
   const ChatPage({
     super.key,
@@ -69,6 +76,11 @@ class ChatPage extends StatefulWidget {
     required this.recipientId,
     this.isGroup = false,
     this.profilePictureUrl,
+    this.initialThemeColor,
+    this.initialSharedText,
+    this.initialSharedFilePath,
+    this.initialSharedFileName,
+    this.initialSharedFileType,
   });
 
   @override
@@ -123,10 +135,13 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _previewPositionTimer;
 
   StreamSubscription? _screenshotSubscription;
+  bool _isAdmin = false;
 
-  @override
   void initState() {
     super.initState();
+    if (widget.isGroup) {
+      _checkIfAdmin();
+    }
     _inputFocusNode.addListener(() {
       if (_inputFocusNode.hasFocus) {
         setState(() {
@@ -139,7 +154,14 @@ class _ChatPageState extends State<ChatPage> {
       conversationId: widget.conversationId,
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
+      initialThemeColor: widget.initialThemeColor,
     ));
+
+    // Pre-populate with shared text if provided
+    if (widget.initialSharedText != null && widget.initialSharedText!.isNotEmpty) {
+      _messageController.text = widget.initialSharedText!;
+      _isTyping = true;
+    }
 
     // Init CallWebRtcBloc and listen for incoming call socket events
     _callWebRtcBloc = getIt<CallWebRtcBloc>();
@@ -194,7 +216,7 @@ class _ChatPageState extends State<ChatPage> {
     final state = _chatBloc.state as ChatLoaded;
 
     final displayedMessages = state.messages.where((m) {
-      if (m.isDeleted) return false;
+      if (m.isDeletedForMe) return false;
       if (_isSearching && _searchQuery.isNotEmpty) {
         return m.content.toLowerCase().contains(_searchQuery.toLowerCase());
       }
@@ -1035,11 +1057,15 @@ class _ChatPageState extends State<ChatPage> {
     if (context.mounted) {
       final Set<UserModel> selectedUsers = {};
 
+      StreamSubscription? contactsSub;
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (bottomSheetCtx) {
+          List<UserModel> localContacts = List.from(contacts);
+          bool isSyncing = false;
+
           return StatefulBuilder(
             builder: (context, setModalState) {
               return Material(
@@ -1090,7 +1116,48 @@ class _ChatPageState extends State<ChatPage> {
                           ),
                           const Spacer(),
                           IconButton(
-                            onPressed: () => Navigator.pop(bottomSheetCtx),
+                            onPressed: isSyncing 
+                                ? null 
+                                : () {
+                                    setModalState(() {
+                                      isSyncing = true;
+                                    });
+                                    final bloc = getIt<ContactsBloc>();
+                                    bloc.add(const SyncContactsEvent());
+                                    contactsSub?.cancel();
+                                    contactsSub = bloc.stream.listen((contactsState) async {
+                                      if (contactsState is ContactsLoaded) {
+                                        contactsSub?.cancel();
+                                        final updated = await _getForwardContacts();
+                                        setModalState(() {
+                                          localContacts = updated;
+                                          isSyncing = false;
+                                        });
+                                      } else if (contactsState is ContactsFailure) {
+                                        contactsSub?.cancel();
+                                        setModalState(() {
+                                          isSyncing = false;
+                                        });
+                                        if (context.mounted) {
+                                          context.showErrorNotification('Sync failed: ${contactsState.errorMessage}');
+                                        }
+                                      }
+                                    });
+                                  },
+                            icon: isSyncing 
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : Icon(Icons.refresh, color: context.colors.primary),
+                            tooltip: 'Sync Contacts',
+                          ),
+                          IconButton(
+                            onPressed: () {
+                              contactsSub?.cancel();
+                              Navigator.pop(bottomSheetCtx);
+                            },
                             icon: Icon(Icons.close, color: context.colors.textSecondary),
                           ),
                         ],
@@ -1104,10 +1171,10 @@ class _ChatPageState extends State<ChatPage> {
                       child: ListView.builder(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        itemCount: contacts.length,
+                        itemCount: localContacts.length,
                         itemBuilder: (context, index) {
-                          final user = contacts[index];
-                          final name = user.username ?? user.phoneNumber;
+                          final user = localContacts[index];
+                          final name = user.displayName;
                           final isSelected = selectedUsers.any((u) => u.id == user.id);
 
                           return ListTile(
@@ -1265,7 +1332,9 @@ class _ChatPageState extends State<ChatPage> {
           },
         );
       },
-    );
+    ).then((_) {
+      contactsSub?.cancel();
+    });
   }
 }
 
@@ -1330,11 +1399,45 @@ class _ChatPageState extends State<ChatPage> {
 
 
   void _setupScreenshotListener() {
-    // Screenshot notification disabled as requested
+    final securityService = getIt<ScreenProtectionService>();
+    securityService.enableProtection();
+    _screenshotSubscription = securityService.onScreenshot.listen((_) {
+      if (mounted) {
+        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
+      }
+    });
+  }
+
+  Future<void> _checkIfAdmin() async {
+    if (!widget.isGroup) return;
+    try {
+      final repo = getIt<ChatRepository>();
+      final data = await repo.getGroupDetails(widget.conversationId);
+      final myId = getIt<StorageService>().getUserId() ?? '';
+      final participantsData = data['participants'];
+      if (participantsData is List) {
+        for (var p in participantsData) {
+          if (p is Map) {
+            final userJson = p['user'] ?? p;
+            if (userJson is Map && userJson['_id'] == myId && p['is_admin'] == true) {
+              if (mounted) {
+                setState(() {
+                  _isAdmin = true;
+                });
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking admin status: $e');
+    }
   }
 
   @override
   void dispose() {
+    getIt<ScreenProtectionService>().disableProtection();
     _screenshotSubscription?.cancel();
     _callSocketSubscription?.cancel();
     _stopTypingTimer();
@@ -2231,7 +2334,7 @@ class _ChatPageState extends State<ChatPage> {
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
           final displayedMessages = messages.where((m) {
-            if (m.isDeleted) return false;
+            if (m.isDeletedForMe) return false;
             if (_isSearching && _searchQuery.isNotEmpty) {
               return m.content.toLowerCase().contains(_searchQuery.toLowerCase());
             }
@@ -2574,6 +2677,45 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  String _formatLastSeenStatus(String? lastSeenStr) {
+    if (lastSeenStr == null || lastSeenStr.isEmpty) return '';
+    try {
+      DateTime date;
+      final parsedInt = int.tryParse(lastSeenStr);
+      if (parsedInt != null) {
+        if (lastSeenStr.length <= 10) {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
+        } else {
+          date = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
+        }
+      } else {
+        date = DateTime.parse(lastSeenStr).toLocal();
+      }
+      final now = DateTime.now();
+      final diff = now.difference(date);
+
+      if (diff.inSeconds < 60) {
+        return 'last seen just now';
+      } else if (diff.inMinutes < 60) {
+        final m = diff.inMinutes;
+        return 'last seen $m ${m == 1 ? 'min' : 'mins'} ago';
+      } else if (diff.inHours < 24) {
+        final h = diff.inHours;
+        return 'last seen $h ${h == 1 ? 'hour' : 'hours'} ago';
+      } else if (diff.inDays == 1) {
+        return 'last seen 1 day ago';
+      } else if (diff.inDays < 365) {
+        final d = diff.inDays;
+        return 'last seen $d days ago';
+      } else {
+        final y = (diff.inDays / 365).floor();
+        return 'last seen $y ${y == 1 ? 'year' : 'years'} ago';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
   PreferredSizeWidget _buildAppBar(BuildContext context, ChatState state) {
     if (_isSearching) {
       return AppBar(
@@ -2673,6 +2815,7 @@ class _ChatPageState extends State<ChatPage> {
 
     final isOnline = state is ChatLoaded ? state.isRecipientOnline : widget.isOnline;
     final isTyping = state is ChatLoaded && state.isRecipientTyping;
+    final lastSeen = state is ChatLoaded ? state.lastSeen : null;
 
     return AppBar(
       backgroundColor: context.colors.scaffoldBackground,
@@ -2802,7 +2945,11 @@ class _ChatPageState extends State<ChatPage> {
                   Text(
                     isTyping
                         ? 'Typing...'
-                        : (widget.isGroup ? 'Group Chat' : (isOnline ? 'Online' : 'Offline')),
+                        : (widget.isGroup
+                            ? 'Group Chat'
+                            : (isOnline
+                                ? 'Online'
+                                : _formatLastSeenStatus(lastSeen))),
                     style: context.bodyMedium.copyWith(
                       color: (isTyping || (!widget.isGroup && isOnline))
                           ? context.colors.success
@@ -3010,11 +3157,14 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('search', CommonIcons.search, 'Search'),
                 _buildMenuItem('group_info', CommonIcons.infoOutline, 'Group info'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Group media'),
-                _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
+                if (_isAdmin)
+                  _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('favourite', isFav ? Icons.star_rounded : Icons.star_outline_rounded, isFav ? 'Remove from favorites' : 'Add to favorites'),
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
-                _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
-                _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
+                if (_isAdmin) ...[
+                  _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
+                  _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
+                ],
               ];
             } else {
               return [
@@ -3456,7 +3606,9 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       // 2. Check server
-      final result = await getIt<ContactsRepository>().syncContacts([phone]);
+      final result = await getIt<ContactsRepository>().syncContacts([
+        {'phone_number': cleanPhone, 'contact_name': name},
+      ]);
       result.when(
         success: (users) {
           if (users.isNotEmpty && mounted) {
@@ -3968,67 +4120,97 @@ class _ChatPageState extends State<ChatPage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          decoration: BoxDecoration(
-            color: context.colors.scaffoldBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: context.colors.textHint.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+        return Material(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: context.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              Row(
-                children: [
-                  Icon(Icons.timer_outlined, color: context.colors.primary, size: 24),
-                  CommonSpaces.w12,
-                  Text(
-                    'Disappearing messages',
-                    style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              CommonSpaces.h16,
-              Text(
-                'For more privacy and storage, all new messages will disappear from this chat for everyone after the selected duration.',
-                style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-              ),
-              CommonSpaces.h24,
-              _buildDisappearingOption(context, 'Off', 0),
-              _buildDisappearingOption(context, '24 hours', 86400),
-              _buildDisappearingOption(context, '7 days', 604800),
-              _buildDisappearingOption(context, '90 days', 7776000),
-              CommonSpaces.h20,
-            ],
+                Row(
+                  children: [
+                    Icon(Icons.timer_outlined, color: context.colors.primary, size: 24),
+                    CommonSpaces.w12,
+                    Text(
+                      'Disappearing messages',
+                      style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                CommonSpaces.h16,
+                Text(
+                  'For more privacy and storage, all new messages will disappear from this chat for everyone after the selected duration.',
+                  style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                ),
+                CommonSpaces.h24,
+                _buildDisappearingOption(context, 'Off', 0),
+                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '24 hours', 86400),
+                _buildDisappearingOption(context, '7 days', 604800),
+                _buildDisappearingOption(context, '30 days', 2592000),
+                CommonSpaces.h20,
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds) {
-    // We don't have current duration in state easily, 
-    // but for now let's just make them clickable to send event
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
       trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () {
-        Navigator.pop(context);
-        _chatBloc.add(SetDisappearingTimerEvent(seconds: seconds == 0 ? null : seconds));
-        context.showInfoNotification('Disappearing messages set to $label');
+      onTap: () async {
+        int? finalSeconds = seconds == 0 ? null : seconds;
+        String finalLabel = label;
+        
+        if (isCustomTimeOption) {
+          final now = DateTime.now();
+          final TimeOfDay? picked = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
+            helpText: 'Select auto-delete time today (before midnight)',
+          );
+          if (picked != null) {
+            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+            
+            if (target.isAfter(now)) {
+              finalSeconds = target.difference(now).inSeconds;
+              finalLabel = 'Custom (${picked.format(context)})';
+            } else {
+              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
+              finalSeconds = 1800;
+              finalLabel = '30 minutes';
+            }
+          } else {
+            finalSeconds = 1800;
+            finalLabel = '30 minutes';
+          }
+        }
+        
+        if (context.mounted) {
+          Navigator.pop(context);
+        }
+        
+        _chatBloc.add(SetDisappearingTimerEvent(seconds: finalSeconds));
+        context.showInfoNotification('Disappearing messages set to $finalLabel');
       },
     );
   }

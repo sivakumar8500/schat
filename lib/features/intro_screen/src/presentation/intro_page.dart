@@ -30,17 +30,17 @@ class _IntroPageState extends State<IntroPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.colors.pureBlack,
-      body: SingleChildScrollView(
+      body: SafeArea(
+        top: false,
         child: Column(
           children: [
-            // Top illustration area with globe and hexagon icon
-            SizedBox(
-              height: MediaQuery.of(context).size.height * 0.55,
+           CommonSpaces.h20,
+            Expanded(
               child: Stack(
                 children: [
                   Positioned.fill(
                     child: Image.asset(
-                      'assets/main_bg_img.png',
+                      'assets/neon_speech_globe.png',
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -67,11 +67,10 @@ class _IntroPageState extends State<IntroPage> {
                 ],
               ),
             ),
-
-            // Content Area - Unified with Background
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p32),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -88,7 +87,7 @@ class _IntroPageState extends State<IntroPage> {
                       color: context.colors.pureWhite,
                     ),
                   ),
-                  CommonSpaces.h24,
+                  CommonSpaces.h20,
                   Text(
                     'Messages that disappear. Calls that can\'t be tapped. Files only you control.',
                     style: context.bodyMedium.copyWith(
@@ -96,17 +95,27 @@ class _IntroPageState extends State<IntroPage> {
                       fontSize: 16,
                     ),
                   ),
-                  CommonSpaces.h40,
+                  CommonSpaces.h32,
 
                   // Get started Button
-                  SizedBox(
+                  Container(
                     width: double.infinity,
-                    height: 46,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(CommonSizes.r24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: context.colors.primary.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
                     child: ElevatedButton(
                       onPressed: _onDone,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: context.colors.primary,
-                        foregroundColor: context.colors.pureWhite,
+                        foregroundColor: context.colors.isDark ? Colors.black : Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(CommonSizes.r24),
                         ),
@@ -118,16 +127,16 @@ class _IntroPageState extends State<IntroPage> {
                           Text(
                             'Get started',
                             style: context.titleMedium.copyWith(
-                              color: context.colors.pureWhite,
+                              color: context.colors.isDark ? Colors.black : Colors.white,
                               fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                           const Spacer(flex: 2),
                           Container(
                             padding: const EdgeInsets.all(CommonSizes.p8),
                             decoration: BoxDecoration(
-                              color: context.colors.pureWhite,
+                              color: context.colors.isDark ? Colors.black : Colors.white,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -168,7 +177,7 @@ class _IntroPageState extends State<IntroPage> {
                       ),
                     ],
                   ),
-                  CommonSpaces.h40,
+                  CommonSpaces.h24,
                 ],
               ),
             ),

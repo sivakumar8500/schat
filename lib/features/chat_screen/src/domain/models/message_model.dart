@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'package:schat/injection.dart';
+import 'package:schat/core/storage/storage_service.dart';
 
 class CallMeta {
   final String callType; // "audio" or "video"
@@ -16,9 +18,9 @@ class CallMeta {
   factory CallMeta.fromJson(Map<String, dynamic> json) {
     return CallMeta(
       callType: (json['callType'] ?? json['call_type'] ?? 'audio').toString(),
-      duration: int.tryParse(json['duration']?.toString() ?? '0') ?? 0,
+      duration: int.tryParse((json['duration'] ?? json['duration_seconds'])?.toString() ?? '0') ?? 0,
       status: (json['status'] ?? 'completed').toString(),
-      startTime: (json['start_time'] ?? json['startTime'] ?? DateTime.now().toIso8601String()).toString(),
+      startTime: (json['start_time'] ?? json['startTime'] ?? json['timestamp'] ?? DateTime.now().toIso8601String()).toString(),
     );
   }
 
@@ -37,7 +39,11 @@ class MessageModel {
   final String content;
   final String? mediaUrl;
   final String? mediaType;
+  /// Top-level message type: "text", "system", "image", "video", "audio", etc.
+  /// "system" messages are group status notifications (e.g. "John is added").
+  final String messageType;
   final bool isDeleted;
+  final bool isDeletedForMe;
   final bool isRead;
   final bool isDelivered;
   final String createdAt;
@@ -48,6 +54,7 @@ class MessageModel {
   final String? replyMessageId;
   final String? replyMessageBody;
   final bool isEdited;
+  final int? editedAt;
   final bool isPinned;
   final int? pinnedAt;
 
@@ -65,6 +72,8 @@ class MessageModel {
 
   // Call support
   final CallMeta? callMeta;
+  final double? duration;
+  final List<String> deletedFor;
 
   const MessageModel({
     required this.id,
@@ -73,7 +82,9 @@ class MessageModel {
     required this.content,
     this.mediaUrl,
     this.mediaType,
+    this.messageType = 'text',
     required this.isDeleted,
+    this.isDeletedForMe = false,
     this.isRead = false,
     this.isDelivered = false,
     required this.createdAt,
@@ -82,6 +93,7 @@ class MessageModel {
     this.replyMessageId,
     this.replyMessageBody,
     this.isEdited = false,
+    this.editedAt,
     this.isPinned = false,
     this.pinnedAt,
     this.attachmentBytes,
@@ -93,20 +105,35 @@ class MessageModel {
     this.allowView = true,
     this.fileSize,
     this.callMeta,
+    this.duration,
+    this.deletedFor = const [],
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
     String contentText = '';
     String? mediaUrl;
-    String? mediaType = (json['type'] as String?)?.toLowerCase();
+    final String rawType = (json['type'] as String?)?.toLowerCase() ?? 'text';
+    // messageType holds the top-level type (e.g. 'system', 'text', 'image').
+    // mediaType holds the media sub-type for attachment bubbles.
+    final String messageType = rawType;
+    String? mediaType = rawType == 'system' ? null : rawType;
 
     final dynamic contentData = json['content'];
+    double? duration;
     if (contentData is Map) {
       contentText = (contentData['text'] ?? '')?.toString() ?? '';
       mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url']) as String?;
+      final rawDuration = contentData['duration'] ?? json['duration'];
+      if (rawDuration != null) {
+        duration = double.tryParse(rawDuration.toString());
+      }
     } else if (contentData is String) {
       contentText = contentData;
       mediaUrl = (json['media_url'] ?? json['url']) as String?;
+      final rawDuration = json['duration'];
+      if (rawDuration != null) {
+        duration = double.tryParse(rawDuration.toString());
+      }
     }
 
     final dynamic security = json['security'];
@@ -148,16 +175,32 @@ class MessageModel {
       callMeta = CallMeta.fromJson(Map<String, dynamic>.from(rawCallMeta));
     }
 
+    final dynamic rawDeletedFor = json['deletedFor'] ?? json['deleted_for'];
+    final List<String> deletedForList = [];
+    if (rawDeletedFor is List) {
+      for (var item in rawDeletedFor) {
+        if (item != null) {
+          deletedForList.add(item.toString());
+        }
+      }
+    }
+    final String? currentUserId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+    final bool rawIsDeleted = (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false;
+    final bool isDeletedForMeOnly = currentUserId != null && deletedForList.contains(currentUserId) && !rawIsDeleted;
+    final bool resolvedIsDeleted = rawIsDeleted || (currentUserId != null && deletedForList.contains(currentUserId));
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
       senderId: (json['senderId'] ?? json['sender_id'] ?? json['sender'])?.toString() ?? '',
       content: contentText,
       mediaUrl: mediaUrl,
+      messageType: messageType,
       mediaType: (mediaType ?? (json['media_type'] as String?))?.toLowerCase(),
-      isDeleted: (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false,
-      isRead: (json['isRead'] ?? json['is_read']) as bool? ?? false,
-      isDelivered: (json['isDelivered'] ?? json['is_delivered']) as bool? ?? false,
+      isDeleted: resolvedIsDeleted,
+      isDeletedForMe: isDeletedForMeOnly,
+      isRead: _parseIsRead(json),
+      isDelivered: _parseIsDelivered(json),
       createdAt: (json['createdAt'] ?? json['created_at'])?.toString() ?? '',
       updatedAt: (json['updatedAt'] ?? json['updated_at'])?.toString() ?? '',
       isReply: (json['isReply'] ?? json['is_reply']) as bool? ?? false,
@@ -170,6 +213,7 @@ class MessageModel {
         return body?.toString();
       }(),
       isEdited: (json['isEdited'] ?? json['is_edited']) as bool? ?? false,
+      editedAt: int.tryParse((json['editedAt'] ?? json['edited_at'])?.toString() ?? ''),
       isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
       pinnedAt: json['pinnedAt'] ?? json['pinned_at'],
       attachmentBytes: null,
@@ -181,7 +225,32 @@ class MessageModel {
       allowView: allowView,
       fileSize: fileSize,
       callMeta: callMeta,
+      duration: duration,
+      deletedFor: deletedForList,
     );
+  }
+
+  /// Parses isRead from either a legacy bool field or the backend `status` string.
+  /// status values: "sent" | "delivered" | "read"
+  static bool _parseIsRead(Map<String, dynamic> json) {
+    // Legacy bool field (cached messages)
+    final legacyBool = json['isRead'] ?? json['is_read'];
+    if (legacyBool is bool) return legacyBool;
+
+    // New backend status string
+    final status = (json['status'] as String?)?.toLowerCase();
+    return status == 'read';
+  }
+
+  /// Parses isDelivered from either a legacy bool field or the backend `status` string.
+  static bool _parseIsDelivered(Map<String, dynamic> json) {
+    // Legacy bool field (cached messages)
+    final legacyBool = json['isDelivered'] ?? json['is_delivered'];
+    if (legacyBool is bool) return legacyBool;
+
+    // New backend status string — "delivered" or "read" both mean delivered
+    final status = (json['status'] as String?)?.toLowerCase();
+    return status == 'delivered' || status == 'read';
   }
 
   Map<String, dynamic> toJson() => {
@@ -193,9 +262,11 @@ class MessageModel {
       'fileKey': mediaUrl,
       if (attachmentName != null) 'fileName': attachmentName,
       if (fileSize != null) 'fileSize': fileSize,
+      if (duration != null) 'duration': duration,
     },
-    'type': mediaType,
+    'type': messageType != 'text' ? messageType : mediaType,
     'isDeleted': isDeleted,
+    'isDeletedForMe': isDeletedForMe,
     'isRead': isRead,
     'isDelivered': isDelivered,
     'createdAt': createdAt,
@@ -204,6 +275,7 @@ class MessageModel {
     'replyMessageId': replyMessageId,
     'replyMessageBody': replyMessageBody,
     'isEdited': isEdited,
+    'editedAt': editedAt,
     'isPinned': isPinned,
     'pinnedAt': pinnedAt,
     'attachmentName': attachmentName,
@@ -214,6 +286,7 @@ class MessageModel {
       'allowDownload': allowDownload,
       'allowView': allowView,
     },
+    'deletedFor': deletedFor,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
   };
 
@@ -224,7 +297,9 @@ class MessageModel {
     String? content,
     String? mediaUrl,
     String? mediaType,
+    String? messageType,
     bool? isDeleted,
+    bool? isDeletedForMe,
     bool? isRead,
     bool? isDelivered,
     String? createdAt,
@@ -233,6 +308,7 @@ class MessageModel {
     String? replyMessageId,
     String? replyMessageBody,
     bool? isEdited,
+    int? editedAt,
     bool? isPinned,
     int? pinnedAt,
     Uint8List? attachmentBytes,
@@ -244,6 +320,8 @@ class MessageModel {
     bool? allowView,
     int? fileSize,
     CallMeta? callMeta,
+    double? duration,
+    List<String>? deletedFor,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -252,7 +330,9 @@ class MessageModel {
       content: content ?? this.content,
       mediaUrl: mediaUrl ?? this.mediaUrl,
       mediaType: mediaType ?? this.mediaType,
+      messageType: messageType ?? this.messageType,
       isDeleted: isDeleted ?? this.isDeleted,
+      isDeletedForMe: isDeletedForMe ?? this.isDeletedForMe,
       isRead: isRead ?? this.isRead,
       isDelivered: isDelivered ?? this.isDelivered,
       createdAt: createdAt ?? this.createdAt,
@@ -261,6 +341,7 @@ class MessageModel {
       replyMessageId: replyMessageId ?? this.replyMessageId,
       replyMessageBody: replyMessageBody ?? this.replyMessageBody,
       isEdited: isEdited ?? this.isEdited,
+      editedAt: editedAt ?? this.editedAt,
       isPinned: isPinned ?? this.isPinned,
       pinnedAt: pinnedAt ?? this.pinnedAt,
       attachmentBytes: attachmentBytes ?? this.attachmentBytes,
@@ -272,6 +353,8 @@ class MessageModel {
       allowView: allowView ?? this.allowView,
       fileSize: fileSize ?? this.fileSize,
       callMeta: callMeta ?? this.callMeta,
+      duration: duration ?? this.duration,
+      deletedFor: deletedFor ?? this.deletedFor,
     );
   }
 }

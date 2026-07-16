@@ -9,7 +9,8 @@ import 'package:schat/utils/common_endpoints.dart';
 
 abstract class ContactsRepository {
   Future<List<Contact>> getContacts();
-  Future<ApiResult<List<UserModel>>> syncContacts(List<String> phoneNumbers);
+  Future<ApiResult<List<UserModel>>> syncContacts(List<Map<String, String>> contacts);
+  Future<ApiResult<List<UserModel>>> fetchSyncedContacts();
   Future<List<UserModel>> getCachedContacts();
   Future<void> cacheContacts(List<UserModel> contacts);
   Future<void> removeContactFromCache(String userId);
@@ -36,10 +37,29 @@ class ContactsRepositoryImpl implements ContactsRepository {
   }
 
   @override
-  Future<ApiResult<List<UserModel>>> syncContacts(List<String> phoneNumbers) async {
+  Future<ApiResult<List<UserModel>>> syncContacts(List<Map<String, String>> contacts) async {
     final result = await _apiService.post<List<UserModel>>(
       CommonEndpoints.syncContacts,
-      data: {'phone_numbers': phoneNumbers},
+      data: {'contacts': contacts},
+      mapper: (data) {
+        if (data is List) {
+          return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+        return [];
+      },
+    );
+
+    if (result is Success<List<UserModel>>) {
+      await cacheContacts(result.data);
+    }
+
+    return result;
+  }
+
+  @override
+  Future<ApiResult<List<UserModel>>> fetchSyncedContacts() async {
+    final result = await _apiService.get<List<UserModel>>(
+      CommonEndpoints.getContacts,
       mapper: (data) {
         if (data is List) {
           return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();

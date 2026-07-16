@@ -28,6 +28,7 @@ void main() {
   late StreamController<dynamic> socketStreamController;
 
   setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
     registerFallbackValue(const CallIdle());
   });
 
@@ -42,6 +43,7 @@ void main() {
     when(() => mockRepository.onMessage).thenAnswer((_) => socketStreamController.stream);
     when(() => mockNotificationService.onCallAnswered).thenAnswer((_) => const Stream.empty());
     when(() => mockWebRtcService.activeConversationId).thenReturn('test_conv');
+    when(() => mockWebRtcService.callSignalState).thenAnswer((_) => const Stream.empty());
     when(() => mockWebRtcService.cleanup()).thenAnswer((_) async {});
     when(() => mockWebRtcService.toggleMute(any())).thenReturn(null);
     when(() => mockWebRtcService.toggleVideo(any())).thenReturn(null);
@@ -138,6 +140,40 @@ void main() {
       },
       expect: () => [
         isA<CallActive>().having((s) => s.isRemoteVideoOff, 'isRemoteVideoOff', true),
+      ],
+    );
+  });
+
+  group('CallWebRtcBloc Incoming Call Handling', () {
+    blocTest<CallWebRtcBloc, CallWebRtcState>(
+      'handles call_incoming socket event and resolves caller_profile_picture_url',
+      build: () {
+        when(() => mockNotificationService.showIncomingCall(any()))
+            .thenAnswer((_) async {});
+        when(() => mockSoundService.playRingtone()).thenAnswer((_) async {});
+        return bloc;
+      },
+      act: (bloc) {
+        socketStreamController.add({
+          'type': 'call_incoming',
+          'conversation_id': 'test_conv',
+          'call_type': 'video',
+          'recipient_id': 'recip_id',
+          'caller_name': 'Alice',
+          'caller_details': {
+            'profile_picture_url': 'https://example.com/pic.png',
+          },
+        });
+      },
+      verify: (bloc) {
+        verify(() => mockSoundService.playRingtone()).called(1);
+        verify(() => mockNotificationService.showIncomingCall(any())).called(1);
+      },
+      expect: () => [
+        isA<CallRinging>()
+            .having((s) => s.callerName, 'callerName', 'Alice')
+            .having((s) => s.profilePictureUrl, 'profilePictureUrl', 'https://example.com/pic.png')
+            .having((s) => s.isVideo, 'isVideo', true),
       ],
     );
   });

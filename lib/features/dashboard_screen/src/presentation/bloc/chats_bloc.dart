@@ -16,6 +16,7 @@ import 'chats_state.dart';
 class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   final GetChatsUseCase _getChatsUseCase;
   final DashboardRepository _chatRepository;
+  // ignore: unused_field
   final ContactsRepository _contactsRepository;
   final ChatSocketRepository _socketRepository;
   final StorageService _storageService;
@@ -35,6 +36,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<MessageEdited>(_onMessageEdited);
     on<RemoveChat>(_onRemoveChat);
     on<CallLogUpdated>(_onCallLogUpdated);
+    on<UpdateChatTypingStatus>(_onUpdateChatTypingStatus);
+    on<MessageDeleted>(_onMessageDeleted);
 
     _listenToSocket();
   }
@@ -65,12 +68,18 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         final cleanData = _cleanMap(Map<dynamic, dynamic>.from(mapData));
         final type = cleanData['type']?.toString();
         
-        if (type == 'user_status') {
+        if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
           final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
               ?.toString();
           final status = cleanData['status']?.toString();
+          final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
+          final lastSeen = cleanData['last_seen']?.toString();
           if (userId != null) {
-            add(UpdateUserStatus(userId: userId, isOnline: status == 'online'));
+            add(UpdateUserStatus(
+              userId: userId,
+              isOnline: isOnline,
+              lastSeen: lastSeen,
+            ));
           }
         } else if (type == 'new_message' || type == 'message') {
           final message = cleanData['message'] ?? (cleanData.containsKey('id') ? cleanData : null);
@@ -78,6 +87,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             final convId = (message['conversationId'] ?? message['conversation_id'])?.toString();
             final updatedAt = (message['updatedAt'] ?? message['created_at'])?.toString();
             final unreadCount = int.tryParse(cleanData['unread_count']?.toString() ?? '') ?? 
+                                int.tryParse(cleanData['unreadCount']?.toString() ?? '') ??
                                 int.tryParse(cleanData['unread']?.toString() ?? '');
             final senderId = (message['senderId'] ?? message['sender_id'] ?? message['sender'])?.toString();
             final msgId = (message['id'] ?? message['messageId'] ?? message['_id'])?.toString();
@@ -107,6 +117,12 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               ));
             }
           }
+        } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (convId != null && msgId != null) {
+            add(MessageDeleted(conversationId: convId, messageId: msgId));
+          }
         } else if (type == 'conversation_deleted') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           if (convId != null) {
@@ -122,14 +138,30 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
            }
         } else if (type == 'call_log_updated') {
           final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
-          final msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString();
           final callMeta = cleanData['call_meta'] ?? cleanData['callMeta'];
+          var msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString();
+          if (msgId == null && callMeta is Map) {
+            msgId = (callMeta['message_id'] ?? callMeta['messageId'])?.toString();
+          }
           if (convId != null && msgId != null && callMeta is Map) {
              add(CallLogUpdated(
                conversationId: convId, 
                messageId: msgId, 
                callMeta: Map<String, dynamic>.from(callMeta),
              ));
+          }
+        } else if (type == 'user_typing' || type == 'typing') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final isTypingField = cleanData['is_typing'] ?? cleanData['isTyping'];
+          final isTyping = isTypingField is bool ? isTypingField : true;
+          final senderId = (cleanData['sender_id'] ?? cleanData['senderId'] ?? cleanData['sender'])?.toString();
+          final myId = _storageService.getUserId() ?? '';
+
+          if (convId != null && senderId != myId) {
+            add(UpdateChatTypingStatus(
+              conversationId: convId,
+              isTyping: isTyping,
+            ));
           }
         }
       } catch (e) {
@@ -213,6 +245,20 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
+  void _onMessageDeleted(MessageDeleted event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (chat.id == event.conversationId && chat.lastMessage?.id == event.messageId) {
+          final updatedLastMessage = chat.lastMessage?.copyWith(isDeleted: true);
+          return chat.copyWith(lastMessage: updatedLastMessage);
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
   void _onRemoveChat(RemoveChat event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
@@ -259,8 +305,22 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         if (!chat.isGroup && chat.recipient.id == event.userId) {
           final updatedRecipient = chat.recipient.copyWith(
             isOnline: event.isOnline,
+            lastSeen: event.lastSeen ?? chat.recipient.lastSeen,
           );
           return chat.copyWith(recipient: updatedRecipient);
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onUpdateChatTypingStatus(UpdateChatTypingStatus event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (chat.id == event.conversationId) {
+          return chat.copyWith(isTyping: event.isTyping);
         }
         return chat;
       }).toList();
@@ -274,7 +334,6 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
     await result.when(
       success: (chat) async {
-        await _contactsRepository.removeContactFromCache(event.participantId);
         emit(
           ChatCreated(
             chat,

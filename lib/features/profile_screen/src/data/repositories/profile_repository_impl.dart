@@ -8,6 +8,8 @@ import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/profile_screen/src/domain/models/update_profile_request.dart';
+import 'package:schat/features/profile_screen/src/domain/models/blocked_group_model.dart';
+import 'package:schat/features/profile_screen/src/domain/models/phone_lookup_response.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -40,7 +42,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
   Future<ApiResult<UserModel>> updateProfile(UpdateProfileRequest request) async {
     final Map<String, dynamic> data = request.toJson();
     // Remove null values to prevent server-side errors on PATCH
-    data.removeWhere((key, value) => value == null);
+    data.removeWhere((key, value) => value == null && key != 'defaultDisappearingTimer');
 
     final result = await _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,
@@ -201,6 +203,28 @@ class ProfileRepositoryImpl implements ProfileRepository {
         }
         return [];
       },
+    );
+  }
+
+  @override
+  Future<ApiResult<List<BlockedGroupModel>>> getBlockedGroups() async {
+    return _apiService.get<List<BlockedGroupModel>>(
+      CommonEndpoints.getBlockedGroups,
+      mapper: (json) {
+        if (json is List) {
+          return json.map((e) => BlockedGroupModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        return [];
+      },
+    );
+  }
+
+  @override
+  Future<ApiResult<PhoneLookupResponse>> lookupByPhoneNumber(String phoneNumber) async {
+    return _apiService.get<PhoneLookupResponse>(
+      CommonEndpoints.lookupUser,
+      queryParameters: {'phone_number': phoneNumber},
+      mapper: (json) => PhoneLookupResponse.fromJson(Map<String, dynamic>.from(json as Map)),
     );
   }
 }

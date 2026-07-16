@@ -23,6 +23,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<UpdateProfileEvent>(_onUpdateProfile);
     on<UpdateAboutEvent>(_onUpdateAbout);
     on<LogoutEvent>(_onLogout);
+    on<UpdateDefaultDisappearingTimerEvent>(_onUpdateDefaultDisappearingTimer);
   }
 
   Future<void> _onUpdateAbout(UpdateAboutEvent event, Emitter<ProfileState> emit) async {
@@ -137,6 +138,24 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
       emit(const ProfileLogoutSuccess());
     } catch (e) {
       emit(ProfileFailure(errorMessage: e.toString()));
+    }
+  }
+
+  Future<void> _onUpdateDefaultDisappearingTimer(
+    UpdateDefaultDisappearingTimerEvent event,
+    Emitter<ProfileState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is ProfileLoaded) {
+      emit(const ProfileLoading());
+      final request = UpdateProfileRequest(
+        defaultDisappearingTimer: event.seconds,
+      );
+      final result = await _profileRepository.updateProfile(request);
+      result.when(
+        success: (user) => emit(ProfileSuccess(user: user)),
+        failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+      );
     }
   }
 }

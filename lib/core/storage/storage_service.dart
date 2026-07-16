@@ -1,5 +1,6 @@
 import 'package:injectable/injectable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 @lazySingleton
 class StorageService {
@@ -10,6 +11,8 @@ class StorageService {
   static const String _profilePicKey = 'profile_pic_url';
   static const String _hasSyncedContactsKey = 'has_synced_contacts';
   static const String _emailKey = 'email';
+  static const String _deviceIdKey = 'device_id';
+  static const String _hasSeenPermissionsKey = 'has_seen_permissions';
 
   final SharedPreferences _prefs;
 
@@ -83,5 +86,22 @@ class StorageService {
 
   String? getEmail() {
     return _prefs.getString(_emailKey);
+  }
+
+  String getOrGenerateDeviceId() {
+    String? deviceId = _prefs.getString(_deviceIdKey);
+    if (deviceId == null) {
+      deviceId = const Uuid().v4();
+      _prefs.setString(_deviceIdKey, deviceId);
+    }
+    return deviceId;
+  }
+
+  Future<void> setHasSeenPermissions(bool value) async {
+    await _prefs.setBool(_hasSeenPermissionsKey, value);
+  }
+
+  bool hasSeenPermissions() {
+    return _prefs.getBool(_hasSeenPermissionsKey) ?? false;
   }
 }

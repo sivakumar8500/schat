@@ -99,4 +99,23 @@ void main() {
       ],
     );
   });
+
+  group('UpdateChatTypingStatus', () {
+    blocTest<ChatsBloc, ChatsState>(
+      'updates typing status in ChatsLoaded state',
+      build: () => chatsBloc,
+      seed: () => ChatsLoaded(chatList),
+      act: (bloc) => bloc.add(const UpdateChatTypingStatus(
+        conversationId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+        isTyping: true,
+      )),
+      expect: () => [
+        isA<ChatsLoaded>().having(
+          (s) => s.chats.firstWhere((c) => c.id == '3fa85f64-5717-4562-b3fc-2c963f66afa6').isTyping,
+          'isTyping',
+          true,
+        ),
+      ],
+    );
+  });
 }

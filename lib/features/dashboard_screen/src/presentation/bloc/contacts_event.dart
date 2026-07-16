@@ -18,5 +18,10 @@ class RemoveContact extends ContactsEvent {
 class UpdateContactStatus extends ContactsEvent {
   final String userId;
   final bool isOnline;
-  const UpdateContactStatus({required this.userId, required this.isOnline});
+  final String? lastSeen;
+  const UpdateContactStatus({
+    required this.userId,
+    required this.isOnline,
+    this.lastSeen,
+  });
 }

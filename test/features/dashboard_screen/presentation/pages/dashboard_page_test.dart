@@ -13,6 +13,9 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
@@ -29,6 +32,7 @@ class MockChatRepository extends Mock implements ChatRepository {}
 class MockStatusRepository extends Mock implements StatusRepository {}
 class MockChatSocketBloc extends MockBloc<ChatSocketEvent, ChatSocketState> implements ChatSocketBloc {}
 class MockChatsBloc extends MockBloc<ChatsEvent, ChatsState> implements ChatsBloc {}
+class MockContactsBloc extends MockBloc<ContactsEvent, ContactsState> implements ContactsBloc {}
 class MockContactsRepository extends Mock implements ContactsRepository {}
 class MockProfileRepository extends Mock implements ProfileRepository {}
 class MockStorageService extends Mock implements StorageService {}
@@ -37,6 +41,7 @@ class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
 void main() {
   late MockChatSocketBloc mockChatSocketBloc;
   late MockChatsBloc mockChatsBloc;
+  late MockContactsBloc mockContactsBloc;
   late MockProfileRepository mockProfileRepository;
   late MockStorageService mockStorageService;
   late MockChatSocketRepository mockChatSocketRepository;
@@ -49,12 +54,14 @@ void main() {
     
     mockChatSocketBloc = MockChatSocketBloc();
     mockChatsBloc = MockChatsBloc();
+    mockContactsBloc = MockContactsBloc();
     mockProfileRepository = MockProfileRepository();
     mockStorageService = MockStorageService();
     mockChatSocketRepository = MockChatSocketRepository();
     
     getIt.registerFactory<ChatSocketBloc>(() => mockChatSocketBloc);
     getIt.registerLazySingleton<ChatsBloc>(() => mockChatsBloc);
+    getIt.registerLazySingleton<ContactsBloc>(() => mockContactsBloc);
     getIt.registerLazySingleton<ContactsRepository>(() => MockContactsRepository());
     getIt.registerLazySingleton<ProfileRepository>(() => mockProfileRepository);
     getIt.registerLazySingleton<StorageService>(() => mockStorageService);
@@ -62,6 +69,7 @@ void main() {
 
     when(() => mockChatSocketBloc.state).thenReturn(ChatSocketInitial());
     when(() => mockChatsBloc.state).thenReturn(const ChatsInitial());
+    when(() => mockContactsBloc.state).thenReturn(const ContactsInitial());
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
     
     when(() => mockStorageService.getUsername()).thenReturn('David');

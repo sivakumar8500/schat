@@ -31,3 +31,9 @@ class UpdateAboutEvent extends ProfileEvent {
 class LogoutEvent extends ProfileEvent {
   const LogoutEvent();
 }
+
+class UpdateDefaultDisappearingTimerEvent extends ProfileEvent {
+  final int? seconds;
+
+  const UpdateDefaultDisappearingTimerEvent({this.seconds});
+}

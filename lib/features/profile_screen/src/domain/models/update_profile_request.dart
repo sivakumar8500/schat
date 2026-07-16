@@ -11,6 +11,7 @@ abstract class UpdateProfileRequest with _$UpdateProfileRequest {
     @JsonKey(name: 'last_name') String? lastName,
     @JsonKey(name: 'profile_picture_url') String? profilePictureUrl,
     String? about,
+    @JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer,
   }) = _UpdateProfileRequest;
 
   factory UpdateProfileRequest.fromJson(Map<String, dynamic> json) => _$UpdateProfileRequestFromJson(json);

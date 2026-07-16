@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
@@ -246,11 +247,24 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<void> updateGroupInfo({required String groupId, String? name, String? description, String? iconUrl}) async {
+  Future<void> updateGroupInfo({
+    required String groupId,
+    String? name,
+    String? description,
+    String? iconUrl,
+    List<String>? participantIds,
+  }) async {
     final Map<String, dynamic> data = {};
-    if (name != null) data['name'] = name;
-    if (description != null) data['description'] = description;
-    if (iconUrl != null) data['icon_url'] = iconUrl;
+    if (name != null) data['group_name'] = name;
+    if (description != null) data['group_description'] = description;
+    if (iconUrl != null) {
+      data['groupPictureUrl'] = iconUrl;
+      data['groupImageUrl'] = iconUrl;
+    }
+    if (participantIds != null) {
+      data['participant_ids'] = participantIds;
+      data['participantIds'] = participantIds;
+    }
 
     final result = await _apiService.patch(
       CommonEndpoints.updateGroup(groupId),
@@ -267,7 +281,11 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<void> addGroupParticipants({required String groupId, required List<String> userIds}) async {
     final result = await _apiService.post(
       CommonEndpoints.addGroupParticipants(groupId),
-      data: {'participant_ids': userIds},
+      // Send both snake_case and camelCase keys to support all backend versions robustly
+      data: {
+        'participant_ids': userIds,
+        'participantIds': userIds,
+      },
       mapper: (data) => data,
     );
     result.when(
@@ -280,6 +298,30 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<void> removeGroupParticipant({required String groupId, required String userId}) async {
     final result = await _apiService.delete(
       CommonEndpoints.removeGroupParticipant(groupId, userId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> promoteGroupAdmin({required String groupId, required String userId}) async {
+    final result = await _apiService.post(
+      CommonEndpoints.promoteGroupAdmin(groupId, userId),
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> demoteGroupAdmin({required String groupId, required String userId}) async {
+    final result = await _apiService.delete(
+      CommonEndpoints.demoteGroupAdmin(groupId, userId),
       mapper: (data) => data,
     );
     result.when(
@@ -376,6 +418,49 @@ class ChatRepositoryImpl implements ChatRepository {
     );
     result.when(
       success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> updateMessageSecurity(
+    String messageId, {
+    required bool allowShare,
+    required bool allowDownload,
+    bool isLocked = false,
+    List<String> accessUsers = const [],
+  }) async {
+    final result = await _apiService.patch(
+      CommonEndpoints.updateMessageSecurity(messageId),
+      data: {
+        'security': {
+          'isLocked': isLocked,
+          'accessUsers': accessUsers,
+          'allowDownload': allowDownload,
+          'allowShare': allowShare,
+        },
+      },
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<MessageSharesModel> getMessageShares(String messageId) async {
+    final result = await _apiService.get<MessageSharesModel>(
+      CommonEndpoints.getMessageShares(messageId),
+      mapper: (data) {
+        if (data is Map) {
+          return MessageSharesModel.fromJson(Map<String, dynamic>.from(data));
+        }
+        return const MessageSharesModel(count: 0, users: []);
+      },
+    );
+    return result.when(
+      success: (model) => model,
       failure: (error, statusCode) => throw Exception(error),
     );
   }

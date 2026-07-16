@@ -196,12 +196,7 @@ class _NewChatPageState extends State<NewChatPage> {
         listener: (context, state) {
           state.maybeWhen(
             chatCreated: (chat, contactName, profilePictureUrl) {
-              if (_pendingParticipantId != null) {
-                context.read<ContactsBloc>().add(
-                  RemoveContact(_pendingParticipantId!),
-                );
-                _pendingParticipantId = null;
-              }
+              _pendingParticipantId = null;
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
@@ -212,6 +207,7 @@ class _NewChatPageState extends State<NewChatPage> {
                     isOnline: false,
                     recipientId: chat.recipient.id,
                     profilePictureUrl: profilePictureUrl,
+                    initialThemeColor: chat.themeColor,
                   ),
                 ),
               );
@@ -387,7 +383,7 @@ class _NewChatPageState extends State<NewChatPage> {
   }
 
   Widget _buildSyncedUserTile(BuildContext context, UserModel user) {
-    final name = user.username ?? user.phoneNumber;
+    final name = user.displayName;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       onTap: () {

@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/core/network/connectivity_repository.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
@@ -40,6 +42,8 @@ class _AudioCallPageState extends State<AudioCallPage>
     with TickerProviderStateMixin {
   int _seconds = 0;
   Timer? _timer;
+  bool _isNetworkConnected = true;
+  StreamSubscription? _connectivitySubscription;
 
   // Animations
   late AnimationController _pulseController;
@@ -56,11 +60,42 @@ class _AudioCallPageState extends State<AudioCallPage>
     super.initState();
     _setupAnimations();
 
+    getIt<ConnectivityRepository>().currentConnectivity.then((result) {
+      final connected = result.any((r) => r != ConnectivityResult.none);
+      if (mounted) {
+        setState(() {
+          _isNetworkConnected = connected;
+        });
+      }
+    });
+    _connectivitySubscription = getIt<ConnectivityRepository>().onConnectivityChanged.listen((result) {
+      final connected = result.any((r) => r != ConnectivityResult.none);
+      if (mounted) {
+        setState(() {
+          _isNetworkConnected = connected;
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
+      final bloc = context.read<CallWebRtcBloc>();
+      bloc.add(const SetCallMinimizedEvent(false));
+
+      // Re-initialize timer if the call is already active
+      final activeState = bloc.state;
+      if (activeState is CallActive) {
+        final activeStart = bloc.activeCallStart;
+        if (activeStart != null) {
+          setState(() {
+            _seconds = DateTime.now().difference(activeStart).inSeconds;
+          });
+        }
+        _startTimer();
+      }
+
       // If outgoing call, initiate WebRTC
       if (widget.isOutgoing) {
-        context.read<CallWebRtcBloc>().add(InitiateCallEvent(
+        bloc.add(InitiateCallEvent(
           conversationId: widget.conversationId,
           isVideo: false,
           contactName: widget.contactName,
@@ -107,7 +142,16 @@ class _AudioCallPageState extends State<AudioCallPage>
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() => _seconds++);
+      if (mounted) {
+        setState(() {
+          final activeStart = context.read<CallWebRtcBloc>().activeCallStart;
+          if (activeStart != null) {
+            _seconds = DateTime.now().difference(activeStart).inSeconds;
+          } else {
+            _seconds++;
+          }
+        });
+      }
     });
   }
 
@@ -118,6 +162,7 @@ class _AudioCallPageState extends State<AudioCallPage>
     _ring1Controller.dispose();
     _ring2Controller.dispose();
     _ring3Controller.dispose();
+    _connectivitySubscription?.cancel();
     
     // Notify bloc that page is being closed (minimized if call still active)
     try {
@@ -139,6 +184,13 @@ class _AudioCallPageState extends State<AudioCallPage>
   }
 
   String _statusLabel(CallWebRtcState state) {
+    if (!_isNetworkConnected) {
+      if (state is CallActive) {
+        return 'Reconnecting...';
+      } else {
+        return 'Waiting for network...';
+      }
+    }
     if (state is CallConnecting) return 'Calling...';
     if (state is CallActive) return _formattedTime;
     if (state is CallEnded) return 'Call Ended';
@@ -271,7 +323,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
                           child: Column(
-                            key: ValueKey(_statusLabel(state)),
+                            key: ValueKey('${state.runtimeType}_${state is CallActive ? (state as CallActive).isRemoteMuted : false}'),
                             children: [
                               Text(
                                 _statusLabel(state),
@@ -423,7 +475,7 @@ class _AudioCallPageState extends State<AudioCallPage>
           // Speaker — green when active
           _buildPillButton(
             icon: isSpeaker ? CommonIcons.volumeUp : CommonIcons.volumeDown,
-            isActive: true,
+            isActive: isSpeaker,
             activeColor: const Color(0xFF34C759),
             onTap: () => context
                 .read<CallWebRtcBloc>()

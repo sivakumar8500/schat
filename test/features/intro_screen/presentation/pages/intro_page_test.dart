@@ -54,9 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify MobileEntryPage renders (using exact text from mobile_entry_page.dart)
-    expect(find.text("Let's "), findsOneWidget);
-    expect(find.text("get "), findsOneWidget);
-    expect(find.text("you in."), findsOneWidget);
+    expect(find.text("Let's get you in."), findsOneWidget);
 
     // Verify shared preferences is updated
     final prefs = await SharedPreferences.getInstance();
@@ -80,9 +78,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify MobileEntryPage renders (using exact text from mobile_entry_page.dart)
-    expect(find.text("Let's "), findsOneWidget);
-    expect(find.text("get "), findsOneWidget);
-    expect(find.text("you in."), findsOneWidget);
+    expect(find.text("Let's get you in."), findsOneWidget);
 
     // Verify shared preferences is updated
     final prefs = await SharedPreferences.getInstance();

@@ -1,11 +1,13 @@
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
+import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/auth_screen/src/data/models/send_otp_request.dart';
 import 'package:schat/features/auth_screen/src/data/models/verify_otp_request.dart';
 import 'package:schat/features/auth_screen/src/data/models/verify_otp_response.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: AuthRepository)
@@ -50,6 +52,8 @@ class AuthRepositoryImpl implements AuthRepository {
           accessToken: response.accessToken,
           refreshToken: response.refreshToken,
         );
+        // Register the device for push notifications now that we have tokens
+        getIt<CallNotificationService>().registerDevice();
         return ApiResult.success(true);
       },
       failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),

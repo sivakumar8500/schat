@@ -39,15 +39,18 @@ class MessageBubble extends StatelessWidget {
   final bool isDelivered;
   final bool isDeleted;
   final String type;
+  final double? duration;
   final String? attachmentPath;
   final String? attachmentName;
   final Uint8List? attachmentBytes;
   final bool isReply;
+  final String? replyMessageId;
   final String? replyMessageBody;
   final String? replyMessageSenderName;
   final bool isEdited;
   final bool isPinned;
   final bool isSelected;
+  final bool isHighlighted;
   final bool isUploading;
   final bool isFailed;
   final VoidCallback? onResendPressed;
@@ -59,6 +62,7 @@ class MessageBubble extends StatelessWidget {
   final int? fileSize;
   final CallMeta? callMeta;
   final bool isRecipientOnline;
+  final VoidCallback? onReplyTap;
 
   const MessageBubble({
     super.key,
@@ -75,11 +79,13 @@ class MessageBubble extends StatelessWidget {
     this.attachmentName,
     this.attachmentBytes,
     this.isReply = false,
+    this.replyMessageId,
     this.replyMessageBody,
     this.replyMessageSenderName,
     this.isEdited = false,
     this.isPinned = false,
     this.isSelected = false,
+    this.isHighlighted = false,
     this.isUploading = false,
     this.isFailed = false,
     this.onResendPressed,
@@ -91,14 +97,48 @@ class MessageBubble extends StatelessWidget {
     this.fileSize,
     this.callMeta,
     this.isRecipientOnline = false,
+    this.onReplyTap,
+    this.duration,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final bool isSystemMessage = type == 'system' ||
+        type == 'group_event' ||
+        type == 'notification' ||
+        _isGroupEvent(message);
+
+    if (isSystemMessage) {
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 24.0),
+          padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 12.0),
+          decoration: BoxDecoration(
+            color: context.colors.isDark
+                ? const Color(0xFF263238) // Dark bluish gray (BlueGrey 900)
+                : const Color(0xFFECEFF1), // Light bluish gray (BlueGrey 50)
+            borderRadius: BorderRadius.circular(12.0),
+          ),
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: context.bodyMedium.copyWith(
+              color: context.colors.isDark
+                  ? const Color(0xFFB0BEC5) // Light bluish gray text for dark mode
+                  : const Color(0xFF546E7A), // Dark bluish gray text for light mode
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       color: isSelected
           ? context.colors.primary.withValues(alpha: 0.15)
-          : context.colors.transparent,
+          : (isHighlighted ? context.colors.primary.withValues(alpha: 0.25) : context.colors.transparent),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         child: Row(
@@ -146,7 +186,7 @@ class MessageBubble extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isMe
-                        ? context.colors.primary
+                        ? context.colors.sentBubble
                         : context.colors.lightBackground,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(20),
@@ -166,53 +206,56 @@ class MessageBubble extends StatelessWidget {
                     crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
                       if (isReply && replyMessageBody != null && !isDeleted)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? context.colors.pureWhite.withValues(alpha: 0.15)
-                                : context.colors.lightBackground.withValues(alpha: 0.8),
-                            border: Border(
-                              left: BorderSide(
-                                color: isMe
-                                    ? context.colors.pureWhite.withValues(alpha: 0.8)
-                                    : context.colors.primary,
-                                width: 4,
-                              ),
-                            ),
-                            borderRadius: const BorderRadius.only(
-                              topRight: Radius.circular(8),
-                              bottomRight: Radius.circular(8),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                replyMessageSenderName ?? (isMe ? 'You' : 'Recipient'),
-                                style: context.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                        GestureDetector(
+                          onTap: onReplyTap,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isMe
+                                  ? context.colors.sentBubble.withValues(alpha: 0.5)
+                                  : context.colors.lightBackground.withValues(alpha: 0.8),
+                              border: Border(
+                                left: BorderSide(
                                   color: isMe
-                                      ? context.colors.textLight
+                                      ? context.colors.primary
                                       : context.colors.primary,
+                                  width: 4,
                                 ),
                               ),
-                              CommonSpaces.h4,
-                              Text(
-                                replyMessageBody!,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: context.bodySmall.copyWith(
-                                  fontSize: 12,
-                                  color: isMe
-                                      ? context.colors.textLight.withValues(alpha: 0.8)
-                                      : context.colors.textSecondary,
-                                ),
+                              borderRadius: const BorderRadius.only(
+                                topRight: Radius.circular(8),
+                                bottomRight: Radius.circular(8),
                               ),
-                            ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  replyMessageSenderName ?? (isMe ? 'You' : 'Recipient'),
+                                  style: context.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: isMe
+                                        ? context.colors.textPrimary
+                                        : context.colors.primary,
+                                  ),
+                                ),
+                                CommonSpaces.h4,
+                                Text(
+                                  replyMessageBody!,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.bodySmall.copyWith(
+                                    fontSize: 12,
+                                    color: isMe
+                                        ? context.colors.textSecondary
+                                        : context.colors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       if (!isDeleted) _buildAttachment(context),
@@ -221,7 +264,7 @@ class MessageBubble extends StatelessWidget {
                         context,
                         context.bodyLarge.copyWith(
                           fontSize: 16,
-                          color: isMe ? context.colors.textLight : context.colors.textPrimary,
+                          color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
                         ),
                       ),
                       if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
@@ -235,7 +278,7 @@ class MessageBubble extends StatelessWidget {
                                 fontSize: 10,
                                 fontStyle: FontStyle.italic,
                                 color: isMe
-                                    ? context.colors.textLight.withValues(alpha: 0.7)
+                                    ? context.colors.textSecondary
                                     : context.colors.textSecondary,
                               ),
                             ),
@@ -245,7 +288,7 @@ class MessageBubble extends StatelessWidget {
                               CommonIcons.pin,
                               size: 10,
                               color: isMe
-                                  ? context.colors.textLight.withValues(alpha: 0.7)
+                                  ? context.colors.textSecondary
                                   : context.colors.textSecondary,
                             ),
                             CommonSpaces.w4,
@@ -255,7 +298,7 @@ class MessageBubble extends StatelessWidget {
                             style: context.bodySmall.copyWith(
                               fontSize: 11,
                               color: isMe
-                                  ? context.colors.textLight.withValues(alpha: 0.7)
+                                  ? context.colors.textSecondary
                                   : context.colors.textSecondary,
                             ),
                           ),
@@ -263,29 +306,42 @@ class MessageBubble extends StatelessWidget {
                             CommonSpaces.w4,
                             Builder(
                               builder: (context) {
-                                final isPending = messageId.startsWith('temp_') || isUploading;
+                                // Pending = temp ID, uploading, OR not yet server-confirmed (covers network-drop case)
+                                final isPending = messageId.startsWith('temp_') ||
+                                    isUploading ||
+                                    (!isDelivered && !isRead && !isFailed);
+                                // ✓ single grey tick — sending / not yet server-confirmed
                                 if (isPending && !isFailed) {
                                   return Icon(
-                                    Icons.access_time_rounded,
-                                    size: 11,
-                                    color: context.colors.textLight.withValues(alpha: 0.7),
+                                    CommonIcons.done,
+                                    size: 14,
+                                    color: context.colors.textSecondary,
                                   );
                                 }
-                                
-                                final IconData iconData = isRead 
-                                    ? CommonIcons.doneAll 
-                                    : ((isGroup || isRecipientOnline || isDelivered) 
-                                        ? CommonIcons.doneAll 
-                                        : CommonIcons.done);
-                                
-                                final Color iconColor = isRead
-                                    ? const Color(0xFF25D366) // WhatsApp-style bright green read receipt
-                                    : context.colors.textLight.withValues(alpha: 0.7);
-                                
+
+                                // ✓✓ blue — read
+                                if (isRead) {
+                                  return Icon(
+                                    CommonIcons.doneAll,
+                                    size: 14,
+                                    color: const Color(0xFF2196F3), // blue
+                                  );
+                                }
+
+                                // ✓✓ grey — delivered
+                                if (isDelivered) {
+                                  return Icon(
+                                    CommonIcons.doneAll,
+                                    size: 14,
+                                    color: context.colors.textSecondary,
+                                  );
+                                }
+
+                                // ✓ grey — sent (reached server, not yet delivered)
                                 return Icon(
-                                  iconData,
+                                  CommonIcons.done,
                                   size: 14,
-                                  color: iconColor,
+                                  color: context.colors.textSecondary,
                                 );
                               },
                             ),
@@ -443,7 +499,11 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else if (type == 'audio' || type == 'voice_note') {
-      result = _AudioWaveformPlayer(audioUrl: attachmentPath, isMe: isMe);
+       result = _AudioWaveformPlayer(
+         audioUrl: attachmentPath,
+         isMe: isMe,
+         payloadDuration: duration,
+       );
     } else if (type == 'video') {
       if (viewLocked) {
         result = _buildLockedPreview(context);
@@ -530,10 +590,21 @@ class MessageBubble extends StatelessWidget {
       );
     } else if (type == 'contact') {
       final path = attachmentPath ?? '';
-      final parts = path.split(':');
-      final bool isSchatUser = parts.length > 2 && parts[2].isNotEmpty;
-      final String phone = parts.length > 1 ? parts[1] : '';
-      final String? contactUserId = isSchatUser ? parts[2] : null;
+      String phone = '';
+      String? contactUserId;
+      bool isSchatUser = false;
+
+      if (path.contains('contact:')) {
+        final contactPart = path.split('contact:').last;
+        final contactParts = contactPart.split(':');
+        if (contactParts.isNotEmpty) {
+          phone = contactParts[0];
+        }
+        if (contactParts.length > 1 && contactParts[1].isNotEmpty) {
+          contactUserId = contactParts[1];
+          isSchatUser = true;
+        }
+      }
 
       final String nameText = attachmentName ?? 'Contact';
       String displayName = nameText;
@@ -548,15 +619,10 @@ class MessageBubble extends StatelessWidget {
       }
 
       // Sanitize phone for dialer: take only first number (if comma/semicolon separated),
-      // strip all non-digit characters, then take the last 10 digits (local number only).
+      // strip all formatting but keep leading '+' and digits (preserves country codes).
       String _sanitizePhone(String raw) {
-        // Take the first phone if multiple are stored (e.g. "0712345678, 0798765432")
         final first = raw.split(RegExp(r'[,;]')).first.trim();
-        final digitsOnly = first.replaceAll(RegExp(r'[^\d]'), '');
-        // Keep only last 10 digits to strip country codes (+91, 0 prefix, etc.)
-        return digitsOnly.length > 10
-            ? digitsOnly.substring(digitsOnly.length - 10)
-            : digitsOnly;
+        return first.replaceAll(RegExp(r'[^\d+]'), '');
       }
 
       final cleanedPhone = _sanitizePhone(phone.isNotEmpty ? phone : displayPhone);
@@ -661,6 +727,26 @@ class MessageBubble extends StatelessWidget {
                   ],
                 ),
               ),
+              if (!isSchatUser) ...[
+                CommonSpaces.w12,
+                IconButton(
+                  icon: Icon(
+                    CommonIcons.phone,
+                    color: isMe ? context.colors.pureWhite : context.colors.primary,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    if (cleanedPhone.isNotEmpty) {
+                      final Uri telUri = Uri(scheme: 'tel', path: cleanedPhone);
+                      canLaunchUrl(telUri).then((can) {
+                        if (can) launchUrl(telUri);
+                      });
+                    }
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
             ],
           ),
         ),
@@ -1318,7 +1404,7 @@ class MessageBubble extends StatelessWidget {
             ),
             CommonSpaces.w6,
             Text(
-              message.isNotEmpty ? message : 'This message was deleted',
+              isMe ? 'You deleted this message' : 'This message was deleted',
               style: deletedStyle,
             ),
           ],
@@ -1363,19 +1449,29 @@ class MessageBubble extends StatelessWidget {
           decoration: TextDecoration.underline,
         ),
         recognizer: TapGestureRecognizer()
-          ..onTap = () {
+          ..onTap = () async {
             var openUrl = url;
             if (openUrl.toLowerCase().startsWith('www.')) {
               openUrl = 'https://$openUrl';
             }
-            InAppViewer.show(
-              context,
-              url: openUrl,
-              fileName: url,
-              type: 'file',
-              allowShare: false,
-              allowDownload: false,
-            );
+            final uri = Uri.tryParse(openUrl);
+            if (uri != null) {
+              try {
+                final can = await canLaunchUrl(uri);
+                if (can) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } else {
+                  if (context.mounted) {
+                    context.showErrorNotification('Could not open link');
+                  }
+                }
+              } catch (e) {
+                debugPrint('Error launching url: $e');
+                if (context.mounted) {
+                  context.showErrorNotification('Error opening link');
+                }
+              }
+            }
           },
       ));
 
@@ -1394,6 +1490,39 @@ class MessageBubble extends StatelessWidget {
         children: spans,
       ),
     );
+  }
+
+  bool _isGroupEvent(String msg) {
+    final lowerMsg = msg.toLowerCase().trim();
+    if (lowerMsg.isEmpty) return false;
+
+    final patterns = [
+      'added',
+      'removed',
+      'left the group',
+      'left group',
+      'joined the group',
+      'joined group',
+      'joined using',
+      'created the group',
+      'created this group',
+      'group created',
+      'changed the group name',
+      'changed group name',
+      'group name changed',
+      'changed the group icon',
+      'changed group icon',
+      'group icon changed',
+      'group icon was updated',
+      'promoted to admin',
+      'demoted from admin',
+      'changed group description',
+      'group description updated',
+      'changed the theme',
+      'changed chat theme',
+    ];
+
+    return patterns.any((pattern) => lowerMsg.contains(pattern));
   }
 }
 
@@ -1544,7 +1673,8 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
 class _AudioWaveformPlayer extends StatefulWidget {
   final String? audioUrl;
   final bool isMe;
-  const _AudioWaveformPlayer({required this.audioUrl, required this.isMe});
+  final double? payloadDuration;
+  const _AudioWaveformPlayer({required this.audioUrl, required this.isMe, this.payloadDuration});
 
   @override
   State<_AudioWaveformPlayer> createState() => _AudioWaveformPlayerState();
@@ -1555,6 +1685,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  bool _isSourceInitialized = false;
 
   final List<double> _barHeights = [
     10, 16, 12, 22, 26, 14, 20, 12, 16, 10, 24, 28, 20, 14, 18,
@@ -1564,17 +1695,43 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   @override
   void initState() {
     super.initState();
+    if (widget.payloadDuration != null) {
+      _duration = Duration(milliseconds: (widget.payloadDuration! * 1000).round());
+    }
     _setupAudioPlayer();
+    _initAudioSource();
+  }
+
+  Future<void> _initAudioSource() async {
+    if (widget.audioUrl != null && widget.audioUrl!.isNotEmpty) {
+      try {
+        final url = _resolveUrl(widget.audioUrl!);
+        final bool isLocal = !kIsWeb && File(url).existsSync();
+        await _audioPlayer.setSource(
+          isLocal ? DeviceFileSource(url) : UrlSource(url),
+        );
+        _isSourceInitialized = true;
+      } catch (e) {
+        debugPrint('Error setting initial audio source: $e');
+      }
+    }
   }
 
   void _setupAudioPlayer() {
     _audioPlayer.onDurationChanged.listen((d) {
-      if (mounted) setState(() => _duration = d);
+      if (widget.payloadDuration == null && mounted) {
+        setState(() => _duration = d);
+      }
     });
     _audioPlayer.onPositionChanged.listen((p) {
-      if (mounted) setState(() => _position = p);
+      if (mounted) {
+        // If we have a payload duration, clamp position to not exceed duration
+        final currentPosition = widget.payloadDuration != null && p > _duration ? _duration : p;
+        setState(() => _position = currentPosition);
+      }
     });
     _audioPlayer.onPlayerComplete.listen((_) {
+      _audioPlayer.seek(Duration.zero);
       if (mounted) {
         setState(() {
           _isPlaying = false;
@@ -1630,12 +1787,16 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
       if (mounted) setState(() => _isPlaying = false);
     } else {
       try {
-        final url = _resolveUrl(widget.audioUrl!);
-        final bool isLocal = !kIsWeb && File(url).existsSync();
-
-        await _audioPlayer.play(
-          isLocal ? DeviceFileSource(url) : UrlSource(url),
-        );
+        if (!_isSourceInitialized) {
+          final url = _resolveUrl(widget.audioUrl!);
+          final bool isLocal = !kIsWeb && File(url).existsSync();
+          await _audioPlayer.play(
+            isLocal ? DeviceFileSource(url) : UrlSource(url),
+          );
+          _isSourceInitialized = true;
+        } else {
+          await _audioPlayer.resume();
+        }
         if (mounted) setState(() => _isPlaying = true);
       } catch (e) {
         debugPrint('Error playing audio: $e');
@@ -1714,9 +1875,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
           CommonSpaces.w8,
           // Duration
           Text(
-            _isPlaying || _position != Duration.zero 
-                ? _formatDuration(_position)
-                : (_duration != Duration.zero ? _formatDuration(_duration) : "00:00"),
+            "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
             style: context.bodySmall.copyWith(
               color: activeColor,
               fontSize: 11,

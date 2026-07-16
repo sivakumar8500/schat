@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:schat/core/network/connectivity_repository.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/features/call_screen/src/domain/web_rtc_service.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
@@ -44,6 +46,8 @@ class _VideoCallPageState extends State<VideoCallPage>
   final WebRtcService _webRtcService = getIt<WebRtcService>();
   int _seconds = 0;
   Timer? _timer;
+  bool _isNetworkConnected = true;
+  StreamSubscription? _connectivitySubscription;
 
   late AnimationController _fadeController;
   bool _controlsVisible = true;
@@ -59,10 +63,41 @@ class _VideoCallPageState extends State<VideoCallPage>
       value: 1.0,
     );
 
+    getIt<ConnectivityRepository>().currentConnectivity.then((result) {
+      final connected = result.any((r) => r != ConnectivityResult.none);
+      if (mounted) {
+        setState(() {
+          _isNetworkConnected = connected;
+        });
+      }
+    });
+    _connectivitySubscription = getIt<ConnectivityRepository>().onConnectivityChanged.listen((result) {
+      final connected = result.any((r) => r != ConnectivityResult.none);
+      if (mounted) {
+        setState(() {
+          _isNetworkConnected = connected;
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
+      final bloc = context.read<CallWebRtcBloc>();
+      bloc.add(const SetCallMinimizedEvent(false));
+
+      // Re-initialize timer if the call is already active
+      final activeState = bloc.state;
+      if (activeState is CallActive) {
+        final activeStart = bloc.activeCallStart;
+        if (activeStart != null) {
+          setState(() {
+            _seconds = DateTime.now().difference(activeStart).inSeconds;
+          });
+        }
+        _startTimer();
+      }
+
       if (widget.isOutgoing) {
-        context.read<CallWebRtcBloc>().add(InitiateCallEvent(
+        bloc.add(InitiateCallEvent(
           conversationId: widget.conversationId,
           isVideo: true,
           contactName: widget.contactName,
@@ -77,7 +112,16 @@ class _VideoCallPageState extends State<VideoCallPage>
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) setState(() => _seconds++);
+      if (mounted) {
+        setState(() {
+          final activeStart = context.read<CallWebRtcBloc>().activeCallStart;
+          if (activeStart != null) {
+            _seconds = DateTime.now().difference(activeStart).inSeconds;
+          } else {
+            _seconds++;
+          }
+        });
+      }
     });
   }
 
@@ -114,6 +158,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     _timer?.cancel();
     _controlsTimer?.cancel();
     _fadeController.dispose();
+    _connectivitySubscription?.cancel();
     
     // Notify bloc that page is being closed (minimized if call still active)
     try {
@@ -323,11 +368,13 @@ class _VideoCallPageState extends State<VideoCallPage>
   }
 
   Widget _buildTopHeader(BuildContext context, CallWebRtcState state) {
-    final statusText = state is CallActive
-        ? _formattedTime
-        : state is CallConnecting
-            ? 'Calling...'
-            : 'Ringing';
+    final statusText = !_isNetworkConnected
+        ? (state is CallActive ? 'Reconnecting...' : 'Waiting for network...')
+        : state is CallActive
+            ? _formattedTime
+            : state is CallConnecting
+                ? 'Calling...'
+                : 'Ringing';
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),

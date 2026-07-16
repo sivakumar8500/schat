@@ -18,12 +18,15 @@ import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
+import 'package:schat/utils/common_notifications.dart';
+
 import 'injection.dart';
 
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
+import 'package:schat/core/services/share_receiver_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
@@ -85,6 +88,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setupSecurityListeners();
+    ShareReceiverService().init();
   }
 
   /// Reconnect the WebSocket when the app comes back to the foreground.
@@ -103,7 +107,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   void _setupSecurityListeners() {
-    // Security listeners disabled as requested
+    final securityService = getIt<ScreenProtectionService>();
+    
+    _screenshotSubscription = securityService.onScreenshot.listen((_) {
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
+      }
+    });
+
+    _recordSubscription = securityService.onScreenRecord.listen((isRecording) {
+      final context = navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        if (isRecording) {
+          context.showErrorNotification("Screen recording is active! Protection enabled.");
+        } else {
+          context.showInfoNotification("Screen recording stopped.");
+        }
+      }
+    });
   }
 
   @override
@@ -111,6 +133,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _screenshotSubscription?.cancel();
     _recordSubscription?.cancel();
+    ShareReceiverService().dispose();
     super.dispose();
   }
 

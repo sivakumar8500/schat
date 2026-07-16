@@ -102,9 +102,6 @@ extension GetItInjectableX on _i174.GetIt {
       preResolve: true,
     );
     gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
-    gh.lazySingleton<_i374.CallNotificationService>(
-      () => _i374.CallNotificationService(),
-    );
     gh.lazySingleton<_i568.ScreenProtectionService>(
       () => _i568.ScreenProtectionService(),
     );
@@ -171,6 +168,12 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i649.ProfileRepository>(
       () => _i67.ProfileRepositoryImpl(
+        gh<_i374.ApiService>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
+    gh.lazySingleton<_i374.CallNotificationService>(
+      () => _i374.CallNotificationService(
         gh<_i374.ApiService>(),
         gh<_i263.StorageService>(),
       ),

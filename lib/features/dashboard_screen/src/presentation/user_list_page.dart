@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/injection.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class UserListPage extends StatefulWidget {
   final bool forceSync;
@@ -45,16 +46,24 @@ class _UserListPageState extends State<UserListPage> {
   String _searchQuery = '';
   late ContactsBloc _contactsBloc;
   final List<UserModel> _selectedUsers = [];
+  bool _isSyncInProgress = false;
 
   final String _appLink = 'https://schat.app';
   final String _inviteTitle = 'Join Schat - Secure Messaging';
+
+  void _triggerSync() {
+    setState(() {
+      _isSyncInProgress = true;
+    });
+    _contactsBloc.add(const SyncContactsEvent());
+  }
 
   @override
   void initState() {
     super.initState();
     _contactsBloc = getIt<ContactsBloc>();
     if (widget.forceSync) {
-      _contactsBloc.add(const SyncContactsEvent());
+      _triggerSync();
     } else {
       _contactsBloc.add(const LoadContacts());
     }
@@ -64,7 +73,7 @@ class _UserListPageState extends State<UserListPage> {
   void didUpdateWidget(UserListPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.forceSync && !oldWidget.forceSync) {
-      _contactsBloc.add(const SyncContactsEvent());
+      _triggerSync();
     }
   }
 
@@ -234,100 +243,170 @@ class _UserListPageState extends State<UserListPage> {
           value: getIt<ChatsBloc>(),
         ),
       ],
-      child: BlocListener<ChatsBloc, ChatsState>(
-        listener: (context, state) {
-          state.maybeWhen(
-            chatCreated: (chat, contactName, profilePictureUrl) {
-              if (_pendingParticipantId != null) {
-                context.read<ContactsBloc>().add(RemoveContact(_pendingParticipantId!));
-                _pendingParticipantId = null;
-              }
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatPage(
-                    conversationId: chat.id,
-                    contactName: contactName,
-                    contactColor: context.colors.primary,
-                    isOnline: false,
-                    recipientId: chat.recipient.id,
-                    profilePictureUrl: profilePictureUrl,
-                  ),
-                ),
-              );
-            },
-            error: (message) {
-              _pendingParticipantId = null;
-            },
-            orElse: () {},
-          );
-        },
-        child: DefaultTabController(
-          length: 2,
-          child: Scaffold(
-            backgroundColor: context.colors.scaffoldBackground,
-            appBar: AppBar(
-              backgroundColor: context.colors.scaffoldBackground,
-              elevation: 0,
-              automaticallyImplyLeading: false,
-              leading: widget.isPicker
-                  ? IconButton(
-                      icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  : null,
-              title: Text(widget.isPicker ? 'Select Participants' : 'New Chat', style: context.h1.copyWith(fontSize: 26)),
-              actions: [
-                if (widget.isPicker)
-                  TextButton(
-                    onPressed: _selectedUsers.isEmpty ? null : () => Navigator.pop(context, _selectedUsers),
-                    child: Text('Done (${_selectedUsers.length})', 
-                      style: context.bodyLarge.copyWith(
-                        color: _selectedUsers.isEmpty ? context.colors.textHint : context.colors.primary,
-                        fontWeight: FontWeight.bold
-                      )
-                    ),
-                  ),
-              ],
-              bottom: TabBar(
-                indicatorColor: context.colors.primary,
-                labelColor: context.colors.primary,
-                unselectedLabelColor: context.colors.textSecondary,
-                labelStyle: context.titleSmall.copyWith(fontWeight: FontWeight.bold),
-                tabs: const [
-                  Tab(text: 'Schat Users'),
-                  Tab(text: 'All Contacts'),
-                ],
-              ),
-            ),
-            body: BlocBuilder<ContactsBloc, ContactsState>(
-              builder: (context, state) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSearchBar(),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: () async {
-                          _contactsBloc.add(const SyncContactsEvent());
-                          await Future.delayed(const Duration(seconds: 1));
-                        },
-                        child: TabBarView(
-                          children: [
-                            _buildSchatUsersTab(context, state),
-                            _buildAllContactsTab(context, state),
-                          ],
-                        ),
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<ChatsBloc, ChatsState>(
+            listener: (context, state) {
+              state.maybeWhen(
+                chatCreated: (chat, contactName, profilePictureUrl) {
+                  _pendingParticipantId = null;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatPage(
+                        conversationId: chat.id,
+                        contactName: contactName,
+                        contactColor: context.colors.primary,
+                        isOnline: false,
+                        recipientId: chat.recipient.id,
+                        profilePictureUrl: profilePictureUrl,
+                        initialThemeColor: chat.themeColor,
                       ),
                     ),
-                  ],
-                );
-              },
-            ),
+                  ).then((_) {
+                    if (context.mounted) {
+                      context.read<ChatsBloc>().add(const FetchChats());
+                    }
+                  });
+                },
+                error: (message) {
+                  _pendingParticipantId = null;
+                },
+                orElse: () {},
+              );
+            },
           ),
+          BlocListener<ContactsBloc, ContactsState>(
+            listener: (context, state) {
+              if (_isSyncInProgress) {
+                if (state is ContactsLoaded) {
+                  setState(() {
+                    _isSyncInProgress = false;
+                  });
+                  context.showSuccessNotification('Contacts synced successfully');
+                } else if (state is ContactsFailure) {
+                  setState(() {
+                    _isSyncInProgress = false;
+                  });
+                  context.showErrorNotification('Failed to sync contacts: ${state.errorMessage}');
+                }
+              }
+            },
+          ),
+        ],
+        child: widget.showOnlySynced
+            ? Scaffold(
+                backgroundColor: context.colors.scaffoldBackground,
+                appBar: AppBar(
+                  backgroundColor: context.colors.scaffoldBackground,
+                  elevation: 0,
+                  automaticallyImplyLeading: false,
+                  leading: widget.isPicker
+                      ? IconButton(
+                          icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+                          onPressed: () => Navigator.pop(context),
+                        )
+                      : null,
+                  title: Text(widget.isPicker ? 'Select Participants' : 'New Chat', style: context.h1.copyWith(fontSize: 26)),
+                  actions: [
+                    if (widget.isPicker)
+                      TextButton(
+                        onPressed: _selectedUsers.isEmpty ? null : () => Navigator.pop(context, _selectedUsers),
+                        child: Text('Done (${_selectedUsers.length})', 
+                          style: context.bodyLarge.copyWith(
+                            color: _selectedUsers.isEmpty ? context.colors.textHint : context.colors.primary,
+                            fontWeight: FontWeight.bold
+                          )
+                        ),
+                      ),
+                  ],
+                ),
+                body: BlocBuilder<ContactsBloc, ContactsState>(
+                  builder: (context, state) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSearchBar(),
+                        Expanded(
+                          child: RefreshIndicator(
+                            onRefresh: () async {
+                              _triggerSync();
+                              await Future.delayed(const Duration(seconds: 1));
+                            },
+                            child: _buildSchatUsersTab(context, state),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              )
+            : DefaultTabController(
+                length: 2,
+                child: Scaffold(
+                  backgroundColor: context.colors.scaffoldBackground,
+                  appBar: AppBar(
+                    backgroundColor: context.colors.scaffoldBackground,
+                    elevation: 0,
+                    automaticallyImplyLeading: false,
+                    leading: widget.isPicker
+                        ? IconButton(
+                            icon: Icon(CommonIcons.arrowBack, color: context.colors.textPrimary),
+                            onPressed: () => Navigator.pop(context),
+                          )
+                        : null,
+                    title: Text(widget.isPicker ? 'Select Participants' : 'New Chat', style: context.h1.copyWith(fontSize: 26)),
+                    actions: [
+                      if (widget.isPicker)
+                        TextButton(
+                          onPressed: _selectedUsers.isEmpty ? null : () => Navigator.pop(context, _selectedUsers),
+                          child: Text('Done (${_selectedUsers.length})', 
+                            style: context.bodyLarge.copyWith(
+                              color: _selectedUsers.isEmpty ? context.colors.textHint : context.colors.primary,
+                              fontWeight: FontWeight.bold
+                            )
+                          ),
+                        ),
+                    ],
+                    bottom: TabBar(
+                      indicatorColor: context.colors.primary,
+                      labelColor: context.colors.primary,
+                      unselectedLabelColor: context.colors.textSecondary,
+                      labelStyle: context.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                      tabs: const [
+                        Tab(text: 'Schat Users'),
+                        Tab(text: 'All Contacts'),
+                      ],
+                    ),
+                  ),
+                  body: BlocBuilder<ContactsBloc, ContactsState>(
+                    builder: (context, state) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSearchBar(),
+                          Expanded(
+                            child: RefreshIndicator(
+                              onRefresh: () async {
+                                _triggerSync();
+                                await Future.delayed(const Duration(seconds: 1));
+                              },
+                              child: TabBarView(
+                                children: [
+                                  _buildSchatUsersTab(context, state),
+                                  _buildAllContactsTab(context, state),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildSchatUsersTab(BuildContext context, ContactsState state) {
@@ -340,7 +419,7 @@ class _UserListPageState extends State<UserListPage> {
           return false;
         }
         if (query.isEmpty) return true;
-        final name = (user.username ?? '').toLowerCase();
+        final name = user.displayName.toLowerCase();
         final phone = user.phoneNumber.toLowerCase();
         return name.contains(query) || phone.contains(query);
       }).toList();
@@ -464,7 +543,7 @@ class _UserListPageState extends State<UserListPage> {
               PrimaryButton(
                 text: 'Sync Now',
                 onPressed: () {
-                  context.read<ContactsBloc>().add(const SyncContactsEvent());
+                  _triggerSync();
                 },
               ),
           ],
@@ -525,7 +604,7 @@ class _UserListPageState extends State<UserListPage> {
   }
 
   Widget _buildSyncedUserTile(BuildContext context, UserModel user) {
-    final name = user.username ?? user.phoneNumber;
+    final name = user.displayName;
     final isSelected = _selectedUsers.any((u) => u.id == user.id);
 
     return ListTile(

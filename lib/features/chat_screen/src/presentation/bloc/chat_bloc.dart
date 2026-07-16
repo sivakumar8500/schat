@@ -6,6 +6,7 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
@@ -77,6 +78,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<LoadThemesEvent>(_onLoadThemes);
     on<UpdateThemeEvent>(_onUpdateTheme);
     on<LoadMoreMessagesEvent>(_onLoadMoreMessages);
+    on<UpdateMessageSecurityEvent>(_onUpdateMessageSecurity);
+    on<FetchMessageSharesEvent>(_onFetchMessageShares);
+    on<ReceiveGroupUpdatedEvent>(_onReceiveGroupUpdated);
+    on<ReceiveGroupAdminUpdatedEvent>(_onReceiveGroupAdminUpdated);
+    on<PromoteGroupAdminEvent>(_onPromoteGroupAdmin);
+    on<DemoteGroupAdminEvent>(_onDemoteGroupAdmin);
 
     _listenToSocket();
   }
@@ -164,16 +171,30 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final contentMap = message['content'];
             final newContent = contentMap is Map ? contentMap['text']?.toString() : message['content']?.toString();
             final updatedAt = (message['updatedAt'] ?? message['updated_at'])?.toString();
+            final editedAt = int.tryParse((message['editedAt'] ?? message['edited_at'])?.toString() ?? '');
             if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId ?? _conversationId!, newContent: newContent, updatedAt: updatedAt));
+              add(ReceiveEditMessageEvent(
+                messageId: msgId,
+                conversationId: convId ?? _conversationId!,
+                newContent: newContent,
+                updatedAt: updatedAt,
+                editedAt: editedAt,
+              ));
             }
           } else {
             final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
             final contentMap = cleanData['content'];
             final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
             final updatedAt = (cleanData['updatedAt'] ?? cleanData['updated_at'])?.toString();
+            final editedAt = int.tryParse((cleanData['editedAt'] ?? cleanData['edited_at'])?.toString() ?? '');
             if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(messageId: msgId, conversationId: convId!, newContent: newContent, updatedAt: updatedAt));
+              add(ReceiveEditMessageEvent(
+                messageId: msgId,
+                conversationId: convId!,
+                newContent: newContent,
+                updatedAt: updatedAt,
+                editedAt: editedAt,
+              ));
             }
           }
         } else if (type == 'message_pinned' || type == 'pin_message') {
@@ -197,14 +218,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId)) {
              add(const CloseChatEvent());
           }
-        } else if (type == 'user_status') {
+        } else if (type == 'group_updated') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ReceiveGroupUpdatedEvent(data: cleanData));
+          }
+        } else if (type == 'group_admin_updated') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ReceiveGroupAdminUpdatedEvent(data: cleanData));
+          }
+        } else if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
           final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])?.toString();
           final status = cleanData['status']?.toString();
-          debugPrint('DEBUG: Status Match Check - Event User: $userId, Current Recipient: $_recipientId, Status: $status');
+          final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
+          final lastSeen = cleanData['last_seen']?.toString();
+          debugPrint('DEBUG: Status Match Check - Event User: $userId, Current Recipient: $_recipientId, Type: $type, isOnline: $isOnline, lastSeen: $lastSeen');
           if (userId == _recipientId) {
             add(UpdateUserStatusEvent(
               userId: userId ?? '',
-              isOnline: status == 'online',
+              isOnline: isOnline,
+              lastSeen: lastSeen,
             ));
           }
         } else if (type == 'change_background_color') {
@@ -345,6 +379,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isRecipientOnline: _currentIsOnline,
         isRecipientTyping: _currentIsTyping,
         customBgColor: savedColor,
+        themeColor: event.initialThemeColor,
       ));
     } else {
       emit(const ChatLoading());
@@ -352,7 +387,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // 2. Fetch fresh messages from API in background
     try {
-      final messages = await _chatRepository.getMessages(event.conversationId, limit: 50, skip: 0);
+      var messages = await _chatRepository.getMessages(event.conversationId, limit: 50, skip: 0);
       _messagesSkip = messages.length;
       if (messages.length < 50) {
         _hasReachedMax = true;
@@ -362,16 +397,57 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Save fresh messages to cache
       _saveToCache(event.conversationId, messages);
 
-      // Mark unread messages from recipient as read
+      // Mark unread messages from recipient as read (send read receipt to server)
       for (var msg in messages) {
         if (msg.senderId != myId && !msg.isRead) {
           _socketRepository.sendReadReceipt(msg.conversationId, msg.id);
         }
       }
 
+      // ── Infer read/delivered status from message history ──────────────────
+      // If the recipient has sent any message AFTER one of our messages,
+      // they clearly read everything before it → mark those as isRead=true.
+      // Also mark any sent (non-temp) message as at least isDelivered=true
+      // since the server acknowledged it.
+      String? lastRecipientMessageTime;
+      // Walk newest→oldest to find last recipient reply timestamp
+      for (final msg in messages.reversed) {
+        if (msg.senderId != myId) {
+          lastRecipientMessageTime = msg.createdAt;
+          break;
+        }
+      }
+
+      messages = messages.map((msg) {
+        if (msg.senderId != myId) return msg;
+        // Skip failed messages — keep their status as-is
+        if (msg.isFailed) return msg;
+        // Our sent message — only infer delivery if the server has confirmed it (non-temp, not failed)
+        bool inferredRead = msg.isRead;
+        bool inferredDelivered = msg.isDelivered; // only trust server-confirmed flag
+
+        if (!inferredRead && lastRecipientMessageTime != null) {
+          // If recipient sent a message after this one, it was read
+          final myTime = DateTime.tryParse(msg.createdAt);
+          final recipientTime = DateTime.tryParse(lastRecipientMessageTime);
+          if (myTime != null && recipientTime != null && recipientTime.isAfter(myTime)) {
+            inferredRead = true;
+          }
+        }
+        if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
+        return msg.copyWith(
+          isRead: inferredRead,
+          isDelivered: inferredDelivered,
+        );
+      }).toList();
+
       final currentState = state;
       if (currentState is ChatLoaded) {
-        emit(currentState.copyWith(messages: messages, pinnedMessages: pinnedMessages));
+        emit(currentState.copyWith(
+          messages: messages,
+          pinnedMessages: pinnedMessages,
+          themeColor: event.initialThemeColor,
+        ));
       } else {
         emit(ChatLoaded(
           messages: messages,
@@ -381,6 +457,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isRecipientOnline: _currentIsOnline,
           isRecipientTyping: _currentIsTyping,
           customBgColor: savedColor,
+          themeColor: event.initialThemeColor,
         ));
       }
     } catch (e) {
@@ -389,6 +466,28 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       } else {
         debugPrint('Error reloading messages from API: $e');
       }
+    }
+
+    // Fetch recipient profile for initial lastSeen in background
+    final rId = event.recipientId;
+    if (rId != null && rId.isNotEmpty) {
+      getIt<ProfileRepository>().getUserById(rId).then((result) {
+        result.when(
+          success: (user) {
+            final currentState = state;
+            if (currentState is ChatLoaded) {
+              add(UpdateUserStatusEvent(
+                userId: rId,
+                isOnline: user.isOnline,
+                lastSeen: user.lastSeen,
+              ));
+            }
+          },
+          failure: (_, __) {},
+        );
+      }).catchError((e) {
+        debugPrint('Error fetching recipient lastSeen: $e');
+      });
     }
   }
 
@@ -470,18 +569,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         final newMessage = MessageModel.fromJson(event.messageData);
         debugPrint('DEBUG: Decoded new message. ID=${newMessage.id}, sender=${newMessage.senderId}, myId=${currentState.myId}');
         
-        if (newMessage.senderId == currentState.myId && newMessage.senderId.isNotEmpty) {
-          debugPrint('DEBUG: Message is from me, updating temp message with real ID');
+        // Determine if this is our own echoed message:
+        // backend sends userView="send" for the sender's copy
+        final userView = (event.messageData['userView'] as String?)?.toLowerCase();
+        final isMine = userView == 'send' ||
+            (newMessage.senderId == currentState.myId && newMessage.senderId.isNotEmpty);
+
+        if (isMine) {
+          debugPrint('DEBUG: Message is from me (userView=$userView), updating temp message with real ID');
           final updatedMessages = List<MessageModel>.from(currentState.messages);
-          int index = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_') && msg.content == newMessage.content);
+
+          // The server-confirmed message is at least "delivered" (it was acknowledged)
+          final confirmedMessage = (newMessage.isDelivered || newMessage.isRead)
+              ? newMessage
+              : newMessage.copyWith(isDelivered: true);
+
+          int index = updatedMessages.lastIndexWhere((msg) =>
+              msg.id.startsWith('temp_') && msg.content == newMessage.content);
           if (index != -1) {
-            updatedMessages[index] = newMessage;
+            updatedMessages[index] = confirmedMessage;
             emit(currentState.copyWith(messages: updatedMessages));
             _saveToCache(_conversationId!, updatedMessages);
           } else {
             int lastTempIndex = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
             if (lastTempIndex != -1) {
-              updatedMessages[lastTempIndex] = newMessage;
+              updatedMessages[lastTempIndex] = confirmedMessage;
               emit(currentState.copyWith(messages: updatedMessages));
               _saveToCache(_conversationId!, updatedMessages);
             }
@@ -595,7 +707,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _currentIsOnline = event.isOnline;
     final currentState = state;
     if (currentState is ChatLoaded) {
-      emit(currentState.copyWith(isRecipientOnline: _currentIsOnline));
+      emit(currentState.copyWith(
+        isRecipientOnline: _currentIsOnline,
+        lastSeen: event.lastSeen ?? currentState.lastSeen,
+      ));
     }
   }
 
@@ -618,28 +733,42 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onMarkMessageRead(MarkMessageReadEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      final updatedMessages = currentState.messages.map((msg) {
-        if (msg.id == event.messageId) {
-          return msg.copyWith(isRead: true);
+      // Mark ALL our sent messages up to the target message as read
+      final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
+      final msgs = currentState.messages;
+      final updated = <MessageModel>[];
+      for (int i = 0; i < msgs.length; i++) {
+        final msg = msgs[i];
+        if (msg.senderId == currentState.myId && !msg.isRead &&
+            (targetIndex == -1 || i <= targetIndex)) {
+          updated.add(msg.copyWith(isRead: true, isDelivered: true));
+        } else {
+          updated.add(msg);
         }
-        return msg;
-      }).toList();
-      emit(currentState.copyWith(messages: updatedMessages));
-      _saveToCache(event.conversationId, updatedMessages);
+      }
+      emit(currentState.copyWith(messages: updated));
+      _saveToCache(event.conversationId, updated);
     }
   }
 
   void _onMarkMessageDelivered(MarkMessageDeliveredEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      final updatedMessages = currentState.messages.map((msg) {
-        if (msg.id == event.messageId) {
-          return msg.copyWith(isDelivered: true);
+      // Mark ALL our sent messages up to the target message as delivered
+      final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
+      final msgs = currentState.messages;
+      final updated = <MessageModel>[];
+      for (int i = 0; i < msgs.length; i++) {
+        final msg = msgs[i];
+        if (msg.senderId == currentState.myId && !msg.isDelivered &&
+            (targetIndex == -1 || i <= targetIndex)) {
+          updated.add(msg.copyWith(isDelivered: true));
+        } else {
+          updated.add(msg);
         }
-        return msg;
-      }).toList();
-      emit(currentState.copyWith(messages: updatedMessages));
-      _saveToCache(event.conversationId, updatedMessages);
+      }
+      emit(currentState.copyWith(messages: updated));
+      _saveToCache(event.conversationId, updated);
     }
   }
 
@@ -648,7 +777,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (currentState is ChatLoaded) {
       final updatedMessages = currentState.messages.map((msg) {
         if (event.messageIds.contains(msg.id)) {
-          return msg.copyWith(isDeleted: true, content: 'This message was deleted');
+          if (event.deleteType == 'me') {
+            return msg.copyWith(isDeletedForMe: true);
+          } else {
+            return msg.copyWith(isDeleted: true, content: 'This message was deleted');
+          }
         }
         return msg;
       }).toList();
@@ -661,7 +794,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         );
       }
 
-      emit(currentState.copyWith(messages: updatedMessages));
+      final updatedPinned = currentState.pinnedMessages
+          .where((m) => !event.messageIds.contains(m.id))
+          .toList();
+
+      emit(currentState.copyWith(
+        messages: updatedMessages,
+        pinnedMessages: updatedPinned,
+      ));
       _saveToCache(event.conversationId, updatedMessages);
     }
   }
@@ -696,17 +836,51 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           return;
         }
         _socketRepository.pinMessage(messageId: event.messageId);
+        _chatRepository.pinMessage(event.messageId).catchError((e) {
+          debugPrint('Error pinning message via API: $e');
+        });
       } else {
         _socketRepository.unpinMessage(messageId: event.messageId);
+        _chatRepository.unpinMessage(event.messageId).catchError((e) {
+          debugPrint('Error unpinning message via API: $e');
+        });
       }
 
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
-          return msg.copyWith(isPinned: event.isPinned);
+          return msg.copyWith(
+            isPinned: event.isPinned,
+            pinnedAt: event.isPinned ? (msg.pinnedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000) : null,
+          );
         }
         return msg;
       }).toList();
-      emit(currentState.copyWith(messages: updatedMessages));
+
+      final List<MessageModel> updatedPinned;
+      if (event.isPinned) {
+        final existingIndex = currentState.pinnedMessages.indexWhere((m) => m.id == event.messageId);
+        if (existingIndex != -1) {
+          updatedPinned = currentState.pinnedMessages;
+        } else {
+          final targetMsg = currentState.messages.where((m) => m.id == event.messageId).firstOrNull;
+          if (targetMsg != null) {
+            updatedPinned = List<MessageModel>.from(currentState.pinnedMessages)
+              ..add(targetMsg.copyWith(
+                isPinned: true,
+                pinnedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+              ));
+          } else {
+            updatedPinned = currentState.pinnedMessages;
+          }
+        }
+      } else {
+        updatedPinned = currentState.pinnedMessages.where((m) => m.id != event.messageId).toList();
+      }
+
+      emit(currentState.copyWith(
+        messages: updatedMessages,
+        pinnedMessages: updatedPinned,
+      ));
       _saveToCache(event.conversationId, updatedMessages);
     }
   }
@@ -776,7 +950,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
         return msg;
       }).toList();
-      emit(currentState.copyWith(messages: updatedMessages));
+      final updatedPinned = currentState.pinnedMessages
+          .where((m) => m.id != event.messageId)
+          .toList();
+      emit(currentState.copyWith(
+        messages: updatedMessages,
+        pinnedMessages: updatedPinned,
+      ));
       _saveToCache(event.conversationId, updatedMessages);
     }
   }
@@ -784,10 +964,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onReceiveEditMessage(ReceiveEditMessageEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      final editedAt = event.updatedAt ?? DateTime.now().toIso8601String();
+      final editedAtStr = event.updatedAt ?? DateTime.now().toIso8601String();
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
-          return msg.copyWith(content: event.newContent, isEdited: true, updatedAt: editedAt);
+          return msg.copyWith(
+            content: event.newContent,
+            isEdited: true,
+            updatedAt: editedAtStr,
+            editedAt: event.editedAt,
+          );
         }
         return msg;
       }).toList();
@@ -844,8 +1029,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onReceiveCallLogUpdate(ReceiveCallLogUpdateEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      final msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'])?.toString();
       final callMetaMap = event.callLogData['call_meta'] ?? event.callLogData['callMeta'];
+      var msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'])?.toString();
+      if (msgId == null && callMetaMap is Map) {
+        msgId = (callMetaMap['message_id'] ?? callMetaMap['messageId'])?.toString();
+      }
       
       if (msgId != null && callMetaMap is Map) {
         final callMeta = CallMeta.fromJson(Map<String, dynamic>.from(callMetaMap));
@@ -944,6 +1132,114 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }).catchError((e) {
       debugPrint('Error saving to cache: $e');
     });
+  }
+
+  Future<void> _onUpdateMessageSecurity(
+    UpdateMessageSecurityEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+    try {
+      await _chatRepository.updateMessageSecurity(
+        event.messageId,
+        allowShare: event.allowShare,
+        allowDownload: event.allowDownload,
+        isLocked: event.isLocked,
+      );
+      // Update the local message model so the UI reflects the change immediately.
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(
+            allowShare: event.allowShare,
+            allowDownload: event.allowDownload,
+          );
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      if (_conversationId != null) _saveToCache(_conversationId!, updatedMessages);
+      add(ShowNotificationEvent(
+        message: event.allowShare ? 'Sharing re-enabled' : 'Sharing disabled for this file',
+      ));
+    } catch (e) {
+      debugPrint('Error updating message security: $e');
+      add(ShowNotificationEvent(message: 'Failed to update share settings', isError: true));
+    }
+  }
+
+  Future<void> _onFetchMessageShares(
+    FetchMessageSharesEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+    try {
+      final sharesData = await _chatRepository.getMessageShares(event.messageId);
+      emit(currentState.copyWith(
+        sharesData: sharesData,
+        sharesMessageId: event.messageId,
+      ));
+    } catch (e) {
+      debugPrint('Error fetching message shares: $e');
+      add(ShowNotificationEvent(message: 'Failed to load share info', isError: true));
+    }
+  }
+
+  Future<void> _onReceiveGroupUpdated(
+    ReceiveGroupUpdatedEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+    final data = event.data;
+    final newName = (data['group_name'] ?? data['groupName'])?.toString();
+    final newPictureUrl = (data['group_picture_url'] ?? data['groupPictureUrl'] ?? data['group_image_url'] ?? data['groupImageUrl'])?.toString();
+    emit(currentState.copyWith(
+      groupName: newName ?? currentState.groupName,
+      groupPictureUrl: newPictureUrl ?? currentState.groupPictureUrl,
+    ));
+    if (newName != null) {
+      add(ShowNotificationEvent(message: 'Group name updated to "$newName"'));
+    } else if (newPictureUrl != null) {
+      add(ShowNotificationEvent(message: 'Group image was updated'));
+    }
+  }
+
+  Future<void> _onReceiveGroupAdminUpdated(
+    ReceiveGroupAdminUpdatedEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final data = event.data;
+    final isAdmin = data['is_admin'] ?? data['isAdmin'];
+    final label = isAdmin == true ? 'A participant is now an admin' : 'A participant is no longer an admin';
+    add(ShowNotificationEvent(message: label));
+  }
+
+  Future<void> _onPromoteGroupAdmin(
+    PromoteGroupAdminEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      await _chatRepository.promoteGroupAdmin(groupId: event.groupId, userId: event.userId);
+      add(ShowNotificationEvent(message: 'Participant promoted to admin'));
+    } catch (e) {
+      debugPrint('Error promoting group admin: $e');
+      add(ShowNotificationEvent(message: 'Failed to promote admin: $e', isError: true));
+    }
+  }
+
+  Future<void> _onDemoteGroupAdmin(
+    DemoteGroupAdminEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      await _chatRepository.demoteGroupAdmin(groupId: event.groupId, userId: event.userId);
+      add(ShowNotificationEvent(message: 'Admin rights removed'));
+    } catch (e) {
+      debugPrint('Error demoting group admin: $e');
+      add(ShowNotificationEvent(message: 'Failed to remove admin rights: $e', isError: true));
+    }
   }
 
   @override

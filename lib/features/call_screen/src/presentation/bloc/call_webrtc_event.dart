@@ -27,13 +27,15 @@ class AnswerCallEvent extends CallWebRtcEvent {
 /// Either side hangs up
 class HangUpCallEvent extends CallWebRtcEvent {
   final String conversationId;
-  const HangUpCallEvent(this.conversationId);
+  final String? messageId;
+  const HangUpCallEvent(this.conversationId, {this.messageId});
 }
 
 /// Either side rejects incoming call
 class RejectCallEvent extends CallWebRtcEvent {
   final String conversationId;
-  const RejectCallEvent(this.conversationId);
+  final String? messageId;
+  const RejectCallEvent(this.conversationId, {this.messageId});
 }
 
 /// Socket pushed a call_incoming event — callee shows ringing UI

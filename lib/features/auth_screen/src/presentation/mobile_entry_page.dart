@@ -122,15 +122,13 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                         child: IntrinsicHeight(
                           child: Column(
                             children: [
-                              const Spacer(),
-                              SizedBox(
-                                height:
-                                    MediaQuery.of(context).size.height * 0.35,
+                               CommonSpaces.h20,
+                              Expanded(
                                 child: Stack(
                                   children: [
                                     Positioned.fill(
                                       child: Image.asset(
-                                        'assets/main_bg_img.png',
+                                        'assets/neon_speech_globe.png',
                                         fit: BoxFit.cover,
                                       ),
                                     ),
@@ -260,6 +258,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
                                               ),
                                               child: TextField(
                                                 controller: _mobileController,
+                                                autofocus: true,
                                                 keyboardType: TextInputType.phone,
                                                 inputFormatters: [
                                                   FilteringTextInputFormatter.digitsOnly,

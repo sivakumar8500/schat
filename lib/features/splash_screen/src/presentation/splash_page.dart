@@ -13,6 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
 import 'package:schat/features/auth_screen/auth_screen.dart';
 import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
+import 'package:schat/features/permissions_screen/permissions_screen.dart';
+import 'package:schat/utils/permission_helper.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -25,6 +27,22 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   late AnimationController _animationController;
   final List<MoleculeParticle> _particles = [];
   final int _particleCount = 30;
+
+  Future<void> _goToDashboardOrPermissions() async {
+    final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
+    if (!mounted) return;
+    if (showPermissions) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const PermissionsPage()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const DashboardPage()),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -87,12 +105,8 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       final username = storage.getUsername();
 
       if (username != null && username.isNotEmpty) {
-        // If we have a token and a cached username, go straight to Dashboard
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardPage()),
-        );
+        // If we have a token and a cached username, go to Dashboard or Permissions
+        await _goToDashboardOrPermissions();
         return;
       }
     }
@@ -126,7 +140,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
       if (!mounted) return;
 
       result.when(
-        success: (user) {
+        success: (user) async {
           _saveUsernameToPrefs(user.username);
           
           if (user.username == null || user.username!.isEmpty) {
@@ -140,10 +154,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
               MaterialPageRoute(builder: (context) => const SubscriptionPage()),
             );
           } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DashboardPage()),
-            );
+            await _goToDashboardOrPermissions();
           }
         },
         failure: (message, statusCode) async {
@@ -155,20 +166,12 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
               MaterialPageRoute(builder: (context) => const MobileEntryPage()),
             );
           } else {
-            if (!mounted) return;
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DashboardPage()),
-            );
+            await _goToDashboardOrPermissions();
           }
         },
       );
     } catch (e) {
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const DashboardPage()),
-      );
+      await _goToDashboardOrPermissions();
     }
   }
 

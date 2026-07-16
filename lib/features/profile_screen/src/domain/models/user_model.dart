@@ -5,6 +5,7 @@ part 'user_model.g.dart';
 
 @freezed
 abstract class UserModel with _$UserModel {
+  const UserModel._();
   const factory UserModel({
     @JsonKey(name: 'phone_number') @Default('') String phoneNumber,
     String? username,
@@ -20,7 +21,19 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'subscription_type') String? subscriptionType,
     @JsonKey(name: 'created_at') @Default('') String createdAt,
     @JsonKey(name: 'updated_at') @Default('') String updatedAt,
+    @JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer,
+    @JsonKey(name: 'contactName') String? contactName,
   }) = _UserModel;
+
+  String get displayName {
+    if (contactName != null && contactName!.isNotEmpty) {
+      return contactName!;
+    }
+    if (username != null && username!.isNotEmpty) {
+      return username!;
+    }
+    return phoneNumber;
+  }
 
   factory UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(_normalizeUserJson(json));
 

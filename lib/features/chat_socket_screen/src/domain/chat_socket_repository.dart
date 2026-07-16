@@ -1,15 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
+import 'js_convert_helper_stub.dart'
+    if (dart.library.html) 'js_convert_helper_web.dart';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/status.dart' as status;
+
+class SocketEventLog {
+  final String direction; // 'inbound' | 'outbound' | 'status'
+  final DateTime timestamp;
+  final Map<String, dynamic> payload;
+
+  SocketEventLog({
+    required this.direction,
+    required this.timestamp,
+    required this.payload,
+  });
+}
 
 abstract class ChatSocketRepository {
   void connect();
   void disconnect();
+  Stream<SocketEventLog> get onEventLog;
   void emit(String event, dynamic data);
   void sendMessage({
     required String conversationId,
@@ -63,6 +77,8 @@ abstract class ChatSocketRepository {
   void sendPing();
   bool get isConnected;
   Stream<dynamic> get onMessage;
+  List<SocketEventLog> get eventLogs;
+  void clearLogs();
 }
 
 @LazySingleton(as: ChatSocketRepository)
@@ -71,10 +87,38 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   final _messageController = StreamController<dynamic>.broadcast();
+  final _eventLogController = StreamController<SocketEventLog>.broadcast();
+  final List<SocketEventLog> _eventLogs = [];
   Timer? _heartbeatTimer;
+  DateTime? _lastPongReceived;
   bool _isConnected = false;
 
   ChatSocketRepositoryImpl(this._storageService);
+
+  @override
+  Stream<SocketEventLog> get onEventLog => _eventLogController.stream;
+
+  @override
+  List<SocketEventLog> get eventLogs => List.unmodifiable(_eventLogs);
+
+  @override
+  void clearLogs() {
+    _eventLogs.clear();
+    _logEvent('status', {'status': 'logs_cleared'});
+  }
+
+  void _logEvent(String direction, Map<String, dynamic> payload) {
+    final log = SocketEventLog(
+      direction: direction,
+      timestamp: DateTime.now(),
+      payload: payload,
+    );
+    _eventLogs.insert(0, log);
+    if (_eventLogs.length > 500) {
+      _eventLogs.removeLast();
+    }
+    _eventLogController.add(log);
+  }
 
   @override
   void connect() async {
@@ -98,14 +142,19 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       debugPrint('---------------------------');
       debugPrint('url --->: $wsUrl');
 
+      _logEvent('status', {'status': 'connecting', 'url': wsUrl.toString()});
+
       _channel = WebSocketChannel.connect(wsUrl);
       
       await _channel!.ready;
       _isConnected = true;
+      _lastPongReceived = DateTime.now();
       debugPrint('--------------------------');
       debugPrint('Socket Status: CONNECTED ✅');
       debugPrint('---------------------------');
       
+      _logEvent('status', {'status': 'connected'});
+
       _startHeartbeat();
 
       _subscription = _channel!.stream.listen(
@@ -139,11 +188,21 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       } else if (rawData is List<int>) {
         decodedData = jsonDecode(utf8.decode(rawData));
       } else {
-        decodedData = rawData;
+        decodedData = convertJsObject(rawData);
       }
+      
+      _logEvent('inbound', decodedData is Map<String, dynamic> 
+          ? decodedData 
+          : {'raw': rawData.toString(), 'decoded': decodedData});
+
+      if (decodedData is Map<String, dynamic> && decodedData['type'] == 'pong') {
+        _lastPongReceived = DateTime.now();
+      }
+
       _messageController.add(decodedData);
     } catch (e) {
       debugPrint('Error parsing incoming data: $e');
+      _logEvent('inbound', {'raw': rawData.toString(), 'error': e.toString()});
       _messageController.add(rawData);
     }
   }
@@ -154,17 +213,29 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     debugPrint('---------------------------');
     debugPrint('error ---->: $error');
     debugPrint('----------------------------------');
+    _logEvent('status', {'status': 'error', 'error': error.toString()});
     disconnect();
     _reconnect();
   }
 
   void _handleConnectionClosed() {
+    final closeCode = _channel?.closeCode;
+    final closeReason = _channel?.closeReason;
     debugPrint('--------------------------');
-    debugPrint('Socket Status: DISCONNECTED ❌');
+    debugPrint('Socket Status: DISCONNECTED ❌ CloseCode: $closeCode, Reason: $closeReason');
     debugPrint('---------------------------');
     debugPrint('----------------------------------');
+    _logEvent('status', {
+      'status': 'disconnected',
+      'closeCode': closeCode,
+      'closeReason': closeReason,
+    });
     disconnect();
-    _reconnect();
+    if (closeCode == 1008) {
+      debugPrint('Subscription check failed (Code 1008). Policy Violation. Avoiding reconnection loop.');
+    } else {
+      _reconnect();
+    }
   }
 
   void _reconnect() {
@@ -177,8 +248,15 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   }
 
   void _startHeartbeat() {
+    _lastPongReceived = DateTime.now();
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_lastPongReceived != null &&
+          DateTime.now().difference(_lastPongReceived!) > const Duration(seconds: 15)) {
+        debugPrint('DEBUG: WebSocket heartbeat timeout (no pong received). Reconnecting...');
+        _handleConnectionError('Heartbeat timeout');
+        return;
+      }
       sendPing();
     });
   }
@@ -214,14 +292,29 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     if (mimeType != null) content['mimeType'] = mimeType;
     if (duration != null) content['duration'] = duration;
 
+    String payloadType = type;
+    if (type == 'voice_note' || (mimeType != null && mimeType.startsWith('audio/'))) {
+      payloadType = 'audio';
+    }
+
+    final String finalType;
+    if (type == 'update_attachment_permissions') {
+      finalType = 'update_attachment_permissions';
+    } else {
+      finalType = payloadType;
+    }
+
     final Map<String, dynamic> payload = {
-      "type": type,
+      "type": finalType,
       "conversationId": conversationId,
       "conversation_id": conversationId,
     };
 
     if (content.isNotEmpty) payload['content'] = content;
-    if (replyMessageId != null) payload['replyMessageId'] = replyMessageId;
+    if (replyMessageId != null) {
+      payload['replyMessageId'] = replyMessageId;
+      payload['reply_message_id'] = replyMessageId;
+    }
     if (security != null) payload['security'] = security;
     if (viewControl != null) payload['viewControl'] = viewControl;
     if (expiry != null) payload['expiry'] = expiry;
@@ -232,12 +325,11 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void sendTypingIndicator(String conversationId, {bool isTyping = true}) {
+    if (!isTyping) return; // Do not send if they stopped typing, backend only expects typing start events
     final Map<String, dynamic> payload = {
       "type": "typing",
       "conversationId": conversationId,
-      "conversation_id": conversationId, // Send both to be safe
-      "is_typing": isTyping,
-      "isTyping": isTyping,
+      "conversation_id": conversationId,
     };
     emit('message', payload);
   }
@@ -387,6 +479,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   void emit(String event, dynamic data) {
     if (_channel == null) {
       debugPrint('Cannot emit: Socket not connected');
+      _logEvent('status', {'status': 'cannot_emit', 'message': 'Socket not connected'});
       return;
     }
 
@@ -396,17 +489,23 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     debugPrint('body ---->: ${jsonEncode(data ?? {})}');
     debugPrint('----------------------------------');
     
+    _logEvent('outbound', data is Map<String, dynamic> ? data : {'raw': data.toString()});
+
     _channel!.sink.add(jsonEncode(data));
   }
 
   @override
   void disconnect() {
+    final wasConnected = _isConnected;
     _stopHeartbeat();
     _subscription?.cancel();
-    _channel?.sink.close(status.goingAway);
+    _channel?.sink.close();
     _channel = null;
     _subscription = null;
     _isConnected = false;
+    if (wasConnected) {
+      _logEvent('status', {'status': 'disconnected_manually'});
+    }
   }
 
   @override

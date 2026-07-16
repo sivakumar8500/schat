@@ -45,6 +45,8 @@ dependencies:
   webview_flutter: ^4.10.0
   path_provider: ^2.1.6
   flutter_webrtc: ^0.12.3
+  timeago: ^3.7.0
+  receive_sharing_intent: ^1.8.1
 
 dev_dependencies:
   flutter_test:

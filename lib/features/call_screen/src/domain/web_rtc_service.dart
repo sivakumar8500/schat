@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:schat/core/network/connectivity_repository.dart';
+import 'package:schat/injection.dart';
 
 /// Represents the signaling state of the WebRTC call.
 enum CallSignalState { idle, connecting, ringing, active, ended, rejected, busy }
@@ -15,13 +18,15 @@ class WebRtcService {
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
-  final List<RTCIceCandidate> _remoteCandidateQueue = [];
+  final List<dynamic> _remoteCandidateQueue = [];
 
   final RTCVideoRenderer localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
 
   String? _activeConversationId;
   bool _renderersInitialized = false;
+  Timer? _reconnectTimer;
+  StreamSubscription? _connectivitySubscription;
 
   final _localStreamController = StreamController<MediaStream?>.broadcast();
   final _remoteStreamController = StreamController<MediaStream?>.broadcast();
@@ -131,6 +136,7 @@ class WebRtcService {
     required ChatSocketRepository repository,
   }) async {
     final conversationId = incomingEvent['conversation_id'] as String;
+    final messageId = incomingEvent['message_id'] ?? incomingEvent['messageId'];
     final callType = incomingEvent['call_type'] as String? ?? 'audio';
     final offerMap = incomingEvent['offer'] as Map<String, dynamic>;
     _activeConversationId = conversationId;
@@ -168,6 +174,7 @@ class WebRtcService {
     repository.emit('message', {
       'type': 'call_response',
       'conversation_id': conversationId,
+      'message_id': messageId,
       'response': 'accept',
       'answer': {
         'type': answer.type,
@@ -184,12 +191,14 @@ class WebRtcService {
 
   void rejectCall({
     required String conversationId,
+    String? messageId,
     required ChatSocketRepository repository,
     String reason = 'reject',
   }) {
     repository.emit('message', {
       'type': 'call_response',
       'conversation_id': conversationId,
+      'message_id': messageId,
       'response': reason,
       'answer': null,
     });
@@ -254,7 +263,7 @@ class WebRtcService {
     if (_peerConnection == null || _remoteCandidateQueue.isEmpty) return;
     debugPrint('WebRTC: Processing ${_remoteCandidateQueue.length} queued ICE candidates');
     
-    final List<RTCIceCandidate> candidates = List.from(_remoteCandidateQueue);
+    final List<dynamic> candidates = List.from(_remoteCandidateQueue);
     _remoteCandidateQueue.clear();
 
     for (var candidate in candidates) {
@@ -274,11 +283,13 @@ class WebRtcService {
 
   Future<void> endCall({
     required String conversationId,
+    String? messageId,
     required ChatSocketRepository repository,
   }) async {
     repository.emit('message', {
       'type': 'call_hangup',
       'conversation_id': conversationId,
+      'message_id': messageId,
     });
     _callSignalController.add(CallSignalState.ended);
     await cleanup();
@@ -340,8 +351,18 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   Future<void> cleanup() async {
-    localRenderer.srcObject = null;
-    remoteRenderer.srcObject = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+    if (_renderersInitialized) {
+      try {
+        localRenderer.srcObject = null;
+        remoteRenderer.srcObject = null;
+      } catch (e) {
+        debugPrint('WebRTC: Error resetting renderers during cleanup: $e');
+      }
+    }
 
     _localStream?.getTracks().forEach((track) => track.stop());
     await _localStream?.dispose();
@@ -446,9 +467,59 @@ class WebRtcService {
       debugPrint('WebRTC ICE State: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
-        _callSignalController.add(CallSignalState.ended);
+        if (_reconnectTimer == null) {
+          debugPrint('WebRTC: Connection disrupted. Starting 30-second reconnection timer.');
+          _reconnectTimer = Timer(const Duration(seconds: 30), () {
+            debugPrint('WebRTC: Reconnection timer expired. Ending call.');
+            _callSignalController.add(CallSignalState.ended);
+          });
+        }
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+                 state == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+        if (_reconnectTimer != null) {
+          debugPrint('WebRTC: Connection restored. Reconnection timer cancelled.');
+          _reconnectTimer?.cancel();
+          _reconnectTimer = null;
+        }
       }
     };
+
+    // Also monitor internet connectivity state changes during the call
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = getIt<ConnectivityRepository>().onConnectivityChanged.listen((result) {
+      final connected = result.any((r) => r != ConnectivityResult.none);
+      debugPrint('WebRTC: Network status changed during call. Connected = $connected');
+      if (!connected) {
+        if (_reconnectTimer == null) {
+          debugPrint('WebRTC: Network offline. Starting 30-second reconnection timer.');
+          _reconnectTimer = Timer(const Duration(seconds: 30), () {
+            debugPrint('WebRTC: Reconnection timer expired due to network loss. Ending call.');
+            _callSignalController.add(CallSignalState.ended);
+          });
+        }
+      } else {
+        // Network reconnected
+        if (_peerConnection != null) {
+          _peerConnection!.getIceConnectionState().then((iceState) {
+            if (iceState == RTCIceConnectionState.RTCIceConnectionStateConnected ||
+                iceState == RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+              if (_reconnectTimer != null) {
+                debugPrint('WebRTC: Network online and ICE connected. Reconnection timer cancelled.');
+                _reconnectTimer?.cancel();
+                _reconnectTimer = null;
+              }
+            } else {
+              // Wait up to 30s from the original disconnect event, WebRTC peer connection will perform ICE restart/reconnect automatically
+              debugPrint('WebRTC: Network online but ICE state is $iceState. Reconnection timer remains active.');
+            }
+          });
+        } else {
+          // If PeerConnection was already cleared, stop timer
+          _reconnectTimer?.cancel();
+          _reconnectTimer = null;
+        }
+      }
+    });
   }
 
   // Dispose all stream controllers (call when app closes)

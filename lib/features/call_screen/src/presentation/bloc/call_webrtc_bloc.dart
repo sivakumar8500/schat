@@ -28,6 +28,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   final CallNotificationService _notificationService = getIt<CallNotificationService>();
   StreamSubscription? _notificationSubscription;
   StreamSubscription? _socketSubscription;
+  StreamSubscription? _webRtcSignalSubscription;
+  Timer? _callTimeoutTimer;
+  String? _activeCallMessageId;
+  DateTime? _activeCallStart;
+
+  DateTime? get activeCallStart => _activeCallStart;
 
   CallWebRtcBloc(this._webRtcService, this._repository)
       : super(const CallIdle()) {
@@ -47,7 +53,16 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<HandleRemoteVideoToggleEvent>(_onHandleRemoteVideoToggle);
     on<HandleRemoteMuteUpdateEvent>(_onHandleRemoteMuteUpdate);
     on<HandleCallErrorEvent>((event, emit) {
+      _cancelCallTimeoutTimer();
+      _activeCallStart = null;
       emit(CallError(event.error));
+    });
+
+    // Listen to WebRTC connection signals (e.g. call ended from ICE failure)
+    _webRtcSignalSubscription = _webRtcService.callSignalState.listen((state) {
+      if (state == CallSignalState.ended) {
+        add(const HandleCallDisconnectedEvent());
+      }
     });
 
     // Listen for calls answered via system UI (CallKit/ConnectionService)
@@ -72,6 +87,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       }
 
       switch (type) {
+        case 'call_initiated':
+          _activeCallMessageId = (data['message_id'] ?? data['messageId'])?.toString();
+          debugPrint('CallWebRtcBloc: Received call_initiated, saved activeCallMessageId: $_activeCallMessageId');
+          break;
         case 'call_initiate':
         case 'call_incoming':
           add(HandleIncomingCallEvent(Map<String, dynamic>.from(data)));
@@ -107,6 +126,23 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     });
   }
 
+  void _startCallTimeoutTimer(String conversationId, {required bool isOutgoing}) {
+    _callTimeoutTimer?.cancel();
+    _callTimeoutTimer = Timer(const Duration(seconds: 90), () {
+      debugPrint('CallWebRtcBloc: Call unanswered after 90 seconds, auto disconnecting');
+      if (isOutgoing) {
+        add(HangUpCallEvent(conversationId));
+      } else {
+        add(RejectCallEvent(conversationId));
+      }
+    });
+  }
+
+  void _cancelCallTimeoutTimer() {
+    _callTimeoutTimer?.cancel();
+    _callTimeoutTimer = null;
+  }
+
   /// Navigates to the call page once the navigator context is ready.
   /// Retries up to 10 times (3 seconds total) when the app is resuming
   /// from a killed/background state and Flutter hasn't fully initialized yet.
@@ -130,8 +166,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     final callerName = extra['caller_name'] ?? 'Unknown';
     final conversationId = extra['conversation_id'] ?? '';
     final recipientId = extra['recipient_id'] ?? '';
-    final profilePictureUrl =
-        extra['profile_picture_url'] ?? extra['profilePictureUrl'];
+    final callerDetails = extra['caller_details'] ?? extra['callerDetails'];
+    String? profilePictureUrl;
+    if (callerDetails is Map) {
+      profilePictureUrl = callerDetails['profile_picture_url'] ??
+          callerDetails['profilePictureUrl'];
+    }
+    profilePictureUrl ??= extra['caller_profile_picture_url'] ??
+        extra['profile_picture_url'] ??
+        extra['profilePictureUrl'];
 
     // Prefer details already resolved in the current state.
     String finalName = callerName;
@@ -196,6 +239,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       // Start back ring early so the caller hears it immediately
       _soundService.playBackRing();
 
+      // Start 90-second unanswered timeout timer
+      _startCallTimeoutTimer(event.conversationId, isOutgoing: true);
+
       final storage = getIt<StorageService>();
       final myName = storage.getUsername();
       final myPic = storage.getProfilePic();
@@ -209,6 +255,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       );
       debugPrint('CallWebRtcBloc: makeCall completed');
     } catch (e) {
+      _cancelCallTimeoutTimer();
       _soundService.stopAll();
       debugPrint('CallWebRtcBloc: Error initiating call: $e');
       emit(CallError('Failed to start call: $e'));
@@ -223,6 +270,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     Emitter<CallWebRtcState> emit,
   ) async {
     try {
+      _cancelCallTimeoutTimer();
       // Ensure socket is connected (especially important for background/terminated launches)
       if (!_repository.isConnected) {
         _repository.connect();
@@ -258,14 +306,23 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       }
       // ----------------------------------------------------------------
 
+      final callerDetails = safeEvent['caller_details'] ?? safeEvent['callerDetails'];
+      String? profilePic;
+      if (callerDetails is Map) {
+        profilePic = callerDetails['profile_picture_url'] ??
+            callerDetails['profilePictureUrl'];
+      }
+      profilePic ??= safeEvent['caller_profile_picture_url'] ??
+          safeEvent['profile_picture_url'] ??
+          safeEvent['profilePictureUrl'];
+
       emit(CallConnecting(
         conversationId: safeEvent['conversation_id'] ?? '',
         isVideo: safeEvent['call_type'] == 'video',
         contactName: safeEvent['caller_name'] ?? '',
         recipientId: safeEvent['recipient_id'] ?? '',
         isMinimized: false,
-        profilePictureUrl:
-            safeEvent['profile_picture_url'] ?? safeEvent['profilePictureUrl'],
+        profilePictureUrl: profilePic,
       ));
 
       await _webRtcService.answerCall(
@@ -277,12 +334,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final isVideo = safeEvent['call_type'] == 'video';
       final callerName = safeEvent['caller_name'] ?? 'Unknown';
       final recipientId = safeEvent['recipient_id'] ?? '';
-      final profilePic =
-          safeEvent['profile_picture_url'] ?? safeEvent['profilePictureUrl'];
 
       // For audio calls, start on earpiece (speaker false), for video start on speaker.
       await _webRtcService.toggleSpeaker(isVideo);
 
+      _activeCallStart = DateTime.now();
       emit(CallActive(
         conversationId: safeEvent['conversation_id'] ?? '',
         contactName: callerName,
@@ -297,18 +353,19 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // HANG UP
-  // ─────────────────────────────────────────────
   Future<void> _onHangUp(
     HangUpCallEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
+    _cancelCallTimeoutTimer();
     _soundService.stopAll();
     await _webRtcService.endCall(
       conversationId: event.conversationId,
+      messageId: event.messageId ?? _activeCallMessageId,
       repository: _repository,
     );
+    _activeCallMessageId = null;
+    _activeCallStart = null;
     emit(const CallEnded());
   }
 
@@ -319,11 +376,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     RejectCallEvent event,
     Emitter<CallWebRtcState> emit,
   ) {
+    _cancelCallTimeoutTimer();
     _soundService.stopAll();
     _webRtcService.rejectCall(
       conversationId: event.conversationId,
+      messageId: event.messageId ?? _activeCallMessageId,
       repository: _repository,
     );
+    _activeCallMessageId = null;
+    _activeCallStart = null;
     emit(const CallEnded());
   }
 
@@ -336,11 +397,19 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   ) async {
     final callType = event.incomingEvent['call_type'] as String? ?? 'audio';
     final recipientId = event.incomingEvent['recipient_id'] as String? ?? '';
-    final profilePic = event.incomingEvent['profile_picture_url'] ?? event.incomingEvent['profilePictureUrl'];
+    final callerDetails = event.incomingEvent['caller_details'] ?? event.incomingEvent['callerDetails'];
+    String? profilePic;
+    if (callerDetails is Map) {
+      profilePic = callerDetails['profile_picture_url'] ??
+          callerDetails['profilePictureUrl'];
+    }
+    profilePic ??= event.incomingEvent['caller_profile_picture_url'] ??
+        event.incomingEvent['profile_picture_url'] ??
+        event.incomingEvent['profilePictureUrl'];
 
     // Resolve caller name from caller_details
     String callerName = event.incomingEvent['caller_name'] as String? ?? 'Unknown';
-    final callerDetails = event.incomingEvent['caller_details'] ?? event.incomingEvent['callerDetails'];
+
     if (callerDetails is Map) {
       final phone = callerDetails['phone_number']?.toString() ?? '';
       final username = callerDetails['username']?.toString() ?? '';
@@ -359,6 +428,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     // Mutate map so all subsequent screens/events have the resolved name
     event.incomingEvent['caller_name'] = callerName;
     
+    final conversationId = event.incomingEvent['conversation_id'] ?? event.incomingEvent['conversationId'] ?? '';
+    _activeCallMessageId = (event.incomingEvent['message_id'] ?? event.incomingEvent['messageId'])?.toString();
+    _startCallTimeoutTimer(conversationId, isOutgoing: false);
+
     _soundService.playRingtone();
     emit(CallRinging(
       incomingEvent: event.incomingEvent,
@@ -385,7 +458,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     final isVideo = incomingEvent['call_type'] == 'video';
     final conversationId = incomingEvent['conversation_id'] ?? '';
     final recipientId = incomingEvent['recipient_id'] ?? '';
-    final profilePic = incomingEvent['profile_picture_url'] ?? incomingEvent['profilePictureUrl'];
+    final callerDetails = incomingEvent['caller_details'] ?? incomingEvent['callerDetails'];
+    String? profilePic;
+    if (callerDetails is Map) {
+      profilePic = callerDetails['profile_picture_url'] ??
+          callerDetails['profilePictureUrl'];
+    }
+    profilePic ??= incomingEvent['caller_profile_picture_url'] ??
+        incomingEvent['profile_picture_url'] ??
+        incomingEvent['profilePictureUrl'];
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -413,6 +494,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     HandleCallAnsweredEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
+    _cancelCallTimeoutTimer();
     await _webRtcService.handleCallAnswered(event.event);
     _soundService.stopAll();
     final response = event.event['response'] as String?;
@@ -437,12 +519,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         contactName = event.event['caller_name'] ?? 'Unknown';
         recipientId = event.event['recipient_id'] ?? '';
         isVideo = event.event['call_type'] == 'video';
-        profilePic = event.event['profile_picture_url'] ?? event.event['profilePictureUrl'];
+        final callerDetails = event.event['caller_details'] ?? event.event['callerDetails'];
+        if (callerDetails is Map) {
+          profilePic = callerDetails['profile_picture_url'] ??
+              callerDetails['profilePictureUrl'];
+        }
+        profilePic ??= event.event['caller_profile_picture_url'] ??
+            event.event['profile_picture_url'] ??
+            event.event['profilePictureUrl'];
       }
       
       // Initialize speaker state based on call type
       await _webRtcService.toggleSpeaker(isVideo);
       
+      _activeCallStart = DateTime.now();
       emit(CallActive(
         conversationId: conversationId, 
         contactName: contactName,
@@ -474,6 +564,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     HandleCallDisconnectedEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
+    _activeCallStart = null;
+    _cancelCallTimeoutTimer();
     _soundService.stopAll();
     // Dismiss any system/CallKit notification on both platforms
     if (!kIsWeb) {
@@ -572,8 +664,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
   @override
   Future<void> close() {
+    _callTimeoutTimer?.cancel();
     _notificationSubscription?.cancel();
     _socketSubscription?.cancel();
+    _webRtcSignalSubscription?.cancel();
     _webRtcService.cleanup();
     return super.close();
   }

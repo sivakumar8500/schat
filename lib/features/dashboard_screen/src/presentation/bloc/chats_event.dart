@@ -23,10 +23,12 @@ class CreateChat extends ChatsEvent {
 class UpdateUserStatus extends ChatsEvent {
   final String userId;
   final bool isOnline;
+  final String? lastSeen;
 
   const UpdateUserStatus({
     required this.userId,
     required this.isOnline,
+    this.lastSeen,
   });
 }
 
@@ -71,5 +73,25 @@ class CallLogUpdated extends ChatsEvent {
     required this.conversationId,
     required this.messageId,
     required this.callMeta,
+  });
+}
+
+class UpdateChatTypingStatus extends ChatsEvent {
+  final String conversationId;
+  final bool isTyping;
+
+  const UpdateChatTypingStatus({
+    required this.conversationId,
+    required this.isTyping,
+  });
+}
+
+class MessageDeleted extends ChatsEvent {
+  final String conversationId;
+  final String messageId;
+
+  const MessageDeleted({
+    required this.conversationId,
+    required this.messageId,
   });
 }

@@ -8,6 +8,7 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
+import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/message_bubble.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -22,6 +23,10 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 
 class MockChatRepository extends Mock implements ChatRepository {}
 class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
@@ -29,6 +34,8 @@ class MockConnectSocketUseCase extends Mock implements ConnectSocketUseCase {}
 class MockChatSocketBloc extends Mock implements ChatSocketBloc {}
 class MockStorageService extends Mock implements StorageService {}
 class MockCallWebRtcBloc extends MockBloc<CallWebRtcEvent, CallWebRtcState> implements CallWebRtcBloc {}
+class MockProfileRepository extends Mock implements ProfileRepository {}
+class MockContactsRepository extends Mock implements ContactsRepository {}
 
 void main() {
   setUpAll(() {
@@ -48,6 +55,7 @@ void main() {
   late MockConnectSocketUseCase mockConnectSocketUseCase;
   late MockStorageService mockStorageService;
   late MockCallWebRtcBloc mockCallWebRtcBloc;
+  late MockProfileRepository mockProfileRepository;
   late Directory tempDir;
 
   setUp(() async {
@@ -57,11 +65,15 @@ void main() {
     mockConnectSocketUseCase = MockConnectSocketUseCase();
     mockStorageService = MockStorageService();
     mockCallWebRtcBloc = MockCallWebRtcBloc();
+    mockProfileRepository = MockProfileRepository();
+    final mockContactsRepository = MockContactsRepository();
     
     getIt.registerSingleton<ChatRepository>(mockChatRepository);
     getIt.registerSingleton<ChatSocketRepository>(mockChatSocketRepository);
     getIt.registerSingleton<StorageService>(mockStorageService);
     getIt.registerSingleton<CallWebRtcBloc>(mockCallWebRtcBloc);
+    getIt.registerSingleton<ProfileRepository>(mockProfileRepository);
+    getIt.registerSingleton<ContactsRepository>(mockContactsRepository);
     getIt.registerFactory<ChatSocketBloc>(() => ChatSocketBloc(mockConnectSocketUseCase, mockChatSocketRepository));
 
     when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
@@ -70,6 +82,12 @@ void main() {
     when(() => mockCallWebRtcBloc.state).thenReturn(const CallIdle());
     when(() => mockCallWebRtcBloc.stream).thenAnswer((_) => const Stream.empty());
     when(() => mockChatRepository.getPinnedMessages(any())).thenAnswer((_) async => []);
+    when(() => mockChatRepository.pinMessage(any())).thenAnswer((_) async {});
+    when(() => mockChatRepository.unpinMessage(any())).thenAnswer((_) async {});
+    when(() => mockContactsRepository.fetchSyncedContacts()).thenAnswer((_) async => ApiResult.success([]));
+    when(() => mockProfileRepository.getUserById(any())).thenAnswer(
+      (_) async => ApiResult.success(const UserModel(id: 'user_1', username: 'Alice', isOnline: true)),
+    );
 
     // Setup mock method channels to avoid MissingPluginException
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -394,6 +412,7 @@ void main() {
     final Map<dynamic, dynamic> contentMap = {
       'text': 'Dynamic map decoded content',
       'fileKey': 'some_key',
+      'duration': 6.5,
     };
     final Map<String, dynamic> rawJson = {
       'id': 'json_msg',
@@ -408,6 +427,7 @@ void main() {
     final message = MessageModel.fromJson(rawJson);
     expect(message.content, 'Dynamic map decoded content');
     expect(message.mediaUrl, 'some_key');
+    expect(message.duration, 6.5);
   });
 
   testWidgets('ChatPage loads more messages when LoadMoreMessagesEvent is added', (WidgetTester tester) async {
@@ -462,5 +482,123 @@ void main() {
     });
 
     expect(find.text('Message 1'), findsOneWidget);
+  });
+
+  test('ChatBloc removes deleted messages from pinnedMessages list', () async {
+    final chatBloc = ChatBloc(
+      chatRepository: mockChatRepository,
+      storageService: mockStorageService,
+      socketRepository: mockChatSocketRepository,
+    );
+
+    final msg1 = const MessageModel(
+      id: 'msg_1',
+      conversationId: 'conv_1',
+      senderId: 'other',
+      content: 'Pinned 1',
+      isDeleted: false,
+      createdAt: '',
+      updatedAt: '',
+    );
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip')))
+        .thenAnswer((_) async => [msg1]);
+    when(() => mockChatRepository.getPinnedMessages(any()))
+        .thenAnswer((_) async => [msg1]);
+
+    chatBloc.add(const LoadMessagesEvent(
+      conversationId: 'conv_1',
+      recipientId: 'user_1',
+    ));
+
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect(chatBloc.state, isA<ChatLoaded>());
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, hasLength(1));
+
+    when(() => mockChatSocketRepository.deleteMessage(
+      conversationId: any(named: 'conversationId'),
+      messageId: any(named: 'messageId'),
+      deleteType: any(named: 'deleteType'),
+    )).thenAnswer((_) {});
+
+    chatBloc.add(const DeleteMessagesEvent(
+      messageIds: ['msg_1'],
+      conversationId: 'conv_1',
+      deleteType: 'me',
+    ));
+
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, isEmpty);
+
+    // Test ReceiveDeleteMessageEvent unpins message too
+    chatBloc.add(const LoadMessagesEvent(
+      conversationId: 'conv_1',
+      recipientId: 'user_1',
+    ));
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, hasLength(1));
+
+    chatBloc.add(const ReceiveDeleteMessageEvent(
+      messageId: 'msg_1',
+      conversationId: 'conv_1',
+    ));
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, isEmpty);
+
+    await chatBloc.close();
+  });
+
+  test('ChatBloc updates pinnedMessages list on PinMessageEvent', () async {
+    final chatBloc = ChatBloc(
+      chatRepository: mockChatRepository,
+      storageService: mockStorageService,
+      socketRepository: mockChatSocketRepository,
+    );
+
+    final msg1 = const MessageModel(
+      id: 'msg_1',
+      conversationId: 'conv_1',
+      senderId: 'other',
+      content: 'Pinned 1',
+      isDeleted: false,
+      createdAt: '',
+      updatedAt: '',
+    );
+    when(() => mockChatRepository.getMessages(any(), limit: any(named: 'limit'), skip: any(named: 'skip')))
+        .thenAnswer((_) async => [msg1]);
+    when(() => mockChatRepository.getPinnedMessages(any()))
+        .thenAnswer((_) async => []);
+
+    chatBloc.add(const LoadMessagesEvent(
+      conversationId: 'conv_1',
+      recipientId: 'user_1',
+    ));
+
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect(chatBloc.state, isA<ChatLoaded>());
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, isEmpty);
+
+    when(() => mockChatSocketRepository.pinMessage(messageId: any(named: 'messageId'))).thenAnswer((_) {});
+    when(() => mockChatSocketRepository.unpinMessage(messageId: any(named: 'messageId'))).thenAnswer((_) {});
+
+    chatBloc.add(const PinMessageEvent(
+      messageId: 'msg_1',
+      conversationId: 'conv_1',
+      isPinned: true,
+    ));
+
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, hasLength(1));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages.first.id, 'msg_1');
+
+    chatBloc.add(const PinMessageEvent(
+      messageId: 'msg_1',
+      conversationId: 'conv_1',
+      isPinned: false,
+    ));
+
+    await Future.delayed(const Duration(milliseconds: 50));
+    expect((chatBloc.state as ChatLoaded).pinnedMessages, isEmpty);
+
+    await chatBloc.close();
   });
 }

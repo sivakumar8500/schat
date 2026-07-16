@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
 abstract class ChatRepository {
@@ -24,9 +25,17 @@ abstract class ChatRepository {
   Future<void> forwardMessage({required String messageId, required String targetConversationId});
   Future<void> setDisappearingTimer({required String conversationId, int? seconds});
   Future<void> deleteGroup(String groupId);
-  Future<void> updateGroupInfo({required String groupId, String? name, String? description, String? iconUrl});
+  Future<void> updateGroupInfo({
+    required String groupId,
+    String? name,
+    String? description,
+    String? iconUrl,
+    List<String>? participantIds,
+  });
   Future<void> addGroupParticipants({required String groupId, required List<String> userIds});
   Future<void> removeGroupParticipant({required String groupId, required String userId});
+  Future<void> promoteGroupAdmin({required String groupId, required String userId});
+  Future<void> demoteGroupAdmin({required String groupId, required String userId});
   Future<void> pinMessage(String messageId);
   Future<void> unpinMessage(String messageId);
   Future<List<MessageModel>> getPinnedMessages(String conversationId);
@@ -40,4 +49,17 @@ abstract class ChatRepository {
 
   /// Updates the conversation theme. Pass [themeColorId] = null to remove the custom theme.
   Future<void> updateTheme({required String conversationId, String? themeColorId});
+
+  /// PATCH the security object of a message. Only the original owner can set allowShare = false.
+  Future<void> updateMessageSecurity(
+    String messageId, {
+    required bool allowShare,
+    required bool allowDownload,
+    bool isLocked = false,
+    List<String> accessUsers = const [],
+  });
+
+  /// GET the list of users who have received a forwarded copy of the message.
+  /// Only the original sender/owner can call this.
+  Future<MessageSharesModel> getMessageShares(String messageId);
 }

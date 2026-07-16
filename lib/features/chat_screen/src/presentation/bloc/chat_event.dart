@@ -10,7 +10,13 @@ class LoadMessagesEvent extends ChatEvent {
   final String conversationId;
   final String? recipientId;
   final bool? initialIsOnline;
-  const LoadMessagesEvent({required this.conversationId, this.recipientId, this.initialIsOnline});
+  final ThemeColorModel? initialThemeColor;
+  const LoadMessagesEvent({
+    required this.conversationId,
+    this.recipientId,
+    this.initialIsOnline,
+    this.initialThemeColor,
+  });
 }
 
 class SendMessageEvent extends ChatEvent {
@@ -69,7 +75,8 @@ class ToggleLockEvent extends ChatEvent {
 class UpdateUserStatusEvent extends ChatEvent {
   final String userId;
   final bool isOnline;
-  const UpdateUserStatusEvent({required this.userId, required this.isOnline});
+  final String? lastSeen;
+  const UpdateUserStatusEvent({required this.userId, required this.isOnline, this.lastSeen});
 }
 
 class UpdateTypingIndicatorEvent extends ChatEvent {
@@ -132,7 +139,14 @@ class ReceiveEditMessageEvent extends ChatEvent {
   final String conversationId;
   final String newContent;
   final String? updatedAt;
-  const ReceiveEditMessageEvent({required this.messageId, required this.conversationId, required this.newContent, this.updatedAt});
+  final int? editedAt;
+  const ReceiveEditMessageEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.newContent,
+    this.updatedAt,
+    this.editedAt,
+  });
 }
 
 class ChangeBackgroundColorEvent extends ChatEvent {
@@ -220,4 +234,52 @@ class UpdateThemeEvent extends ChatEvent {
 class LoadMoreMessagesEvent extends ChatEvent {
   final String conversationId;
   const LoadMoreMessagesEvent({required this.conversationId});
+}
+
+/// Dispatched by the owner to PATCH the security.allowShare field on a message.
+class UpdateMessageSecurityEvent extends ChatEvent {
+  final String messageId;
+  final bool allowShare;
+  final bool allowDownload;
+  final bool isLocked;
+
+  const UpdateMessageSecurityEvent({
+    required this.messageId,
+    required this.allowShare,
+    required this.allowDownload,
+    this.isLocked = false,
+  });
+}
+
+/// Dispatched by the owner to fetch the list of users who have received a
+/// forwarded copy of the message (GET /messages/{id}/shares).
+class FetchMessageSharesEvent extends ChatEvent {
+  final String messageId;
+  const FetchMessageSharesEvent({required this.messageId});
+}
+
+/// Received when the server broadcasts a group_updated WebSocket event.
+class ReceiveGroupUpdatedEvent extends ChatEvent {
+  final Map<String, dynamic> data;
+  const ReceiveGroupUpdatedEvent({required this.data});
+}
+
+/// Received when the server broadcasts a group_admin_updated WebSocket event.
+class ReceiveGroupAdminUpdatedEvent extends ChatEvent {
+  final Map<String, dynamic> data;
+  const ReceiveGroupAdminUpdatedEvent({required this.data});
+}
+
+/// Promote a participant to group admin via POST /groups/{group_id}/admins/{user_id}.
+class PromoteGroupAdminEvent extends ChatEvent {
+  final String groupId;
+  final String userId;
+  const PromoteGroupAdminEvent({required this.groupId, required this.userId});
+}
+
+/// Demote a group admin via DELETE /groups/{group_id}/admins/{user_id}.
+class DemoteGroupAdminEvent extends ChatEvent {
+  final String groupId;
+  final String userId;
+  const DemoteGroupAdminEvent({required this.groupId, required this.userId});
 }
