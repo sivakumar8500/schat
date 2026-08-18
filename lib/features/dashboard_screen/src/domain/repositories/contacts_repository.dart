@@ -31,7 +31,9 @@ class ContactsRepositoryImpl implements ContactsRepository {
   Future<List<Contact>> getContacts() async {
     try {
       return await FastContacts.getAllContacts();
-    } catch (e) {
+    } catch (e, stack) {
+      print('Schat Error fetching contacts: $e');
+      print(stack);
       return [];
     }
   }

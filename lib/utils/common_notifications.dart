@@ -6,6 +6,33 @@ import 'package:schat/utils/common_icons.dart';
 
 extension NotificationExt on BuildContext {
   void showErrorNotification(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(this);
+    if (messenger != null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(CommonIcons.errorOutline, color: colors.pureWhite, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: bodyMedium.copyWith(color: colors.pureWhite),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: colors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(12),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     Flushbar(
       message: message,
       messageText: Text(
@@ -23,6 +50,33 @@ extension NotificationExt on BuildContext {
   }
 
   void showSuccessNotification(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(this);
+    if (messenger != null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(CommonIcons.checkCircleOutline, color: colors.pureWhite, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: bodyMedium.copyWith(color: colors.pureWhite),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: colors.success,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(12),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     Flushbar(
       message: message,
       messageText: Text(
@@ -40,6 +94,33 @@ extension NotificationExt on BuildContext {
   }
 
   void showInfoNotification(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(this);
+    if (messenger != null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(CommonIcons.infoOutline, color: colors.pureWhite, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: bodyMedium.copyWith(color: colors.pureWhite),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: colors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(12),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     Flushbar(
       message: message,
       messageText: Text(
@@ -57,6 +138,47 @@ extension NotificationExt on BuildContext {
   }
 
   void showDownloadNotification(String message, {double? progress}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(this);
+    if (messenger != null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(CommonIcons.downloading, color: colors.pureWhite, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: bodyMedium.copyWith(color: colors.pureWhite),
+                    ),
+                  ),
+                ],
+              ),
+              if (progress != null) ...[
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: colors.pureWhite.withValues(alpha: 0.2),
+                  valueColor: AlwaysStoppedAnimation<Color>(colors.pureWhite),
+                ),
+              ],
+            ],
+          ),
+          backgroundColor: colors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(12),
+          duration: progress == null ? const Duration(seconds: 3) : const Duration(seconds: 10),
+        ),
+      );
+      return;
+    }
     Flushbar(
       message: message,
       messageText: Column(

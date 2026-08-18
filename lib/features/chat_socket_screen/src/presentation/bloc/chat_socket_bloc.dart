@@ -73,7 +73,11 @@ class ChatSocketBloc extends Bloc<ChatSocketEvent, ChatSocketState> {
   }
 
   void _onSendEditMessage(SendEditMessage event, Emitter<ChatSocketState> emit) {
-    _repository.editMessage(messageId: event.messageId, text: event.text);
+    _repository.editMessage(
+      messageId: event.messageId,
+      text: event.text,
+      security: event.security,
+    );
   }
 
   void _onSendDeleteMessage(SendDeleteMessage event, Emitter<ChatSocketState> emit) {

@@ -44,7 +44,11 @@ abstract class ChatSocketRepository {
   void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
   void sendDeliveryReceipt(String conversationId, String messageId);
-  void editMessage({required String messageId, required String text});
+  void editMessage({
+    required String messageId,
+    String? text,
+    Map<String, dynamic>? security,
+  });
   void deleteMessage({
     required String conversationId,
     required String messageId,
@@ -359,11 +363,17 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   }
 
   @override
-  void editMessage({required String messageId, required String text}) {
+  void editMessage({
+    required String messageId,
+    String? text,
+    Map<String, dynamic>? security,
+  }) {
     final Map<String, dynamic> payload = {
       "type": "edit_message",
       "message_id": messageId,
-      "text": text,
+      "messageId": messageId,
+      if (text != null) "text": text,
+      if (security != null) "security": security,
     };
     emit('message', payload);
   }
@@ -392,8 +402,11 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   }) {
     final Map<String, dynamic> payload = {
       "type": type,
+      "conversationId": conversationId,
       "conversation_id": conversationId,
+      "messageId": messageId,
       "message_id": messageId,
+      "fileKey": fileKey,
       "file_key": fileKey,
     };
     emit('message', payload);

@@ -12,6 +12,7 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -58,6 +59,9 @@ class MessageBubble extends StatelessWidget {
   final bool allowShare;
   final bool allowDownload;
   final bool allowView;
+  final bool isFileViewed;
+  final bool isFileDownloaded;
+  final bool isFileShared;
   final VoidCallback? onSharePressed;
   final int? fileSize;
   final CallMeta? callMeta;
@@ -93,6 +97,9 @@ class MessageBubble extends StatelessWidget {
     this.allowShare = true,
     this.allowDownload = true,
     this.allowView = true,
+    this.isFileViewed = false,
+    this.isFileDownloaded = false,
+    this.isFileShared = false,
     this.onSharePressed,
     this.fileSize,
     this.callMeta,
@@ -499,14 +506,18 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else if (type == 'audio' || type == 'voice_note') {
-       result = _AudioWaveformPlayer(
-         audioUrl: attachmentPath,
-         isMe: isMe,
-         payloadDuration: duration,
-       );
+      if (viewLocked) {
+        result = _buildLockedAttachmentCard(context, type: type, label: 'Audio Restricted');
+      } else {
+        result = _AudioWaveformPlayer(
+          audioUrl: attachmentPath,
+          isMe: isMe,
+          payloadDuration: duration,
+        );
+      }
     } else if (type == 'video') {
       if (viewLocked) {
-        result = _buildLockedPreview(context);
+        result = _buildLockedAttachmentCard(context, type: type, label: 'Video Restricted');
       } else {
         result = Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
@@ -521,7 +532,7 @@ class MessageBubble extends StatelessWidget {
       }
     } else if (type == 'file') {
       if (viewLocked) {
-        result = _buildLockedPreview(context);
+        result = _buildLockedAttachmentCard(context, type: type, label: 'File Restricted');
       } else {
         result = _buildFileBubbleCard(context);
       }
@@ -823,6 +834,62 @@ class MessageBubble extends StatelessWidget {
     return result;
   }
 
+  Widget _buildLockedAttachmentCard(BuildContext context, {required String type, required String label}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isMe
+            ? context.colors.pureWhite.withValues(alpha: 0.1)
+            : context.colors.textHint.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: context.colors.textHint.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: context.colors.textHint.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              CommonIcons.lockOutline,
+              color: isMe ? context.colors.pureWhite : context.colors.textSecondary,
+              size: 20,
+            ),
+          ),
+          CommonSpaces.w12,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: context.bodyMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                ),
+              ),
+              CommonSpaces.h2,
+              Text(
+                'Playback & viewing locked by sender',
+                style: context.bodySmall.copyWith(
+                  fontSize: 11,
+                  color: isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPermissionControls(BuildContext context) {
     if (attachmentPath == null && attachmentBytes == null) {
       return const SizedBox.shrink();
@@ -833,13 +900,17 @@ class MessageBubble extends StatelessWidget {
     }
 
     if (isMe) {
-      final activeBg = context.colors.pureWhite.withValues(alpha: 0.2);
-      final activeIcon = context.colors.pureWhite;
-      final activeBorder = context.colors.pureWhite.withValues(alpha: 0.4);
+      final activeBg = context.colors.primary.withValues(alpha: 0.12);
+      final activeIcon = context.colors.primary;
+      final activeBorder = context.colors.primary.withValues(alpha: 0.35);
 
-      final inactiveBg = context.colors.pureWhite.withValues(alpha: 0.05);
-      final inactiveIcon = context.colors.pureWhite.withValues(alpha: 0.4);
-      final inactiveBorder = context.colors.pureWhite.withValues(alpha: 0.15);
+      final viewedBg = context.colors.primary;
+      final viewedIcon = context.colors.pureWhite;
+      final viewedBorder = context.colors.primary;
+
+      final inactiveBg = context.colors.error.withValues(alpha: 0.12);
+      final inactiveIcon = context.colors.error;
+      final inactiveBorder = context.colors.error.withValues(alpha: 0.35);
 
       return Padding(
         padding: const EdgeInsets.only(top: 8.0),
@@ -851,28 +922,28 @@ class MessageBubble extends StatelessWidget {
               _buildCapsuleChip(
                 context: context,
                 icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
-                label: allowView ? 'View Allowed' : 'View Locked',
-                backgroundColor: allowView ? activeBg : inactiveBg,
-                textColor: allowView ? activeIcon : inactiveIcon,
-                borderColor: allowView ? activeBorder : inactiveBorder,
+                label: allowView ? (isFileViewed ? 'Viewed' : 'View Allowed') : 'View Locked',
+                backgroundColor: allowView ? (isFileViewed ? viewedBg : activeBg) : inactiveBg,
+                textColor: allowView ? (isFileViewed ? viewedIcon : activeIcon) : inactiveIcon,
+                borderColor: allowView ? (isFileViewed ? viewedBorder : activeBorder) : inactiveBorder,
                 onTap: () => _updatePermissions(context, view: !allowView),
               ),
               _buildCapsuleChip(
                 context: context,
                 icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
-                label: allowDownload ? 'Download Allowed' : 'Download Locked',
-                backgroundColor: allowDownload ? activeBg : inactiveBg,
-                textColor: allowDownload ? activeIcon : inactiveIcon,
-                borderColor: allowDownload ? activeBorder : inactiveBorder,
+                label: allowDownload ? (isFileDownloaded ? 'Downloaded' : 'Download Allowed') : 'Download Locked',
+                backgroundColor: allowDownload ? (isFileDownloaded ? viewedBg : activeBg) : inactiveBg,
+                textColor: allowDownload ? (isFileDownloaded ? viewedIcon : activeIcon) : inactiveIcon,
+                borderColor: allowDownload ? (isFileDownloaded ? viewedBorder : activeBorder) : inactiveBorder,
                 onTap: () => _updatePermissions(context, download: !allowDownload),
               ),
               _buildCapsuleChip(
                 context: context,
                 icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
-                label: allowShare ? 'Share Allowed' : 'Share Locked',
-                backgroundColor: allowShare ? activeBg : inactiveBg,
-                textColor: allowShare ? activeIcon : inactiveIcon,
-                borderColor: allowShare ? activeBorder : inactiveBorder,
+                label: allowShare ? (isFileShared ? 'Shared' : 'Share Allowed') : 'Share Locked',
+                backgroundColor: allowShare ? (isFileShared ? viewedBg : activeBg) : inactiveBg,
+                textColor: allowShare ? (isFileShared ? viewedIcon : activeIcon) : inactiveIcon,
+                borderColor: allowShare ? (isFileShared ? viewedBorder : activeBorder) : inactiveBorder,
                 onTap: () => _updatePermissions(context, share: !allowShare),
               ),
             ],
@@ -880,13 +951,13 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     } else {
-      final activeBg = context.colors.primary.withValues(alpha: 0.1);
+      final activeBg = context.colors.primary.withValues(alpha: 0.12);
       final activeIcon = context.colors.primary;
-      final activeBorder = context.colors.primary.withValues(alpha: 0.3);
+      final activeBorder = context.colors.primary.withValues(alpha: 0.35);
 
-      final inactiveBg = context.colors.textHint.withValues(alpha: 0.05);
-      final inactiveIcon = context.colors.textHint.withValues(alpha: 0.4);
-      final inactiveBorder = context.colors.textHint.withValues(alpha: 0.1);
+      final inactiveBg = context.colors.error.withValues(alpha: 0.12);
+      final inactiveIcon = context.colors.error;
+      final inactiveBorder = context.colors.error.withValues(alpha: 0.35);
 
       return Padding(
         padding: const EdgeInsets.only(top: 8.0),
@@ -898,7 +969,7 @@ class MessageBubble extends StatelessWidget {
               _buildCapsuleChip(
                 context: context,
                 icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
-                label: 'View',
+                label: allowView ? 'View' : 'View Locked',
                 backgroundColor: allowView ? activeBg : inactiveBg,
                 textColor: allowView ? activeIcon : inactiveIcon,
                 borderColor: allowView ? activeBorder : inactiveBorder,
@@ -907,7 +978,7 @@ class MessageBubble extends StatelessWidget {
               _buildCapsuleChip(
                 context: context,
                 icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
-                label: 'Download',
+                label: allowDownload ? 'Download' : 'Download Locked',
                 backgroundColor: allowDownload ? activeBg : inactiveBg,
                 textColor: allowDownload ? activeIcon : inactiveIcon,
                 borderColor: allowDownload ? activeBorder : inactiveBorder,
@@ -916,7 +987,7 @@ class MessageBubble extends StatelessWidget {
               _buildCapsuleChip(
                 context: context,
                 icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
-                label: 'Share',
+                label: allowShare ? 'Share' : 'Share Locked',
                 backgroundColor: allowShare ? activeBg : inactiveBg,
                 textColor: allowShare ? activeIcon : inactiveIcon,
                 borderColor: allowShare ? activeBorder : inactiveBorder,
@@ -939,14 +1010,14 @@ class MessageBubble extends StatelessWidget {
     Color? borderColor,
   }) {
     return Container(
-      margin: const EdgeInsets.only(right: 8.0, top: 4.0, bottom: 4.0),
+      margin: const EdgeInsets.only(right: 6.0, top: 4.0, bottom: 4.0),
       child: Material(
         color: context.colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(20),
           child: Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(20),
@@ -955,37 +1026,23 @@ class MessageBubble extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Icon(icon, size: 16, color: textColor),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLockedPreview(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 64,
-          width: 220,
-          color: context.colors.textPrimary.withValues(alpha: 0.1),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(CommonIcons.lockOutline, color: context.colors.textSecondary, size: 20),
-              CommonSpaces.w8,
-              Flexible(
-                child: Text(
-                  'View Locked',
-                  style: context.bodyMedium.copyWith(
-                    color: context.colors.textSecondary,
-                    fontWeight: FontWeight.bold,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 14, color: textColor),
+                if (label.isNotEmpty) ...[
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: context.bodySmall.copyWith(
+                      color: textColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1005,6 +1062,16 @@ class MessageBubble extends StatelessWidget {
       allowView: newView,
     ));
     
+    context.read<ChatSocketBloc>().add(SendEditMessage(
+      messageId: messageId,
+      security: {
+        'isLocked': false,
+        'allowShare': newShare,
+        'allowDownload': newDownload,
+        'allowView': newView,
+      },
+    ));
+
     context.read<ChatSocketBloc>().add(SendMessage(
       conversationId: conversationId,
       type: 'update_attachment_permissions',
@@ -1064,7 +1131,27 @@ class MessageBubble extends StatelessWidget {
       type: type,
       allowShare: allowShare,
       allowDownload: allowDownload,
-      onSharePressed: onSharePressed,
+      onSharePressed: () {
+        if (onSharePressed != null) {
+          onSharePressed!();
+        }
+        getIt<ChatSocketRepository>().sendFileAction(
+          type: 'share_file',
+          conversationId: conversationId,
+          messageId: messageId,
+          fileKey: path,
+        );
+      },
+      onDownloadPressed: () {
+        if (!isLocalFile) {
+          getIt<ChatSocketRepository>().sendFileAction(
+            type: 'download_file',
+            conversationId: conversationId,
+            messageId: messageId,
+            fileKey: path,
+          );
+        }
+      },
     );
 
     // Notify backend about file view
@@ -1078,7 +1165,7 @@ class MessageBubble extends StatelessWidget {
     }
   }
 
-  void _triggerDownload(BuildContext context) {
+  void _triggerDownload(BuildContext context) async {
     final String? path = attachmentPath;
     if (path == null || path.isEmpty) return;
     String url = path;
@@ -1101,13 +1188,56 @@ class MessageBubble extends StatelessWidget {
       url = '$s3BaseUrl$url';
     }
 
-    if (isLocalFile) {
-      // If it's already local, we just try to open it
-      downloadFile(url, attachmentName ?? 'File');
-    } else {
-      downloadFile(url, attachmentName ?? 'File');
-      context.showSuccessNotification('Downloading ${attachmentName ?? "File"}...');
-    }
+    final messenger = ScaffoldMessenger.of(context);
+    final fileName = attachmentName ?? 'File';
+
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('Downloading $fileName: 0%'),
+      ),
+    );
+
+    final downloadedFile = await downloadFile(
+      url,
+      fileName,
+      onProgress: (received, total) {
+        if (total > 0) {
+          final pct = ((received / total) * 100).toInt();
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 1),
+              content: Text('Downloading $fileName: $pct%'),
+            ),
+          );
+        }
+      },
+    );
+
+    messenger.hideCurrentSnackBar();
+    final savePath = downloadedFile?.path ?? 'Schat secure storage';
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 5),
+        backgroundColor: context.colors.primary,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '✅ $fileName (100%) Encrypted & Downloaded',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Saved to: $savePath',
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+    );
 
     // Notify backend about file download
     if (!isLocalFile) {

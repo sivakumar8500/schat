@@ -84,6 +84,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveGroupAdminUpdatedEvent>(_onReceiveGroupAdminUpdated);
     on<PromoteGroupAdminEvent>(_onPromoteGroupAdmin);
     on<DemoteGroupAdminEvent>(_onDemoteGroupAdmin);
+    on<ReceiveFileActionEvent>(_onReceiveFileAction);
 
     _listenToSocket();
   }
@@ -165,37 +166,62 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final message = cleanData['message'];
           String? convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           
-          if (message is Map) {
-            convId ??= (message['conversationId'] ?? message['conversation_id'] ?? message['conversation'])?.toString();
-            final msgId = (message['id'] ?? message['messageId'])?.toString();
-            final contentMap = message['content'];
-            final newContent = contentMap is Map ? contentMap['text']?.toString() : message['content']?.toString();
-            final updatedAt = (message['updatedAt'] ?? message['updated_at'])?.toString();
-            final editedAt = int.tryParse((message['editedAt'] ?? message['edited_at'])?.toString() ?? '');
-            if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(
-                messageId: msgId,
-                conversationId: convId ?? _conversationId!,
-                newContent: newContent,
-                updatedAt: updatedAt,
-                editedAt: editedAt,
-              ));
-            }
-          } else {
-            final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-            final contentMap = cleanData['content'];
-            final newContent = contentMap is Map ? contentMap['text']?.toString() : cleanData['content']?.toString();
-            final updatedAt = (cleanData['updatedAt'] ?? cleanData['updated_at'])?.toString();
-            final editedAt = int.tryParse((cleanData['editedAt'] ?? cleanData['edited_at'])?.toString() ?? '');
-            if (_isSameConversation(convId, _conversationId) && msgId != null && newContent != null) {
-              add(ReceiveEditMessageEvent(
-                messageId: msgId,
-                conversationId: convId!,
-                newContent: newContent,
-                updatedAt: updatedAt,
-                editedAt: editedAt,
-              ));
-            }
+          final Map<String, dynamic> msgMap = (message is Map) 
+              ? Map<String, dynamic>.from(message) 
+              : Map<String, dynamic>.from(cleanData);
+
+          convId ??= (msgMap['conversationId'] ?? msgMap['conversation_id'] ?? msgMap['conversation'])?.toString();
+          final msgId = (msgMap['id'] ?? msgMap['messageId'] ?? msgMap['message_id'])?.toString();
+          
+          final contentMap = msgMap['content'];
+          final newContent = contentMap is Map ? contentMap['text']?.toString() : msgMap['content']?.toString();
+          final updatedAt = (msgMap['updatedAt'] ?? msgMap['updated_at'])?.toString();
+          final editedAt = int.tryParse((msgMap['editedAt'] ?? msgMap['edited_at'])?.toString() ?? '');
+
+          final securityMap = msgMap['security'] ?? cleanData['security'];
+          final viewControlMap = msgMap['viewControl'] ?? msgMap['view_control'] ?? cleanData['viewControl'] ?? cleanData['view_control'];
+
+          bool? allowShare;
+          bool? allowDownload;
+          bool? allowView;
+          bool? isLocked;
+
+          if (securityMap is Map) {
+            if (securityMap['allowShare'] != null) allowShare = securityMap['allowShare'] as bool;
+            else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+
+            if (securityMap['allowDownload'] != null) allowDownload = securityMap['allowDownload'] as bool;
+            else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+
+            if (securityMap['allowView'] != null) allowView = securityMap['allowView'] as bool;
+            else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
+
+            if (securityMap['isLocked'] != null) isLocked = securityMap['isLocked'] as bool;
+            else if (securityMap['is_locked'] != null) isLocked = securityMap['is_locked'] as bool;
+          }
+
+          if (viewControlMap is Map) {
+            if (allowShare == null && viewControlMap['allowShare'] != null) allowShare = viewControlMap['allowShare'] as bool;
+            if (allowDownload == null && viewControlMap['allowDownload'] != null) allowDownload = viewControlMap['allowDownload'] as bool;
+            if (allowView == null && viewControlMap['allowView'] != null) allowView = viewControlMap['allowView'] as bool;
+          }
+
+          if (msgMap['allowShare'] != null) allowShare = msgMap['allowShare'] as bool;
+          if (msgMap['allowDownload'] != null) allowDownload = msgMap['allowDownload'] as bool;
+          if (msgMap['allowView'] != null) allowView = msgMap['allowView'] as bool;
+
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(ReceiveEditMessageEvent(
+              messageId: msgId,
+              conversationId: convId ?? _conversationId!,
+              newContent: newContent,
+              updatedAt: updatedAt,
+              editedAt: editedAt,
+              allowShare: allowShare,
+              allowDownload: allowDownload,
+              allowView: allowView,
+              isLocked: isLocked,
+            ));
           }
         } else if (type == 'message_pinned' || type == 'pin_message') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -209,9 +235,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           }
         } else if (type == 'file_viewed' || type == 'file_downloaded' || type == 'file_shared') {
           final userId = (cleanData['user_id'] ?? cleanData['userId'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           if (userId != null && userId != _storageService.getUserId()) {
              final action = type!.split('_').last;
              add(ShowNotificationEvent(message: 'Other participant $action your file'));
+             if (msgId != null) {
+               add(ReceiveFileActionEvent(messageId: msgId, actionType: type!));
+             }
           }
         } else if (type == 'conversation_deleted') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -968,10 +998,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
           return msg.copyWith(
-            content: event.newContent,
+            content: event.newContent ?? msg.content,
             isEdited: true,
             updatedAt: editedAtStr,
             editedAt: event.editedAt,
+            allowShare: event.allowShare ?? msg.allowShare,
+            allowDownload: event.allowDownload ?? msg.allowDownload,
+            allowView: event.allowView ?? msg.allowView,
           );
         }
         return msg;
@@ -1009,6 +1042,26 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onReceiveFileAction(ReceiveFileActionEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          return msg.copyWith(
+            isFileViewed: event.actionType == 'file_viewed' ? true : msg.isFileViewed,
+            isFileDownloaded: event.actionType == 'file_downloaded' ? true : msg.isFileDownloaded,
+            isFileShared: event.actionType == 'file_shared' ? true : msg.isFileShared,
+          );
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      if (updatedMessages.isNotEmpty && _conversationId != null) {
+        _saveToCache(_conversationId!, updatedMessages);
+      }
     }
   }
 
@@ -1159,6 +1212,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       if (_conversationId != null) _saveToCache(_conversationId!, updatedMessages);
+
+      _socketRepository.editMessage(
+        messageId: event.messageId,
+        security: {
+          'isLocked': event.isLocked,
+          'allowDownload': event.allowDownload,
+          'allowShare': event.allowShare,
+          'allowView': true,
+        },
+      );
       add(ShowNotificationEvent(
         message: event.allowShare ? 'Sharing re-enabled' : 'Sharing disabled for this file',
       ));

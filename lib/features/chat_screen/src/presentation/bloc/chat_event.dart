@@ -137,15 +137,24 @@ class ReceiveDeleteMessageEvent extends ChatEvent {
 class ReceiveEditMessageEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
-  final String newContent;
+  final String? newContent;
   final String? updatedAt;
   final int? editedAt;
+  final bool? allowShare;
+  final bool? allowDownload;
+  final bool? allowView;
+  final bool? isLocked;
+
   const ReceiveEditMessageEvent({
     required this.messageId,
     required this.conversationId,
-    required this.newContent,
+    this.newContent,
     this.updatedAt,
     this.editedAt,
+    this.allowShare,
+    this.allowDownload,
+    this.allowView,
+    this.isLocked,
   });
 }
 
@@ -282,4 +291,10 @@ class DemoteGroupAdminEvent extends ChatEvent {
   final String groupId;
   final String userId;
   const DemoteGroupAdminEvent({required this.groupId, required this.userId});
+}
+
+class ReceiveFileActionEvent extends ChatEvent {
+  final String messageId;
+  final String actionType; // 'file_viewed', 'file_downloaded', 'file_shared'
+  const ReceiveFileActionEvent({required this.messageId, required this.actionType});
 }

@@ -21,6 +21,12 @@ import 'core/network/connectivity_repository.dart' as _i232;
 import 'core/network/network_module.dart' as _i550;
 import 'core/notifications/call_notification_service.dart' as _i374;
 import 'core/security/screen_protection_service.dart' as _i568;
+import 'core/security/secure_attachment_service.dart' as _i999;
+import 'core/security/security_scanner_service.dart' as _i998;
+import 'features/security_scanner/data/repositories/malware_scan_repository_impl.dart' as _i997;
+import 'features/security_scanner/data/services/url_safety_service.dart' as _i996;
+import 'features/security_scanner/domain/repositories/malware_scan_repository.dart' as _i995;
+import 'features/security_scanner/presentation/controllers/scan_progress_controller.dart' as _i994;
 import 'core/storage/storage_service.dart' as _i263;
 import 'features/auth_screen/src/data/repositories/auth_repository_impl.dart'
     as _i299;
@@ -146,6 +152,28 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i361.Dio>(
       () => networkModule.getDio(gh<_i729.ApiInterceptor>()),
+    );
+    gh.lazySingleton<_i999.SecureAttachmentService>(
+      () => _i999.SecureAttachmentService(
+        gh<_i263.StorageService>(),
+        gh<_i361.Dio>(),
+      ),
+    );
+    gh.lazySingleton<_i996.UrlSafetyService>(() => _i996.UrlSafetyService());
+    gh.lazySingleton<_i995.MalwareScanRepository>(
+      () => _i997.MalwareScanRepositoryImpl(gh<_i999.SecureAttachmentService>()),
+    );
+    gh.lazySingleton<_i998.SecurityScannerService>(
+      () => _i998.SecurityScannerService(
+        gh<_i995.MalwareScanRepository>(),
+        gh<_i996.UrlSafetyService>(),
+      ),
+    );
+    gh.factory<_i994.ScanProgressController>(
+      () => _i994.ScanProgressController(
+        gh<_i998.SecurityScannerService>(),
+        gh<_i995.MalwareScanRepository>(),
+      ),
     );
     gh.factory<_i515.ConnectSocketUseCase>(
       () => _i515.ConnectSocketUseCase(gh<_i411.ChatSocketRepository>()),

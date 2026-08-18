@@ -3,20 +3,25 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:schat/utils/common_colors.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
 
-class InAppViewer extends StatelessWidget {
+import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/injection.dart';
+
+class InAppViewer extends StatefulWidget {
   final String url;
   final String fileName;
   final String type; // 'image', 'video', 'audio', 'file'
   final bool allowShare;
   final bool allowDownload;
   final VoidCallback? onSharePressed;
+  final VoidCallback? onDownloadPressed;
 
   const InAppViewer({
     super.key,
@@ -26,6 +31,7 @@ class InAppViewer extends StatelessWidget {
     this.allowShare = true,
     this.allowDownload = true,
     this.onSharePressed,
+    this.onDownloadPressed,
   });
 
   static void show(
@@ -36,6 +42,7 @@ class InAppViewer extends StatelessWidget {
     bool allowShare = true,
     bool allowDownload = true,
     VoidCallback? onSharePressed,
+    VoidCallback? onDownloadPressed,
   }) {
     Navigator.push(
       context,
@@ -47,88 +54,200 @@ class InAppViewer extends StatelessWidget {
           allowShare: allowShare,
           allowDownload: allowDownload,
           onSharePressed: onSharePressed,
+          onDownloadPressed: onDownloadPressed,
         ),
       ),
     );
   }
 
   @override
+  State<InAppViewer> createState() => _InAppViewerState();
+}
+
+class _InAppViewerState extends State<InAppViewer> {
+  File? _decryptedTempFile;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepareAttachment();
+  }
+
+  Future<void> _prepareAttachment() async {
+    try {
+      if (kIsWeb) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      final secureService = getIt<SecureAttachmentService>();
+      final tempFile = await secureService.getDecryptedTempFileForViewing(
+        url: widget.url,
+        fileName: widget.fileName,
+      );
+
+      if (mounted) {
+        setState(() {
+          _decryptedTempFile = tempFile;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('InAppViewer preparation error: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to decrypt attachment securely.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // Delete decrypted temporary file immediately when viewer is closed
+    if (_decryptedTempFile != null) {
+      getIt<SecureAttachmentService>().cleanupTempFile(_decryptedTempFile);
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     Widget viewerWidget;
 
-    if (type == 'image') {
-      viewerWidget = InteractiveViewer(
-        maxScale: 4.0,
-        child: Center(
-          child: Image.network(
-            url,
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return const Center(child: CircularProgressIndicator(color: Colors.white));
-            },
-            errorBuilder: (context, error, stackTrace) => const Center(
+    if (_isLoading) {
+      viewerWidget = const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            CommonSpaces.h16,
+            Text('Securing & Decrypting...', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
+      );
+    } else if (_errorMessage != null) {
+      viewerWidget = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_clock_outlined, color: Colors.white54, size: 64),
+            CommonSpaces.h16,
+            Text(_errorMessage!, style: const TextStyle(color: Colors.white70)),
+          ],
+        ),
+      );
+    } else {
+      final activePath = _decryptedTempFile?.path ?? widget.url;
+
+      if (widget.type == 'image') {
+        final isLocal = !kIsWeb && File(activePath).existsSync();
+        viewerWidget = InteractiveViewer(
+          maxScale: 4.0,
+          child: Center(
+            child: isLocal
+                ? Image.file(
+                    File(activePath),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                          CommonSpaces.h16,
+                          Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                        ],
+                      ),
+                    ),
+                  )
+                : Image.network(
+                    activePath,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(child: CircularProgressIndicator(color: Colors.white));
+                    },
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                          CommonSpaces.h16,
+                          Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+        );
+      } else if (widget.type == 'video') {
+        if (kIsWeb) {
+          viewerWidget = Center(
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: createWebVideoView(activePath),
+            ),
+          );
+        } else {
+          viewerWidget = _MobileVideoPlayer(url: activePath);
+        }
+      } else if (widget.type == 'audio') {
+        viewerWidget = Center(
+          child: Card(
+            color: Colors.grey.shade900,
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                  const Icon(CommonIcons.audio, color: Colors.white70, size: 64),
                   CommonSpaces.h16,
-                  Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                  Text(
+                    widget.fileName,
+                    style: context.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  CommonSpaces.h24,
+                  createWebAudioView(activePath),
                 ],
               ),
             ),
           ),
-        ),
-      );
-    } else if (type == 'video') {
-      if (kIsWeb) {
-        viewerWidget = Center(
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: createWebVideoView(url),
-          ),
         );
       } else {
-        viewerWidget = _MobileVideoPlayer(url: url);
-      }
-    } else if (type == 'audio') {
-      viewerWidget = Center(
-        child: Card(
-          color: Colors.grey.shade900,
-          margin: const EdgeInsets.all(24),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(CommonIcons.audio, color: Colors.white70, size: 64),
-                CommonSpaces.h16,
-                Text(
-                  fileName,
-                  style: context.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                CommonSpaces.h24,
-                createWebAudioView(url),
-              ],
+        // Document / other files
+        final isPdf = widget.fileName.toLowerCase().endsWith('.pdf') || activePath.toLowerCase().endsWith('.pdf');
+        if (kIsWeb) {
+          viewerWidget = Container(
+            padding: const EdgeInsets.all(16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: createWebDocView(activePath),
             ),
-          ),
-        ),
-      );
-    } else {
-      // Document / other files
-      if (kIsWeb) {
-        viewerWidget = Container(
-          padding: const EdgeInsets.all(16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: createWebDocView(url),
-          ),
-        );
-      } else {
-        viewerWidget = _MobileDocumentViewer(url: url, fileName: fileName);
+          );
+        } else if (isPdf) {
+          viewerWidget = _InAppPdfViewer(
+            filePath: activePath,
+            fileName: widget.fileName,
+          );
+        } else {
+          viewerWidget = _MobileDocumentViewer(
+            url: activePath,
+            fileName: widget.fileName,
+            allowDownload: widget.allowDownload,
+            onDownloadPressed: widget.onDownloadPressed,
+          );
+        }
       }
     }
 
@@ -142,30 +261,82 @@ class InAppViewer extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          fileName,
+          widget.fileName,
           style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          if (allowShare && onSharePressed != null)
+          if (widget.allowShare && widget.onSharePressed != null)
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: 'Share/Forward',
               onPressed: () {
                 Navigator.pop(context);
-                onSharePressed!();
+                widget.onSharePressed!();
               },
             ),
-          if (allowDownload)
+          if (widget.allowDownload)
             IconButton(
               icon: const Icon(Icons.download, color: Colors.white),
               tooltip: 'Download',
-              onPressed: () {
-                downloadFile(url, fileName);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Downloading $fileName...')),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final primaryColor = context.colors.primary;
+
+                messenger.showSnackBar(
+                  SnackBar(
+                    duration: const Duration(seconds: 2),
+                    content: Text('Downloading ${widget.fileName}: 0%'),
+                  ),
                 );
+
+                final file = await downloadFile(
+                  widget.url,
+                  widget.fileName,
+                  onProgress: (received, total) {
+                    if (total > 0 && mounted) {
+                      final pct = ((received / total) * 100).toInt();
+                      messenger.hideCurrentSnackBar();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          duration: const Duration(seconds: 1),
+                          content: Text('Downloading ${widget.fileName}: $pct%'),
+                        ),
+                      );
+                    }
+                  },
+                );
+
+                if (widget.onDownloadPressed != null) {
+                  widget.onDownloadPressed!();
+                }
+
+                if (mounted) {
+                  messenger.hideCurrentSnackBar();
+                  final savePath = file?.path ?? 'Schat secure storage';
+                  messenger.showSnackBar(
+                    SnackBar(
+                      duration: const Duration(seconds: 5),
+                      backgroundColor: primaryColor,
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '✅ ${widget.fileName} (100%) Encrypted & Downloaded',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Saved to: $savePath',
+                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
               },
             ),
           CommonSpaces.w8,
@@ -181,7 +352,15 @@ class InAppViewer extends StatelessWidget {
 class _MobileDocumentViewer extends StatefulWidget {
   final String url;
   final String fileName;
-  const _MobileDocumentViewer({required this.url, required this.fileName});
+  final bool allowDownload;
+  final VoidCallback? onDownloadPressed;
+
+  const _MobileDocumentViewer({
+    required this.url,
+    required this.fileName,
+    this.allowDownload = true,
+    this.onDownloadPressed,
+  });
 
   @override
   State<_MobileDocumentViewer> createState() => _MobileDocumentViewerState();
@@ -199,13 +378,8 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
   }
 
   void _initializeController() {
-    String finalUrl = widget.url;
-    
-    // For mobile, most documents (PDF, DOCX) are best viewed via Google Docs Viewer
-    // especially since Android WebView doesn't support PDF viewing natively.
-    if (!widget.url.startsWith('file://')) {
-      finalUrl = 'https://docs.google.com/viewer?url=${Uri.encodeComponent(widget.url)}&embedded=true';
-    }
+    final String path = widget.url;
+    final bool isLocal = !path.startsWith('http://') && !path.startsWith('https://');
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -223,27 +397,57 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
             if (mounted) setState(() => _hasError = true);
           },
         ),
-      )
-      ..loadRequest(Uri.parse(finalUrl));
+      );
+
+    if (isLocal) {
+      final cleanPath = path.replaceAll('file://', '');
+      final file = File(cleanPath);
+      if (file.existsSync()) {
+        debugPrint('MobileDocumentViewer: Loading local file -> $cleanPath');
+        _controller.loadFile(cleanPath);
+      } else {
+        if (mounted) setState(() => _hasError = true);
+      }
+    } else {
+      final googleDocsUrl =
+          'https://docs.google.com/viewer?url=${Uri.encodeComponent(path)}&embedded=true';
+      debugPrint('MobileDocumentViewer: Loading remote doc -> $googleDocsUrl');
+      _controller.loadRequest(Uri.parse(googleDocsUrl));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isLocal = !widget.url.startsWith('http://') && !widget.url.startsWith('https://');
+
     if (_hasError) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+            const Icon(Icons.picture_as_pdf, color: Colors.white54, size: 64),
             const SizedBox(height: 16),
+            Text(
+              'Document: ${widget.fileName}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
             const Text(
-              'Failed to load document in viewer.',
+              'Tap below to open or save the PDF file',
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => downloadFile(widget.url, widget.fileName),
-              child: const Text('Download & Open Externally'),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Open with External PDF Reader'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              onPressed: () {
+                downloadFile(widget.url, widget.fileName);
+              },
             ),
           ],
         ),
@@ -376,3 +580,120 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
     );
   }
 }
+
+class _InAppPdfViewer extends StatefulWidget {
+  final String filePath;
+  final String fileName;
+
+  const _InAppPdfViewer({
+    required this.filePath,
+    required this.fileName,
+  });
+
+  @override
+  State<_InAppPdfViewer> createState() => _InAppPdfViewerState();
+}
+
+class _InAppPdfViewerState extends State<_InAppPdfViewer> {
+  int _totalPages = 0;
+  int _currentPage = 0;
+  bool _isReady = false;
+  String _errorMessage = '';
+
+  @override
+  Widget build(BuildContext context) {
+    if (_errorMessage.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+              const SizedBox(height: 16),
+              Text(
+                'Error rendering PDF: $_errorMessage',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        PDFView(
+          filePath: widget.filePath.replaceAll('file://', ''),
+          enableSwipe: true,
+          swipeHorizontal: false,
+          autoSpacing: true,
+          pageFling: true,
+          pageSnap: true,
+          defaultPage: _currentPage,
+          fitPolicy: FitPolicy.BOTH,
+          preventLinkNavigation: false,
+          onRender: (pages) {
+            if (mounted) {
+              setState(() {
+                _totalPages = pages ?? 0;
+                _isReady = true;
+              });
+            }
+          },
+          onError: (error) {
+            if (mounted) {
+              setState(() {
+                _errorMessage = error.toString();
+              });
+            }
+          },
+          onPageError: (page, error) {
+            if (mounted) {
+              setState(() {
+                _errorMessage = 'Page $page error: $error';
+              });
+            }
+          },
+          onPageChanged: (int? page, int? total) {
+            if (mounted) {
+              setState(() {
+                _currentPage = page ?? 0;
+              });
+            }
+          },
+        ),
+        if (!_isReady)
+          const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        if (_isReady && _totalPages > 0)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Text(
+                  '${_currentPage + 1} / $_totalPages',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+

@@ -23,6 +23,7 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
 import 'package:schat/features/chat_socket_screen/chat_socket_screen.dart';
+import 'package:schat/features/security_scanner/presentation/pages/scan_result_screen.dart';
 
 class ProfileSettingsPage extends StatefulWidget {
   final String username;
@@ -378,6 +379,13 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                       MaterialPageRoute(builder: (context) => const ChatSocketPage()),
                     ),
                   ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.shield_outlined,
+                    title: 'Scan Device Security',
+                    subtitle: 'Check attachments, links & device integrity',
+                    onTap: () => _showSecurityScanConfirmationDialog(context),
+                  ),
 
                   const Divider(),
                   _buildListTile(
@@ -572,4 +580,42 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
       },
     );
   }
+
+  void _showSecurityScanConfirmationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.shield_outlined, color: context.colors.primary, size: 28),
+            CommonSpaces.w8,
+            const Text('Scan Device Security'),
+          ],
+        ),
+        content: const Text(
+          'This scan checks user-accessible files, downloaded attachments, installed apps (where platform APIs permit), and URLs for known threats.\n\n'
+          'Note: It functions as an in-app security checker for Schat attachments & links and does not replace full system antivirus software.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ScanResultScreen.navigateTo(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Start Scan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
 }
+

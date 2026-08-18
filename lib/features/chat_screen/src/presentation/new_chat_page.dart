@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fast_contacts/fast_contacts.dart';
@@ -26,8 +28,27 @@ class NewChatPage extends StatefulWidget {
   State<NewChatPage> createState() => _NewChatPageState();
 }
 
-class _NewChatPageState extends State<NewChatPage> {
+class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
   String? _pendingParticipantId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      getIt<ContactsBloc>().add(const LoadContacts());
+    }
+  }
 
   final String _appLink = 'https://schat.app';
   final String _inviteTitle = 'Join Schat - Secure Messaging';
@@ -246,13 +267,15 @@ class _NewChatPageState extends State<NewChatPage> {
     if (state is ContactsLoading) {
       return const Center(child: CircularProgressIndicator());
     } else if (state is ContactsLoaded) {
-      if (state.contacts.isEmpty && state.syncedContacts.isEmpty) {
-        return _buildEmptyState(context);
-      }
+      // if (state.contacts.isEmpty && state.syncedContacts.isEmpty) {
+      //   return _buildEmptyState(context);
+      // }
 
       final syncedUsers = state.syncedContacts;
       final allContacts = state.contacts;
       final hiddenPhones = state.hiddenPhoneNumbers;
+
+      log("Siva Contacts get $allContacts");
 
       final inviteContacts = allContacts.where((contact) {
         // Exclude if phone number is in hidden list
@@ -276,9 +299,9 @@ class _NewChatPageState extends State<NewChatPage> {
         });
       }).toList();
 
-      if (syncedUsers.isEmpty && inviteContacts.isEmpty) {
-        return _buildEmptyState(context);
-      }
+      // if (syncedUsers.isEmpty && inviteContacts.isEmpty) {
+      //   return _buildEmptyState(context);
+      // }
 
       return ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

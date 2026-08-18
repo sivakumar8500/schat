@@ -58,8 +58,9 @@ class SendReadReceipt extends ChatSocketEvent {
 
 class SendEditMessage extends ChatSocketEvent {
   final String messageId;
-  final String text;
-  const SendEditMessage({required this.messageId, required this.text});
+  final String? text;
+  final Map<String, dynamic>? security;
+  const SendEditMessage({required this.messageId, this.text, this.security});
 }
 
 class SendDeleteMessage extends ChatSocketEvent {

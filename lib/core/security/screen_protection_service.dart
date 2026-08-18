@@ -31,6 +31,8 @@ class ScreenProtectionService {
       if (isRecording) {
         _screenRecordController.add(true);
       }
+      
+      await enableProtection();
     } catch (e) {
       debugPrint('ScreenProtection: Error initializing screen protector listeners: $e');
     }

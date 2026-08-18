@@ -198,6 +198,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   Future<void> _loadAndSync(Emitter<ContactsState> emit) async {
     try {
       final contacts = await _contactsRepository.getContacts();
+      log("Siva Contacts get $contacts");
       var cachedUsers = await _contactsRepository.getCachedContacts();
       final hidden = await _contactsRepository.getHiddenPhoneNumbers();
 
@@ -221,6 +222,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       );
 
       if (!_storageService.hasSyncedContacts()) {
+        await _storageService.setHasSyncedContacts(true);
         final syncData = _extractSyncData(contacts);
         if (syncData.isNotEmpty) {
           final result = await _contactsRepository.syncContacts(syncData);
@@ -235,7 +237,6 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
                 hiddenPhoneNumbers: hidden,
               ),
             );
-            await _storageService.setHasSyncedContacts(true);
           }
         }
       }
@@ -249,72 +250,58 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     Emitter<ContactsState> emit,
   ) async {
     final currentState = state;
-    if (currentState is ContactsLoaded || state is ContactsInitial) {
-      if (currentState is! ContactsLoaded) {
-        emit(const ContactsLoading());
+    if (currentState is! ContactsLoaded) {
+      emit(const ContactsLoading());
+    }
+    try {
+      if (kIsWeb) {
+        final serverResult = await _contactsRepository.fetchSyncedContacts();
+        final cachedUsers = serverResult is Success<List<UserModel>> ? serverResult.data : await _contactsRepository.getCachedContacts();
+        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+        final filteredCached = cachedUsers
+            .where((u) => !hidden.contains(u.phoneNumber))
+            .toList();
+        emit(
+          ContactsLoaded(
+            contacts: const [],
+            syncedContacts: filteredCached,
+            hiddenPhoneNumbers: hidden,
+          ),
+        );
+        return;
       }
-      try {
-        if (kIsWeb) {
-          final serverResult = await _contactsRepository.fetchSyncedContacts();
-          final cachedUsers = serverResult is Success<List<UserModel>> ? serverResult.data : await _contactsRepository.getCachedContacts();
-          final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-          final filteredCached = cachedUsers
+
+      final status = await Permission.contacts.request();
+      if (!status.isGranted) {
+        emit(const ContactsPermissionDenied());
+        return;
+      }
+
+      final contacts = await _contactsRepository.getContacts();
+      final syncData = _extractSyncData(contacts);
+      final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+
+      await _storageService.setHasSyncedContacts(true);
+
+      if (syncData.isNotEmpty) {
+        final result = await _contactsRepository.syncContacts(syncData);
+
+        if (result is Success<List<UserModel>>) {
+          final filteredResult = result.data
               .where((u) => !hidden.contains(u.phoneNumber))
               .toList();
           emit(
             ContactsLoaded(
-              contacts: const [],
-              syncedContacts: filteredCached,
+              contacts: contacts,
+              syncedContacts: filteredResult,
               hiddenPhoneNumbers: hidden,
             ),
           );
-          return;
-        }
-
-        final status = await Permission.contacts.request();
-        if (!status.isGranted) {
-          emit(const ContactsPermissionDenied());
-          return;
-        }
-
-        final contacts = await _contactsRepository.getContacts();
-        final syncData = _extractSyncData(contacts);
-        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-
-        if (syncData.isNotEmpty) {
-          final result = await _contactsRepository.syncContacts(syncData);
-
-          if (result is Success<List<UserModel>>) {
-            final filteredResult = result.data
-                .where((u) => !hidden.contains(u.phoneNumber))
-                .toList();
-            emit(
-              ContactsLoaded(
-                contacts: contacts,
-                syncedContacts: filteredResult,
-                hiddenPhoneNumbers: hidden,
-              ),
-            );
-            await _storageService.setHasSyncedContacts(true);
-          } else {
-            final failure = result as Failure;
-            if (state is! ContactsLoaded) {
-              emit(ContactsFailure(errorMessage: failure.message));
-            }
-            final filteredSynced = (currentState is ContactsLoaded)
-                ? currentState.syncedContacts
-                      .where((u) => !hidden.contains(u.phoneNumber))
-                      .toList()
-                : <UserModel>[];
-            emit(
-              ContactsLoaded(
-                contacts: contacts,
-                syncedContacts: filteredSynced,
-                hiddenPhoneNumbers: hidden,
-              ),
-            );
-          }
         } else {
+          final failure = result as Failure;
+          if (state is! ContactsLoaded) {
+            emit(ContactsFailure(errorMessage: failure.message));
+          }
           final filteredSynced = (currentState is ContactsLoaded)
               ? currentState.syncedContacts
                     .where((u) => !hidden.contains(u.phoneNumber))
@@ -328,13 +315,24 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
             ),
           );
         }
-      } catch (e) {
-        if (state is! ContactsLoaded) {
-          emit(ContactsFailure(errorMessage: e.toString()));
-        }
+      } else {
+        final filteredSynced = (currentState is ContactsLoaded)
+            ? currentState.syncedContacts
+                  .where((u) => !hidden.contains(u.phoneNumber))
+                  .toList()
+            : <UserModel>[];
+        emit(
+          ContactsLoaded(
+            contacts: contacts,
+            syncedContacts: filteredSynced,
+            hiddenPhoneNumbers: hidden,
+          ),
+        );
       }
-    } else {
-      add(const LoadContacts());
+    } catch (e) {
+      if (state is! ContactsLoaded) {
+        emit(ContactsFailure(errorMessage: e.toString()));
+      }
     }
   }
 

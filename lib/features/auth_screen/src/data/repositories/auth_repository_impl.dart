@@ -2,6 +2,7 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/auth_screen/src/data/models/send_otp_request.dart';
 import 'package:schat/features/auth_screen/src/data/models/verify_otp_request.dart';
@@ -62,7 +63,9 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<void> logout() async {
+    await getIt<SecureAttachmentService>().clearAllEncryptedData();
     await _storageService.clearTokens();
     await Future.delayed(const Duration(milliseconds: 500));
   }
 }
+

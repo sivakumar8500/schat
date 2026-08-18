@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,7 @@ import 'package:record/record.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
@@ -767,7 +769,7 @@ class _ChatPageState extends State<ChatPage> {
         _menuPopupItem(context, 'Copy', CommonIcons.copy),
         if (isMe) _menuPopupItem(context, 'Edit', CommonIcons.edit),
         _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
-        _menuPopupItem(context, 'Forward', CommonIcons.forward),
+        if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
         _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
         _menuPopupItem(context, 'Select', CommonIcons.selectAll),
         _menuPopupItem(context, 'Delete', CommonIcons.deleteOutline, isDestructive: true),
@@ -776,7 +778,7 @@ class _ChatPageState extends State<ChatPage> {
       menuItems.addAll([
         _menuPopupItem(context, 'Reply', CommonIcons.reply),
         _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
-        _menuPopupItem(context, 'Forward', CommonIcons.forward),
+        if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
         _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
         _menuPopupItem(context, 'Select', CommonIcons.selectAll),
         _menuPopupItem(context, 'Delete', CommonIcons.deleteOutline, isDestructive: true),
@@ -1293,6 +1295,13 @@ class _ChatPageState extends State<ChatPage> {
                                               return;
                                             } catch (e) {
                                               debugPrint('Forward API failed fallback to socket: $e');
+                                              final errStr = e.toString();
+                                              if (errStr.contains('Sharing is disabled') || errStr.contains('403')) {
+                                                if (context.mounted) {
+                                                  context.showErrorNotification('Sharing is disabled for this file.');
+                                                }
+                                                return; // Do NOT fall back to socket, abort forwarding
+                                              }
                                             }
                                           }
                                           // Send socket message only if API is skipped (temp message) or fails
@@ -1400,7 +1409,6 @@ class _ChatPageState extends State<ChatPage> {
 
   void _setupScreenshotListener() {
     final securityService = getIt<ScreenProtectionService>();
-    securityService.enableProtection();
     _screenshotSubscription = securityService.onScreenshot.listen((_) {
       if (mounted) {
         context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
@@ -1437,7 +1445,6 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    getIt<ScreenProtectionService>().disableProtection();
     _screenshotSubscription?.cancel();
     _callSocketSubscription?.cancel();
     _stopTypingTimer();
@@ -2503,6 +2510,9 @@ class _ChatPageState extends State<ChatPage> {
                                       allowShare: msg.allowShare,
                                       allowDownload: msg.allowDownload,
                                       allowView: msg.allowView,
+                                      isFileViewed: msg.isFileViewed,
+                                      isFileDownloaded: msg.isFileDownloaded,
+                                      isFileShared: msg.isFileShared,
                                       onSharePressed: () => _showForwardBottomSheet(context, msg),
                                       fileSize: msg.fileSize,
                                       callMeta: msg.callMeta,
@@ -2849,6 +2859,8 @@ class _ChatPageState extends State<ChatPage> {
                     contactName: widget.contactName,
                     contactColor: widget.contactColor,
                     isOnline: isOnline,
+                    recipientId: widget.recipientId,
+                    profilePictureUrl: widget.profilePictureUrl,
                   ),
                 ),
               ),
@@ -3071,6 +3083,7 @@ class _ChatPageState extends State<ChatPage> {
                         contactColor: widget.contactColor,
                         isOnline: isOnline,
                         recipientId: widget.recipientId,
+                        profilePictureUrl: widget.profilePictureUrl,
                       ),
                     ),
                   ),
@@ -3793,13 +3806,65 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _pickFile(FileType type, {List<String>? allowedExtensions}) async {
     try {
-      final FilePickerResult? result = await FilePicker.pickFiles(
-        type: type,
-        allowedExtensions: allowedExtensions,
-        withData: true,
-      );
+      final List<String> defaultExtensions = [
+        'enc', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+        'txt', 'csv', 'zip', 'rar', '7z', 'png', 'jpg', 'jpeg',
+        'gif', 'webp', 'mp4', 'mkv', 'avi', 'mov', 'mp3', 'wav',
+        'm4a', 'aac', 'apk', 'bin', 'dat'
+      ];
+
+      FilePickerResult? result;
+      try {
+        result = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: allowedExtensions ?? defaultExtensions,
+          withData: true,
+        );
+      } catch (e) {
+        debugPrint('FileType.custom picker fallback to FileType.any: $e');
+        result = await FilePicker.pickFiles(
+          type: FileType.any,
+          withData: true,
+        );
+      }
+
       if (result == null || !mounted) return;
-      final PlatformFile file = result.files.single;
+      PlatformFile file = result.files.single;
+
+      // Automatically decrypt encrypted files selected from storage/downloads
+      bool wasDecrypted = false;
+      if (file.path != null) {
+        try {
+          var realName = file.name;
+          while (realName.endsWith('.enc')) {
+            realName = realName.substring(0, realName.length - 4);
+          }
+          if (realName.isEmpty) realName = 'attachment';
+
+          final decryptedTemp = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+            encryptedFilePath: file.path!,
+            originalFileName: realName,
+          );
+          if (decryptedTemp.path != file.path) {
+            final decBytes = await decryptedTemp.readAsBytes();
+            file = PlatformFile(
+              path: decryptedTemp.path,
+              name: realName,
+              size: decBytes.length,
+              bytes: decBytes,
+            );
+            wasDecrypted = true;
+            debugPrint('Auto-decrypted Schat attachment for re-upload: ${file.name} (${file.size} bytes)');
+          }
+        } catch (e) {
+          debugPrint('Error auto-decrypting file during selection: $e');
+        }
+      }
+
+      if (wasDecrypted && mounted) {
+        context.showInfoNotification('Decrypted encrypted attachment: ${file.name}');
+      }
+
       String fileType = type == FileType.audio
           ? 'audio'
           : type == FileType.video
@@ -4004,6 +4069,8 @@ class _ChatPageState extends State<ChatPage> {
                       child: FutureBuilder<List<Contact>>(
                         future: getIt<ContactsRepository>().getContacts(),
                         builder: (context, snapshot) {
+                          log("Siva Contacts get ");
+                          log(snapshot.data.toString());
                           if (snapshot.connectionState == ConnectionState.waiting) {
                             return const Center(child: CircularProgressIndicator());
                           }

@@ -69,6 +69,7 @@ class StorageService {
   Future<void> clearTokens() async {
     await _prefs.remove(_tokenKey);
     await _prefs.remove(_refreshTokenKey);
+    await _prefs.remove(_hasSyncedContactsKey);
   }
 
   bool hasToken() {

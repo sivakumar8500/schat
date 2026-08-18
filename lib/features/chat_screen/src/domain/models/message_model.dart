@@ -70,6 +70,11 @@ class MessageModel {
   final bool allowDownload;
   final bool allowView;
 
+  // Attachment tracking status
+  final bool isFileViewed;
+  final bool isFileDownloaded;
+  final bool isFileShared;
+
   // Call support
   final CallMeta? callMeta;
   final double? duration;
@@ -103,6 +108,9 @@ class MessageModel {
     this.allowShare = true,
     this.allowDownload = true,
     this.allowView = true,
+    this.isFileViewed = false,
+    this.isFileDownloaded = false,
+    this.isFileShared = false,
     this.fileSize,
     this.callMeta,
     this.duration,
@@ -142,22 +150,45 @@ class MessageModel {
     bool allowShare = true;
     bool allowDownload = true;
     bool allowView = true;
+    bool isFileViewed = false;
+    bool isFileDownloaded = false;
+    bool isFileShared = false;
 
     if (security is Map) {
       allowShare = (security['allowShare'] ?? security['allow_share'] ?? allowShare) as bool;
       allowDownload = (security['allowDownload'] ?? security['allow_download'] ?? allowDownload) as bool;
       allowView = (security['allowView'] ?? security['allow_view'] ?? allowView) as bool;
+      isFileViewed = (security['isFileViewed'] ?? security['file_viewed'] ?? security['is_file_viewed'] ?? isFileViewed) as bool? ?? false;
+      isFileDownloaded = (security['isFileDownloaded'] ?? security['file_downloaded'] ?? security['is_file_downloaded'] ?? isFileDownloaded) as bool? ?? false;
+      isFileShared = (security['isFileShared'] ?? security['file_shared'] ?? security['is_file_shared'] ?? isFileShared) as bool? ?? false;
     }
 
     if (viewControl is Map) {
       allowShare = (viewControl['allowShare'] ?? viewControl['allow_share'] ?? allowShare) as bool;
       allowDownload = (viewControl['allowDownload'] ?? viewControl['allow_download'] ?? allowDownload) as bool;
       allowView = (viewControl['allowView'] ?? viewControl['allow_view'] ?? allowView) as bool;
+      isFileViewed = (viewControl['isFileViewed'] ?? viewControl['file_viewed'] ?? viewControl['is_file_viewed'] ?? isFileViewed) as bool? ?? false;
+      isFileDownloaded = (viewControl['isFileDownloaded'] ?? viewControl['file_downloaded'] ?? viewControl['is_file_downloaded'] ?? isFileDownloaded) as bool? ?? false;
+      isFileShared = (viewControl['isFileShared'] ?? viewControl['file_shared'] ?? viewControl['is_file_shared'] ?? isFileShared) as bool? ?? false;
     }
 
-    allowShare = (json['allowShare'] ?? json['allow_share'] ?? allowShare) as bool;
-    allowDownload = (json['allowDownload'] ?? json['allow_download'] ?? allowDownload) as bool;
-    allowView = (json['allowView'] ?? json['allow_view'] ?? allowView) as bool;
+    if (json['allowShare'] != null) allowShare = json['allowShare'] as bool;
+    else if (json['allow_share'] != null) allowShare = json['allow_share'] as bool;
+
+    if (json['allowDownload'] != null) allowDownload = json['allowDownload'] as bool;
+    else if (json['allow_download'] != null) allowDownload = json['allow_download'] as bool;
+
+    if (json['allowView'] != null) allowView = json['allowView'] as bool;
+    else if (json['allow_view'] != null) allowView = json['allow_view'] as bool;
+
+    if (json['isFileViewed'] != null) isFileViewed = json['isFileViewed'] as bool;
+    else if (json['file_viewed'] != null) isFileViewed = json['file_viewed'] as bool;
+
+    if (json['isFileDownloaded'] != null) isFileDownloaded = json['isFileDownloaded'] as bool;
+    else if (json['file_downloaded'] != null) isFileDownloaded = json['file_downloaded'] as bool;
+
+    if (json['isFileShared'] != null) isFileShared = json['isFileShared'] as bool;
+    else if (json['file_shared'] != null) isFileShared = json['file_shared'] as bool;
 
     int? fileSize;
     final dynamic rawFileSize = json['fileSize'] ?? json['file_size'] ?? json['file_size_bytes'] ?? 
@@ -223,6 +254,9 @@ class MessageModel {
       allowShare: allowShare,
       allowDownload: allowDownload,
       allowView: allowView,
+      isFileViewed: isFileViewed,
+      isFileDownloaded: isFileDownloaded,
+      isFileShared: isFileShared,
       fileSize: fileSize,
       callMeta: callMeta,
       duration: duration,
@@ -281,10 +315,24 @@ class MessageModel {
     'attachmentName': attachmentName,
     'fileSize': fileSize,
     'isFailed': isFailed,
+    'isFileViewed': isFileViewed,
+    'isFileDownloaded': isFileDownloaded,
+    'isFileShared': isFileShared,
+    'security': {
+      'allowShare': allowShare,
+      'allowDownload': allowDownload,
+      'allowView': allowView,
+      'isFileViewed': isFileViewed,
+      'isFileDownloaded': isFileDownloaded,
+      'isFileShared': isFileShared,
+    },
     'viewControl': {
       'allowShare': allowShare,
       'allowDownload': allowDownload,
       'allowView': allowView,
+      'isFileViewed': isFileViewed,
+      'isFileDownloaded': isFileDownloaded,
+      'isFileShared': isFileShared,
     },
     'deletedFor': deletedFor,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
@@ -318,6 +366,9 @@ class MessageModel {
     bool? allowShare,
     bool? allowDownload,
     bool? allowView,
+    bool? isFileViewed,
+    bool? isFileDownloaded,
+    bool? isFileShared,
     int? fileSize,
     CallMeta? callMeta,
     double? duration,
@@ -351,6 +402,9 @@ class MessageModel {
       allowShare: allowShare ?? this.allowShare,
       allowDownload: allowDownload ?? this.allowDownload,
       allowView: allowView ?? this.allowView,
+      isFileViewed: isFileViewed ?? this.isFileViewed,
+      isFileDownloaded: isFileDownloaded ?? this.isFileDownloaded,
+      isFileShared: isFileShared ?? this.isFileShared,
       fileSize: fileSize ?? this.fileSize,
       callMeta: callMeta ?? this.callMeta,
       duration: duration ?? this.duration,
