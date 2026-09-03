@@ -21,7 +21,8 @@ _UserModel _$UserModelFromJson(Map<String, dynamic> json) => _UserModel(
   subscriptionType: json['subscription_type'] as String?,
   createdAt: json['created_at'] as String? ?? '',
   updatedAt: json['updated_at'] as String? ?? '',
-  defaultDisappearingTimer: (json['defaultDisappearingTimer'] as num?)?.toInt(),
+  defaultDisappearingTimer: (json['default_disappearing_timer'] as num?)
+      ?.toInt(),
   contactName: json['contactName'] as String?,
 );
 
@@ -41,6 +42,6 @@ Map<String, dynamic> _$UserModelToJson(_UserModel instance) =>
       'subscription_type': instance.subscriptionType,
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
-      'defaultDisappearingTimer': instance.defaultDisappearingTimer,
+      'default_disappearing_timer': instance.defaultDisappearingTimer,
       'contactName': instance.contactName,
     };

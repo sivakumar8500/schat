@@ -11,11 +11,13 @@ class LoadMessagesEvent extends ChatEvent {
   final String? recipientId;
   final bool? initialIsOnline;
   final ThemeColorModel? initialThemeColor;
+  final int? initialDisappearingTimer;
   const LoadMessagesEvent({
     required this.conversationId,
     this.recipientId,
     this.initialIsOnline,
     this.initialThemeColor,
+    this.initialDisappearingTimer,
   });
 }
 
@@ -33,6 +35,10 @@ class SendMessageEvent extends ChatEvent {
   final bool allowView;
   final int? fileSize;
   final String? messageId;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+  final String? title;
 
   const SendMessageEvent({
     required this.conversationId,
@@ -48,6 +54,10 @@ class SendMessageEvent extends ChatEvent {
     this.allowView = true,
     this.fileSize,
     this.messageId,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.title,
   });
 }
 
@@ -297,4 +307,13 @@ class ReceiveFileActionEvent extends ChatEvent {
   final String messageId;
   final String actionType; // 'file_viewed', 'file_downloaded', 'file_shared'
   const ReceiveFileActionEvent({required this.messageId, required this.actionType});
+}
+
+class ScheduleMessageEvent extends ChatEvent {
+  final Map<String, dynamic> requestData;
+  const ScheduleMessageEvent(this.requestData);
+}
+
+class CheckExpiredMessagesEvent extends ChatEvent {
+  const CheckExpiredMessagesEvent();
 }

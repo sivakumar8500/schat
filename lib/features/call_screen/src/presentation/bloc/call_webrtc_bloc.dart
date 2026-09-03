@@ -52,6 +52,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<SetCallMinimizedEvent>(_onSetMinimized);
     on<HandleRemoteVideoToggleEvent>(_onHandleRemoteVideoToggle);
     on<HandleRemoteMuteUpdateEvent>(_onHandleRemoteMuteUpdate);
+    on<RequestCallSwitchEvent>(_onRequestCallSwitch);
+    on<HandleCallSwitchRequestedEvent>(_onHandleCallSwitchRequested);
+    on<RespondToCallSwitchEvent>(_onRespondToCallSwitch);
+    on<HandleCallSwitchRespondedEvent>(_onHandleCallSwitchResponded);
     on<HandleCallErrorEvent>((event, emit) {
       _cancelCallTimeoutTimer();
       _activeCallStart = null;
@@ -115,6 +119,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
             isMuted: data['is_muted'] == true,
             muteType: data['mute_type'] ?? 'audio',
           ));
+          break;
+        case 'call_switch_requested':
+          add(HandleCallSwitchRequestedEvent(Map<String, dynamic>.from(data)));
+          break;
+        case 'call_switch_responded':
+          add(HandleCallSwitchRespondedEvent(Map<String, dynamic>.from(data)));
           break;
         case 'error':
           final errorMsg = data['message']?.toString();
@@ -335,8 +345,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final callerName = safeEvent['caller_name'] ?? 'Unknown';
       final recipientId = safeEvent['recipient_id'] ?? '';
 
-      // For audio calls, start on earpiece (speaker false), for video start on speaker.
-      await _webRtcService.toggleSpeaker(isVideo);
+      bool speaker = isVideo;
+      if (state is CallRinging) {
+        speaker = (state as CallRinging).isSpeakerOn;
+      }
+
+      await _webRtcService.toggleSpeaker(speaker);
 
       _activeCallStart = DateTime.now();
       emit(CallActive(
@@ -344,8 +358,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         contactName: callerName,
         recipientId: recipientId,
         isVideo: isVideo,
-        isSpeakerOn: isVideo,
+        isSpeakerOn: speaker,
         profilePictureUrl: profilePic,
+        startedAt: _activeCallStart,
       ));
     } catch (e) {
       debugPrint('CallWebRtcBloc: Error answering call: $e');
@@ -529,18 +544,23 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
             event.event['profilePictureUrl'];
       }
       
-      // Initialize speaker state based on call type
-      await _webRtcService.toggleSpeaker(isVideo);
+      bool speaker = isVideo;
+      if (currentState is CallConnecting) {
+        speaker = currentState.isSpeakerOn;
+      }
+      
+      await _webRtcService.toggleSpeaker(speaker);
       
       _activeCallStart = DateTime.now();
       emit(CallActive(
-        conversationId: conversationId, 
+        conversationId: conversationId,
         contactName: contactName,
         recipientId: recipientId,
         isVideo: isVideo,
-        isSpeakerOn: isVideo,
+        isSpeakerOn: speaker,
         isMinimized: isMinimized,
         profilePictureUrl: profilePic,
+        startedAt: _activeCallStart,
       ));
     } else {
       emit(CallRejected(reason: response == 'busy' ? 'User is busy' : 'Call declined'));
@@ -641,12 +661,29 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   Future<void> _onSwitchCamera(
       SwitchCameraCallEvent event, Emitter<CallWebRtcState> emit) async {
     await _webRtcService.switchCamera();
+    if (state is CallActive) {
+      final current = state as CallActive;
+      emit(current.copyWith(isFrontCamera: !current.isFrontCamera));
+    } else if (state is CallConnecting) {
+      final current = state as CallConnecting;
+      emit(current.copyWith(isFrontCamera: !current.isFrontCamera));
+    }
   }
 
   void _onToggleSpeaker(
       ToggleSpeakerCallEvent event, Emitter<CallWebRtcState> emit) {
     if (state is CallActive) {
       final current = state as CallActive;
+      final newSpeakerState = !current.isSpeakerOn;
+      _webRtcService.toggleSpeaker(newSpeakerState);
+      emit(current.copyWith(isSpeakerOn: newSpeakerState));
+    } else if (state is CallConnecting) {
+      final current = state as CallConnecting;
+      final newSpeakerState = !current.isSpeakerOn;
+      _webRtcService.toggleSpeaker(newSpeakerState);
+      emit(current.copyWith(isSpeakerOn: newSpeakerState));
+    } else if (state is CallRinging) {
+      final current = state as CallRinging;
       final newSpeakerState = !current.isSpeakerOn;
       _webRtcService.toggleSpeaker(newSpeakerState);
       emit(current.copyWith(isSpeakerOn: newSpeakerState));
@@ -703,5 +740,80 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       debugPrint('Error finding contact name: $e');
     }
     return null;
+  }
+  Future<void> _onRequestCallSwitch(
+      RequestCallSwitchEvent event, Emitter<CallWebRtcState> emit) async {
+    if (state is CallActive) {
+      final current = state as CallActive;
+      await _webRtcService.requestCallSwitch(
+        callType: event.callType,
+        repository: _repository,
+      );
+      // Wait for response
+    }
+  }
+
+  void _onHandleCallSwitchRequested(
+      HandleCallSwitchRequestedEvent event, Emitter<CallWebRtcState> emit) {
+    if (state is CallActive) {
+      final current = state as CallActive;
+      final requestedType = event.event['call_type'] as String?;
+      if (requestedType != null) {
+        emit(current.copyWith(
+          switchRequestedCallType: requestedType,
+          switchRequestedEvent: event.event,
+        ));
+      }
+    }
+  }
+
+  Future<void> _onRespondToCallSwitch(
+      RespondToCallSwitchEvent event, Emitter<CallWebRtcState> emit) async {
+    if (state is CallActive) {
+      final current = state as CallActive;
+      final requestedType = current.switchRequestedCallType;
+      
+      if (event.accept && requestedType != null) {
+        final isVideo = requestedType == 'video';
+        await _webRtcService.acceptCallSwitch(
+          isVideo: isVideo,
+          repository: _repository,
+          remoteOfferEvent: current.switchRequestedEvent,
+          messageId: _activeCallMessageId,
+        );
+        emit(current.copyWith(
+          isVideo: isVideo,
+          clearSwitchRequest: true,
+          isVideoOff: !isVideo,
+        ));
+      } else {
+        _webRtcService.rejectCallSwitch(
+          repository: _repository,
+          messageId: _activeCallMessageId,
+        );
+        emit(current.copyWith(clearSwitchRequest: true));
+      }
+    }
+  }
+
+  Future<void> _onHandleCallSwitchResponded(
+      HandleCallSwitchRespondedEvent event, Emitter<CallWebRtcState> emit) async {
+    if (state is CallActive) {
+      final current = state as CallActive;
+      final response = event.event['response'] as String?;
+      if (response == 'accept') {
+        final newType = event.event['call_type'] as String?;
+        if (newType != null) {
+          final isVideo = newType == 'video';
+          emit(current.copyWith(
+            isVideo: isVideo,
+            isVideoOff: !isVideo,
+          ));
+        }
+        await _webRtcService.handleCallSwitchResponded(event.event);
+      } else {
+        // Switch rejected by remote, just ignore or show toast
+      }
+    }
   }
 }

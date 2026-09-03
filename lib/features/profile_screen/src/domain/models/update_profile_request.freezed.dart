@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$UpdateProfileRequest {
 
- String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;@JsonKey(name: 'defaultDisappearingTimer') int? get defaultDisappearingTimer;
+ String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;@JsonKey(name: 'default_disappearing_timer') int? get defaultDisappearingTimer;
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $UpdateProfileRequestCopyWith<$Res>  {
   factory $UpdateProfileRequestCopyWith(UpdateProfileRequest value, $Res Function(UpdateProfileRequest) _then) = _$UpdateProfileRequestCopyWithImpl;
 @useResult
 $Res call({
- String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer
+ String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer
 });
 
 
@@ -158,7 +158,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest() when $default != null:
 return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
@@ -179,7 +179,7 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer)  $default,) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest():
 return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
@@ -199,7 +199,7 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'defaultDisappearingTimer')  int? defaultDisappearingTimer)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer)?  $default,) {final _that = this;
 switch (_that) {
 case _UpdateProfileRequest() when $default != null:
 return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.defaultDisappearingTimer);case _:
@@ -214,7 +214,7 @@ return $default(_that.username,_that.firstName,_that.lastName,_that.profilePictu
 @JsonSerializable()
 
 class _UpdateProfileRequest implements UpdateProfileRequest {
-  const _UpdateProfileRequest({this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about, @JsonKey(name: 'defaultDisappearingTimer') this.defaultDisappearingTimer});
+  const _UpdateProfileRequest({this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about, @JsonKey(name: 'default_disappearing_timer') this.defaultDisappearingTimer});
   factory _UpdateProfileRequest.fromJson(Map<String, dynamic> json) => _$UpdateProfileRequestFromJson(json);
 
 @override final  String? username;
@@ -222,7 +222,7 @@ class _UpdateProfileRequest implements UpdateProfileRequest {
 @override@JsonKey(name: 'last_name') final  String? lastName;
 @override@JsonKey(name: 'profile_picture_url') final  String? profilePictureUrl;
 @override final  String? about;
-@override@JsonKey(name: 'defaultDisappearingTimer') final  int? defaultDisappearingTimer;
+@override@JsonKey(name: 'default_disappearing_timer') final  int? defaultDisappearingTimer;
 
 /// Create a copy of UpdateProfileRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -257,7 +257,7 @@ abstract mixin class _$UpdateProfileRequestCopyWith<$Res> implements $UpdateProf
   factory _$UpdateProfileRequestCopyWith(_UpdateProfileRequest value, $Res Function(_UpdateProfileRequest) _then) = __$UpdateProfileRequestCopyWithImpl;
 @override @useResult
 $Res call({
- String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer
+ String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer
 });
 
 

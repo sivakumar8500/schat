@@ -11,6 +11,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 
 /// 1-to-1 Audio Call Page — wired to WebRTC via CallWebRtcBloc.
 /// mason make page --name audio_call
@@ -215,11 +216,39 @@ class _AudioCallPageState extends State<AudioCallPage>
         if (state is CallEnded || state is CallRejected || state is CallError) {
           Navigator.of(context).maybePop();
         }
+        if (state is CallActive) {
+          if (state.switchRequestedCallType == 'video') {
+             _showSwitchRequestDialog(context, state);
+          }
+          if (state.isVideo) {
+             // Upgraded to video call! Switch UI.
+             Navigator.of(context).pushReplacement(
+               MaterialPageRoute(
+                 builder: (_) => BlocProvider.value(
+                   value: context.read<CallWebRtcBloc>(),
+                   child: VideoCallPage(
+                     conversationId: widget.conversationId,
+                     contactName: widget.contactName,
+                     contactColor: widget.contactColor,
+                     recipientId: widget.recipientId,
+                     isOutgoing: widget.isOutgoing,
+                     profilePictureUrl: widget.profilePictureUrl,
+                     myProfilePictureUrl: widget.myProfilePictureUrl,
+                   ),
+                 ),
+               ),
+             );
+          }
+        }
       },
       child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
         builder: (context, state) {
           final isMuted = state is CallActive ? state.isMuted : false;
-          final isSpeaker = state is CallActive ? state.isSpeakerOn : false;
+          final isSpeaker = state is CallActive
+              ? state.isSpeakerOn
+              : (state is CallConnecting
+                  ? state.isSpeakerOn
+                  : (state is CallRinging ? state.isSpeakerOn : false));
 
           return Scaffold(
             body: Stack(
@@ -323,7 +352,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
                           child: Column(
-                            key: ValueKey('${state.runtimeType}_${state is CallActive ? (state as CallActive).isRemoteMuted : false}'),
+                            key: ValueKey('${state.runtimeType}_${state is CallActive ? (state).isRemoteMuted : false}'),
                             children: [
                               Text(
                                 _statusLabel(state),
@@ -470,7 +499,14 @@ class _AudioCallPageState extends State<AudioCallPage>
           _buildPillButton(
             icon: CommonIcons.videocam,
             isActive: false,
-            onTap: () {},
+            onTap: () {
+               if (context.read<CallWebRtcBloc>().state is CallActive) {
+                  context.read<CallWebRtcBloc>().add(const RequestCallSwitchEvent('video'));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Requesting to switch to video...')),
+                  );
+               }
+            },
           ),
           // Speaker — green when active
           _buildPillButton(
@@ -536,6 +572,40 @@ class _AudioCallPageState extends State<AudioCallPage>
             const Color(0xFF0F172A),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _isSwitchDialogShowing = false;
+  
+  void _showSwitchRequestDialog(BuildContext context, CallActive state) {
+    if (_isSwitchDialogShowing) return;
+    _isSwitchDialogShowing = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        title: const Text('Video Call Request', style: TextStyle(color: Colors.white)),
+        content: Text('${state.contactName} is requesting to switch to a video call.', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isSwitchDialogShowing = false;
+              context.read<CallWebRtcBloc>().add(const RespondToCallSwitchEvent(false));
+            },
+            child: const Text('Decline', style: TextStyle(color: Colors.redAccent)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isSwitchDialogShowing = false;
+              context.read<CallWebRtcBloc>().add(const RespondToCallSwitchEvent(true));
+            },
+            child: const Text('Accept', style: TextStyle(color: Colors.green)),
+          ),
+        ],
       ),
     );
   }

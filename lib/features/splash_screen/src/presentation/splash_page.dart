@@ -4,7 +4,6 @@ import 'package:schat/features/profile_screen/profile_screen.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
-import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:schat/injection.dart';
 import 'package:schat/core/storage/storage_service.dart';
 
@@ -58,6 +59,12 @@ class MessageModel {
   final bool isPinned;
   final int? pinnedAt;
 
+  // Location support
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+  final String? locationTitle;
+
   // Background upload tracking
   final Uint8List? attachmentBytes;
   final String? attachmentName;
@@ -80,6 +87,9 @@ class MessageModel {
   final double? duration;
   final List<String> deletedFor;
 
+  // Disappearing messages
+  final int? expiry;
+
   const MessageModel({
     required this.id,
     required this.conversationId,
@@ -101,6 +111,10 @@ class MessageModel {
     this.editedAt,
     this.isPinned = false,
     this.pinnedAt,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.locationTitle,
     this.attachmentBytes,
     this.attachmentName,
     this.isUploading = false,
@@ -115,6 +129,7 @@ class MessageModel {
     this.callMeta,
     this.duration,
     this.deletedFor = const [],
+    this.expiry,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -126,7 +141,15 @@ class MessageModel {
     final String messageType = rawType;
     String? mediaType = rawType == 'system' ? null : rawType;
 
-    final dynamic contentData = json['content'];
+    dynamic contentData = json['content'];
+    if (contentData is String) {
+      try {
+        final decoded = jsonDecode(contentData);
+        if (decoded is Map) {
+          contentData = decoded;
+        }
+      } catch (_) {}
+    }
     double? duration;
     if (contentData is Map) {
       contentText = (contentData['text'] ?? '')?.toString() ?? '';
@@ -172,23 +195,29 @@ class MessageModel {
       isFileShared = (viewControl['isFileShared'] ?? viewControl['file_shared'] ?? viewControl['is_file_shared'] ?? isFileShared) as bool? ?? false;
     }
 
-    if (json['allowShare'] != null) allowShare = json['allowShare'] as bool;
-    else if (json['allow_share'] != null) allowShare = json['allow_share'] as bool;
+    if (json['allowShare'] != null) {
+      allowShare = json['allowShare'] as bool;
+    } else if (json['allow_share'] != null) allowShare = json['allow_share'] as bool;
 
-    if (json['allowDownload'] != null) allowDownload = json['allowDownload'] as bool;
-    else if (json['allow_download'] != null) allowDownload = json['allow_download'] as bool;
+    if (json['allowDownload'] != null) {
+      allowDownload = json['allowDownload'] as bool;
+    } else if (json['allow_download'] != null) allowDownload = json['allow_download'] as bool;
 
-    if (json['allowView'] != null) allowView = json['allowView'] as bool;
-    else if (json['allow_view'] != null) allowView = json['allow_view'] as bool;
+    if (json['allowView'] != null) {
+      allowView = json['allowView'] as bool;
+    } else if (json['allow_view'] != null) allowView = json['allow_view'] as bool;
 
-    if (json['isFileViewed'] != null) isFileViewed = json['isFileViewed'] as bool;
-    else if (json['file_viewed'] != null) isFileViewed = json['file_viewed'] as bool;
+    if (json['isFileViewed'] != null) {
+      isFileViewed = json['isFileViewed'] as bool;
+    } else if (json['file_viewed'] != null) isFileViewed = json['file_viewed'] as bool;
 
-    if (json['isFileDownloaded'] != null) isFileDownloaded = json['isFileDownloaded'] as bool;
-    else if (json['file_downloaded'] != null) isFileDownloaded = json['file_downloaded'] as bool;
+    if (json['isFileDownloaded'] != null) {
+      isFileDownloaded = json['isFileDownloaded'] as bool;
+    } else if (json['file_downloaded'] != null) isFileDownloaded = json['file_downloaded'] as bool;
 
-    if (json['isFileShared'] != null) isFileShared = json['isFileShared'] as bool;
-    else if (json['file_shared'] != null) isFileShared = json['file_shared'] as bool;
+    if (json['isFileShared'] != null) {
+      isFileShared = json['isFileShared'] as bool;
+    } else if (json['file_shared'] != null) isFileShared = json['file_shared'] as bool;
 
     int? fileSize;
     final dynamic rawFileSize = json['fileSize'] ?? json['file_size'] ?? json['file_size_bytes'] ?? 
@@ -204,6 +233,8 @@ class MessageModel {
     final dynamic rawCallMeta = json['callMeta'] ?? json['call_meta'];
     if (rawCallMeta is Map) {
       callMeta = CallMeta.fromJson(Map<String, dynamic>.from(rawCallMeta));
+    } else if (json['callType'] != null || json['call_type'] != null) {
+      callMeta = CallMeta.fromJson(json);
     }
 
     final dynamic rawDeletedFor = json['deletedFor'] ?? json['deleted_for'];
@@ -219,6 +250,37 @@ class MessageModel {
     final bool rawIsDeleted = (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false;
     final bool isDeletedForMeOnly = currentUserId != null && deletedForList.contains(currentUserId) && !rawIsDeleted;
     final bool resolvedIsDeleted = rawIsDeleted || (currentUserId != null && deletedForList.contains(currentUserId));
+
+    // Extract location data if present
+    double? latitude;
+    double? longitude;
+    String? address;
+    String? locationTitle;
+
+    if (contentData is Map) {
+      if (contentData['latitude'] != null) {
+        latitude = double.tryParse(contentData['latitude'].toString());
+      }
+      if (contentData['longitude'] != null) {
+        longitude = double.tryParse(contentData['longitude'].toString());
+      }
+      address = contentData['address']?.toString();
+      locationTitle = contentData['title']?.toString();
+    }
+
+    // Fallback to top-level keys for messages loaded from local cache
+    if (latitude == null && json['latitude'] != null) {
+      latitude = double.tryParse(json['latitude'].toString());
+    }
+    if (longitude == null && json['longitude'] != null) {
+      longitude = double.tryParse(json['longitude'].toString());
+    }
+    if (address == null && json['address'] != null) {
+      address = json['address']?.toString();
+    }
+    if (locationTitle == null && json['title'] != null) {
+      locationTitle = json['title']?.toString();
+    }
 
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
@@ -246,7 +308,11 @@ class MessageModel {
       isEdited: (json['isEdited'] ?? json['is_edited']) as bool? ?? false,
       editedAt: int.tryParse((json['editedAt'] ?? json['edited_at'])?.toString() ?? ''),
       isPinned: (json['isPinned'] ?? json['is_pinned']) as bool? ?? false,
-      pinnedAt: json['pinnedAt'] ?? json['pinned_at'],
+      pinnedAt: int.tryParse((json['pinnedAt'] ?? json['pinned_at'])?.toString() ?? ''),
+      latitude: latitude,
+      longitude: longitude,
+      address: address,
+      locationTitle: locationTitle,
       attachmentBytes: null,
       attachmentName: parsedAttachmentName,
       isUploading: false,
@@ -261,6 +327,7 @@ class MessageModel {
       callMeta: callMeta,
       duration: duration,
       deletedFor: deletedForList,
+      expiry: int.tryParse((json['expiry'] ?? json['expires_at'])?.toString() ?? ''),
     );
   }
 
@@ -297,6 +364,10 @@ class MessageModel {
       if (attachmentName != null) 'fileName': attachmentName,
       if (fileSize != null) 'fileSize': fileSize,
       if (duration != null) 'duration': duration,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (address != null) 'address': address,
+      if (locationTitle != null) 'title': locationTitle,
     },
     'type': messageType != 'text' ? messageType : mediaType,
     'isDeleted': isDeleted,
@@ -336,6 +407,7 @@ class MessageModel {
     },
     'deletedFor': deletedFor,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
+    if (expiry != null) 'expiry': expiry,
   };
 
   MessageModel copyWith({
@@ -373,6 +445,11 @@ class MessageModel {
     CallMeta? callMeta,
     double? duration,
     List<String>? deletedFor,
+    int? expiry,
+    double? latitude,
+    double? longitude,
+    String? address,
+    String? locationTitle,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -409,6 +486,11 @@ class MessageModel {
       callMeta: callMeta ?? this.callMeta,
       duration: duration ?? this.duration,
       deletedFor: deletedFor ?? this.deletedFor,
+      expiry: expiry ?? this.expiry,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      address: address ?? this.address,
+      locationTitle: locationTitle ?? this.locationTitle,
     );
   }
 }

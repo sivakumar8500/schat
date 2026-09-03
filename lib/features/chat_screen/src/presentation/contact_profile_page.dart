@@ -72,7 +72,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         success: (user) {
           if (mounted) setState(() => _recipientUser = user);
         },
-        failure: (_, __) {},
+        failure: (_, _) {},
       );
     } catch (_) {}
     if (mounted) setState(() => _isLoadingUser = false);
@@ -111,7 +111,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
               'id': widget.recipientId,
               'name': widget.contactName,
               'profilePictureUrl': widget.profilePictureUrl,
-              'colorValue': widget.contactColor.value,
+              'colorValue': widget.contactColor.toARGB32(),
             });
             await box.put('blocked_list', jsonEncode(blockedList));
           }
@@ -460,7 +460,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
               ],
             ),
           ),
-          if (trailing != null) trailing,
+          ?trailing,
         ],
       ),
     );
@@ -612,7 +612,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                             width: 50,
                             height: 50,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
+                            errorBuilder: (_, _, _) => Icon(
                               Icons.broken_image_rounded,
                               size: 24,
                               color: context.colors.textHint,

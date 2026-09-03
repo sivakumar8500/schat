@@ -21,6 +21,7 @@ abstract class LastMessageModel with _$LastMessageModel {
 
   factory LastMessageModel.fromJson(Map<String, dynamic> json) => _$LastMessageModelFromJson(_normalizeLastMessage(json));
 
+  @override
   Map<String, dynamic> toJson();
 }
 
@@ -57,6 +58,11 @@ Map<String, dynamic> _normalizeLastMessage(Map<String, dynamic> json) {
         contentText = mediaType[0].toUpperCase() + mediaType.substring(1);
       }
     }
+  }
+
+  // Append coordinates for location messages to display in dashboard preview
+  if (mediaType == 'location' && contentData is Map) {
+    contentText = '📍 Location';
   }
 
   // Create a normalized map for the generated factory

@@ -20,20 +20,23 @@ import 'core/network/api_service.dart' as _i374;
 import 'core/network/connectivity_repository.dart' as _i232;
 import 'core/network/network_module.dart' as _i550;
 import 'core/notifications/call_notification_service.dart' as _i374;
+import 'core/notifications/push_notification_service.dart' as _i610;
 import 'core/security/screen_protection_service.dart' as _i568;
-import 'core/security/secure_attachment_service.dart' as _i999;
-import 'core/security/security_scanner_service.dart' as _i998;
-import 'features/security_scanner/data/repositories/malware_scan_repository_impl.dart' as _i997;
-import 'features/security_scanner/data/services/url_safety_service.dart' as _i996;
-import 'features/security_scanner/domain/repositories/malware_scan_repository.dart' as _i995;
-import 'features/security_scanner/presentation/controllers/scan_progress_controller.dart' as _i994;
+import 'core/security/secure_attachment_service.dart' as _i32;
+import 'core/security/security_scanner_service.dart' as _i464;
 import 'core/storage/storage_service.dart' as _i263;
 import 'features/auth_screen/src/data/repositories/auth_repository_impl.dart'
     as _i299;
 import 'features/auth_screen/src/domain/repositories/auth_repository.dart'
     as _i939;
+import 'features/call_screen/src/data/repositories/call_history_repository_impl.dart'
+    as _i314;
 import 'features/call_screen/src/domain/call_sound_service.dart' as _i849;
+import 'features/call_screen/src/domain/repositories/call_history_repository.dart'
+    as _i762;
 import 'features/call_screen/src/domain/web_rtc_service.dart' as _i176;
+import 'features/call_screen/src/presentation/bloc/call_history_cubit.dart'
+    as _i371;
 import 'features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart'
     as _i288;
 import 'features/chat_screen/src/data/repositories/chat_repository_impl.dart'
@@ -74,8 +77,14 @@ import 'features/profile_screen/src/data/repositories/profile_repository_impl.da
     as _i67;
 import 'features/profile_screen/src/domain/repositories/profile_repository.dart'
     as _i649;
+import 'features/security_scanner/data/repositories/malware_scan_repository_impl.dart'
+    as _i641;
 import 'features/security_scanner/data/repositories/security_repository_impl.dart'
     as _i568;
+import 'features/security_scanner/data/services/url_safety_service.dart'
+    as _i213;
+import 'features/security_scanner/domain/repositories/malware_scan_repository.dart'
+    as _i878;
 import 'features/security_scanner/domain/repositories/security_repository.dart'
     as _i229;
 import 'features/security_scanner/domain/usecases/check_device_integrity_usecase.dart'
@@ -86,6 +95,8 @@ import 'features/security_scanner/domain/usecases/scan_url_usecase.dart'
     as _i874;
 import 'features/security_scanner/presentation/bloc/security_scanner_bloc.dart'
     as _i530;
+import 'features/security_scanner/presentation/controllers/scan_progress_controller.dart'
+    as _i339;
 import 'features/status_screen/src/data/repositories/status_repository_impl.dart'
     as _i769;
 import 'features/status_screen/src/domain/repositories/status_repository.dart'
@@ -94,6 +105,12 @@ import 'features/subscription_screen/src/data/repositories/subscription_reposito
     as _i819;
 import 'features/subscription_screen/src/domain/repositories/subscription_repository.dart'
     as _i702;
+import 'features/tickets_screen/src/data/repositories/tickets_repository_impl.dart'
+    as _i61;
+import 'features/tickets_screen/src/domain/repositories/tickets_repository.dart'
+    as _i981;
+import 'features/tickets_screen/src/presentation/bloc/tickets_bloc.dart'
+    as _i582;
 
 extension GetItInjectableX on _i174.GetIt {
   // initializes the registration of main-scope dependencies inside of GetIt
@@ -108,16 +125,17 @@ extension GetItInjectableX on _i174.GetIt {
       preResolve: true,
     );
     gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
+    gh.lazySingleton<_i610.PushNotificationService>(
+      () => _i610.PushNotificationService(),
+    );
     gh.lazySingleton<_i568.ScreenProtectionService>(
       () => _i568.ScreenProtectionService(),
     );
     gh.lazySingleton<_i849.CallSoundService>(() => _i849.CallSoundService());
     gh.lazySingleton<_i176.WebRtcService>(() => _i176.WebRtcService());
+    gh.lazySingleton<_i213.UrlSafetyService>(() => _i213.UrlSafetyService());
     gh.lazySingleton<_i466.PaymentRepository>(
       () => _i39.PaymentRepositoryImpl(),
-    );
-    gh.lazySingleton<_i906.StatusRepository>(
-      () => _i769.StatusRepositoryImpl(),
     );
     gh.lazySingleton<_i229.SecurityRepository>(
       () => _i568.SecurityRepositoryImpl(),
@@ -130,6 +148,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.factory<_i729.ApiInterceptor>(
       () => _i729.ApiInterceptor(gh<_i263.StorageService>()),
+    );
+    gh.lazySingleton<_i32.SecureAttachmentService>(
+      () => _i32.SecureAttachmentService(gh<_i263.StorageService>()),
     );
     gh.lazySingleton<_i628.CheckDeviceIntegrityUseCase>(
       () => _i628.CheckDeviceIntegrityUseCase(gh<_i229.SecurityRepository>()),
@@ -153,30 +174,11 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i361.Dio>(
       () => networkModule.getDio(gh<_i729.ApiInterceptor>()),
     );
-    gh.lazySingleton<_i999.SecureAttachmentService>(
-      () => _i999.SecureAttachmentService(
-        gh<_i263.StorageService>(),
-        gh<_i361.Dio>(),
-      ),
-    );
-    gh.lazySingleton<_i996.UrlSafetyService>(() => _i996.UrlSafetyService());
-    gh.lazySingleton<_i995.MalwareScanRepository>(
-      () => _i997.MalwareScanRepositoryImpl(gh<_i999.SecureAttachmentService>()),
-    );
-    gh.lazySingleton<_i998.SecurityScannerService>(
-      () => _i998.SecurityScannerService(
-        gh<_i995.MalwareScanRepository>(),
-        gh<_i996.UrlSafetyService>(),
-      ),
-    );
-    gh.factory<_i994.ScanProgressController>(
-      () => _i994.ScanProgressController(
-        gh<_i998.SecurityScannerService>(),
-        gh<_i995.MalwareScanRepository>(),
-      ),
-    );
     gh.factory<_i515.ConnectSocketUseCase>(
       () => _i515.ConnectSocketUseCase(gh<_i411.ChatSocketRepository>()),
+    );
+    gh.lazySingleton<_i878.MalwareScanRepository>(
+      () => _i641.MalwareScanRepositoryImpl(gh<_i32.SecureAttachmentService>()),
     );
     gh.factory<_i201.ConnectivityBloc>(
       () => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>()),
@@ -206,13 +208,34 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i263.StorageService>(),
       ),
     );
+    gh.lazySingleton<_i906.StatusRepository>(
+      () => _i769.StatusRepositoryImpl(gh<_i374.ApiService>()),
+    );
     gh.lazySingleton<_i649.ChatRepository>(
       () => _i715.ChatRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.factory<_i981.TicketsRepository>(
+      () => _i61.TicketsRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.lazySingleton<_i464.SecurityScannerService>(
+      () => _i464.SecurityScannerService(
+        gh<_i878.MalwareScanRepository>(),
+        gh<_i213.UrlSafetyService>(),
+      ),
     );
     gh.factory<_i992.ChatSocketBloc>(
       () => _i992.ChatSocketBloc(
         gh<_i515.ConnectSocketUseCase>(),
         gh<_i411.ChatSocketRepository>(),
+      ),
+    );
+    gh.factory<_i582.TicketsBloc>(
+      () => _i582.TicketsBloc(gh<_i981.TicketsRepository>()),
+    );
+    gh.factory<_i339.ScanProgressController>(
+      () => _i339.ScanProgressController(
+        gh<_i464.SecurityScannerService>(),
+        gh<_i878.MalwareScanRepository>(),
       ),
     );
     gh.lazySingleton<_i702.SubscriptionRepository>(
@@ -232,6 +255,12 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i198.DashboardRepository>(
       () => _i986.DashboardRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.lazySingleton<_i762.CallHistoryRepository>(
+      () => _i314.CallHistoryRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.factory<_i371.CallHistoryCubit>(
+      () => _i371.CallHistoryCubit(gh<_i762.CallHistoryRepository>()),
     );
     gh.lazySingleton<_i127.GetChatsUseCase>(
       () => _i127.GetChatsUseCase(gh<_i198.DashboardRepository>()),

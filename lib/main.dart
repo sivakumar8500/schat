@@ -16,6 +16,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
 import 'package:schat/utils/common_notifications.dart';

@@ -36,6 +36,7 @@ abstract class RecipientModel with _$RecipientModel {
 
   factory RecipientModel.fromJson(Map<String, dynamic> json) => _$RecipientModelFromJson(_normalizeRecipientJson(json));
 
+  @override
   Map<String, dynamic> toJson();
 }
 

@@ -40,43 +40,40 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     }
   }
 
-  void _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) {
+  Future<void> _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) async {
     final currentState = state;
-    if (currentState is StatusLoaded) {
-      emit(currentState.copyWith(
-        myStatusText: () => event.text,
-        myStatusBytes: () => null,
-        myStatusPath: () => null,
-        myStatusTime: () => DateTime.now(),
-      ));
-    } else {
-      emit(StatusLoaded(
-        recentUpdates: const [],
-        mutedUpdates: const [],
-        myStatusText: event.text,
-        myStatusTime: DateTime.now(),
-      ));
+    emit(const StatusLoading());
+    try {
+      await _repository.createStatus(
+        statusType: 'text',
+        textContent: event.text,
+        privacyType: event.privacyType,
+        privacyUserIds: event.privacyUserIds,
+      );
+      add(const LoadStatusUpdatesEvent());
+    } catch (e) {
+      emit(StatusFailure(errorMessage: e.toString()));
     }
   }
 
-  void _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) {
+  Future<void> _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) async {
     final currentState = state;
-    if (currentState is StatusLoaded) {
-      emit(currentState.copyWith(
-        myStatusText: () => event.caption,
-        myStatusBytes: () => event.bytes,
-        myStatusPath: () => event.path,
-        myStatusTime: () => DateTime.now(),
-      ));
-    } else {
-      emit(StatusLoaded(
-        recentUpdates: const [],
-        mutedUpdates: const [],
-        myStatusText: event.caption,
-        myStatusBytes: event.bytes,
-        myStatusPath: event.path,
-        myStatusTime: DateTime.now(),
-      ));
+    emit(const StatusLoading());
+    try {
+      await _repository.createStatus(
+        statusType: event.path != null && event.path!.endsWith('.mp4') ? 'video' : 'image',
+        textContent: event.caption,
+        filePath: event.path,
+        fileBytes: event.bytes,
+        fileName: event.path != null ? event.path!.split('/').last : 'media.jpg',
+        mimeType: event.path != null && event.path!.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg',
+        fileSizeBytes: event.bytes?.length ?? 1024,
+        privacyType: event.privacyType,
+        privacyUserIds: event.privacyUserIds,
+      );
+      add(const LoadStatusUpdatesEvent());
+    } catch (e) {
+      emit(StatusFailure(errorMessage: e.toString()));
     }
   }
 
@@ -103,15 +100,19 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     }
   }
 
-  void _onDeleteMyStatus(DeleteMyStatusEvent event, Emitter<StatusState> emit) {
-    final currentState = state;
-    if (currentState is StatusLoaded) {
-      emit(currentState.copyWith(
-        myStatusText: () => null,
-        myStatusBytes: () => null,
-        myStatusPath: () => null,
-        myStatusTime: () => null,
-      ));
+  Future<void> _onDeleteMyStatus(DeleteMyStatusEvent event, Emitter<StatusState> emit) async {
+    // We would need a status ID to delete from backend, for now this is just placeholder.
+    // If we have myStatuses list, we should delete a specific one.
+    // The current UI logic may need changes to support multiple my-statuses.
+    emit(const StatusLoading());
+    try {
+      final myStatuses = await _repository.getMyStatuses();
+      if (myStatuses.isNotEmpty) {
+        await _repository.deleteStatus(myStatuses.first.id);
+      }
+      add(const LoadStatusUpdatesEvent());
+    } catch (e) {
+      emit(StatusFailure(errorMessage: e.toString()));
     }
   }
 }

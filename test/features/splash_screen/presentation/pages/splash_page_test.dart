@@ -7,7 +7,6 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/theme_controller.dart';
-import 'package:schat/utils/common_icons.dart';
 
 class MockStorageService extends Mock implements StorageService {}
 class MockProfileRepository extends Mock implements ProfileRepository {}

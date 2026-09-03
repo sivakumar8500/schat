@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 
 class FullScreenImagePage extends StatelessWidget {

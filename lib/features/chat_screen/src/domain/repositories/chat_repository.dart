@@ -62,4 +62,7 @@ abstract class ChatRepository {
   /// GET the list of users who have received a forwarded copy of the message.
   /// Only the original sender/owner can call this.
   Future<MessageSharesModel> getMessageShares(String messageId);
+
+  /// POST /messages/scheduled to schedule a message for a future date/time.
+  Future<bool> scheduleMessage(Map<String, dynamic> requestData);
 }

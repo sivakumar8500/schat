@@ -21,6 +21,10 @@ class SendMessage extends ChatSocketEvent {
   final String? mimeType;
   final double? duration;
   final String? replyMessageId;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+  final String? title;
   final Map<String, dynamic>? security;
   final Map<String, dynamic>? viewControl;
   final Map<String, dynamic>? expiry;
@@ -37,6 +41,10 @@ class SendMessage extends ChatSocketEvent {
     this.mimeType,
     this.duration,
     this.replyMessageId,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.title,
     this.security,
     this.viewControl,
     this.expiry,

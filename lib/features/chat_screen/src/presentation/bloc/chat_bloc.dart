@@ -18,6 +18,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final ChatSocketRepository _socketRepository;
   StreamSubscription? _socketSubscription;
   Timer? _typingTimer;
+  Timer? _expiryTimer;
 
   String? _conversationId;
   String? _recipientId;
@@ -85,8 +86,52 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<PromoteGroupAdminEvent>(_onPromoteGroupAdmin);
     on<DemoteGroupAdminEvent>(_onDemoteGroupAdmin);
     on<ReceiveFileActionEvent>(_onReceiveFileAction);
+    on<ScheduleMessageEvent>(_onScheduleMessage);
+    on<CheckExpiredMessagesEvent>(_onCheckExpiredMessages);
 
     _listenToSocket();
+    _startExpiryTimer();
+  }
+
+  void _startExpiryTimer() {
+    _expiryTimer?.cancel();
+    _expiryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      add(const CheckExpiredMessagesEvent());
+    });
+  }
+
+  void _onCheckExpiredMessages(CheckExpiredMessagesEvent event, Emitter<ChatState> emit) {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      bool hasExpired = false;
+      final filteredMessages = currentState.messages.where((msg) {
+        if (msg.expiry != null && msg.expiry! > 0) {
+          if (now >= msg.expiry!) {
+            hasExpired = true;
+            return false;
+          }
+        }
+        return true;
+      }).toList();
+
+      if (hasExpired) {
+        emit(currentState.copyWith(messages: filteredMessages));
+        if (_conversationId != null) {
+          _saveToCache(_conversationId!, filteredMessages);
+        }
+      }
+    }
+  }
+
+  List<MessageModel> _filterExpiredMessages(List<MessageModel> messages) {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return messages.where((msg) {
+      if (msg.expiry != null && msg.expiry! > 0) {
+        return now < msg.expiry!;
+      }
+      return true;
+    }).toList();
   }
 
   bool _isSameConversation(dynamic id1, dynamic id2) {
@@ -187,17 +232,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           bool? isLocked;
 
           if (securityMap is Map) {
-            if (securityMap['allowShare'] != null) allowShare = securityMap['allowShare'] as bool;
-            else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+            if (securityMap['allowShare'] != null) {
+              allowShare = securityMap['allowShare'] as bool;
+            } else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
 
-            if (securityMap['allowDownload'] != null) allowDownload = securityMap['allowDownload'] as bool;
-            else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+            if (securityMap['allowDownload'] != null) {
+              allowDownload = securityMap['allowDownload'] as bool;
+            } else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
 
-            if (securityMap['allowView'] != null) allowView = securityMap['allowView'] as bool;
-            else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
+            if (securityMap['allowView'] != null) {
+              allowView = securityMap['allowView'] as bool;
+            } else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
 
-            if (securityMap['isLocked'] != null) isLocked = securityMap['isLocked'] as bool;
-            else if (securityMap['is_locked'] != null) isLocked = securityMap['is_locked'] as bool;
+            if (securityMap['isLocked'] != null) {
+              isLocked = securityMap['isLocked'] as bool;
+            } else if (securityMap['is_locked'] != null) isLocked = securityMap['is_locked'] as bool;
           }
 
           if (viewControlMap is Map) {
@@ -240,7 +289,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
              final action = type!.split('_').last;
              add(ShowNotificationEvent(message: 'Other participant $action your file'));
              if (msgId != null) {
-               add(ReceiveFileActionEvent(messageId: msgId, actionType: type!));
+               add(ReceiveFileActionEvent(messageId: msgId, actionType: type));
              }
           }
         } else if (type == 'conversation_deleted') {
@@ -402,14 +451,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
 
     if (cachedMessages.isNotEmpty) {
+      final filteredCached = _filterExpiredMessages(cachedMessages);
       emit(ChatLoaded(
-        messages: cachedMessages,
+        messages: filteredCached,
         myId: myId,
         isMuted: isMuted,
         isRecipientOnline: _currentIsOnline,
         isRecipientTyping: _currentIsTyping,
         customBgColor: savedColor,
         themeColor: event.initialThemeColor,
+        disappearingTimer: event.initialDisappearingTimer,
       ));
     } else {
       emit(const ChatLoading());
@@ -488,6 +539,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isRecipientTyping: _currentIsTyping,
           customBgColor: savedColor,
           themeColor: event.initialThemeColor,
+          disappearingTimer: event.initialDisappearingTimer,
         ));
       }
     } catch (e) {
@@ -513,7 +565,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               ));
             }
           },
-          failure: (_, __) {},
+          failure: (_, _) {},
         );
       }).catchError((e) {
         debugPrint('Error fetching recipient lastSeen: $e');
@@ -548,7 +600,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
 
       // Prepend the older messages to the existing list.
-      final updatedMessages = List<MessageModel>.from(moreMessages)..addAll(currentState.messages);
+      final filteredMore = _filterExpiredMessages(moreMessages);
+      final updatedMessages = List<MessageModel>.from(filteredMore)..addAll(currentState.messages);
 
       emit(currentState.copyWith(messages: updatedMessages));
       _isFetchingMore = false;
@@ -570,6 +623,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         content: event.text,
         mediaUrl: event.attachmentPath,
         mediaType: event.type,
+        latitude: event.latitude,
+        longitude: event.longitude,
+        address: event.address,
+        locationTitle: event.title,
         isDeleted: false,
         createdAt: now,
         updatedAt: now,
@@ -585,7 +642,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         fileSize: event.fileSize,
       );
 
-      final updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);
+      final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
     }
@@ -618,20 +675,22 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               msg.id.startsWith('temp_') && msg.content == newMessage.content);
           if (index != -1) {
             updatedMessages[index] = confirmedMessage;
-            emit(currentState.copyWith(messages: updatedMessages));
-            _saveToCache(_conversationId!, updatedMessages);
+            final filtered = _filterExpiredMessages(updatedMessages);
+            emit(currentState.copyWith(messages: filtered));
+            _saveToCache(_conversationId!, filtered);
           } else {
             int lastTempIndex = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
             if (lastTempIndex != -1) {
               updatedMessages[lastTempIndex] = confirmedMessage;
-              emit(currentState.copyWith(messages: updatedMessages));
-              _saveToCache(_conversationId!, updatedMessages);
+              final filtered = _filterExpiredMessages(updatedMessages);
+              emit(currentState.copyWith(messages: filtered));
+              _saveToCache(_conversationId!, filtered);
             }
           }
           return;
         }
 
-        final updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);
+        final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));
         _currentIsTyping = false;
         
         // Send read receipt back to sender via socket
@@ -683,8 +742,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onSetDisappearingTimer(SetDisappearingTimerEvent event, Emitter<ChatState> emit) {
-    if (_conversationId != null) {
+    final currentState = state;
+    if (currentState is ChatLoaded && _conversationId != null) {
       _chatRepository.setDisappearingTimer(conversationId: _conversationId!, seconds: event.seconds);
+      emit(currentState.copyWith(
+        disappearingTimer: event.seconds,
+      ));
     }
   }
 
@@ -1097,8 +1160,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           return msg;
         }).toList();
         
-        emit(currentState.copyWith(messages: updatedMessages));
-        _saveToCache(_conversationId!, updatedMessages);
+        final filteredMessages = _filterExpiredMessages(updatedMessages);
+        emit(currentState.copyWith(messages: filteredMessages));
+        _saveToCache(_conversationId!, filteredMessages);
       }
     }
   }
@@ -1305,10 +1369,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  Future<void> _onScheduleMessage(
+    ScheduleMessageEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      try {
+        await _chatRepository.scheduleMessage(event.requestData);
+        // We do not add the message to the local list yet, it will be delivered by the server when the schedule time hits
+      } catch (e) {
+        debugPrint('Error scheduling message: $e');
+        add(ShowNotificationEvent(message: 'Failed to schedule message: $e', isError: true));
+      }
+    }
+  }
+
   @override
   Future<void> close() {
     _socketSubscription?.cancel();
     _typingTimer?.cancel();
+    _expiryTimer?.cancel();
     return super.close();
   }
 }

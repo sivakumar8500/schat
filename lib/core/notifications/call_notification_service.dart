@@ -32,36 +32,14 @@ class CallNotificationService {
       return;
     }
 
-    // Request permissions for iOS
-    await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    // Get the FCM token
-    final token = await _fcm.getToken();
-    debugPrint('FCM TOKEN: $token');
-
-    // Register token if user is already authenticated
-    if (token != null) {
-      await _registerDeviceWithToken(token);
-    }
-
-    // Listen to token refresh
-    _fcm.onTokenRefresh.listen((newToken) {
-      debugPrint('FCM TOKEN REFRESHED: $newToken');
-      _registerDeviceWithToken(newToken);
-    });
+    // Handle background actions from CallKit
+    FlutterCallkitIncoming.onEvent.listen(_onCallKitEvent);
 
     // Listen for foreground messages.
     // Suppress foreground FCM if socket is likely handling it via CallWebRtcBloc.
     FirebaseMessaging.onMessage.listen((message) {
       if (kDebugMode) print('FCM Foreground Message: ${message.data}');
     });
-
-    // Handle background actions from CallKit
-    FlutterCallkitIncoming.onEvent.listen(_onCallKitEvent);
   }
 
   /// Public method to register device (called on login/auth state change)
@@ -74,6 +52,12 @@ class CallNotificationService {
       } else {
         debugPrint('CallNotificationService: Failed to get FCM token for manual registration');
       }
+      
+      // Listen to token refresh
+      _fcm.onTokenRefresh.listen((newToken) {
+        debugPrint('FCM TOKEN REFRESHED: $newToken');
+        _registerDeviceWithToken(newToken);
+      });
     } catch (e) {
       debugPrint('CallNotificationService: Error fetching FCM token: $e');
     }
@@ -81,10 +65,11 @@ class CallNotificationService {
 
   /// Registers the device token on the server
   Future<void> _registerDeviceWithToken(String token) async {
-    if (!_storageService.hasToken()) {
-      debugPrint('CallNotificationService: User not authenticated, skipping token registration');
-      return;
-    }
+    // Allow device registration without auth token as per new requirements
+    // if (!_storageService.hasToken()) {
+    //   debugPrint('CallNotificationService: User not authenticated, skipping token registration');
+    //   return;
+    // }
 
     final deviceId = _storageService.getOrGenerateDeviceId();
     String deviceType = 'unknown';

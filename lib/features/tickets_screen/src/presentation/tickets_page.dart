@@ -1,14 +1,17 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:schat/features/profile_screen/src/domain/models/ticket_model.dart';
+import 'package:schat/features/tickets_screen/src/domain/models/ticket_model.dart';
+import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_bloc.dart';
+import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_event.dart';
+import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_state.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/injection.dart';
 
 class TicketsPage extends StatefulWidget {
   const TicketsPage({super.key});
@@ -18,75 +21,12 @@ class TicketsPage extends StatefulWidget {
 }
 
 class _TicketsPageState extends State<TicketsPage> {
-  List<TicketModel> _tickets = [];
-  bool _isLoading = true;
   final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    _loadTickets();
-  }
-
-  Future<void> _loadTickets() async {
-    try {
-      final box = await Hive.openBox('tickets_box');
-      final String? jsonString = box.get('tickets_list');
-      if (jsonString != null) {
-        final List<dynamic> decoded = jsonDecode(jsonString);
-        setState(() {
-          _tickets = decoded.map((e) => TicketModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _tickets = [];
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading tickets: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _saveTicket({
-    required String title,
-    required String description,
-    String? attachmentPath,
-  }) async {
-    try {
-      final box = await Hive.openBox('tickets_box');
-      final String? jsonString = box.get('tickets_list');
-      List<dynamic> list = [];
-      if (jsonString != null) {
-        list = jsonDecode(jsonString);
-      }
-
-      final newTicket = TicketModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: title,
-        description: description,
-        attachmentPath: attachmentPath,
-        status: 'Open',
-        createdAt: DateTime.now().toIso8601String(),
-      );
-
-      list.insert(0, newTicket.toJson());
-      await box.put('tickets_list', jsonEncode(list));
-      
-      await _loadTickets();
-      if (mounted) {
-        context.showSuccessNotification('Ticket raised successfully');
-      }
-    } catch (e) {
-      debugPrint('Error raising ticket: $e');
-      if (mounted) {
-        context.showErrorNotification('Failed to raise ticket');
-      }
-    }
+    context.read<TicketsBloc>().add(const LoadTicketsEvent());
   }
 
   void _showRaiseTicketBottomSheet(BuildContext context) {
@@ -94,7 +34,7 @@ class _TicketsPageState extends State<TicketsPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
+      builder: (bottomSheetContext) {
         File? localAttachment;
         final nameController = TextEditingController();
         final descController = TextEditingController();
@@ -116,7 +56,7 @@ class _TicketsPageState extends State<TicketsPage> {
 
             return Padding(
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+                bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom,
               ),
               child: Container(
                 decoration: BoxDecoration(
@@ -197,7 +137,7 @@ class _TicketsPageState extends State<TicketsPage> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: () async {
+                        onPressed: () {
                           final title = nameController.text.trim();
                           final desc = descController.text.trim();
 
@@ -206,15 +146,13 @@ class _TicketsPageState extends State<TicketsPage> {
                             return;
                           }
 
-                          await _saveTicket(
+                          this.context.read<TicketsBloc>().add(CreateTicketEvent(
                             title: title,
                             description: desc,
                             attachmentPath: localAttachment?.path,
-                          );
+                          ));
 
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                          }
+                          Navigator.pop(bottomSheetContext);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.primary,
@@ -237,38 +175,64 @@ class _TicketsPageState extends State<TicketsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.colors.scaffoldBackground,
-      appBar: AppBar(
-        title: const Text('Support Tickets'),
+    return BlocListener<TicketsBloc, TicketsState>(
+      listener: (context, state) {
+        if (state is TicketCreateSuccess) {
+          context.showSuccessNotification('Ticket raised successfully');
+        } else if (state is TicketCreateError) {
+          context.showErrorNotification(state.errorMessage);
+        } else if (state is TicketsError) {
+          context.showErrorNotification(state.errorMessage);
+        }
+      },
+      child: Scaffold(
         backgroundColor: context.colors.scaffoldBackground,
-        elevation: 0,
-        foregroundColor: context.colors.textPrimary,
-        leading: IconButton(
-          icon: Icon(CommonIcons.arrowBack),
-          onPressed: () => Navigator.pop(context),
+        appBar: AppBar(
+          title: const Text('Support Tickets'),
+          backgroundColor: context.colors.scaffoldBackground,
+          elevation: 0,
+          foregroundColor: context.colors.textPrimary,
+          leading: IconButton(
+            icon: Icon(CommonIcons.arrowBack),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadTickets,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _tickets.isEmpty
-                ? SingleChildScrollView(
+        body: RefreshIndicator(
+          onRefresh: () async {
+            context.read<TicketsBloc>().add(const LoadTicketsEvent());
+          },
+          child: BlocBuilder<TicketsBloc, TicketsState>(
+            buildWhen: (previous, current) => 
+                current is TicketsInitial || 
+                current is TicketsLoading || 
+                current is TicketsLoaded,
+            builder: (context, state) {
+              if (state is TicketsInitial || state is TicketsLoading) {
+                return const Center(child: CircularProgressIndicator());
+              } else if (state is TicketsLoaded) {
+                if (state.tickets.isEmpty) {
+                  return SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Container(
                       height: MediaQuery.of(context).size.height * 0.7,
                       alignment: Alignment.center,
                       child: _buildEmptyState(),
                     ),
-                  )
-                : _buildTicketsList(),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showRaiseTicketBottomSheet(context),
-        backgroundColor: context.colors.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Raise Ticket', style: TextStyle(color: Colors.white)),
+                  );
+                }
+                return _buildTicketsList(state.tickets);
+              }
+              // Should not happen due to buildWhen, but fallback just in case
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () => _showRaiseTicketBottomSheet(context),
+          backgroundColor: context.colors.primary,
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: const Text('Raise Ticket', style: TextStyle(color: Colors.white)),
+        ),
       ),
     );
   }
@@ -307,14 +271,13 @@ class _TicketsPageState extends State<TicketsPage> {
     );
   }
 
-  Widget _buildTicketsList() {
+  Widget _buildTicketsList(List<TicketModel> tickets) {
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: _tickets.length,
+      itemCount: tickets.length,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       itemBuilder: (context, index) {
-        final ticket = _tickets[index];
-        final isCompleted = ticket.status == 'Resolved';
+        final ticket = tickets[index];
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 8),
@@ -376,7 +339,7 @@ class _TicketsPageState extends State<TicketsPage> {
                 ],
                 CommonSpaces.h12,
                 Text(
-                  'Created on: ${_formatDate(ticket.createdAt)}',
+                  'Created on: ${_formatDate(ticket.createdAtInt)}',
                   style: context.bodySmall.copyWith(
                     color: context.colors.textHint,
                   ),
@@ -426,12 +389,13 @@ class _TicketsPageState extends State<TicketsPage> {
     );
   }
 
-  String _formatDate(String isoString) {
+  String _formatDate(int? timestamp) {
+    if (timestamp == null) return 'Unknown';
     try {
-      final dateTime = DateTime.parse(isoString);
+      final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
       return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
     } catch (_) {
-      return '';
+      return 'Unknown';
     }
   }
 }

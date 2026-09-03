@@ -36,6 +36,10 @@ abstract class ChatSocketRepository {
     String? mimeType,
     double? duration,
     String? replyMessageId,
+    double? latitude,
+    double? longitude,
+    String? address,
+    String? title,
     Map<String, dynamic>? security,
     Map<String, dynamic>? viewControl,
     Map<String, dynamic>? expiry,
@@ -282,6 +286,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     String? mimeType,
     double? duration,
     String? replyMessageId,
+    double? latitude,
+    double? longitude,
+    String? address,
+    String? title,
     Map<String, dynamic>? security,
     Map<String, dynamic>? viewControl,
     Map<String, dynamic>? expiry,
@@ -295,6 +303,11 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     if (fileSize != null) content['fileSize'] = fileSize;
     if (mimeType != null) content['mimeType'] = mimeType;
     if (duration != null) content['duration'] = duration;
+    
+    if (latitude != null) content['latitude'] = latitude;
+    if (longitude != null) content['longitude'] = longitude;
+    if (address != null) content['address'] = address;
+    if (title != null) content['title'] = title;
 
     String payloadType = type;
     if (type == 'voice_note' || (mimeType != null && mimeType.startsWith('audio/'))) {
@@ -372,8 +385,8 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       "type": "edit_message",
       "message_id": messageId,
       "messageId": messageId,
-      if (text != null) "text": text,
-      if (security != null) "security": security,
+      "text": ?text,
+      "security": ?security,
     };
     emit('message', payload);
   }

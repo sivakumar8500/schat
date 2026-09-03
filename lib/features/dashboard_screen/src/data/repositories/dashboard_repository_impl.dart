@@ -110,7 +110,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<ApiResult<void>> hideChat(String conversationId) async {
     return _apiService.post<void>(
       CommonEndpoints.hideChat(conversationId),
-      mapper: (_) => null,
+      mapper: (_) {},
     );
   }
 
@@ -118,7 +118,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<ApiResult<void>> unhideChat(String conversationId) async {
     return _apiService.post<void>(
       CommonEndpoints.unhideChat(conversationId),
-      mapper: (_) => null,
+      mapper: (_) {},
     );
   }
 

@@ -1,20 +1,18 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/intro_screen/intro_screen.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
-import 'package:schat/features/profile_screen/src/presentation/profile_page.dart';
+import 'package:schat/features/profile_screen/src/presentation/emergency_contacts_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
 import 'package:schat/presentation/pages/blocked_users_page.dart';
-import 'package:schat/presentation/pages/tickets_page.dart';
+import 'package:schat/features/tickets_screen/src/presentation/tickets_page.dart';
+import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_bloc.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -329,7 +327,12 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     title: 'Support Tickets',
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const TicketsPage()),
+                      MaterialPageRoute(
+                        builder: (context) => BlocProvider(
+                          create: (_) => getIt<TicketsBloc>(),
+                          child: const TicketsPage(),
+                        ),
+                      ),
                     ),
                   ),
                   _buildListTile(
@@ -337,6 +340,15 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     icon: Icons.sync,
                     title: 'Sync Contacts',
                     onTap: () => Navigator.pop(context, 'sync'),
+                  ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.health_and_safety_outlined,
+                    title: 'Emergency Contacts',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const EmergencyContactsPage()),
+                    ),
                   ),
 
                   _buildSectionHeader('App Settings'),
@@ -347,7 +359,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     subtitle: getIt<ThemeController>().themeMode == ThemeMode.dark ? 'Dark Mode' : 'Light Mode',
                     trailing: Switch(
                       value: getIt<ThemeController>().themeMode == ThemeMode.dark,
-                      activeColor: context.colors.primary,
+                      activeThumbColor: context.colors.primary,
                       onChanged: (val) {
                         setState(() {
                           getIt<ThemeController>().toggleTheme();
@@ -553,10 +565,10 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                 style: sheetCtx.bodyMedium.copyWith(color: sheetCtx.colors.textSecondary),
               ),
               CommonSpaces.h24,
-              _buildDisappearingOption(sheetCtx, 'Off', null),
-              _buildDisappearingOption(sheetCtx, '1 day', 86400),
-              _buildDisappearingOption(sheetCtx, '7 days', 604800),
-              _buildDisappearingOption(sheetCtx, '30 days', 2592000),
+              _buildDisappearingOption(context, sheetCtx, 'Off', null),
+              _buildDisappearingOption(context, sheetCtx, '1 day', 86400),
+              _buildDisappearingOption(context, sheetCtx, '7 days', 604800),
+              _buildDisappearingOption(context, sheetCtx, '30 days', 2592000),
               CommonSpaces.h20,
             ],
           ),
@@ -565,7 +577,7 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext sheetCtx, String label, int? seconds) {
+  Widget _buildDisappearingOption(BuildContext blocContext, BuildContext sheetCtx, String label, int? seconds) {
     final bool isSelected = _defaultDisappearingTimer == seconds;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -575,8 +587,8 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
           : const Icon(Icons.chevron_right_rounded),
       onTap: () {
         Navigator.pop(sheetCtx);
-        context.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
-        context.showInfoNotification('Default disappearing messages set to $label');
+        blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
+        blocContext.showInfoNotification('Default disappearing messages set to $label');
       },
     );
   }

@@ -150,7 +150,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             Expanded(
               child: ListView.separated(
                 itemCount: state.steps.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final step = state.steps[index];
                   final isCurrent = index == state.currentStepIndex && !state.isCompleted;
@@ -354,7 +354,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
             ElevatedButton.icon(
               onPressed: () async {
                 await _controller.deleteSuspiciousAndCorruptedFiles();
-                if (mounted) {
+                if (context.mounted) {
                   context.showSuccessNotification('Suspicious & corrupted files deleted.');
                 }
               },

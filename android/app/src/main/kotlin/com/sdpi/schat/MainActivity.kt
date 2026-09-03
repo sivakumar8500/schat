@@ -1,4 +1,4 @@
-package com.schat.schat
+package com.sdpi.schat
 
 import io.flutter.embedding.android.FlutterActivity
 

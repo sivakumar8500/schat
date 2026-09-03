@@ -1,8 +1,8 @@
 class CommonEndpoints {
   CommonEndpoints._();
 
-  static const String baseUrl = 'http://13.201.205.176:8000/api/v1';
-  static const String socketUrl = 'ws://13.201.205.176:8000/ws';
+  static const String baseUrl = 'http://13.205.107.199:8000/api/v1';
+  static const String socketUrl = 'ws://13.205.107.199:8000/ws';
 
   // Auth
   static const String sendOtp = '/auth/send-otp';
@@ -15,6 +15,10 @@ class CommonEndpoints {
   static const String getContacts = '/users/contacts';
   static String getUserProfile(String userId) => '/users/$userId';
   static const String deleteAccount = '/users/me';
+  static const String emergencyContacts = '/users/emergency-contacts';
+  static const String defaultEmergencyContacts = '/users/emergency-contacts/default';
+  static const String allEmergencyContacts = '/users/emergency-contacts/all';
+  static String emergencyContact(String contactId) => '/users/emergency-contacts/$contactId';
 
   // Subscriptions
   static const String getPlans = '/subscriptions/plans';
@@ -24,6 +28,9 @@ class CommonEndpoints {
   static const String getChats = '/chats/';
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
+  static const String scheduleMessage = '/messages/scheduled';
+  static const String getCalls = '/messages/calls';
+  static String getCallHistory({int limit = 50}) => '/messages/calls?limit=$limit';
   static String getGroupDetails(String groupId) => '/groups/$groupId';
   static String updateGroup(String groupId) => '/groups/$groupId';
   static String deleteGroup(String groupId) => '/groups/$groupId';
@@ -39,6 +46,10 @@ class CommonEndpoints {
   static String unmuteChat(String conversationId) => '/chats/$conversationId/unmute';
   static String setDisappearingTimer(String conversationId) => '/chats/$conversationId/disappearing-timer';
   
+  // --- Device & Push Notifications ---
+  static const String registerFcmToken = '/notifications/register-device';
+
+  // --- External Integrations ---
   // Message Actions
   static String forwardMessage(String messageId) => '/messages/$messageId/forward';
   static String pinMessage(String messageId) => '/messages/$messageId/pin';
@@ -71,10 +82,23 @@ class CommonEndpoints {
   // Clear Chat
   static String clearChat(String conversationId) => '/chats/$conversationId/clear';
 
+  // Tickets
+  static const String createTicket = '/chats/tickets';
+  static const String getTickets = '/chats/tickets';
+
   // Conversation Theme Colors
   static const String getThemes = '/chats/themes';
   static String updateTheme(String conversationId) => '/chats/$conversationId/theme';
 
   // Notifications
   static const String registerDevice = '/notifications/register-device';
+
+  // Status
+  static const String getRecentStatuses = '/statuses/';
+  static const String getMyStatuses = '/statuses/me';
+  static const String createStatus = '/statuses/';
+  static String deleteStatus(String statusId) => '/statuses/$statusId';
+  static String viewStatus(String statusId) => '/statuses/$statusId/view';
+  static String muteContactStatus(String contactId) => '/statuses/mute/$contactId';
+  static String unmuteContactStatus(String contactId) => '/statuses/unmute/$contactId';
 }

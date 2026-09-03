@@ -23,11 +23,13 @@ abstract class ChatModel with _$ChatModel {
     @JsonKey(name: 'is_muted') @Default(false) bool isMuted,
     @JsonKey(name: 'is_favorite') @Default(false) bool isFavorite,
     @JsonKey(name: 'themeColor') ThemeColorModel? themeColor,
+    @JsonKey(name: 'disappearing_timer') int? disappearingTimer,
     @JsonKey(includeFromJson: false, includeToJson: false) @Default(false) bool isTyping,
   }) = _ChatModel;
 
   factory ChatModel.fromJson(Map<String, dynamic> json) => _$ChatModelFromJson(_normalizeChatJson(json));
 
+  @override
   Map<String, dynamic> toJson();
 }
 
@@ -60,6 +62,17 @@ Map<String, dynamic> _normalizeChatJson(Map<String, dynamic> json) {
   
   if (json['last_message'] is Map) {
     normalizedJson['last_message'] = Map<String, dynamic>.from(json['last_message'] as Map);
+  }
+
+  if (json['themeColor'] is Map) {
+    normalizedJson['themeColor'] = Map<String, dynamic>.from(json['themeColor'] as Map);
+  }
+
+  // Normalize disappearing timer
+  if (json.containsKey('timer_seconds')) {
+    normalizedJson['disappearing_timer'] = json['timer_seconds'];
+  } else if (json.containsKey('disappearingTimer')) {
+    normalizedJson['disappearing_timer'] = json['disappearingTimer'];
   }
 
   return normalizedJson;

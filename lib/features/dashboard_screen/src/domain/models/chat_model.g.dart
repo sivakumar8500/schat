@@ -25,6 +25,7 @@ _ChatModel _$ChatModelFromJson(Map<String, dynamic> json) => _ChatModel(
   themeColor: json['themeColor'] == null
       ? null
       : ThemeColorModel.fromJson(json['themeColor'] as Map<String, dynamic>),
+  disappearingTimer: (json['disappearing_timer'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
@@ -43,4 +44,5 @@ Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
       'is_muted': instance.isMuted,
       'is_favorite': instance.isFavorite,
       'themeColor': instance.themeColor,
+      'disappearing_timer': instance.disappearingTimer,
     };

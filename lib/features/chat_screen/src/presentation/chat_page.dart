@@ -16,7 +16,6 @@ import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboar
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/utils/common_sizes.dart';
 
 import 'package:schat/utils/common_strings.dart';
 import 'package:schat/utils/common_spaces.dart';
@@ -37,11 +36,14 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_e
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
+import 'widgets/schedule_message_bottom_sheet.dart';
+import 'widgets/location_share_bottom_sheet.dart';
 import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
 import 'group_info_page.dart';
 import 'shared_media_page.dart';
+import 'attachment_preview_page.dart';
 import 'package:schat/utils/permission_helper.dart';
 import '../../../call_screen/call_screen.dart';
 import '../domain/models/message_model.dart';
@@ -68,6 +70,7 @@ class ChatPage extends StatefulWidget {
   final String? initialSharedFilePath;
   final String? initialSharedFileName;
   final String? initialSharedFileType;
+  final int? initialDisappearingTimer;
 
   const ChatPage({
     super.key,
@@ -83,6 +86,7 @@ class ChatPage extends StatefulWidget {
     this.initialSharedFilePath,
     this.initialSharedFileName,
     this.initialSharedFileType,
+    this.initialDisappearingTimer,
   });
 
   @override
@@ -139,6 +143,7 @@ class _ChatPageState extends State<ChatPage> {
   StreamSubscription? _screenshotSubscription;
   bool _isAdmin = false;
 
+  @override
   void initState() {
     super.initState();
     if (widget.isGroup) {
@@ -356,7 +361,7 @@ class _ChatPageState extends State<ChatPage> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: pinnedMessages.length,
-                  separatorBuilder: (_, __) => const Divider(),
+                  separatorBuilder: (_, _) => const Divider(),
                   itemBuilder: (context, index) {
                     final msg = pinnedMessages[index];
                     return ListTile(
@@ -767,12 +772,10 @@ class _ChatPageState extends State<ChatPage> {
       menuItems.addAll([
         _menuPopupItem(context, 'Reply', CommonIcons.reply),
         _menuPopupItem(context, 'Copy', CommonIcons.copy),
-        if (isMe) _menuPopupItem(context, 'Edit', CommonIcons.edit),
         _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
         if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
         _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
         _menuPopupItem(context, 'Select', CommonIcons.selectAll),
-        _menuPopupItem(context, 'Delete', CommonIcons.deleteOutline, isDestructive: true),
       ]);
     } else {
       menuItems.addAll([
@@ -781,7 +784,6 @@ class _ChatPageState extends State<ChatPage> {
         if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
         _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
         _menuPopupItem(context, 'Select', CommonIcons.selectAll),
-        _menuPopupItem(context, 'Delete', CommonIcons.deleteOutline, isDestructive: true),
       ]);
     }
 
@@ -1307,7 +1309,7 @@ class _ChatPageState extends State<ChatPage> {
                                           // Send socket message only if API is skipped (temp message) or fails
                                           _sendForwardSocketMessage(socketRepo, chat.id, msg);
                                         },
-                                        failure: (_, __) {},
+                                        failure: (_, _) {},
                                       );
                                     } catch (e) {
                                       debugPrint('Error forwarding to ${user.username}: $e');
@@ -1685,6 +1687,7 @@ class _ChatPageState extends State<ChatPage> {
             'allowDownload': allowDownload,
             'allowView': allowView,
           },
+          expiry: _getExpiryData(),
         ));
       }
     } else if (mounted) {
@@ -1797,6 +1800,20 @@ class _ChatPageState extends State<ChatPage> {
     _typingIndicatorTimer = null;
   }
 
+  Map<String, dynamic>? _getExpiryData() {
+    final state = _chatBloc.state;
+    if (state is ChatLoaded) {
+      final timer = state.disappearingTimer;
+      if (timer != null && timer > 0) {
+        return {
+          'timer_seconds': timer,
+          'expires_at': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer,
+        };
+      }
+    }
+    return null;
+  }
+
   Future<void> _sendMessage(BuildContext context) async {
     final text = _messageController.text.trim();
 
@@ -1841,6 +1858,7 @@ class _ChatPageState extends State<ChatPage> {
           type: 'text',
           text: text,
           replyMessageId: _replyingToMessage?.id,
+          expiry: _getExpiryData(),
         ));
       }
 
@@ -1884,13 +1902,24 @@ class _ChatPageState extends State<ChatPage> {
 
     if (type == 'location' || type == 'contact') {
       final String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+      
+      double? lat;
+      double? lng;
+      if (type == 'location' && path != null && path.contains(',')) {
+        final parts = path.split(',');
+        lat = double.tryParse(parts[0]);
+        lng = double.tryParse(parts[1]);
+      }
 
       _chatBloc.add(SendMessageEvent(
         conversationId: widget.conversationId,
         text: caption.isNotEmpty ? caption : name,
         type: type,
-        attachmentPath: path,
+        attachmentPath: type == 'location' ? null : path, // Remove from fileKey
         attachmentName: name,
+        latitude: lat,
+        longitude: lng,
+        title: type == 'location' ? name : null,
         allowShare: allowShare,
         allowDownload: allowDownload,
         allowView: allowView,
@@ -1909,7 +1938,10 @@ class _ChatPageState extends State<ChatPage> {
           conversationId: widget.conversationId,
           type: type,
           text: caption.isNotEmpty ? caption : name,
-          fileKey: path,
+          fileKey: type == 'location' ? null : path, // Remove from fileKey
+          latitude: lat,
+          longitude: lng,
+          title: type == 'location' ? name : null,
           security: {
             'allowShare': allowShare,
             'allowDownload': allowDownload,
@@ -1920,6 +1952,7 @@ class _ChatPageState extends State<ChatPage> {
             'allowDownload': allowDownload,
             'allowView': allowView,
           },
+          expiry: _getExpiryData(),
         ));
       }
       return;
@@ -2021,6 +2054,7 @@ class _ChatPageState extends State<ChatPage> {
             'allowDownload': allowDownload,
             'allowView': allowView,
           },
+          expiry: _getExpiryData(),
         ));
       }
     } else if (context.mounted) {
@@ -2061,6 +2095,7 @@ class _ChatPageState extends State<ChatPage> {
           type: 'text',
           text: msg.content,
           replyMessageId: msg.replyMessageId,
+          expiry: _getExpiryData(),
         ));
       }
     } else {
@@ -2101,6 +2136,7 @@ class _ChatPageState extends State<ChatPage> {
               'allowDownload': msg.allowDownload,
               'allowView': msg.allowView,
             },
+            expiry: _getExpiryData(),
           ));
         }
       } else {
@@ -2462,26 +2498,58 @@ class _ChatPageState extends State<ChatPage> {
                                     }
                                   }
 
-                                  final bubble = GestureDetector(
-                                    onTapDown: (details) {
-                                      _tapPosition = details.globalPosition;
-                                    },
-                                    onLongPress: () {
-                                      if (msg.isDeleted) return;
-                                      if (_selectedMessageIds.isEmpty) {
-                                        _showMessageMenu(context, msg, isMe, _tapPosition, state is ChatLoaded ? state.isRecipientOnline : false);
-                                      }
-                                    },
-                                    onTap: () {
-                                      if (msg.isDeleted) return;
-                                      if (_selectedMessageIds.isNotEmpty) {
+                                  final bubble = Dismissible(
+                                    key: ValueKey('dismiss_${msg.id}'),
+                                    direction: DismissDirection.horizontal,
+                                    confirmDismiss: (direction) async {
+                                      if (direction == DismissDirection.startToEnd) {
+                                        // Swipe right to delete
+                                        _showDeleteDialog(context, [msg]);
+                                        return false; // Don't dismiss from widget tree
+                                      } else if (direction == DismissDirection.endToStart) {
+                                        // Swipe left to reply
                                         setState(() {
-                                          if (_selectedMessageIds.contains(msg.id)) {
-                                            _selectedMessageIds.remove(msg.id);
-                                          } else {
-                                            _selectedMessageIds.add(msg.id);
-                                          }
+                                          _replyingToMessage = msg;
+                                          _editingMessage = null;
+                                          _messageController.clear();
+                                          _inputFocusNode.requestFocus();
                                         });
+                                        return false;
+                                      }
+                                      return false;
+                                    },
+                                    background: Container(
+                                      alignment: Alignment.centerLeft,
+                                      padding: const EdgeInsets.only(left: 20.0),
+                                      color: Colors.redAccent.withValues(alpha: 0.15),
+                                      child: const Icon(CommonIcons.deleteOutline, color: Colors.redAccent),
+                                    ),
+                                    secondaryBackground: Container(
+                                      alignment: Alignment.centerRight,
+                                      padding: const EdgeInsets.only(right: 20.0),
+                                      color: context.colors.primary.withValues(alpha: 0.15),
+                                      child: Icon(CommonIcons.reply, color: context.colors.primary),
+                                    ),
+                                    child: GestureDetector(
+                                      onTapDown: (details) {
+                                        _tapPosition = details.globalPosition;
+                                      },
+                                      onLongPress: () {
+                                        if (msg.isDeleted) return;
+                                        if (_selectedMessageIds.isEmpty) {
+                                          _showMessageMenu(context, msg, isMe, _tapPosition, state is ChatLoaded ? state.isRecipientOnline : false);
+                                        }
+                                      },
+                                      onTap: () {
+                                        if (msg.isDeleted) return;
+                                        if (_selectedMessageIds.isNotEmpty) {
+                                          setState(() {
+                                            if (_selectedMessageIds.contains(msg.id)) {
+                                              _selectedMessageIds.remove(msg.id);
+                                            } else {
+                                              _selectedMessageIds.add(msg.id);
+                                            }
+                                          });
                                       }
                                     },
                                     child: MessageBubble(
@@ -2495,6 +2563,10 @@ class _ChatPageState extends State<ChatPage> {
                                       isDeleted: msg.isDeleted,
                                       isGroup: widget.isGroup,
                                       type: msg.mediaType ?? 'text',
+                                      latitude: msg.latitude,
+                                      longitude: msg.longitude,
+                                      address: msg.address,
+                                      locationTitle: msg.locationTitle,
                                       attachmentPath: msg.mediaUrl,
                                       attachmentName: msg.attachmentName ?? (msg.content.isNotEmpty ? msg.content : 'File'),
                                       attachmentBytes: msg.attachmentBytes,
@@ -2518,7 +2590,8 @@ class _ChatPageState extends State<ChatPage> {
                                       callMeta: msg.callMeta,
                                       isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
                                     ),
-                                  );
+                                  ),
+                                );
 
                                   if (showDateSeparator && msgDay != null) {
                                     return Column(
@@ -3090,7 +3163,8 @@ class _ChatPageState extends State<ChatPage> {
                 );
               }
             } else if (value == 'disappearing') {
-              _showDisappearingMessagesBottomSheet(context);
+              final currentTimer = state is ChatLoaded ? state.disappearingTimer : null;
+              _showDisappearingMessagesBottomSheet(context, currentTimer);
             } else if (value == 'mute') {
               final isMuted = state is ChatLoaded && state.isMuted;
               _chatBloc.add(ToggleMuteEvent(isMuted: !isMuted));
@@ -3160,6 +3234,8 @@ class _ChatPageState extends State<ChatPage> {
               if (confirm == true) {
                 _chatBloc.add(ClearChatEvent(conversationId: widget.conversationId));
               }
+            } else if (value == 'scheduled') {
+              _showScheduleMessageBottomSheet(context);
             }
           },
           itemBuilder: (BuildContext context) {
@@ -3170,6 +3246,7 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('search', CommonIcons.search, 'Search'),
                 _buildMenuItem('group_info', CommonIcons.infoOutline, 'Group info'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Group media'),
+                _buildMenuItem('scheduled', Icons.schedule_rounded, 'Scheduled messages'),
                 if (_isAdmin)
                   _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('favourite', isFav ? Icons.star_rounded : Icons.star_outline_rounded, isFav ? 'Remove from favorites' : 'Add to favorites'),
@@ -3185,6 +3262,7 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('new_group', Icons.group_add_rounded, 'New group'),
                 _buildMenuItem('view_contact', CommonIcons.personOutline, 'View contact'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Media, links, and docs'),
+                _buildMenuItem('scheduled', Icons.schedule_rounded, 'Scheduled messages'),
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
                 _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
@@ -3630,7 +3708,7 @@ class _ChatPageState extends State<ChatPage> {
             });
           }
         },
-        failure: (_, __) {},
+        failure: (_, _) {},
       );
     } catch (e) {
       debugPrint('Error checking contact: $e');
@@ -3649,17 +3727,35 @@ class _ChatPageState extends State<ChatPage> {
     final Uint8List bytes = await image.readAsBytes();
     if (!mounted) return;
 
-    setState(() {
-      _selectedAttachmentPath = kIsWeb ? null : image.path;
-      _selectedAttachmentBytes = bytes;
-      _selectedAttachmentName = name;
-      _selectedAttachmentType = 'image';
-      _selectedAttachmentSize = size;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
-      _attachmentAllowView = true;
-      _isTyping = true;
-    });
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AttachmentPreviewPage(
+          path: kIsWeb ? null : image.path,
+          bytes: bytes,
+          name: name,
+          type: 'image',
+          size: size,
+          contactName: widget.contactName,
+        ),
+      ),
+    );
+
+    if (result != null && result['send'] == true && mounted) {
+      final caption = result['caption'] as String;
+      setState(() {
+        _selectedAttachmentPath = kIsWeb ? null : image.path;
+        _selectedAttachmentBytes = bytes;
+        _selectedAttachmentName = name;
+        _selectedAttachmentType = 'image';
+        _selectedAttachmentSize = size;
+        _attachmentAllowShare = true;
+        _attachmentAllowDownload = true;
+        _attachmentAllowView = true;
+        _messageController.text = caption;
+      });
+      _uploadAndSendAttachment(context);
+    }
   }
 
   /// Shows a bottom sheet with Photo / Video options when the camera icon is tapped.
@@ -3785,17 +3881,35 @@ class _ChatPageState extends State<ChatPage> {
       final Uint8List bytes = await video.readAsBytes();
       if (!mounted) return;
 
-      setState(() {
-        _selectedAttachmentPath = video.path;
-        _selectedAttachmentBytes = bytes;
-        _selectedAttachmentName = name;
-        _selectedAttachmentType = 'video';
-        _selectedAttachmentSize = size;
-        _attachmentAllowShare = true;
-        _attachmentAllowDownload = true;
-        _attachmentAllowView = true;
-        _isTyping = true;
-      });
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AttachmentPreviewPage(
+            path: video.path,
+            bytes: bytes,
+            name: name,
+            type: 'video',
+            size: size,
+            contactName: widget.contactName,
+          ),
+        ),
+      );
+
+      if (result != null && result['send'] == true && mounted) {
+        final caption = result['caption'] as String;
+        setState(() {
+          _selectedAttachmentPath = video.path;
+          _selectedAttachmentBytes = bytes;
+          _selectedAttachmentName = name;
+          _selectedAttachmentType = 'video';
+          _selectedAttachmentSize = size;
+          _attachmentAllowShare = true;
+          _attachmentAllowDownload = true;
+          _attachmentAllowView = true;
+          _messageController.text = caption;
+        });
+        _uploadAndSendAttachment(context);
+      }
     } catch (e) {
       debugPrint('Video picker error: $e');
       if (mounted) {
@@ -3882,17 +3996,35 @@ class _ChatPageState extends State<ChatPage> {
         }
       }
 
-      setState(() {
-        _selectedAttachmentPath = file.path;
-        _selectedAttachmentBytes = file.bytes;
-        _selectedAttachmentName = file.name;
-        _selectedAttachmentType = fileType;
-        _selectedAttachmentSize = file.size;
-        _attachmentAllowShare = true;
-        _attachmentAllowDownload = true;
-        _attachmentAllowView = true;
-        _isTyping = true;
-      });
+      final previewResult = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AttachmentPreviewPage(
+            path: file.path,
+            bytes: file.bytes,
+            name: file.name,
+            type: fileType,
+            size: file.size,
+            contactName: widget.contactName,
+          ),
+        ),
+      );
+
+      if (previewResult != null && previewResult['send'] == true && mounted) {
+        final caption = previewResult['caption'] as String;
+        setState(() {
+          _selectedAttachmentPath = file.path;
+          _selectedAttachmentBytes = file.bytes;
+          _selectedAttachmentName = file.name;
+          _selectedAttachmentType = fileType;
+          _selectedAttachmentSize = file.size;
+          _attachmentAllowShare = true;
+          _attachmentAllowDownload = true;
+          _attachmentAllowView = true;
+          _messageController.text = caption;
+        });
+        _uploadAndSendAttachment(context);
+      }
     } catch (e) {
       debugPrint('File picker error: $e');
       if (mounted) {
@@ -3905,91 +4037,23 @@ class _ChatPageState extends State<ChatPage> {
 
   void _showLocationPicker(BuildContext ctx) {
     showModalBottomSheet(
-      context: ctx,
-      backgroundColor: ctx.colors.scaffoldBackground,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40, height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: ctx.colors.textHint.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Row(
-              children: [
-                Icon(CommonIcons.location, color: ctx.colors.primary, size: 28),
-                CommonSpaces.w12,
-                Text('Share Location', style: ctx.titleMedium),
-              ],
-            ),
-            CommonSpaces.h20,
-            // Map placeholder
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 180,
-                color: ctx.colors.lightBackground,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Grid to simulate a map
-                    GridView.builder(
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 6),
-                      itemCount: 36,
-                      itemBuilder: (_, _) => Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: ctx.colors.textHint.withValues(alpha: 0.15)),
-                          color: ctx.colors.lightBackground,
-                        ),
-                      ),
-                    ),
-                    Icon(CommonIcons.location, color: ctx.colors.primary, size: 48),
-                  ],
-                ),
-              ),
-            ),
-            CommonSpaces.h16,
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: Icon(CommonIcons.myLocation, color: ctx.colors.primary),
-                    label: const Text('Current Location'),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      setState(() {
-                        _selectedAttachmentPath = 'location';
-                        _selectedAttachmentName = 'My Location';
-                        _selectedAttachmentType = 'location';
-                        _selectedAttachmentBytes = null;
-                        _selectedAttachmentSize = 0;
-                        _attachmentAllowShare = true;
-                        _attachmentAllowDownload = true;
-                        _attachmentAllowView = true;
-                        _isTyping = true;
-                      });
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: ctx.colors.primary,
-                      side: BorderSide(color: ctx.colors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => LocationShareBottomSheet(
+        onSendLocation: (lat, lng) {
+          setState(() {
+            _selectedAttachmentPath = '$lat,$lng';
+            _selectedAttachmentName = 'My Location';
+            _selectedAttachmentType = 'location';
+            _selectedAttachmentBytes = null;
+            _selectedAttachmentSize = 0;
+            _attachmentAllowShare = true;
+            _attachmentAllowDownload = true;
+            _attachmentAllowView = true;
+          });
+          if (mounted) _uploadAndSendAttachment(context);
+        },
       ),
     );
   }
@@ -4183,7 +4247,110 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showDisappearingMessagesBottomSheet(BuildContext context) {
+  Future<void> _showScheduleMessageBottomSheet(BuildContext context) async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (dialogCtx) => ScheduleMessageBottomSheet(
+        contactName: widget.contactName,
+      ),
+    );
+
+    if (result != null && mounted) {
+      final DateTime scheduledTime = result['scheduledDateTime'] as DateTime;
+      final String text = result['text'] ?? '';
+      final File? attachment = result['attachment'] as File?;
+      final ScheduledMessageType type = result['type'] as ScheduledMessageType;
+
+      String messageTypeStr = 'text';
+      String? fileKey;
+      String? fileName;
+      int fileSize = 0;
+      String? mimeType;
+
+      if (type == ScheduledMessageType.image) {
+        messageTypeStr = 'image';
+      } else if (type == ScheduledMessageType.document) {
+        messageTypeStr = 'document';
+      } else if (type == ScheduledMessageType.audio) {
+        messageTypeStr = 'audio';
+      }
+
+      if (attachment != null) {
+        fileName = attachment.path.split('/').last;
+        fileSize = await attachment.length();
+        mimeType = _getMimeType(attachment.path, messageTypeStr);
+        
+        fileKey = await getIt<ChatRepository>().uploadMedia(
+          conversationId: widget.conversationId,
+          filePath: attachment.path,
+          fileName: fileName,
+          mediaType: _getMediaType(messageTypeStr),
+          mimeType: mimeType,
+          fileSizeBytes: fileSize,
+        );
+      }
+
+      final requestData = {
+        "conversationId": widget.conversationId,
+        "messageType": messageTypeStr,
+        "parentMessageId": null,
+        "content": {
+          "text": text,
+          "fileKey": fileKey,
+          "thumbnail": null,
+          "fileName": fileName,
+          "fileSize": fileSize,
+          "mimeType": mimeType,
+          "duration": 0,
+          "isForwarded": false,
+          "forwardedFromMessageId": null,
+          "forwardCount": 0,
+          "contactName": null,
+          "phoneNumber": null,
+          "latitude": null,
+          "longitude": null,
+          "address": null,
+          "isEdited": false,
+          "editedAt": null
+        },
+        "security": {
+          "isLocked": false,
+          "accessUsers": [],
+          "allowDownload": true,
+          "allowShare": true,
+          "allowView": true
+        },
+        "viewControl": {
+          "type": "normal",
+          "maxViews": 1,
+          "viewedBy": [],
+          "isOpened": false,
+          "openedAt": null
+        },
+        "expiry": {
+          "isEnabled": false,
+          "expireType": null,
+          "expireAt": null,
+          "disappearAfterRead": false,
+          "readTimerSeconds": 0
+        },
+        "callMeta": null,
+        "scheduledAt": scheduledTime.toUtc().toIso8601String()
+      };
+
+      _chatBloc.add(ScheduleMessageEvent(requestData));
+
+      final formattedTime =
+          '${scheduledTime.year}-${scheduledTime.month.toString().padLeft(2, '0')}-${scheduledTime.day.toString().padLeft(2, '0')} '
+          '${scheduledTime.hour.toString().padLeft(2, '0')}:${scheduledTime.minute.toString().padLeft(2, '0')}:${scheduledTime.second.toString().padLeft(2, '0')}';
+
+      context.showSuccessNotification('Message scheduled for $formattedTime');
+    }
+  }
+
+  void _showDisappearingMessagesBottomSheet(BuildContext context, int? currentTimer) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -4225,11 +4392,11 @@ class _ChatPageState extends State<ChatPage> {
                   style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
                 ),
                 CommonSpaces.h24,
-                _buildDisappearingOption(context, 'Off', 0),
-                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
-                _buildDisappearingOption(context, '24 hours', 86400),
-                _buildDisappearingOption(context, '7 days', 604800),
-                _buildDisappearingOption(context, '30 days', 2592000),
+                _buildDisappearingOption(context, 'Off', 0, currentTimer),
+                _buildDisappearingOption(context, '30 minutes', 1800, currentTimer, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
+                _buildDisappearingOption(context, '7 days', 604800, currentTimer),
+                _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
                 CommonSpaces.h20,
               ],
             ),
@@ -4239,11 +4406,14 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer, {bool isCustomTimeOption = false}) {
+    final bool isSelected = (currentTimer == seconds) || (currentTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: context.colors.primary)
+          : const Icon(Icons.chevron_right_rounded),
       onTap: () async {
         int? finalSeconds = seconds == 0 ? null : seconds;
         String finalLabel = label;

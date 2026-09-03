@@ -261,6 +261,7 @@ class _UserListPageState extends State<UserListPage> {
                         recipientId: chat.recipient.id,
                         profilePictureUrl: profilePictureUrl,
                         initialThemeColor: chat.themeColor,
+                        initialDisappearingTimer: chat.disappearingTimer,
                       ),
                     ),
                   ).then((_) {

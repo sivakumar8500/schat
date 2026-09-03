@@ -18,8 +18,8 @@ class SecureAttachmentService {
   final Dio _dio;
   final Dio _cleanDio;
 
-  SecureAttachmentService(this._storageService, Dio? dio)
-      : _dio = dio ?? Dio(),
+  SecureAttachmentService(this._storageService)
+      : _dio = Dio(),
         _cleanDio = Dio(BaseOptions(
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
@@ -62,10 +62,10 @@ class SecureAttachmentService {
       if (host == '13.201.205.176' || host == '10.0.2.2' || host == 'localhost') {
         s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
       } else {
-        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
     } catch (_) {
-      s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+      s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
     }
     return '$s3BaseUrl$path';
   }

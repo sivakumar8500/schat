@@ -12,7 +12,6 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
-import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -22,6 +21,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart' show CallMeta;
@@ -67,6 +67,11 @@ class MessageBubble extends StatelessWidget {
   final CallMeta? callMeta;
   final bool isRecipientOnline;
   final VoidCallback? onReplyTap;
+  final int? pinnedAt;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+  final String? locationTitle;
 
   const MessageBubble({
     super.key,
@@ -106,7 +111,35 @@ class MessageBubble extends StatelessWidget {
     this.isRecipientOnline = false,
     this.onReplyTap,
     this.duration,
+    this.pinnedAt,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.locationTitle,
   });
+
+  String _formatSystemMessage(String msg) {
+    final RegExp regex = RegExp(r'(\d+)\s*seconds?');
+    return msg.replaceAllMapped(regex, (match) {
+      final secondsStr = match.group(1);
+      if (secondsStr != null) {
+        final int seconds = int.tryParse(secondsStr) ?? 0;
+        if (seconds == 0) return 'Off';
+        if (seconds < 60) return '$seconds seconds';
+        if (seconds < 3600) {
+          final mins = seconds ~/ 60;
+          return '$mins min';
+        }
+        if (seconds < 86400) {
+          final hours = seconds ~/ 3600;
+          return '$hours hr';
+        }
+        final days = seconds ~/ 86400;
+        return '$days day${days > 1 ? 's' : ''}';
+      }
+      return match.group(0)!;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -116,27 +149,36 @@ class MessageBubble extends StatelessWidget {
         _isGroupEvent(message);
 
     if (isSystemMessage) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 24.0),
-          padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 12.0),
-          decoration: BoxDecoration(
-            color: context.colors.isDark
-                ? const Color(0xFF263238) // Dark bluish gray (BlueGrey 900)
-                : const Color(0xFFECEFF1), // Light bluish gray (BlueGrey 50)
-            borderRadius: BorderRadius.circular(12.0),
-          ),
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: context.bodyMedium.copyWith(
-              color: context.colors.isDark
-                  ? const Color(0xFFB0BEC5) // Light bluish gray text for dark mode
-                  : const Color(0xFF546E7A), // Dark bluish gray text for light mode
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            const Expanded(child: Divider(indent: 16, endIndent: 8)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              decoration: BoxDecoration(
+                color: context.colors.lightBackground,
+                borderRadius: BorderRadius.circular(12.0),
+                border: Border.all(
+                  color: context.colors.border,
+                  width: 0.5,
+                ),
+              ),
+              child: Text(
+                _formatSystemMessage(message),
+                textAlign: TextAlign.center,
+                style: context.bodySmall.copyWith(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
             ),
-          ),
+            const Expanded(child: Divider(indent: 8, endIndent: 16)),
+          ],
         ),
       );
     }
@@ -273,6 +315,7 @@ class MessageBubble extends StatelessWidget {
                           fontSize: 16,
                           color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
                         ),
+                        type == 'location' ? '' : message,
                       ),
                       if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
                       Row(
@@ -367,7 +410,7 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildAttachment(BuildContext context) {
-    if (attachmentPath == null && attachmentBytes == null && type != 'call') {
+    if (attachmentPath == null && attachmentBytes == null && type != 'call' && type != 'location') {
       return const SizedBox.shrink();
     }
 
@@ -426,10 +469,10 @@ class MessageBubble extends StatelessWidget {
             if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
               s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
             } else {
-              s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+              s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
             }
           } catch (_) {
-            s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+            s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
           }
           final s3Url = '$s3BaseUrl$displayUrl';
           imageWidget = Image.network(
@@ -537,64 +580,114 @@ class MessageBubble extends StatelessWidget {
         result = _buildFileBubbleCard(context);
       }
     } else if (type == 'location') {
+      double lat = latitude ?? 0.0;
+      double lng = longitude ?? 0.0;
+      
+      // Fallback for old messages that might still use attachmentPath
+      if (lat == 0.0 && lng == 0.0 && attachmentPath != null && attachmentPath!.contains(',')) {
+        final parts = attachmentPath!.split(',');
+        if (parts.length == 2) {
+          lat = double.tryParse(parts[0]) ?? 0.0;
+          lng = double.tryParse(parts[1]) ?? 0.0;
+        }
+      }
+
       result = Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            height: 120,
-            width: 200,
-            color: isMe
-                ? context.colors.pureWhite.withValues(alpha: 0.15)
-                : context.colors.lightBackground,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 5,
-                  ),
-                  itemCount: 25,
-                  itemBuilder: (_, _) => Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: context.colors.textHint.withValues(alpha: 0.2),
+        child: GestureDetector(
+          onTap: () async {
+            if (lat != 0.0 && lng != 0.0) {
+              final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+              try {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } catch (e) {
+                if (context.mounted) {
+                  context.showErrorNotification('Could not open Maps');
+                }
+              }
+            }
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              height: 180,
+              width: 260,
+              color: isMe
+                  ? context.colors.pureWhite.withValues(alpha: 0.15)
+                  : context.colors.lightBackground,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (lat != 0.0 && lng != 0.0)
+                    GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: LatLng(lat, lng),
+                        zoom: 15,
                       ),
-                    ),
-                  ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      CommonIcons.location,
-                      color: context.colors.error,
-                      size: 36,
-                    ),
+                      liteModeEnabled: true,
+                      zoomControlsEnabled: false,
+                      myLocationButtonEnabled: false,
+                      mapToolbarEnabled: false,
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('loc'),
+                          position: LatLng(lat, lng),
+                        ),
+                      },
+                    )
+                  else
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
+                      color: context.colors.lightBackground,
+                    ),
+                  if (lat == 0.0 && lng == 0.0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isMe
-                            ? context.colors.pureWhite.withValues(alpha: 0.8)
-                            : context.colors.lightBackground,
+                        color: context.colors.scaffoldBackground.withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(
-                        'My Location',
-                        style: context.bodySmall.copyWith(
-                          fontSize: 11,
-                          color: context.colors.textPrimary,
-                          fontWeight: FontWeight.bold,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            CommonIcons.location,
+                            color: context.colors.error,
+                            size: 36,
+                          ),
+                          CommonSpaces.h8,
+                          Text(
+                            'Location',
+                            style: context.bodySmall.copyWith(
+                              fontSize: 11,
+                              color: context.colors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  // Coordinate overlay
+                  if (lat != 0.0 && lng != 0.0)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                        color: Colors.black.withValues(alpha: 0.6),
+                        child: Text(
+                          'Lat: $lat, Lng: $lng',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -631,12 +724,12 @@ class MessageBubble extends StatelessWidget {
 
       // Sanitize phone for dialer: take only first number (if comma/semicolon separated),
       // strip all formatting but keep leading '+' and digits (preserves country codes).
-      String _sanitizePhone(String raw) {
+      String sanitizePhone(String raw) {
         final first = raw.split(RegExp(r'[,;]')).first.trim();
         return first.replaceAll(RegExp(r'[^\d+]'), '');
       }
 
-      final cleanedPhone = _sanitizePhone(phone.isNotEmpty ? phone : displayPhone);
+      final cleanedPhone = sanitizePhone(phone.isNotEmpty ? phone : displayPhone);
 
       result = GestureDetector(
         onTap: () {
@@ -727,8 +820,8 @@ class MessageBubble extends StatelessWidget {
                         displayPhone,
                         style: context.bodySmall.copyWith(
                           color: isSchatUser 
-                              ? (isMe ? context.colors.pureWhite.withOpacity(0.7) : context.colors.textSecondary)
-                              : (isMe ? context.colors.pureWhite.withOpacity(0.4) : context.colors.textHint), // blur/muted color!
+                              ? (isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary)
+                              : (isMe ? context.colors.pureWhite.withValues(alpha: 0.4) : context.colors.textHint), // blur/muted color!
                           fontSize: 11,
                         ),
                         maxLines: 1,
@@ -1116,10 +1209,10 @@ class MessageBubble extends StatelessWidget {
         if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
         }
       } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
       url = '$s3BaseUrl$url';
     }
@@ -1180,10 +1273,10 @@ class MessageBubble extends StatelessWidget {
         if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
         }
       } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
       url = '$s3BaseUrl$url';
     }
@@ -1214,6 +1307,8 @@ class MessageBubble extends StatelessWidget {
         }
       },
     );
+
+    if (!context.mounted) return;
 
     messenger.hideCurrentSnackBar();
     final savePath = downloadedFile?.path ?? 'Schat secure storage';
@@ -1514,7 +1609,7 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildMessageText(BuildContext context, TextStyle baseStyle) {
+  Widget _buildMessageText(BuildContext context, TextStyle baseStyle, String text) {
     if (isDeleted) {
       final deletedStyle = baseStyle.copyWith(
         fontStyle: FontStyle.italic,
@@ -1542,7 +1637,7 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    if (message.isEmpty || (type != 'text' && message == attachmentName)) {
+    if (text.isEmpty || (type != 'text' && text == attachmentName)) {
       return const SizedBox.shrink();
     }
 
@@ -1551,10 +1646,10 @@ class MessageBubble extends StatelessWidget {
       caseSensitive: false,
     );
 
-    final matches = urlRegex.allMatches(message);
+    final matches = urlRegex.allMatches(text);
     if (matches.isEmpty) {
       return Text(
-        message,
+        text,
         style: baseStyle,
       );
     }
@@ -1565,11 +1660,11 @@ class MessageBubble extends StatelessWidget {
     for (final match in matches) {
       if (match.start > lastEnd) {
         spans.add(TextSpan(
-          text: message.substring(lastEnd, match.start),
+          text: text.substring(lastEnd, match.start),
         ));
       }
 
-      final url = message.substring(match.start, match.end);
+      final url = text.substring(match.start, match.end);
       final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
 
       spans.add(TextSpan(
@@ -1608,9 +1703,9 @@ class MessageBubble extends StatelessWidget {
       lastEnd = match.end;
     }
 
-    if (lastEnd < message.length) {
+    if (lastEnd < text.length) {
       spans.add(TextSpan(
-        text: message.substring(lastEnd),
+        text: text.substring(lastEnd),
       ));
     }
 
@@ -1650,6 +1745,7 @@ class MessageBubble extends StatelessWidget {
       'group description updated',
       'changed the theme',
       'changed chat theme',
+      'disappearing',
     ];
 
     return patterns.any((pattern) => lowerMsg.contains(pattern));
@@ -1719,10 +1815,10 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
         }
       } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
       url = '$s3BaseUrl$url';
     }
@@ -1899,10 +1995,10 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
         if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
         }
       } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.ap-south-1.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
       url = '$s3BaseUrl$url';
     }

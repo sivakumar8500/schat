@@ -9,7 +9,6 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
-import 'package:schat/injection.dart';
 import 'contacts_event.dart';
 import 'contacts_state.dart';
 

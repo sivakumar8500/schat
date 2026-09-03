@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:injectable/injectable.dart';
@@ -12,7 +11,8 @@ import 'package:schat/features/profile_screen/src/domain/models/blocked_group_mo
 import 'package:schat/features/profile_screen/src/domain/models/phone_lookup_response.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/utils/common_endpoints.dart';
-
+import 'package:schat/features/profile_screen/src/data/models/add_emergency_contact_request.dart';
+import 'package:schat/features/profile_screen/src/data/models/emergency_contact_response.dart';
 @LazySingleton(as: ProfileRepository)
 class ProfileRepositoryImpl implements ProfileRepository {
   final ApiService _apiService;
@@ -181,7 +181,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
   Future<ApiResult<void>> blockUser(String userId) async {
     return _apiService.post<void>(
       CommonEndpoints.blockUser(userId),
-      mapper: (_) => null,
+      mapper: (_) {},
     );
   }
 
@@ -189,7 +189,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
   Future<ApiResult<void>> unblockUser(String userId) async {
     return _apiService.post<void>(
       CommonEndpoints.unblockUser(userId),
-      mapper: (_) => null,
+      mapper: (_) {},
     );
   }
 
@@ -225,6 +225,40 @@ class ProfileRepositoryImpl implements ProfileRepository {
       CommonEndpoints.lookupUser,
       queryParameters: {'phone_number': phoneNumber},
       mapper: (json) => PhoneLookupResponse.fromJson(Map<String, dynamic>.from(json as Map)),
+    );
+  }
+
+  @override
+  Future<ApiResult<EmergencyContactResponse>> getAllEmergencyContacts() async {
+    return _apiService.get<EmergencyContactResponse>(
+      CommonEndpoints.allEmergencyContacts,
+      mapper: (json) => EmergencyContactResponse.fromJson(Map<String, dynamic>.from(json as Map)),
+    );
+  }
+
+  @override
+  Future<ApiResult<PersonalContact>> addEmergencyContact(AddEmergencyContactRequest request) async {
+    return _apiService.post<PersonalContact>(
+      CommonEndpoints.emergencyContacts,
+      data: request.toJson(),
+      mapper: (json) => PersonalContact.fromJson(Map<String, dynamic>.from(json as Map)),
+    );
+  }
+
+  @override
+  Future<ApiResult<PersonalContact>> updateEmergencyContact(String contactId, String contactName) async {
+    return _apiService.put<PersonalContact>(
+      CommonEndpoints.emergencyContact(contactId),
+      data: {'contactName': contactName},
+      mapper: (json) => PersonalContact.fromJson(Map<String, dynamic>.from(json as Map)),
+    );
+  }
+
+  @override
+  Future<ApiResult<void>> deleteEmergencyContact(String contactId) async {
+    return _apiService.delete<void>(
+      CommonEndpoints.emergencyContact(contactId),
+      mapper: (_) {},
     );
   }
 }

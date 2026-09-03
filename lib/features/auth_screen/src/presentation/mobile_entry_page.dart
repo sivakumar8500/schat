@@ -12,7 +12,8 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:sms_autofill/sms_autofill.dart';
-
+import 'package:schat/injection.dart';
+import 'package:schat/core/notifications/call_notification_service.dart';
 class MobileEntryPage extends StatefulWidget {
   const MobileEntryPage({super.key});
 
@@ -27,6 +28,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
   void initState() {
     super.initState();
     _fetchMobileNumber();
+    getIt<CallNotificationService>().registerDevice();
   }
 
   Future<void> _fetchMobileNumber() async {

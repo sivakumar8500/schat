@@ -1,8 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
+import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/chat_search/src/presentation/chat_search_page.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
@@ -58,6 +62,29 @@ class _DashboardPageState extends State<DashboardPage> {
     _loadMutedChats();
     // Initialize socket connection when dashboard is loaded
     context.read<ChatSocketBloc>().add(const ConnectSocket());
+    
+    // Fetch conversations now that we are authenticated
+    context.read<ChatsBloc>().add(const FetchChats());
+    
+    // Setup and sync push notifications & call tokens since we are authenticated
+    _setupNotifications();
+  }
+
+  Future<void> _setupNotifications() async {
+    final pushService = getIt<PushNotificationService>();
+    final callService = getIt<CallNotificationService>();
+    
+    // Explicitly request notification permission using permission_handler (more reliable on Android 13+)
+    if (!kIsWeb) {
+      final status = await Permission.notification.status;
+      if (status.isDenied) {
+        await Permission.notification.request();
+      }
+    }
+    
+    await pushService.initialize();
+    await pushService.registerToken();
+    await callService.registerDevice();
   }
 
   Future<void> _loadMutedChats() async {
@@ -297,6 +324,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (confirm != true) return;
 
+    if (!mounted) return;
+
     try {
       final currentState = context.read<ChatsBloc>().state;
       if (currentState is ChatsLoaded) {
@@ -320,7 +349,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     'id': chat.recipient.id,
                     'name': chat.recipient.displayName,
                     'profilePictureUrl': chat.recipient.profilePictureUrl,
-                    'colorValue': context.colors.primary.value,
+                    'colorValue': context.colors.primary.toARGB32(),
                   });
                   blockedCount++;
                 }
@@ -374,6 +403,8 @@ class _DashboardPageState extends State<DashboardPage> {
     );
 
     if (confirm != true) return;
+
+    if (!mounted) return;
 
     final chatsState = context.read<ChatsBloc>().state;
     List<ChatModel> selectedChats = [];
@@ -686,6 +717,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         recipientId: chat.id,
                         isGroup: true,
                         initialThemeColor: chat.themeColor,
+                        initialDisappearingTimer: chat.disappearingTimer,
                       ),
                     ),
                   );
@@ -1131,6 +1163,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 recipientId: chat.recipient.id,
                 isGroup: chat.isGroup,
                 initialThemeColor: chat.themeColor,
+                initialDisappearingTimer: chat.disappearingTimer,
               ),
             ),
           );

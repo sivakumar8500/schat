@@ -120,7 +120,7 @@ class ShareReceiverService {
       final res = await contactsRepo.fetchSyncedContacts();
       res.when(
         success: (list) => contacts = list,
-        failure: (_, __) {},
+        failure: (_, _) {},
       );
     }
 

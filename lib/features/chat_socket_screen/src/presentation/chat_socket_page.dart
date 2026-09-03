@@ -170,7 +170,7 @@ class _ChatSocketPageState extends State<ChatSocketPage> with SingleTickerProvid
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               DropdownButtonFormField<String>(
-                value: _messageType,
+                initialValue: _messageType,
                 decoration: _inputDecoration('Message Type'),
                 dropdownColor: context.colors.lightBackground,
                 style: context.bodyLarge,
@@ -221,7 +221,7 @@ class _ChatSocketPageState extends State<ChatSocketPage> with SingleTickerProvid
               Text('Toggle Typing Status:', style: context.bodyLarge),
               Switch(
                 value: _isTyping,
-                activeColor: context.colors.primary,
+                activeThumbColor: context.colors.primary,
                 onChanged: (val) {
                   setState(() {
                     _isTyping = val;

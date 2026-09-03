@@ -21,7 +21,7 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'subscription_type') String? subscriptionType,
     @JsonKey(name: 'created_at') @Default('') String createdAt,
     @JsonKey(name: 'updated_at') @Default('') String updatedAt,
-    @JsonKey(name: 'defaultDisappearingTimer') int? defaultDisappearingTimer,
+    @JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,
     @JsonKey(name: 'contactName') String? contactName,
   }) = _UserModel;
 
@@ -37,6 +37,7 @@ abstract class UserModel with _$UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(_normalizeUserJson(json));
 
+  @override
   Map<String, dynamic> toJson();
 }
 

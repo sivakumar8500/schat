@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$ChatModel {
 
-@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'is_group') bool get isGroup;@JsonKey(name: 'group_name') String? get groupName;@JsonKey(name: 'group_description') String? get groupDescription;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt; RecipientModel get recipient;@JsonKey(name: 'last_message') LastMessageModel? get lastMessage;@JsonKey(name: 'unread_count') int get unreadCount;@JsonKey(name: 'isHidden') bool get isHidden;@JsonKey(name: 'isHided') bool get isHided;@JsonKey(name: 'is_muted') bool get isMuted;@JsonKey(name: 'is_favorite') bool get isFavorite;@JsonKey(name: 'themeColor') ThemeColorModel? get themeColor;@JsonKey(includeFromJson: false, includeToJson: false) bool get isTyping;
+@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'is_group') bool get isGroup;@JsonKey(name: 'group_name') String? get groupName;@JsonKey(name: 'group_description') String? get groupDescription;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt; RecipientModel get recipient;@JsonKey(name: 'last_message') LastMessageModel? get lastMessage;@JsonKey(name: 'unread_count') int get unreadCount;@JsonKey(name: 'isHidden') bool get isHidden;@JsonKey(name: 'isHided') bool get isHided;@JsonKey(name: 'is_muted') bool get isMuted;@JsonKey(name: 'is_favorite') bool get isFavorite;@JsonKey(name: 'themeColor') ThemeColorModel? get themeColor;@JsonKey(name: 'disappearing_timer') int? get disappearingTimer;@JsonKey(includeFromJson: false, includeToJson: false) bool get isTyping;
 /// Create a copy of ChatModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $ChatModelCopyWith<ChatModel> get copyWith => _$ChatModelCopyWithImpl<ChatModel>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatModel&&(identical(other.id, id) || other.id == id)&&(identical(other.isGroup, isGroup) || other.isGroup == isGroup)&&(identical(other.groupName, groupName) || other.groupName == groupName)&&(identical(other.groupDescription, groupDescription) || other.groupDescription == groupDescription)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.recipient, recipient) || other.recipient == recipient)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.unreadCount, unreadCount) || other.unreadCount == unreadCount)&&(identical(other.isHidden, isHidden) || other.isHidden == isHidden)&&(identical(other.isHided, isHided) || other.isHided == isHided)&&(identical(other.isMuted, isMuted) || other.isMuted == isMuted)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.themeColor, themeColor) || other.themeColor == themeColor)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatModel&&(identical(other.id, id) || other.id == id)&&(identical(other.isGroup, isGroup) || other.isGroup == isGroup)&&(identical(other.groupName, groupName) || other.groupName == groupName)&&(identical(other.groupDescription, groupDescription) || other.groupDescription == groupDescription)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.recipient, recipient) || other.recipient == recipient)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.unreadCount, unreadCount) || other.unreadCount == unreadCount)&&(identical(other.isHidden, isHidden) || other.isHidden == isHidden)&&(identical(other.isHided, isHided) || other.isHided == isHided)&&(identical(other.isMuted, isMuted) || other.isMuted == isMuted)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.themeColor, themeColor) || other.themeColor == themeColor)&&(identical(other.disappearingTimer, disappearingTimer) || other.disappearingTimer == disappearingTimer)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,isGroup,groupName,groupDescription,createdAt,updatedAt,recipient,lastMessage,unreadCount,isHidden,isHided,isMuted,isFavorite,themeColor,isTyping);
+int get hashCode => Object.hash(runtimeType,id,isGroup,groupName,groupDescription,createdAt,updatedAt,recipient,lastMessage,unreadCount,isHidden,isHided,isMuted,isFavorite,themeColor,disappearingTimer,isTyping);
 
 @override
 String toString() {
-  return 'ChatModel(id: $id, isGroup: $isGroup, groupName: $groupName, groupDescription: $groupDescription, createdAt: $createdAt, updatedAt: $updatedAt, recipient: $recipient, lastMessage: $lastMessage, unreadCount: $unreadCount, isHidden: $isHidden, isHided: $isHided, isMuted: $isMuted, isFavorite: $isFavorite, themeColor: $themeColor, isTyping: $isTyping)';
+  return 'ChatModel(id: $id, isGroup: $isGroup, groupName: $groupName, groupDescription: $groupDescription, createdAt: $createdAt, updatedAt: $updatedAt, recipient: $recipient, lastMessage: $lastMessage, unreadCount: $unreadCount, isHidden: $isHidden, isHided: $isHided, isMuted: $isMuted, isFavorite: $isFavorite, themeColor: $themeColor, disappearingTimer: $disappearingTimer, isTyping: $isTyping)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $ChatModelCopyWith<$Res>  {
   factory $ChatModelCopyWith(ChatModel value, $Res Function(ChatModel) _then) = _$ChatModelCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_group') bool isGroup,@JsonKey(name: 'group_name') String? groupName,@JsonKey(name: 'group_description') String? groupDescription,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt, RecipientModel recipient,@JsonKey(name: 'last_message') LastMessageModel? lastMessage,@JsonKey(name: 'unread_count') int unreadCount,@JsonKey(name: 'isHidden') bool isHidden,@JsonKey(name: 'isHided') bool isHided,@JsonKey(name: 'is_muted') bool isMuted,@JsonKey(name: 'is_favorite') bool isFavorite,@JsonKey(name: 'themeColor') ThemeColorModel? themeColor,@JsonKey(includeFromJson: false, includeToJson: false) bool isTyping
+@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_group') bool isGroup,@JsonKey(name: 'group_name') String? groupName,@JsonKey(name: 'group_description') String? groupDescription,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt, RecipientModel recipient,@JsonKey(name: 'last_message') LastMessageModel? lastMessage,@JsonKey(name: 'unread_count') int unreadCount,@JsonKey(name: 'isHidden') bool isHidden,@JsonKey(name: 'isHided') bool isHided,@JsonKey(name: 'is_muted') bool isMuted,@JsonKey(name: 'is_favorite') bool isFavorite,@JsonKey(name: 'themeColor') ThemeColorModel? themeColor,@JsonKey(name: 'disappearing_timer') int? disappearingTimer,@JsonKey(includeFromJson: false, includeToJson: false) bool isTyping
 });
 
 
@@ -65,7 +65,7 @@ class _$ChatModelCopyWithImpl<$Res>
 
 /// Create a copy of ChatModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? isGroup = null,Object? groupName = freezed,Object? groupDescription = freezed,Object? createdAt = null,Object? updatedAt = null,Object? recipient = null,Object? lastMessage = freezed,Object? unreadCount = null,Object? isHidden = null,Object? isHided = null,Object? isMuted = null,Object? isFavorite = null,Object? themeColor = freezed,Object? isTyping = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? isGroup = null,Object? groupName = freezed,Object? groupDescription = freezed,Object? createdAt = null,Object? updatedAt = null,Object? recipient = null,Object? lastMessage = freezed,Object? unreadCount = null,Object? isHidden = null,Object? isHided = null,Object? isMuted = null,Object? isFavorite = null,Object? themeColor = freezed,Object? disappearingTimer = freezed,Object? isTyping = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,isGroup: null == isGroup ? _self.isGroup : isGroup // ignore: cast_nullable_to_non_nullable
@@ -81,7 +81,8 @@ as bool,isHided: null == isHided ? _self.isHided : isHided // ignore: cast_nulla
 as bool,isMuted: null == isMuted ? _self.isMuted : isMuted // ignore: cast_nullable_to_non_nullable
 as bool,isFavorite: null == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
 as bool,themeColor: freezed == themeColor ? _self.themeColor : themeColor // ignore: cast_nullable_to_non_nullable
-as ThemeColorModel?,isTyping: null == isTyping ? _self.isTyping : isTyping // ignore: cast_nullable_to_non_nullable
+as ThemeColorModel?,disappearingTimer: freezed == disappearingTimer ? _self.disappearingTimer : disappearingTimer // ignore: cast_nullable_to_non_nullable
+as int?,isTyping: null == isTyping ? _self.isTyping : isTyping // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }
@@ -188,10 +189,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(name: 'disappearing_timer')  int? disappearingTimer, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ChatModel() when $default != null:
-return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.isTyping);case _:
+return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.disappearingTimer,_that.isTyping);case _:
   return orElse();
 
 }
@@ -209,10 +210,10 @@ return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(name: 'disappearing_timer')  int? disappearingTimer, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)  $default,) {final _that = this;
 switch (_that) {
 case _ChatModel():
-return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.isTyping);case _:
+return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.disappearingTimer,_that.isTyping);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -229,10 +230,10 @@ return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_group')  bool isGroup, @JsonKey(name: 'group_name')  String? groupName, @JsonKey(name: 'group_description')  String? groupDescription, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt,  RecipientModel recipient, @JsonKey(name: 'last_message')  LastMessageModel? lastMessage, @JsonKey(name: 'unread_count')  int unreadCount, @JsonKey(name: 'isHidden')  bool isHidden, @JsonKey(name: 'isHided')  bool isHided, @JsonKey(name: 'is_muted')  bool isMuted, @JsonKey(name: 'is_favorite')  bool isFavorite, @JsonKey(name: 'themeColor')  ThemeColorModel? themeColor, @JsonKey(name: 'disappearing_timer')  int? disappearingTimer, @JsonKey(includeFromJson: false, includeToJson: false)  bool isTyping)?  $default,) {final _that = this;
 switch (_that) {
 case _ChatModel() when $default != null:
-return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.isTyping);case _:
+return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_that.createdAt,_that.updatedAt,_that.recipient,_that.lastMessage,_that.unreadCount,_that.isHidden,_that.isHided,_that.isMuted,_that.isFavorite,_that.themeColor,_that.disappearingTimer,_that.isTyping);case _:
   return null;
 
 }
@@ -244,7 +245,7 @@ return $default(_that.id,_that.isGroup,_that.groupName,_that.groupDescription,_t
 @JsonSerializable()
 
 class _ChatModel implements ChatModel {
-  const _ChatModel({@JsonKey(name: '_id', includeIfNull: false) this.id = '', @JsonKey(name: 'is_group') this.isGroup = false, @JsonKey(name: 'group_name') this.groupName, @JsonKey(name: 'group_description') this.groupDescription, @JsonKey(name: 'created_at') this.createdAt = '', @JsonKey(name: 'updated_at') this.updatedAt = '', required this.recipient, @JsonKey(name: 'last_message') this.lastMessage, @JsonKey(name: 'unread_count') this.unreadCount = 0, @JsonKey(name: 'isHidden') this.isHidden = false, @JsonKey(name: 'isHided') this.isHided = false, @JsonKey(name: 'is_muted') this.isMuted = false, @JsonKey(name: 'is_favorite') this.isFavorite = false, @JsonKey(name: 'themeColor') this.themeColor, @JsonKey(includeFromJson: false, includeToJson: false) this.isTyping = false});
+  const _ChatModel({@JsonKey(name: '_id', includeIfNull: false) this.id = '', @JsonKey(name: 'is_group') this.isGroup = false, @JsonKey(name: 'group_name') this.groupName, @JsonKey(name: 'group_description') this.groupDescription, @JsonKey(name: 'created_at') this.createdAt = '', @JsonKey(name: 'updated_at') this.updatedAt = '', required this.recipient, @JsonKey(name: 'last_message') this.lastMessage, @JsonKey(name: 'unread_count') this.unreadCount = 0, @JsonKey(name: 'isHidden') this.isHidden = false, @JsonKey(name: 'isHided') this.isHided = false, @JsonKey(name: 'is_muted') this.isMuted = false, @JsonKey(name: 'is_favorite') this.isFavorite = false, @JsonKey(name: 'themeColor') this.themeColor, @JsonKey(name: 'disappearing_timer') this.disappearingTimer, @JsonKey(includeFromJson: false, includeToJson: false) this.isTyping = false});
   factory _ChatModel.fromJson(Map<String, dynamic> json) => _$ChatModelFromJson(json);
 
 @override@JsonKey(name: '_id', includeIfNull: false) final  String id;
@@ -261,6 +262,7 @@ class _ChatModel implements ChatModel {
 @override@JsonKey(name: 'is_muted') final  bool isMuted;
 @override@JsonKey(name: 'is_favorite') final  bool isFavorite;
 @override@JsonKey(name: 'themeColor') final  ThemeColorModel? themeColor;
+@override@JsonKey(name: 'disappearing_timer') final  int? disappearingTimer;
 @override@JsonKey(includeFromJson: false, includeToJson: false) final  bool isTyping;
 
 /// Create a copy of ChatModel
@@ -276,16 +278,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ChatModel&&(identical(other.id, id) || other.id == id)&&(identical(other.isGroup, isGroup) || other.isGroup == isGroup)&&(identical(other.groupName, groupName) || other.groupName == groupName)&&(identical(other.groupDescription, groupDescription) || other.groupDescription == groupDescription)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.recipient, recipient) || other.recipient == recipient)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.unreadCount, unreadCount) || other.unreadCount == unreadCount)&&(identical(other.isHidden, isHidden) || other.isHidden == isHidden)&&(identical(other.isHided, isHided) || other.isHided == isHided)&&(identical(other.isMuted, isMuted) || other.isMuted == isMuted)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.themeColor, themeColor) || other.themeColor == themeColor)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ChatModel&&(identical(other.id, id) || other.id == id)&&(identical(other.isGroup, isGroup) || other.isGroup == isGroup)&&(identical(other.groupName, groupName) || other.groupName == groupName)&&(identical(other.groupDescription, groupDescription) || other.groupDescription == groupDescription)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.recipient, recipient) || other.recipient == recipient)&&(identical(other.lastMessage, lastMessage) || other.lastMessage == lastMessage)&&(identical(other.unreadCount, unreadCount) || other.unreadCount == unreadCount)&&(identical(other.isHidden, isHidden) || other.isHidden == isHidden)&&(identical(other.isHided, isHided) || other.isHided == isHided)&&(identical(other.isMuted, isMuted) || other.isMuted == isMuted)&&(identical(other.isFavorite, isFavorite) || other.isFavorite == isFavorite)&&(identical(other.themeColor, themeColor) || other.themeColor == themeColor)&&(identical(other.disappearingTimer, disappearingTimer) || other.disappearingTimer == disappearingTimer)&&(identical(other.isTyping, isTyping) || other.isTyping == isTyping));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,isGroup,groupName,groupDescription,createdAt,updatedAt,recipient,lastMessage,unreadCount,isHidden,isHided,isMuted,isFavorite,themeColor,isTyping);
+int get hashCode => Object.hash(runtimeType,id,isGroup,groupName,groupDescription,createdAt,updatedAt,recipient,lastMessage,unreadCount,isHidden,isHided,isMuted,isFavorite,themeColor,disappearingTimer,isTyping);
 
 @override
 String toString() {
-  return 'ChatModel(id: $id, isGroup: $isGroup, groupName: $groupName, groupDescription: $groupDescription, createdAt: $createdAt, updatedAt: $updatedAt, recipient: $recipient, lastMessage: $lastMessage, unreadCount: $unreadCount, isHidden: $isHidden, isHided: $isHided, isMuted: $isMuted, isFavorite: $isFavorite, themeColor: $themeColor, isTyping: $isTyping)';
+  return 'ChatModel(id: $id, isGroup: $isGroup, groupName: $groupName, groupDescription: $groupDescription, createdAt: $createdAt, updatedAt: $updatedAt, recipient: $recipient, lastMessage: $lastMessage, unreadCount: $unreadCount, isHidden: $isHidden, isHided: $isHided, isMuted: $isMuted, isFavorite: $isFavorite, themeColor: $themeColor, disappearingTimer: $disappearingTimer, isTyping: $isTyping)';
 }
 
 
@@ -296,7 +298,7 @@ abstract mixin class _$ChatModelCopyWith<$Res> implements $ChatModelCopyWith<$Re
   factory _$ChatModelCopyWith(_ChatModel value, $Res Function(_ChatModel) _then) = __$ChatModelCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_group') bool isGroup,@JsonKey(name: 'group_name') String? groupName,@JsonKey(name: 'group_description') String? groupDescription,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt, RecipientModel recipient,@JsonKey(name: 'last_message') LastMessageModel? lastMessage,@JsonKey(name: 'unread_count') int unreadCount,@JsonKey(name: 'isHidden') bool isHidden,@JsonKey(name: 'isHided') bool isHided,@JsonKey(name: 'is_muted') bool isMuted,@JsonKey(name: 'is_favorite') bool isFavorite,@JsonKey(name: 'themeColor') ThemeColorModel? themeColor,@JsonKey(includeFromJson: false, includeToJson: false) bool isTyping
+@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_group') bool isGroup,@JsonKey(name: 'group_name') String? groupName,@JsonKey(name: 'group_description') String? groupDescription,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt, RecipientModel recipient,@JsonKey(name: 'last_message') LastMessageModel? lastMessage,@JsonKey(name: 'unread_count') int unreadCount,@JsonKey(name: 'isHidden') bool isHidden,@JsonKey(name: 'isHided') bool isHided,@JsonKey(name: 'is_muted') bool isMuted,@JsonKey(name: 'is_favorite') bool isFavorite,@JsonKey(name: 'themeColor') ThemeColorModel? themeColor,@JsonKey(name: 'disappearing_timer') int? disappearingTimer,@JsonKey(includeFromJson: false, includeToJson: false) bool isTyping
 });
 
 
@@ -313,7 +315,7 @@ class __$ChatModelCopyWithImpl<$Res>
 
 /// Create a copy of ChatModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? isGroup = null,Object? groupName = freezed,Object? groupDescription = freezed,Object? createdAt = null,Object? updatedAt = null,Object? recipient = null,Object? lastMessage = freezed,Object? unreadCount = null,Object? isHidden = null,Object? isHided = null,Object? isMuted = null,Object? isFavorite = null,Object? themeColor = freezed,Object? isTyping = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? isGroup = null,Object? groupName = freezed,Object? groupDescription = freezed,Object? createdAt = null,Object? updatedAt = null,Object? recipient = null,Object? lastMessage = freezed,Object? unreadCount = null,Object? isHidden = null,Object? isHided = null,Object? isMuted = null,Object? isFavorite = null,Object? themeColor = freezed,Object? disappearingTimer = freezed,Object? isTyping = null,}) {
   return _then(_ChatModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,isGroup: null == isGroup ? _self.isGroup : isGroup // ignore: cast_nullable_to_non_nullable
@@ -329,7 +331,8 @@ as bool,isHided: null == isHided ? _self.isHided : isHided // ignore: cast_nulla
 as bool,isMuted: null == isMuted ? _self.isMuted : isMuted // ignore: cast_nullable_to_non_nullable
 as bool,isFavorite: null == isFavorite ? _self.isFavorite : isFavorite // ignore: cast_nullable_to_non_nullable
 as bool,themeColor: freezed == themeColor ? _self.themeColor : themeColor // ignore: cast_nullable_to_non_nullable
-as ThemeColorModel?,isTyping: null == isTyping ? _self.isTyping : isTyping // ignore: cast_nullable_to_non_nullable
+as ThemeColorModel?,disappearingTimer: freezed == disappearingTimer ? _self.disappearingTimer : disappearingTimer // ignore: cast_nullable_to_non_nullable
+as int?,isTyping: null == isTyping ? _self.isTyping : isTyping // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
 }

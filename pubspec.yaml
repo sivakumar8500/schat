@@ -49,6 +49,10 @@ dependencies:
   flutter_webrtc: ^0.12.3
   timeago: ^3.7.0
   receive_sharing_intent: ^1.8.1
+  geolocator: ^14.0.2
+  google_maps_flutter: ^2.18.0
+  flutter_local_notifications: ^22.3.0
+  intl: ^0.20.3
 
 dev_dependencies:
   flutter_test:

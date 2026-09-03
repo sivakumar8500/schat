@@ -168,7 +168,38 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
       total = contact.statuses.length;
       current = _currentStatusIndex;
 
-      if (status.text != null) {
+      if (status.imagePath != null && status.imagePath!.isNotEmpty) {
+        content = Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              status.imagePath!,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return Center(child: Icon(Icons.broken_image, size: 50, color: Colors.white54));
+              },
+            ),
+            if (status.text != null && status.text!.isNotEmpty)
+              Positioned(
+                bottom: 120, // above the reply box
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    status.text!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        );
+      } else if (status.text != null && status.text!.isNotEmpty) {
         content = Container(
           color: status.backgroundColor,
           alignment: Alignment.center,

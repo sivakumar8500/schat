@@ -10,18 +10,29 @@ class LoadStatusUpdatesEvent extends StatusEvent {
 
 class UploadTextStatusEvent extends StatusEvent {
   final String text;
-  const UploadTextStatusEvent({required this.text});
+  final String? privacyType;
+  final List<String>? privacyUserIds;
+
+  const UploadTextStatusEvent({
+    required this.text,
+    this.privacyType,
+    this.privacyUserIds,
+  });
 }
 
 class UploadMediaStatusEvent extends StatusEvent {
   final String? path;
   final Uint8List? bytes;
   final String? caption;
+  final String? privacyType;
+  final List<String>? privacyUserIds;
 
   const UploadMediaStatusEvent({
     this.path,
     this.bytes,
     this.caption,
+    this.privacyType,
+    this.privacyUserIds,
   });
 }
 

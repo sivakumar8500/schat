@@ -229,6 +229,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
                     recipientId: chat.recipient.id,
                     profilePictureUrl: profilePictureUrl,
                     initialThemeColor: chat.themeColor,
+                    initialDisappearingTimer: chat.disappearingTimer,
                   ),
                 ),
               );

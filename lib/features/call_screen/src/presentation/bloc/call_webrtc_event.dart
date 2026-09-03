@@ -104,3 +104,23 @@ class HandleCallErrorEvent extends CallWebRtcEvent {
   final String error;
   const HandleCallErrorEvent(this.error);
 }
+
+class RequestCallSwitchEvent extends CallWebRtcEvent {
+  final String callType;
+  const RequestCallSwitchEvent(this.callType);
+}
+
+class HandleCallSwitchRequestedEvent extends CallWebRtcEvent {
+  final Map<String, dynamic> event;
+  const HandleCallSwitchRequestedEvent(this.event);
+}
+
+class RespondToCallSwitchEvent extends CallWebRtcEvent {
+  final bool accept;
+  const RespondToCallSwitchEvent(this.accept);
+}
+
+class HandleCallSwitchRespondedEvent extends CallWebRtcEvent {
+  final Map<String, dynamic> event;
+  const HandleCallSwitchRespondedEvent(this.event);
+}

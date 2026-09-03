@@ -1,5 +1,6 @@
 // mason make page --name video_call
 import 'dart:async';
+import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -52,6 +53,10 @@ class _VideoCallPageState extends State<VideoCallPage>
   late AnimationController _fadeController;
   bool _controlsVisible = true;
   Timer? _controlsTimer;
+  bool _isLocalVideoSmall = true;
+
+  double? _pipX;
+  double? _pipY;
 
   @override
   void initState() {
@@ -129,8 +134,11 @@ class _VideoCallPageState extends State<VideoCallPage>
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) {
-        setState(() => _controlsVisible = false);
-        _fadeController.reverse();
+        final state = context.read<CallWebRtcBloc>().state;
+        if (state is CallActive) {
+          setState(() => _controlsVisible = false);
+          _fadeController.reverse();
+        }
       }
     });
   }
@@ -179,15 +187,45 @@ class _VideoCallPageState extends State<VideoCallPage>
       listener: (context, state) {
         if (state is CallActive && _timer == null) {
           _startTimer();
+          _scheduleControlsHide();
         }
         if (state is CallEnded || state is CallRejected || state is CallError) {
           Navigator.of(context).maybePop();
+        }
+        if (state is CallActive) {
+          if (state.switchRequestedCallType == 'audio') {
+             _showSwitchRequestDialog(context, state);
+          }
+          if (!state.isVideo) {
+             // Downgraded to audio call! Switch UI.
+             Navigator.of(context).pushReplacement(
+               MaterialPageRoute(
+                 builder: (_) => BlocProvider.value(
+                   value: context.read<CallWebRtcBloc>(),
+                   child: AudioCallPage(
+                     conversationId: widget.conversationId,
+                     contactName: widget.contactName,
+                     contactColor: widget.contactColor,
+                     recipientId: widget.recipientId,
+                     isOutgoing: widget.isOutgoing,
+                     profilePictureUrl: widget.profilePictureUrl,
+                     myProfilePictureUrl: widget.myProfilePictureUrl,
+                   ),
+                 ),
+               ),
+             );
+          }
         }
       },
       child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
         builder: (context, state) {
           final isMuted = state is CallActive ? state.isMuted : false;
           final isVideoOff = state is CallActive ? state.isVideoOff : false;
+          bool isFrontCamera = true;
+          if (state is CallActive) {
+            isFrontCamera = state.isFrontCamera;
+          } else if (state is CallConnecting) isFrontCamera = state.isFrontCamera;
+          else if (state is CallRinging) isFrontCamera = state.isFrontCamera;
 
           return Scaffold(
             backgroundColor: context.colors.pureBlack,
@@ -195,18 +233,30 @@ class _VideoCallPageState extends State<VideoCallPage>
               onTap: _showControls,
               child: Stack(
                 children: [
-                  // ─── Remote Video (Full Screen) ───
                   Positioned.fill(
                     child: state is CallActive
-                        ? (state.isRemoteVideoOff 
-                            ? _buildRemoteVideoOffPlaceholder(state)
+                        ? (_isLocalVideoSmall
+                            ? (state.isRemoteVideoOff 
+                                ? _buildRemoteVideoOffPlaceholder(state)
+                                : RTCVideoView(
+                                    _webRtcService.remoteRenderer,
+                                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                    mirror: false,
+                                  ))
+                            : (isVideoOff
+                                ? _buildLocalVideoOffPlaceholder()
+                                : RTCVideoView(
+                                    _webRtcService.localRenderer,
+                                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                    mirror: isFrontCamera,
+                                  )))
+                        : (isVideoOff
+                            ? _buildWaitingScreen()
                             : RTCVideoView(
-                                _webRtcService.remoteRenderer,
-                                objectFit: RTCVideoViewObjectFit
-                                    .RTCVideoViewObjectFitCover,
-                                mirror: false,
-                              ))
-                        : _buildWaitingScreen(),
+                                _webRtcService.localRenderer,
+                                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                mirror: isFrontCamera,
+                              )),
                   ),
 
                   // ─── Gradient overlays ───
@@ -279,8 +329,9 @@ class _VideoCallPageState extends State<VideoCallPage>
                     ),
                   ),
 
-                  // ─── Local Video PiP ───
-                  _buildLocalVideoPiP(isVideoOff),
+                  // ─── Small Video (Picture-in-Picture) ───
+                  if (state is CallActive)
+                    _buildSmallVideoPiP(state, isVideoOff, isFrontCamera),
 
                   // ─── Bottom Control Bar ───
                   Positioned(
@@ -470,64 +521,93 @@ class _VideoCallPageState extends State<VideoCallPage>
     );
   }
 
-  Widget _buildLocalVideoPiP(bool isVideoOff) {
+  Widget _buildSmallVideoPiP(CallActive? state, bool isVideoOff, bool isFrontCamera) {
     return Positioned(
-      top: 80,
-      right: 72,
+      top: _pipY ?? 80,
+      left: _pipX,
+      right: _pipX == null ? 72 : null,
       child: SafeArea(
-        child: Container(
-          width: 110,
-          height: 160,
-          decoration: BoxDecoration(
-            color: context.colors.videoCallBarBackground,
-            borderRadius: BorderRadius.circular(16),
-            border:
-                Border.all(color: context.colors.pureWhite.withValues(alpha: 0.3), width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: context.colors.pureBlack.withValues(alpha: 0.4),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: isVideoOff
-                ? Container(
-                    color: context.colors.pureBlack.withValues(alpha: 0.87),
-                    child: Center(
-                      child: (widget.myProfilePictureUrl != null &&
-                              widget.myProfilePictureUrl!.isNotEmpty)
-                          ? ClipOval(
-                              child: Image.network(
-                                widget.myProfilePictureUrl!,
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (ctx, err, stack) => Icon(
-                                    CommonIcons.person,
-                                    color: context.colors.pureWhite.withValues(alpha: 0.54),
-                                    size: 48),
-                              ),
-                            )
-                          : Icon(CommonIcons.person,
-                              color: context.colors.pureWhite.withValues(alpha: 0.54), size: 48),
-                    ),
-                  )
-                : RTCVideoView(
-                    _webRtcService.localRenderer,
-                    mirror: true,
-                    objectFit:
-                        RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  ),
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            setState(() {
+              _pipX ??= MediaQuery.of(context).size.width - 72 - 110;
+              _pipX = (_pipX! + details.delta.dx).clamp(0.0, MediaQuery.of(context).size.width - 110.0);
+              
+              _pipY ??= 80;
+              _pipY = (_pipY! + details.delta.dy).clamp(0.0, MediaQuery.of(context).size.height - 160.0);
+            });
+          },
+          onTap: () {
+            if (state != null) {
+              setState(() {
+                _isLocalVideoSmall = !_isLocalVideoSmall;
+              });
+            }
+          },
+          child: Container(
+            width: 110,
+            height: 160,
+            decoration: BoxDecoration(
+              color: context.colors.videoCallBarBackground,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.colors.pureWhite.withValues(alpha: 0.3), width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: context.colors.pureBlack.withValues(alpha: 0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: _isLocalVideoSmall
+                  ? (isVideoOff
+                      ? _buildLocalVideoOffPlaceholder()
+                      : RTCVideoView(
+                          _webRtcService.localRenderer,
+                          mirror: isFrontCamera,
+                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        ))
+                  : (state == null || state.isRemoteVideoOff
+                      ? _buildRemoteVideoOffPlaceholder(state)
+                      : RTCVideoView(
+                          _webRtcService.remoteRenderer,
+                          mirror: false,
+                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        )),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildRemoteVideoOffPlaceholder(CallActive state) {
+  Widget _buildLocalVideoOffPlaceholder() {
+    return Container(
+      color: context.colors.pureBlack.withValues(alpha: 0.87),
+      child: Center(
+        child: (widget.myProfilePictureUrl != null &&
+                widget.myProfilePictureUrl!.isNotEmpty)
+            ? ClipOval(
+                child: Image.network(
+                  widget.myProfilePictureUrl!,
+                  width: 80,
+                  height: 80,
+                  fit: BoxFit.cover,
+                  errorBuilder: (ctx, err, stack) => Icon(
+                      CommonIcons.person,
+                      color: context.colors.pureWhite.withValues(alpha: 0.54),
+                      size: 48),
+                ),
+              )
+            : Icon(CommonIcons.person,
+                color: context.colors.pureWhite.withValues(alpha: 0.54), size: 48),
+      ),
+    );
+  }
+
+  Widget _buildRemoteVideoOffPlaceholder(CallActive? state) {
     return Stack(
       children: [
         if (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty) ...[
@@ -589,7 +669,11 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   Widget _buildControlBar(BuildContext context, bool isMuted, bool isVideoOff,
       CallWebRtcState state) {
-    final isSpeakerOn = state is CallActive ? state.isSpeakerOn : true;
+    final isSpeakerOn = state is CallActive
+        ? state.isSpeakerOn
+        : (state is CallConnecting
+            ? state.isSpeakerOn
+            : (state is CallRinging ? state.isSpeakerOn : true));
     return Container(
       padding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -660,6 +744,40 @@ class _VideoCallPageState extends State<VideoCallPage>
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: context.colors.pureWhite, size: size * 0.42),
+      ),
+    );
+  }
+
+  bool _isSwitchDialogShowing = false;
+  
+  void _showSwitchRequestDialog(BuildContext context, CallActive state) {
+    if (_isSwitchDialogShowing) return;
+    _isSwitchDialogShowing = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        title: const Text('Audio Call Request', style: TextStyle(color: Colors.white)),
+        content: Text('${state.contactName} is requesting to switch to an audio call.', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isSwitchDialogShowing = false;
+              context.read<CallWebRtcBloc>().add(const RespondToCallSwitchEvent(false));
+            },
+            child: const Text('Decline', style: TextStyle(color: Colors.redAccent)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _isSwitchDialogShowing = false;
+              context.read<CallWebRtcBloc>().add(const RespondToCallSwitchEvent(true));
+            },
+            child: const Text('Accept', style: TextStyle(color: Colors.green)),
+          ),
+        ],
       ),
     );
   }

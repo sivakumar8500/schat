@@ -418,8 +418,6 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isLocal = !widget.url.startsWith('http://') && !widget.url.startsWith('https://');
-
     if (_hasError) {
       return Center(
         child: Column(

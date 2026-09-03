@@ -15,6 +15,8 @@ class CallConnecting extends CallWebRtcState {
   final String recipientId;
   final bool isMinimized;
   final String? profilePictureUrl;
+  final bool isSpeakerOn;
+  final bool isFrontCamera;
   const CallConnecting({
     required this.conversationId,
     required this.isVideo,
@@ -22,13 +24,17 @@ class CallConnecting extends CallWebRtcState {
     this.recipientId = '',
     this.isMinimized = false,
     this.profilePictureUrl,
-  });
+    bool? isSpeakerOn,
+    this.isFrontCamera = true,
+  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
 
   CallConnecting copyWith({
     String? contactName,
     String? recipientId,
     bool? isMinimized,
     String? profilePictureUrl,
+    bool? isSpeakerOn,
+    bool? isFrontCamera,
   }) {
     return CallConnecting(
       conversationId: conversationId,
@@ -37,6 +43,8 @@ class CallConnecting extends CallWebRtcState {
       recipientId: recipientId ?? this.recipientId,
       isMinimized: isMinimized ?? this.isMinimized,
       profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
+      isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
+      isFrontCamera: isFrontCamera ?? this.isFrontCamera,
     );
   }
 }
@@ -48,13 +56,32 @@ class CallRinging extends CallWebRtcState {
   final String recipientId;
   final bool isVideo;
   final String? profilePictureUrl;
+  final bool isSpeakerOn;
+  final bool isFrontCamera;
   const CallRinging({
     required this.incomingEvent,
     required this.callerName,
     required this.recipientId,
     required this.isVideo,
     this.profilePictureUrl,
-  });
+    bool? isSpeakerOn,
+    this.isFrontCamera = true,
+  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
+  
+  CallRinging copyWith({
+    bool? isSpeakerOn,
+    bool? isFrontCamera,
+  }) {
+    return CallRinging(
+      incomingEvent: incomingEvent,
+      callerName: callerName,
+      recipientId: recipientId,
+      isVideo: isVideo,
+      profilePictureUrl: profilePictureUrl,
+      isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
+      isFrontCamera: isFrontCamera ?? this.isFrontCamera,
+    );
+  }
 }
 
 class CallActive extends CallWebRtcState {
@@ -67,47 +94,80 @@ class CallActive extends CallWebRtcState {
   final bool isVideoOff;
   final bool isRemoteVideoOff;
   final bool isRemoteMuted;
+  final bool isFrontCamera;
   final bool isMinimized;
   final String? profilePictureUrl;
+  final DateTime? startedAt;
+  final String? switchRequestedCallType;
+  final Map<String, dynamic>? switchRequestedEvent;
+
   const CallActive({
     required this.conversationId,
     required this.contactName,
     required this.recipientId,
     required this.isVideo,
     this.isMuted = false,
-    this.isSpeakerOn = true,
     this.isVideoOff = false,
-    this.isRemoteVideoOff = false,
+    this.isFrontCamera = true,
     this.isRemoteMuted = false,
+    this.isRemoteVideoOff = false,
+    this.isSpeakerOn = false,
     this.isMinimized = false,
     this.profilePictureUrl,
+    this.startedAt,
+    this.switchRequestedCallType,
+    this.switchRequestedEvent,
   });
 
   CallActive copyWith({
-    String? contactName,
-    String? recipientId,
     bool? isMuted,
-    bool? isSpeakerOn,
     bool? isVideoOff,
-    bool? isRemoteVideoOff,
+    bool? isFrontCamera,
     bool? isRemoteMuted,
+    bool? isRemoteVideoOff,
+    bool? isSpeakerOn,
     bool? isMinimized,
-    String? profilePictureUrl,
+    bool? isVideo,
+    String? switchRequestedCallType,
+    Map<String, dynamic>? switchRequestedEvent,
+    bool clearSwitchRequest = false,
   }) {
     return CallActive(
       conversationId: conversationId,
-      contactName: contactName ?? this.contactName,
-      recipientId: recipientId ?? this.recipientId,
-      isVideo: isVideo,
+      contactName: contactName,
+      recipientId: recipientId,
+      isVideo: isVideo ?? this.isVideo,
       isMuted: isMuted ?? this.isMuted,
-      isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isVideoOff: isVideoOff ?? this.isVideoOff,
-      isRemoteVideoOff: isRemoteVideoOff ?? this.isRemoteVideoOff,
+      isFrontCamera: isFrontCamera ?? this.isFrontCamera,
       isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
+      isRemoteVideoOff: isRemoteVideoOff ?? this.isRemoteVideoOff,
+      isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isMinimized: isMinimized ?? this.isMinimized,
-      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
+      profilePictureUrl: profilePictureUrl,
+      startedAt: startedAt,
+      switchRequestedCallType: clearSwitchRequest ? null : (switchRequestedCallType ?? this.switchRequestedCallType),
+      switchRequestedEvent: clearSwitchRequest ? null : (switchRequestedEvent ?? this.switchRequestedEvent),
     );
   }
+
+  List<Object?> get props => [
+        conversationId,
+        contactName,
+        recipientId,
+        isVideo,
+        isMuted,
+        isVideoOff,
+        isFrontCamera,
+        isRemoteMuted,
+        isRemoteVideoOff,
+        isSpeakerOn,
+        isMinimized,
+        profilePictureUrl,
+        startedAt,
+        switchRequestedCallType,
+        switchRequestedEvent,
+      ];
 }
 
 class CallEnded extends CallWebRtcState {

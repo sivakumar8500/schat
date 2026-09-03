@@ -347,6 +347,146 @@ class WebRtcService {
   }
 
   // ─────────────────────────────────────────────
+  // MID-CALL SWITCHING
+  // ─────────────────────────────────────────────
+
+  Future<void> requestCallSwitch({
+    required String callType,
+    required ChatSocketRepository repository,
+  }) async {
+    if (_peerConnection == null || _activeConversationId == null) return;
+    
+    // Switch media stream
+    final isVideo = callType == 'video';
+    final newStream = await _getUserMedia(isVideo: isVideo);
+    
+    // Replace tracks
+    final senders = await _peerConnection!.getSenders();
+    for (var track in newStream.getTracks()) {
+      final senderIndex = senders.indexWhere((s) => s.track?.kind == track.kind);
+      if (senderIndex != -1) {
+        await senders[senderIndex].replaceTrack(track);
+      } else {
+        await _peerConnection!.addTrack(track, newStream);
+      }
+    }
+    
+    // Cleanup old stream
+    _localStream?.getTracks().forEach((track) => track.stop());
+    _localStream = newStream;
+    localRenderer.srcObject = _localStream;
+    _localStreamController.add(_localStream);
+
+    // Create new offer
+    final offer = await _peerConnection!.createOffer(_offerConstraints);
+    await _peerConnection!.setLocalDescription(offer);
+
+    // Send request
+    repository.emit('message', {
+      'type': 'call_switch_request',
+      'conversation_id': _activeConversationId,
+      'call_type': callType,
+      'sdp': {
+        'type': offer.type,
+        'sdp': offer.sdp,
+      }
+    });
+  }
+
+  Future<void> acceptCallSwitch({
+    required bool isVideo,
+    required ChatSocketRepository repository,
+    Map<String, dynamic>? remoteOfferEvent,
+    String? messageId,
+  }) async {
+    if (_peerConnection == null || _activeConversationId == null) return;
+    
+    // Set remote description if offer is provided
+    if (remoteOfferEvent != null && remoteOfferEvent['sdp'] != null) {
+      final sdpData = remoteOfferEvent['sdp'];
+      final remoteOffer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
+      await _peerConnection!.setRemoteDescription(remoteOffer);
+    }
+    
+    // Get new media stream based on the requested switch
+    final newStream = await _getUserMedia(isVideo: isVideo);
+    
+    // Replace tracks on existing peer connection
+    final senders = await _peerConnection!.getSenders();
+    for (var track in newStream.getTracks()) {
+      final senderIndex = senders.indexWhere((s) => s.track?.kind == track.kind);
+      if (senderIndex != -1) {
+        await senders[senderIndex].replaceTrack(track);
+      } else {
+        await _peerConnection!.addTrack(track, newStream);
+      }
+    }
+    
+    // Cleanup old stream
+    _localStream?.getTracks().forEach((track) => track.stop());
+    _localStream = newStream;
+    localRenderer.srcObject = _localStream;
+    _localStreamController.add(_localStream);
+    
+    // Create new answer
+    final answer = await _peerConnection!.createAnswer(_offerConstraints);
+    await _peerConnection!.setLocalDescription(answer);
+
+    final payload = <String, dynamic>{
+      'type': 'call_switch_response',
+      'conversation_id': _activeConversationId,
+      'accepted': true,
+      'call_type': isVideo ? 'video' : 'audio',
+      'sdp': {
+        'type': answer.type,
+        'sdp': answer.sdp,
+      },
+    };
+    if (messageId != null) payload['message_id'] = messageId;
+    
+    repository.emit('message', payload);
+  }
+
+  void rejectCallSwitch({
+    required ChatSocketRepository repository,
+    String? messageId,
+  }) {
+    if (_activeConversationId == null) return;
+    
+    final payload = <String, dynamic>{
+      'type': 'call_switch_response',
+      'conversation_id': _activeConversationId,
+      'accepted': false,
+    };
+    if (messageId != null) payload['message_id'] = messageId;
+
+    repository.emit('message', payload);
+  }
+
+  Future<void> handleCallSwitchResponded(Map<String, dynamic> event) async {
+    final accepted = event['accepted'] == true || event['status'] == 'accepted';
+    if (accepted) {
+      final sdpData = event['sdp'] as Map<String, dynamic>?;
+      if (sdpData != null && _peerConnection != null) {
+        final answer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
+        await _peerConnection!.setRemoteDescription(answer);
+        await _processRemoteCandidateQueue();
+      }
+      
+      // Update local stream if we requested switch
+      final newType = event['call_type'] as String?;
+      if (newType != null) {
+        final isVideo = newType == 'video';
+        // We already replaced tracks in requestCallSwitch, but just in case we need to refresh UI:
+        debugPrint('WebRTC: Switch to $newType accepted');
+      }
+    } else {
+      // Remote rejected the switch.
+      debugPrint('WebRTC: Remote party rejected the switch');
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // CLEANUP
   // ─────────────────────────────────────────────
 

@@ -38,6 +38,7 @@ class ChatLoaded extends ChatState {
   // Group info — updated in real time via group_updated WebSocket event
   final String? groupName;
   final String? groupPictureUrl;
+  final int? disappearingTimer;
 
   const ChatLoaded({
     required this.messages,
@@ -57,6 +58,7 @@ class ChatLoaded extends ChatState {
     this.sharesMessageId,
     this.groupName,
     this.groupPictureUrl,
+    this.disappearingTimer,
   });
 
   ChatLoaded copyWith({
@@ -79,6 +81,7 @@ class ChatLoaded extends ChatState {
     String? sharesMessageId,
     String? groupName,
     String? groupPictureUrl,
+    int? disappearingTimer,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
@@ -98,6 +101,7 @@ class ChatLoaded extends ChatState {
       sharesMessageId: sharesMessageId ?? this.sharesMessageId,
       groupName: groupName ?? this.groupName,
       groupPictureUrl: groupPictureUrl ?? this.groupPictureUrl,
+      disappearingTimer: disappearingTimer ?? this.disappearingTimer,
     );
   }
 }

@@ -464,4 +464,18 @@ class ChatRepositoryImpl implements ChatRepository {
       failure: (error, statusCode) => throw Exception(error),
     );
   }
+
+  @override
+  Future<bool> scheduleMessage(Map<String, dynamic> requestData) async {
+    final result = await _apiService.post(
+      CommonEndpoints.scheduleMessage,
+      data: requestData,
+      mapper: (data) => true,
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
 }
