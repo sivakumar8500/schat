@@ -237,7 +237,7 @@ class CallNotificationService {
     final type = message.data['type']?.toString();
 
     // 1. Incoming Call (CallKit VoIP)
-    if (type == 'call_initiate') {
+    if (type == 'call_initiate' || type == 'call_incoming') {
       final Uuid uuid = const Uuid();
       final String callUuid = uuid.v4();
       final String callerName = message.data['caller_name'] ?? 'Unknown';
