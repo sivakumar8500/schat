@@ -12,6 +12,7 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:sms_autofill/sms_autofill.dart';
@@ -205,6 +206,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is AuthSuccess) {
+          getIt<PushNotificationService>().registerToken();
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const ProfilePage()),

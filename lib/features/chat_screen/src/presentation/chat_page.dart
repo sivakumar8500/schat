@@ -15,6 +15,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 
 import 'package:schat/utils/common_strings.dart';
@@ -157,6 +158,7 @@ class _ChatPageState extends State<ChatPage> {
       }
     });
     debugPrint('DEBUG: ChatPage Initializing for conv: ${widget.conversationId}, recipient: ${widget.recipientId}, initialOnline: ${widget.isOnline}');
+    getIt<InAppNotificationService>().setActiveConversationId(widget.conversationId);
     _chatBloc = ChatBloc()..add(LoadMessagesEvent(
       conversationId: widget.conversationId,
       recipientId: widget.recipientId,
@@ -1447,6 +1449,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    getIt<InAppNotificationService>().setActiveConversationId(null);
     _screenshotSubscription?.cancel();
     _callSocketSubscription?.cancel();
     _stopTypingTimer();

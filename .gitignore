@@ -47,3 +47,7 @@ app.*.map.json
 # Scratch directory
 scratch/
 
+# Backend nested repo
+schat_backend/
+android/build/
+

@@ -46,6 +46,12 @@ class CommonEndpoints {
   static String unmuteChat(String conversationId) => '/chats/$conversationId/unmute';
   static String setDisappearingTimer(String conversationId) => '/chats/$conversationId/disappearing-timer';
   
+  // Chat Transfer & View Requests
+  static const String chatViewRequests = '/chats/view-requests';
+  static String respondChatViewRequest(String requestId) => '/chats/view-requests/$requestId/respond';
+  static String revokeChatViewRequest(String requestId) => '/chats/view-requests/$requestId/revoke';
+  static String getTargetConversations(String targetUserId) => '/chats/target/$targetUserId';
+  
   // --- Device & Push Notifications ---
   static const String registerFcmToken = '/notifications/register-device';
 

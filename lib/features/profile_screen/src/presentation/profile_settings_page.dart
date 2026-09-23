@@ -21,6 +21,7 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
 import 'package:schat/features/chat_socket_screen/chat_socket_screen.dart';
+import 'package:schat/features/chat_transfer_screen/chat_transfer_screen.dart';
 import 'package:schat/features/security_scanner/presentation/pages/scan_result_screen.dart';
 
 class ProfileSettingsPage extends StatefulWidget {
@@ -312,6 +313,15 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                   const Divider(),
                   
                   _buildSectionHeader('Account'),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.supervisor_account_outlined,
+                    title: 'Chat Access & Transfer',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ChatTransferPage()),
+                    ),
+                  ),
                   _buildListTile(
                     context: context,
                     icon: Icons.block_rounded,

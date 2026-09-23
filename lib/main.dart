@@ -16,6 +16,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
@@ -32,6 +34,16 @@ import 'package:schat/core/services/share_receiver_service.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (_) {}
+  await CallNotificationService.handleBackgroundMessage(message);
+}
+
 Future<void> main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
@@ -41,8 +53,8 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     
-    // Register background message handler
-    FirebaseMessaging.onBackgroundMessage(CallNotificationService.handleBackgroundMessage);
+    // Register top-level background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // Initialize Hive
     await Hive.initFlutter();
@@ -52,6 +64,13 @@ Future<void> main() async {
     // Initialize CallNotificationService
     await getIt<CallNotificationService>().initialize();
     
+    // Initialize InAppNotificationService
+    getIt<InAppNotificationService>().initialize();
+
+    // Initialize PushNotificationService
+    await getIt<PushNotificationService>().initialize();
+    await getIt<PushNotificationService>().registerToken();
+
     // Initialize ScreenProtectionService
     await getIt<ScreenProtectionService>().initialize();
     

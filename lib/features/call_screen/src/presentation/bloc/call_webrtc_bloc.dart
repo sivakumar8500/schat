@@ -97,6 +97,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           break;
         case 'call_initiate':
         case 'call_incoming':
+          final senderId = (data['sender_id'] ?? data['senderId'])?.toString();
+          final myId = getIt<StorageService>().getUserId();
+          if (senderId != null && myId != null && senderId == myId) {
+            debugPrint('CallWebRtcBloc: Ignoring incoming call event from self');
+            return;
+          }
           add(HandleIncomingCallEvent(Map<String, dynamic>.from(data)));
           break;
         case 'call_response':
@@ -744,7 +750,6 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   Future<void> _onRequestCallSwitch(
       RequestCallSwitchEvent event, Emitter<CallWebRtcState> emit) async {
     if (state is CallActive) {
-      final current = state as CallActive;
       await _webRtcService.requestCallSwitch(
         callType: event.callType,
         repository: _repository,

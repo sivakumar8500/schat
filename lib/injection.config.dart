@@ -20,6 +20,7 @@ import 'core/network/api_service.dart' as _i374;
 import 'core/network/connectivity_repository.dart' as _i232;
 import 'core/network/network_module.dart' as _i550;
 import 'core/notifications/call_notification_service.dart' as _i374;
+import 'core/notifications/in_app_notification_service.dart' as _i601;
 import 'core/notifications/push_notification_service.dart' as _i610;
 import 'core/security/screen_protection_service.dart' as _i568;
 import 'core/security/secure_attachment_service.dart' as _i32;
@@ -55,6 +56,22 @@ import 'features/chat_socket_screen/src/domain/usecases/connect_socket_usecase.d
     as _i515;
 import 'features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart'
     as _i992;
+import 'features/chat_transfer_screen/src/data/repositories/chat_transfer_repository_impl.dart'
+    as _i9;
+import 'features/chat_transfer_screen/src/domain/repositories/chat_transfer_repository.dart'
+    as _i984;
+import 'features/chat_transfer_screen/src/domain/usecases/get_chat_view_requests_usecase.dart'
+    as _i54;
+import 'features/chat_transfer_screen/src/domain/usecases/get_target_conversations_usecase.dart'
+    as _i439;
+import 'features/chat_transfer_screen/src/domain/usecases/respond_chat_view_request_usecase.dart'
+    as _i746;
+import 'features/chat_transfer_screen/src/domain/usecases/revoke_chat_view_request_usecase.dart'
+    as _i350;
+import 'features/chat_transfer_screen/src/domain/usecases/send_chat_view_request_usecase.dart'
+    as _i773;
+import 'features/chat_transfer_screen/src/presentation/bloc/chat_transfer_bloc.dart'
+    as _i673;
 import 'features/connectivity/src/presentation/bloc/connectivity_bloc.dart'
     as _i201;
 import 'features/dashboard_screen/src/data/repositories/dashboard_repository_impl.dart'
@@ -174,6 +191,12 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i361.Dio>(
       () => networkModule.getDio(gh<_i729.ApiInterceptor>()),
     );
+    gh.lazySingleton<_i601.InAppNotificationService>(
+      () => _i601.InAppNotificationService(
+        gh<_i411.ChatSocketRepository>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
     gh.factory<_i515.ConnectSocketUseCase>(
       () => _i515.ConnectSocketUseCase(gh<_i411.ChatSocketRepository>()),
     );
@@ -184,6 +207,31 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i201.ConnectivityBloc(gh<_i232.ConnectivityRepository>()),
     );
     gh.lazySingleton<_i374.ApiService>(() => _i374.ApiService(gh<_i361.Dio>()));
+    gh.factory<_i984.ChatTransferRepository>(
+      () => _i9.ChatTransferRepositoryImpl(gh<_i374.ApiService>()),
+    );
+    gh.factory<_i54.GetChatViewRequestsUseCase>(
+      () => _i54.GetChatViewRequestsUseCase(gh<_i984.ChatTransferRepository>()),
+    );
+    gh.factory<_i439.GetTargetConversationsUseCase>(
+      () => _i439.GetTargetConversationsUseCase(
+        gh<_i984.ChatTransferRepository>(),
+      ),
+    );
+    gh.factory<_i746.RespondChatViewRequestUseCase>(
+      () => _i746.RespondChatViewRequestUseCase(
+        gh<_i984.ChatTransferRepository>(),
+      ),
+    );
+    gh.factory<_i350.RevokeChatViewRequestUseCase>(
+      () => _i350.RevokeChatViewRequestUseCase(
+        gh<_i984.ChatTransferRepository>(),
+      ),
+    );
+    gh.factory<_i773.SendChatViewRequestUseCase>(
+      () =>
+          _i773.SendChatViewRequestUseCase(gh<_i984.ChatTransferRepository>()),
+    );
     gh.lazySingleton<_i288.CallWebRtcBloc>(
       () => _i288.CallWebRtcBloc(
         gh<_i176.WebRtcService>(),
@@ -200,6 +248,17 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i67.ProfileRepositoryImpl(
         gh<_i374.ApiService>(),
         gh<_i263.StorageService>(),
+      ),
+    );
+    gh.factory<_i673.ChatTransferBloc>(
+      () => _i673.ChatTransferBloc(
+        gh<_i263.StorageService>(),
+        gh<_i773.SendChatViewRequestUseCase>(),
+        gh<_i54.GetChatViewRequestsUseCase>(),
+        gh<_i746.RespondChatViewRequestUseCase>(),
+        gh<_i350.RevokeChatViewRequestUseCase>(),
+        gh<_i439.GetTargetConversationsUseCase>(),
+        gh<_i411.ChatSocketRepository>(),
       ),
     );
     gh.lazySingleton<_i374.CallNotificationService>(
