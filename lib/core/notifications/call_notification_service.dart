@@ -155,7 +155,7 @@ class CallNotificationService {
         actionColor: '#4CAF50',
         textColor: '#FFFFFF',
         incomingCallNotificationChannelName: 'Incoming Calls',
-        textAccept: 'Accept',
+        textAccept: 'Answer',
         textDecline: 'Decline',
       ),
       ios: const IOSParams(
@@ -284,7 +284,7 @@ class CallNotificationService {
           actionColor: '#4CAF50',
           textColor: '#FFFFFF',
           incomingCallNotificationChannelName: 'Incoming Calls',
-          textAccept: 'Accept',
+          textAccept: 'Answer',
           textDecline: 'Decline',
         ),
         ios: const IOSParams(

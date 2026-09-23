@@ -242,6 +242,11 @@ class PushNotificationService {
   }
 
   Future<void> _showLocalNotification(RemoteMessage message) async {
+    final type = message.data['type']?.toString();
+    if (type == 'call_initiate' || type == 'call_incoming') {
+      return;
+    }
+
     final notification = message.notification;
     String title = notification?.title ?? '';
     String body = notification?.body ?? '';
