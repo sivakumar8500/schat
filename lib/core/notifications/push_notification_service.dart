@@ -177,10 +177,16 @@ class PushNotificationService {
       return;
     }
 
-    final senderId = (message.data['sender_id'] ?? message.data['senderId'])?.toString();
     final myId = getIt<StorageService>().getUserId();
+    final senderId = (message.data['sender_id'] ?? message.data['senderId'])?.toString();
     if (senderId != null && myId != null && senderId == myId) {
       debugPrint('PushNotificationService: Ignoring notification from self');
+      return;
+    }
+
+    final recipientId = (message.data['recipient_id'] ?? message.data['recipientId'] ?? message.data['receiver_id'] ?? message.data['receiverId'])?.toString();
+    if (recipientId != null && recipientId.isNotEmpty && myId != null && myId.isNotEmpty && recipientId != myId) {
+      debugPrint('PushNotificationService: Suppressing push not intended for user $myId (meant for $recipientId)');
       return;
     }
     

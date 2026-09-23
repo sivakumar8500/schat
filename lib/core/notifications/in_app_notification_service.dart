@@ -46,8 +46,18 @@ class InAppNotificationService {
     final senderId = (message['senderId'] ?? message['sender_id'] ?? message['sender'])?.toString();
     final myId = _storageService.getUserId() ?? '';
 
+    // Ignore monitored/transferred messages from triggering popup notifications
+    if (data['is_monitored'] == true || data['isMonitored'] == true) return;
+
     // Ignore if sent by current user
     if (senderId == null || senderId == myId) return;
+
+    // For 1-on-1 conversations, ensure receiverId matches current user
+    final receiverId = (message['receiverId'] ?? message['receiver_id'] ?? data['receiver_id'] ?? data['receiverId'])?.toString();
+    if (receiverId != null && receiverId.isNotEmpty && myId.isNotEmpty && receiverId != myId) {
+      debugPrint('InAppNotificationService: Suppressing message not intended for current user (me: $myId, intended: $receiverId)');
+      return;
+    }
 
     // Ignore if user is currently inside this exact conversation
     if (convId != null && convId == _activeConversationId) {
