@@ -319,40 +319,25 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
 
               const Spacer(),
 
-              // Bottom Actions: Decline + Slide to Answer
+              // Bottom Actions: Two Buttons (Decline & Accept)
               Padding(
-                padding: const EdgeInsets.fromLTRB(28, 0, 28, 40),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                padding: const EdgeInsets.fromLTRB(48, 0, 48, 48),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Decline quick button
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildSmallActionButton(
-                          icon: Icons.alarm,
-                          label: 'Remind Me',
-                          onTap: () {},
-                        ),
-                        _buildSmallActionButton(
-                          icon: Icons.message_rounded,
-                          label: 'Message',
-                          onTap: () {},
-                        ),
-                        _buildSmallActionButton(
-                          icon: CommonIcons.callEnd,
-                          label: 'Decline',
-                          color: const Color(0xFFFF3B30),
-                          onTap: _decline,
-                        ),
-                      ],
+                    // Decline Button (Red)
+                    _buildMainCallButton(
+                      label: 'Decline',
+                      icon: CommonIcons.callEnd,
+                      color: const Color(0xFFFF3B30),
+                      onTap: _decline,
                     ),
-                    CommonSpaces.h32,
-                    // Dual Swipe / Slide Call Actions
-                    DualSlideCallActions(
-                      isVideo: widget.isVideo,
-                      onAccepted: _accept,
-                      onDeclined: _decline,
+                    // Accept Button (Green)
+                    _buildMainCallButton(
+                      label: 'Accept',
+                      icon: widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
+                      color: const Color(0xFF34C759),
+                      onTap: _accept,
                     ),
                   ],
                 ),
@@ -366,10 +351,10 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     );
   }
 
-  Widget _buildSmallActionButton({
-    required IconData icon,
+  Widget _buildMainCallButton({
     required String label,
-    Color? color,
+    required IconData icon,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -378,25 +363,34 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 52,
-            height: 52,
+            width: 76,
+            height: 76,
             decoration: BoxDecoration(
-              color: (color ?? Colors.white).withValues(alpha: color != null ? 0.25 : 0.15),
+              color: color,
               shape: BoxShape.circle,
-              border: Border.all(
-                color: (color ?? Colors.white).withValues(alpha: 0.3),
-                width: 1,
-              ),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.45),
+                  blurRadius: 20,
+                  spreadRadius: 4,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
-            child: Icon(icon, color: color ?? Colors.white, size: 24),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 34,
+            ),
           ),
-          CommonSpaces.h8,
+          CommonSpaces.h12,
           Text(
             label,
             style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
             ),
           ),
         ],
@@ -448,285 +442,3 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   }
 }
 
-/// Interactive Dual Slide / Swipe Call Actions:
-/// - Slide Right-to-Left (<<<) on the Accept button to answer.
-/// - Slide Left-to-Right (>>>) on the Decline button to decline.
-/// - Tap directly or swipe either side.
-class DualSlideCallActions extends StatefulWidget {
-  final VoidCallback onAccepted;
-  final VoidCallback onDeclined;
-  final bool isVideo;
-
-  const DualSlideCallActions({
-    super.key,
-    required this.onAccepted,
-    required this.onDeclined,
-    required this.isVideo,
-  });
-
-  @override
-  State<DualSlideCallActions> createState() => _DualSlideCallActionsState();
-}
-
-class _DualSlideCallActionsState extends State<DualSlideCallActions>
-    with SingleTickerProviderStateMixin {
-  double _acceptDrag = 0.0; // Positive value representing pixels dragged to the left
-  double _declineDrag = 0.0; // Positive value representing pixels dragged to the right
-  late AnimationController _shimmerController;
-  late Animation<double> _shimmerAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _shimmerAnimation = Tween<double>(begin: 0.35, end: 1.0).animate(
-      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _shimmerController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const double buttonSize = 72.0;
-    const double maxDragDistance = 90.0;
-    const double threshold = 65.0;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Decline (Swipe Left-to-Right >>> or Tap)
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: buttonSize + maxDragDistance,
-              height: buttonSize,
-              child: Stack(
-                alignment: Alignment.centerLeft,
-                children: [
-                  // Track background when dragging
-                  if (_declineDrag > 0)
-                    Positioned(
-                      left: 0,
-                      top: 6,
-                      bottom: 6,
-                      width: buttonSize + _declineDrag,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF3B30).withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(buttonSize / 2),
-                          border: Border.all(
-                            color: const Color(0xFFFF3B30).withValues(alpha: 0.4),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Shimmering Arrow indicators pointing right >>>
-                  Positioned(
-                    left: buttonSize + 6,
-                    child: AnimatedBuilder(
-                      animation: _shimmerAnimation,
-                      builder: (context, _) {
-                        return Opacity(
-                          opacity: _shimmerAnimation.value,
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.chevron_right_rounded, color: Colors.white60, size: 20),
-                              Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 20),
-                              Icon(Icons.chevron_right_rounded, color: Colors.white, size: 20),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  // Draggable Decline Button
-                  Positioned(
-                    left: _declineDrag,
-                    child: GestureDetector(
-                      onTap: widget.onDeclined,
-                      onHorizontalDragUpdate: (details) {
-                        setState(() {
-                          _declineDrag = (_declineDrag + details.delta.dx).clamp(0.0, maxDragDistance);
-                        });
-                      },
-                      onHorizontalDragEnd: (details) {
-                        if (_declineDrag >= threshold) {
-                          widget.onDeclined();
-                        } else {
-                          setState(() {
-                            _declineDrag = 0.0;
-                          });
-                        }
-                      },
-                      child: Container(
-                        width: buttonSize,
-                        height: buttonSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFFF3B30), Color(0xFFD70015)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFFF3B30).withValues(alpha: 0.45),
-                              blurRadius: 18,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          CommonIcons.callEnd,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            CommonSpaces.h10,
-            const Text(
-              'Decline',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-
-        // Accept (Swipe Right-to-Left <<< or Tap)
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: buttonSize + maxDragDistance,
-              height: buttonSize,
-              child: Stack(
-                alignment: Alignment.centerRight,
-                children: [
-                  // Track background when dragging
-                  if (_acceptDrag > 0)
-                    Positioned(
-                      right: 0,
-                      top: 6,
-                      bottom: 6,
-                      width: buttonSize + _acceptDrag,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF34C759).withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(buttonSize / 2),
-                          border: Border.all(
-                            color: const Color(0xFF34C759).withValues(alpha: 0.4),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Shimmering Arrow indicators pointing left <<<
-                  Positioned(
-                    right: buttonSize + 6,
-                    child: AnimatedBuilder(
-                      animation: _shimmerAnimation,
-                      builder: (context, _) {
-                        return Opacity(
-                          opacity: _shimmerAnimation.value,
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.chevron_left_rounded, color: Colors.white, size: 20),
-                              Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 20),
-                              Icon(Icons.chevron_left_rounded, color: Colors.white60, size: 20),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  // Draggable Accept Button
-                  Positioned(
-                    right: _acceptDrag,
-                    child: GestureDetector(
-                      onTap: widget.onAccepted,
-                      onHorizontalDragUpdate: (details) {
-                        setState(() {
-                          // Dragging to the left means negative dx, which increases _acceptDrag
-                          _acceptDrag = (_acceptDrag - details.delta.dx).clamp(0.0, maxDragDistance);
-                        });
-                      },
-                      onHorizontalDragEnd: (details) {
-                        if (_acceptDrag >= threshold) {
-                          widget.onAccepted();
-                        } else {
-                          setState(() {
-                            _acceptDrag = 0.0;
-                          });
-                        }
-                      },
-                      child: Container(
-                        width: buttonSize,
-                        height: buttonSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF34C759), Color(0xFF248A3D)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF34C759).withValues(alpha: 0.5),
-                              blurRadius: 18,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            CommonSpaces.h10,
-            const Text(
-              'Accept',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
