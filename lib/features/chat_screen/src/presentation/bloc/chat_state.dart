@@ -3,6 +3,8 @@ import 'package:schat/features/chat_screen/src/domain/models/message_model.dart'
 import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
+import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+
 abstract class ChatState {
   const ChatState();
 }
@@ -41,6 +43,10 @@ class ChatLoaded extends ChatState {
   final String? groupPictureUrl;
   final int? disappearingTimer;
 
+  // Screen permission (active granted permission for current user & incoming pending requests)
+  final ScreenPermissionModel? activeScreenPermission;
+  final ScreenPermissionModel? incomingScreenPermissionRequest;
+
   const ChatLoaded({
     required this.messages,
     this.pinnedMessages = const [],
@@ -61,6 +67,8 @@ class ChatLoaded extends ChatState {
     this.groupName,
     this.groupPictureUrl,
     this.disappearingTimer,
+    this.activeScreenPermission,
+    this.incomingScreenPermissionRequest,
   });
 
   ChatLoaded copyWith({
@@ -86,6 +94,10 @@ class ChatLoaded extends ChatState {
     String? groupName,
     String? groupPictureUrl,
     int? disappearingTimer,
+    ScreenPermissionModel? activeScreenPermission,
+    bool clearActiveScreenPermission = false,
+    ScreenPermissionModel? incomingScreenPermissionRequest,
+    bool clearIncomingScreenPermissionRequest = false,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
@@ -109,9 +121,16 @@ class ChatLoaded extends ChatState {
       groupName: groupName ?? this.groupName,
       groupPictureUrl: groupPictureUrl ?? this.groupPictureUrl,
       disappearingTimer: disappearingTimer ?? this.disappearingTimer,
+      activeScreenPermission: clearActiveScreenPermission
+          ? null
+          : (activeScreenPermission ?? this.activeScreenPermission),
+      incomingScreenPermissionRequest: clearIncomingScreenPermissionRequest
+          ? null
+          : (incomingScreenPermissionRequest ?? this.incomingScreenPermissionRequest),
     );
   }
 }
+
 
 class ChatError extends ChatState {
   final String errorMessage;

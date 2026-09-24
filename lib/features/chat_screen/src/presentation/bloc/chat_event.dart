@@ -340,3 +340,25 @@ class ReceiveDisappearingTimerUpdatedEvent extends ChatEvent {
   const ReceiveDisappearingTimerUpdatedEvent({this.seconds});
 }
 
+class ReceiveScreenPermissionRequestEvent extends ChatEvent {
+  final Map<String, dynamic> requestData;
+  const ReceiveScreenPermissionRequestEvent({required this.requestData});
+}
+
+class ReceiveScreenPermissionResponseEvent extends ChatEvent {
+  final Map<String, dynamic> requestData;
+  final String action;
+  const ReceiveScreenPermissionResponseEvent({required this.requestData, required this.action});
+}
+
+class UpdateActiveScreenPermissionEvent extends ChatEvent {
+  final Map<String, dynamic>? permissionData;
+  const UpdateActiveScreenPermissionEvent({this.permissionData});
+}
+
+class ConsumeScreenPermissionEvent extends ChatEvent {
+  final String requestId;
+  const ConsumeScreenPermissionEvent({required this.requestId});
+}
+
+

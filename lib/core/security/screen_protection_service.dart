@@ -16,36 +16,15 @@ class ScreenProtectionService {
     if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
     
     try {
-      ScreenProtector.addListener(
-        () {
-          debugPrint('ScreenProtection: Screenshot detected!');
-          _screenshotController.add(null);
-        },
-        (isRecording) {
-          debugPrint('ScreenProtection: Screen recording state: $isRecording');
-          _screenRecordController.add(isRecording);
-        },
-      );
-      
-      final isRecording = await ScreenProtector.isRecording();
-      if (isRecording) {
-        _screenRecordController.add(true);
-      }
-      
-      await enableProtection();
+      // Ensure screenshot and screen recording restrictions are off across the entire app
+      await disableProtection();
     } catch (e) {
-      debugPrint('ScreenProtection: Error initializing screen protector listeners: $e');
+      debugPrint('ScreenProtection: Error initializing screen protection service: $e');
     }
   }
 
   Future<void> enableProtection() async {
-    if (kIsWeb) return;
-    try {
-      await ScreenProtector.preventScreenshotOn();
-      debugPrint('ScreenProtection: Screenshot prevention enabled');
-    } catch (e) {
-      debugPrint('ScreenProtection: Error enabling screenshot prevention: $e');
-    }
+    // Disabled across all screens as requested
   }
 
   Future<void> disableProtection() async {
@@ -61,6 +40,6 @@ class ScreenProtectionService {
   void dispose() {
     _screenshotController.close();
     _screenRecordController.close();
-    ScreenProtector.removeListener();
   }
 }
+

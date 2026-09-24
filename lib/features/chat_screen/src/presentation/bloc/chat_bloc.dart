@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
@@ -91,6 +92,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ScheduleMessageEvent>(_onScheduleMessage);
     on<CheckExpiredMessagesEvent>(_onCheckExpiredMessages);
     on<ReceiveDisappearingTimerUpdatedEvent>(_onReceiveDisappearingTimerUpdated);
+    on<ReceiveScreenPermissionRequestEvent>(_onReceiveScreenPermissionRequest);
+    on<ReceiveScreenPermissionResponseEvent>(_onReceiveScreenPermissionResponse);
+    on<UpdateActiveScreenPermissionEvent>(_onUpdateActiveScreenPermission);
+    on<ConsumeScreenPermissionEvent>(_onConsumeScreenPermission);
 
     _listenToSocket();
     _startExpiryTimer();
@@ -388,6 +393,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId)) {
             add(ReceiveCallLogUpdateEvent(callLogData: cleanData));
           }
+        } else if (type == 'screen_permission_request') {
+          final req = cleanData['request'] ?? cleanData;
+          if (req is Map) {
+            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
+            if (_isSameConversation(convId, _conversationId)) {
+              add(ReceiveScreenPermissionRequestEvent(requestData: Map<String, dynamic>.from(req)));
+            }
+          }
+        } else if (type == 'screen_permission_response') {
+          final req = cleanData['request'] ?? cleanData;
+          final action = cleanData['action']?.toString() ?? cleanData['status']?.toString() ?? 'rejected';
+          if (req is Map) {
+            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
+            if (_isSameConversation(convId, _conversationId)) {
+              add(ReceiveScreenPermissionResponseEvent(requestData: Map<String, dynamic>.from(req), action: action));
+            }
+          }
         } else if (type == 'conversation_settings_updated' || type == 'disappearing_timer_updated') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           if (_isSameConversation(convId, _conversationId)) {
@@ -547,6 +569,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         );
       }).toList();
 
+      ScreenPermissionModel? activeScreenPermission;
+      try {
+        activeScreenPermission = await _chatRepository.getActiveScreenPermission(event.conversationId);
+      } catch (_) {}
+
       final currentState = state;
       if (currentState is ChatLoaded) {
         emit(currentState.copyWith(
@@ -554,6 +581,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           pinnedMessages: pinnedMessages,
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
+          activeScreenPermission: activeScreenPermission ?? currentState.activeScreenPermission,
         ));
       } else {
         emit(ChatLoaded(
@@ -567,6 +595,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           customWallpaperUrl: savedWallpaper,
           themeColor: savedThemeColor,
           disappearingTimer: event.initialDisappearingTimer,
+          activeScreenPermission: activeScreenPermission,
         ));
       }
     } catch (e) {
@@ -1493,6 +1522,78 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       } catch (e) {
         debugPrint('Error scheduling message: $e');
         add(ShowNotificationEvent(message: 'Failed to schedule message: $e', isError: true));
+      }
+    }
+  }
+
+  void _onReceiveScreenPermissionRequest(
+    ReceiveScreenPermissionRequestEvent event,
+    Emitter<ChatState> emit,
+  ) {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      final model = ScreenPermissionModel.fromJson(event.requestData);
+      emit(currentState.copyWith(incomingScreenPermissionRequest: model));
+    }
+  }
+
+  void _onReceiveScreenPermissionResponse(
+    ReceiveScreenPermissionResponseEvent event,
+    Emitter<ChatState> emit,
+  ) {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      final model = ScreenPermissionModel.fromJson(event.requestData);
+      final isAccepted = event.action.toLowerCase() == 'accept' || model.status == 'accepted';
+      final receiverName = model.receiverName ?? 'Contact';
+      final permText = model.isScreenshot
+          ? '${model.allowedCount ?? 1} screenshot(s)'
+          : '${model.durationSeconds ?? 30}s recording';
+
+      if (isAccepted) {
+        emit(currentState.copyWith(
+          activeScreenPermission: model,
+          notificationMessage: '$receiverName accepted your request for $permText!',
+        ));
+      } else {
+        emit(currentState.copyWith(
+          clearActiveScreenPermission: true,
+          notificationMessage: '$receiverName rejected your request for $permText.',
+        ));
+      }
+    }
+  }
+
+  void _onUpdateActiveScreenPermission(
+    UpdateActiveScreenPermissionEvent event,
+    Emitter<ChatState> emit,
+  ) {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      if (event.permissionData == null) {
+        emit(currentState.copyWith(clearActiveScreenPermission: true));
+      } else {
+        final model = ScreenPermissionModel.fromJson(event.permissionData!);
+        emit(currentState.copyWith(activeScreenPermission: model));
+      }
+    }
+  }
+
+  Future<void> _onConsumeScreenPermission(
+    ConsumeScreenPermissionEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      try {
+        final updated = await _chatRepository.consumeScreenPermission(event.requestId);
+        if (updated.status == 'completed' || (updated.remainingCount != null && updated.remainingCount! <= 0)) {
+          emit(currentState.copyWith(clearActiveScreenPermission: true));
+        } else {
+          emit(currentState.copyWith(activeScreenPermission: updated));
+        }
+      } catch (e) {
+        debugPrint('Error consuming screen permission: $e');
       }
     }
   }

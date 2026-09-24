@@ -113,4 +113,12 @@ class CommonEndpoints {
   static String viewStatus(String statusId) => '/statuses/$statusId/view';
   static String muteContactStatus(String contactId) => '/statuses/mute/$contactId';
   static String unmuteContactStatus(String contactId) => '/statuses/unmute/$contactId';
+
+  // Screen Capture Permission
+  static const String screenPermissionRequest = '/chats/screen-permission/request';
+  static String screenPermissionRespond(String requestId) => '/chats/screen-permission/$requestId/respond';
+  static const String screenPermissionPending = '/chats/screen-permission/pending';
+  static String screenPermissionActive(String conversationId) => '/chats/screen-permission/active/$conversationId';
+  static String screenPermissionConsume(String requestId) => '/chats/screen-permission/$requestId/consume';
 }
+

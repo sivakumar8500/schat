@@ -7,6 +7,7 @@ import 'package:schat/features/chat_screen/src/domain/models/message_shares_mode
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -514,4 +515,97 @@ class ChatRepositoryImpl implements ChatRepository {
       failure: (error, _) => throw Exception(error),
     );
   }
+
+  @override
+  Future<ScreenPermissionModel> requestScreenPermission({
+    required String conversationId,
+    required String permissionType,
+    int? allowedCount,
+    int? durationSeconds,
+  }) async {
+    final result = await _apiService.post<ScreenPermissionModel>(
+      CommonEndpoints.screenPermissionRequest,
+      data: {
+        'conversation_id': conversationId,
+        'permission_type': permissionType,
+        if (allowedCount != null) 'allowed_count': allowedCount,
+        if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      },
+      mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<ScreenPermissionModel> respondToScreenPermission({
+    required String requestId,
+    required String action,
+  }) async {
+    final result = await _apiService.post<ScreenPermissionModel>(
+      CommonEndpoints.screenPermissionRespond(requestId),
+      data: {'action': action},
+      mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<List<ScreenPermissionModel>> getPendingScreenPermissions() async {
+    final result = await _apiService.get<List<ScreenPermissionModel>>(
+      CommonEndpoints.screenPermissionPending,
+      mapper: (data) {
+        if (data is List) {
+          return data
+              .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+        return [];
+      },
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => [],
+    );
+  }
+
+  @override
+  Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId) async {
+    final result = await _apiService.get<ScreenPermissionModel?>(
+      CommonEndpoints.screenPermissionActive(conversationId),
+      mapper: (data) {
+        if (data != null && data is Map) {
+          return ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data));
+        }
+        return null;
+      },
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => null,
+    );
+  }
+
+  @override
+  Future<ScreenPermissionModel> consumeScreenPermission(String requestId) async {
+    final result = await _apiService.post<ScreenPermissionModel>(
+      CommonEndpoints.screenPermissionConsume(requestId),
+      mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
 }
+

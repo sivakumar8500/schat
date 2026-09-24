@@ -39,6 +39,9 @@ import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_
 import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
+import 'widgets/request_screen_permission_bottom_sheet.dart';
+import 'widgets/incoming_screen_permission_bottom_sheet.dart';
+import '../domain/models/screen_permission_model.dart';
 import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
@@ -145,7 +148,6 @@ class _ChatPageState extends State<ChatPage> {
   int _previewPositionSecs = 0;
   Timer? _previewPositionTimer;
 
-  StreamSubscription? _screenshotSubscription;
   bool _isAdmin = false;
 
   @override
@@ -180,8 +182,6 @@ class _ChatPageState extends State<ChatPage> {
     // Init CallWebRtcBloc and listen for incoming call socket events
     _callWebRtcBloc = getIt<CallWebRtcBloc>();
     // _listenForCallEvents(); // CallWebRtcBloc now listens to socket internally
-
-    _setupScreenshotListener();
 
     // Listen to preview player events
     _previewPlayer.onPlayerComplete.listen((_) {
@@ -1416,15 +1416,6 @@ class _ChatPageState extends State<ChatPage> {
   }
 
 
-  void _setupScreenshotListener() {
-    final securityService = getIt<ScreenProtectionService>();
-    _screenshotSubscription = securityService.onScreenshot.listen((_) {
-      if (mounted) {
-        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
-      }
-    });
-  }
-
   Future<void> _checkIfAdmin() async {
     if (!widget.isGroup) return;
     try {
@@ -1455,7 +1446,6 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     getIt<InAppNotificationService>().setActiveConversationId(null);
-    _screenshotSubscription?.cancel();
     _callSocketSubscription?.cancel();
     _stopTypingTimer();
     _messageController.dispose();
@@ -2380,6 +2370,25 @@ class _ChatPageState extends State<ChatPage> {
           } else if (state is ChatLoaded && state.notificationMessage != null) {
             context.showInfoNotification(state.notificationMessage!);
           }
+
+          if (state is ChatLoaded && state.incomingScreenPermissionRequest != null) {
+            final incomingReq = state.incomingScreenPermissionRequest!;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (dialogCtx) => IncomingScreenPermissionBottomSheet(
+                    request: incomingReq,
+                    onResponded: (updated) {
+                      _chatBloc.add(const UpdateActiveScreenPermissionEvent(permissionData: null));
+                    },
+                  ),
+                );
+              }
+            });
+          }
         },
         builder: (context, state) {
           final isLoading = state is ChatLoading || state is ChatInitial;
@@ -2453,7 +2462,13 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   SafeArea(
                     bottom: false,
-                    child: _buildPinnedMessageBanner(state),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildPinnedMessageBanner(state),
+                        _buildActiveScreenPermissionBanner(state),
+                      ],
+                    ),
                   ),
                   Expanded(
                     child: NotificationListener<ScrollNotification>(
@@ -3277,6 +3292,8 @@ class _ChatPageState extends State<ChatPage> {
               }
             } else if (value == 'scheduled') {
               _showScheduleMessageBottomSheet(context);
+            } else if (value == 'screen_permission') {
+              _showRequestScreenPermissionBottomSheet(context);
             }
           },
           itemBuilder: (BuildContext context) {
@@ -3300,6 +3317,7 @@ class _ChatPageState extends State<ChatPage> {
             } else {
               return [
                 _buildMenuItem('search', CommonIcons.search, 'Search message'),
+                _buildMenuItem('screen_permission', Icons.security_rounded, 'Request Screenshot / Record'),
                 _buildMenuItem('new_group', Icons.group_add_rounded, 'New group'),
                 _buildMenuItem('view_contact', CommonIcons.personOutline, 'View contact'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Media, links, and docs'),
@@ -4389,6 +4407,80 @@ class _ChatPageState extends State<ChatPage> {
 
       context.showSuccessNotification('Message scheduled for $formattedTime');
     }
+  }
+
+  void _showRequestScreenPermissionBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (dialogCtx) => RequestScreenPermissionBottomSheet(
+        conversationId: widget.conversationId,
+        contactName: widget.contactName,
+      ),
+    );
+  }
+
+  Widget _buildActiveScreenPermissionBanner(ChatState state) {
+    if (state is! ChatLoaded || state.activeScreenPermission == null) {
+      return const SizedBox.shrink();
+    }
+    final perm = state.activeScreenPermission!;
+    final isScreenshot = perm.isScreenshot;
+    final remaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.primary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isScreenshot ? Icons.camera_alt_rounded : Icons.videocam_rounded,
+            color: context.colors.primary,
+            size: 20,
+          ),
+          CommonSpaces.w10,
+          Expanded(
+            child: Text(
+              isScreenshot
+                  ? 'Screenshot allowed: $remaining remaining'
+                  : 'Screen recording allowed: ${perm.durationSeconds ?? 30}s',
+              style: context.bodySmall.copyWith(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (isScreenshot)
+            InkWell(
+              onTap: () {
+                _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
+                context.showSuccessNotification('Screenshot count updated');
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.colors.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Use 1',
+                  style: context.bodySmall.copyWith(
+                    color: context.colors.textLight,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _showDisappearingMessagesBottomSheet(BuildContext context, int? currentTimer) {

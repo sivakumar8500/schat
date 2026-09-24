@@ -4,6 +4,8 @@ import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.da
 import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
+import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+
 abstract class ChatRepository {
   Future<List<MessageModel>> getMessages(String conversationId, {int? limit, int? skip});
   Future<bool> sendMessage(MessageModel message);
@@ -76,4 +78,24 @@ abstract class ChatRepository {
 
   /// POST /messages/scheduled to schedule a message for a future date/time.
   Future<bool> scheduleMessage(Map<String, dynamic> requestData);
+
+  /// Screen capture permission methods
+  Future<ScreenPermissionModel> requestScreenPermission({
+    required String conversationId,
+    required String permissionType,
+    int? allowedCount,
+    int? durationSeconds,
+  });
+
+  Future<ScreenPermissionModel> respondToScreenPermission({
+    required String requestId,
+    required String action,
+  });
+
+  Future<List<ScreenPermissionModel>> getPendingScreenPermissions();
+
+  Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId);
+
+  Future<ScreenPermissionModel> consumeScreenPermission(String requestId);
 }
+

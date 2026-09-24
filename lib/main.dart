@@ -21,7 +21,6 @@ import 'package:schat/core/notifications/in_app_notification_service.dart';
 
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
-import 'package:schat/utils/common_notifications.dart';
 
 import 'injection.dart';
 
@@ -100,14 +99,10 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  StreamSubscription? _screenshotSubscription;
-  StreamSubscription? _recordSubscription;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _setupSecurityListeners();
     ShareReceiverService().init();
   }
 
@@ -126,36 +121,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
   }
 
-  void _setupSecurityListeners() {
-    final securityService = getIt<ScreenProtectionService>();
-    
-    _screenshotSubscription = securityService.onScreenshot.listen((_) {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
-      }
-    });
-
-    _recordSubscription = securityService.onScreenRecord.listen((isRecording) {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        if (isRecording) {
-          context.showErrorNotification("Screen recording is active! Protection enabled.");
-        } else {
-          context.showInfoNotification("Screen recording stopped.");
-        }
-      }
-    });
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _screenshotSubscription?.cancel();
-    _recordSubscription?.cancel();
     ShareReceiverService().dispose();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {
