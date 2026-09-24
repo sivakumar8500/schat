@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:hive/hive.dart';
@@ -26,7 +27,6 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
@@ -46,6 +46,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   int _currentIndex = 0;
+  int _filterIndex = 0; // 0: All, 1: Unread, 2: Groups
   String _username = 'David';
   String? _profilePicUrl;
   final Set<String> _hiddenChatIds = {};
@@ -504,8 +505,17 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatsTab() {
-    return BlocListener<ChatsBloc, ChatsState>(
-      listener: (context, state) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: HomeBackgroundWavePainter(isDark: context.colors.isDark),
+            ),
+          ),
+        ),
+        BlocListener<ChatsBloc, ChatsState>(
+          listener: (context, state) {
         if (state is ChatsLoaded) {
           setState(() {
             _hiddenChatIds.clear();
@@ -540,9 +550,13 @@ class _DashboardPageState extends State<DashboardPage> {
           debugPrint('DEBUG: DashboardPage ChatsBloc state: ${state.runtimeType}');
           final isSelectionMode = _selectedChatIds.isNotEmpty;
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               isSelectionMode ? _buildSelectionHeader() : _buildHeader(),
-              if (!isSelectionMode) _buildSearchBar(),
+              if (!isSelectionMode) ...[
+                _buildSearchBar(),
+                _buildFilterChips(),
+              ],
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async {
@@ -567,7 +581,20 @@ class _DashboardPageState extends State<DashboardPage> {
                     },
                     loaded: (chatList) {
                       debugPrint('DEBUG: DashboardPage showing loaded with ${chatList.length} chats');
-                      if (chatList.isEmpty) {
+                      final visibleChats = chatList
+                          .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
+                          .where((c) {
+                            if (_filterIndex == 1) return c.unreadCount > 0;
+                            if (_filterIndex == 2) return c.isGroup;
+                            return true;
+                          })
+                          .toList();
+
+                      final totalUnreadCount = chatList
+                          .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
+                          .fold<int>(0, (sum, c) => sum + c.unreadCount);
+
+                      if (visibleChats.isEmpty && chatList.isEmpty) {
                         return SingleChildScrollView(
                           physics: const AlwaysScrollableScrollPhysics(),
                           child: Container(
@@ -583,7 +610,13 @@ class _DashboardPageState extends State<DashboardPage> {
                           ),
                         );
                       }
-                      return _buildChatList(chatList);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!isSelectionMode) _buildSectionHeader(totalUnreadCount),
+                          Expanded(child: _buildChatListFromFiltered(visibleChats)),
+                        ],
+                      );
                     },
                     orElse: () {
                       debugPrint('DEBUG: DashboardPage state orElse: ${state.runtimeType}');
@@ -596,12 +629,15 @@ class _DashboardPageState extends State<DashboardPage> {
           );
         },
       ),
-    );
-  }
+    ),
+  ],
+);
+}
 
   Widget _buildHeader() {
+    final isDark = context.colors.isDark;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -611,11 +647,10 @@ class _DashboardPageState extends State<DashboardPage> {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        ProfileSettingsPage(
-                          username: _username,
-                          profilePicUrl: _profilePicUrl,
-                        ),
+                    builder: (context) => ProfileSettingsPage(
+                      username: _username,
+                      profilePicUrl: _profilePicUrl,
+                    ),
                   ),
                 );
                 
@@ -634,24 +669,71 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Row(
                 children: [
                   Container(
-                    width: CommonSizes.p32,
-                    height: CommonSizes.p32,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
-                      color: context.colors.primary.withValues(alpha: 0.1),
+                      color: isDark
+                          ? const Color(0xFF00FF87).withValues(alpha: 0.15)
+                          : const Color(0xFF00873C).withValues(alpha: 0.12),
                       shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF00FF87).withValues(alpha: 0.4)
+                            : const Color(0xFF00873C).withValues(alpha: 0.25),
+                        width: 1.5,
+                      ),
                     ),
                     child: ClipOval(
                       child: (_profilePicUrl != null && _profilePicUrl!.isNotEmpty)
-                          ? Image.network(
-                              _profilePicUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: _profilePicUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(CommonIcons.person, color: context.colors.primary, size: 20),
+                              placeholder: (context, url) => Center(
+                                child: Text(
+                                  _username.isNotEmpty
+                                      ? _username.substring(0, 1).toUpperCase()
+                                      : 'U',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? const Color(0xFF00FF87)
+                                        : const Color(0xFF00873C),
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Center(
+                                child: Text(
+                                  _username.isNotEmpty
+                                      ? _username.substring(0, 1).toUpperCase()
+                                      : 'U',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? const Color(0xFF00FF87)
+                                        : const Color(0xFF00873C),
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             )
-                          : Icon(CommonIcons.person, color: context.colors.primary, size: 20),
+                          : Center(
+                              child: Text(
+                                _username.isNotEmpty
+                                    ? _username.substring(0, 1).toUpperCase()
+                                    : 'U',
+                                style: TextStyle(
+                                    color: isDark
+                                        ? const Color(0xFF00FF87)
+                                        : const Color(0xFF00873C),
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
-                  CommonSpaces.w12,
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -659,18 +741,20 @@ class _DashboardPageState extends State<DashboardPage> {
                       children: [
                         Text(
                           "S-Chat",
-                          style: context.h2.copyWith(
+                          style: TextStyle(
                             fontSize: 22,
-                            color: context.colors.primary,
+                            color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
                             fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
                           "How are you today?",
-                          style: context.bodyMedium.copyWith(
-                            color: context.colors.textSecondary,
+                          style: TextStyle(
+                            color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+                            fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -683,9 +767,9 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           PopupMenuButton<String>(
             icon: Icon(
-              CommonIcons.moreVert,
+              Icons.more_vert_rounded,
               color: context.colors.textPrimary,
-              size: 28,
+              size: 24,
             ),
             color: context.colors.scaffoldBackground,
             elevation: 4,
@@ -807,11 +891,12 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildSearchBar() {
-    final searchBgColor = context.colors.isDark 
-        ? context.colors.pureWhite.withValues(alpha: 0.1)
-        : context.colors.primary.withValues(alpha: 0.05);
+    final isDark = context.colors.isDark;
+    final searchBgColor = isDark 
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFEFF4F1);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: GestureDetector(
         onTap: () {
           Navigator.push(
@@ -820,24 +905,25 @@ class _DashboardPageState extends State<DashboardPage> {
           );
         },
         child: Container(
-          height: 52,
+          height: 48,
           decoration: BoxDecoration(
             color: searchBgColor,
-            borderRadius: BorderRadius.circular(26),
+            borderRadius: BorderRadius.circular(24),
           ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              CommonSpaces.w16,
               Icon(
-                CommonIcons.search,
-                color: context.colors.textHint.withValues(alpha: 0.7),
+                Icons.search_rounded,
+                color: isDark ? Colors.white54 : const Color(0xFF4B5563),
+                size: 22,
               ),
-              CommonSpaces.w12,
+              const SizedBox(width: 12),
               Text(
-                'Search',
-                style: context.bodyLarge.copyWith(
-                  color: context.colors.textHint.withValues(alpha: 0.7),
-                  fontSize: 16,
+                'Search conversations',
+                style: TextStyle(
+                  color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                  fontSize: 15,
                   fontWeight: FontWeight.normal,
                 ),
               ),
@@ -848,9 +934,136 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _buildFilterChips() {
+    final isDark = context.colors.isDark;
+    final filterOptions = ['All', 'Unread', 'Groups'];
+    final activeColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final activeTextColor = isDark ? Colors.black : Colors.white;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+      child: Row(
+        children: List.generate(filterOptions.length, (index) {
+          final isSelected = _filterIndex == index;
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _filterIndex = index;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? activeColor
+                      : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.transparent),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected
+                        ? activeColor
+                        : (isDark ? Colors.white24 : const Color(0xFFD1D5DB)),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  filterOptions[index],
+                  style: TextStyle(
+                    color: isSelected
+                        ? activeTextColor
+                        : (isDark ? Colors.white70 : const Color(0xFF374151)),
+                    fontSize: 13.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(int unreadCount) {
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Messages',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+              if (unreadCount > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+                        : const Color(0xFFD1FADF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+                    style: TextStyle(
+                      color: primaryColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HiddenChatsPage()),
+              );
+            },
+            child: Row(
+              children: [
+                Icon(
+                  Icons.inventory_2_outlined,
+                  size: 18,
+                  color: primaryColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Archive',
+                  style: TextStyle(
+                    color: primaryColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAvatar(ChatModel chat) {
     final isGroup = chat.isGroup;
-    final color = context.colors.primary;
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
+    final avatarTextColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF027A48);
 
     if (isGroup) {
       final groupPic = chat.recipient.profilePictureUrl;
@@ -858,21 +1071,22 @@ class _DashboardPageState extends State<DashboardPage> {
         return Stack(
           children: [
             Container(
-              width: CommonSizes.p38,
-              height: CommonSizes.p38,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
+                color: avatarBg,
                 shape: BoxShape.circle,
               ),
               child: ClipOval(
-                child: Image.network(
-                  groupPic,
+                child: CachedNetworkImage(
+                  imageUrl: groupPic,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Icon(Icons.group_rounded, color: color, size: 24),
-                    );
-                  },
+                  placeholder: (context, url) => Center(
+                    child: Icon(Icons.group_rounded, color: primaryColor, size: 24),
+                  ),
+                  errorWidget: (context, url, error) => Center(
+                    child: Icon(Icons.group_rounded, color: primaryColor, size: 24),
+                  ),
                 ),
               ),
             ),
@@ -881,15 +1095,15 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       return SizedBox(
-        width: CommonSizes.p48,
-        height: CommonSizes.p48,
+        width: 48,
+        height: 48,
         child: Stack(
           children: [
             Positioned(
               left: 2,
               top: 2,
               child: _buildSmallAvatar(
-                context.colors.primary.withValues(alpha: 0.4),
+                primaryColor.withValues(alpha: 0.25),
                 '👨🏻‍💻',
               ),
             ),
@@ -897,7 +1111,7 @@ class _DashboardPageState extends State<DashboardPage> {
               right: 2,
               top: 2,
               child: _buildSmallAvatar(
-                context.colors.pinkAccent.withValues(alpha: 0.4),
+                context.colors.pinkAccent.withValues(alpha: 0.25),
                 '👩🏼‍💻',
               ),
             ),
@@ -905,7 +1119,7 @@ class _DashboardPageState extends State<DashboardPage> {
               left: 2,
               bottom: 2,
               child: _buildSmallAvatar(
-                context.colors.orangeAccent.withValues(alpha: 0.4),
+                context.colors.orangeAccent.withValues(alpha: 0.25),
                 '👨🏽‍💻',
               ),
             ),
@@ -913,10 +1127,10 @@ class _DashboardPageState extends State<DashboardPage> {
               right: 2,
               bottom: 2,
               child: Container(
-                width: 24,
-                height: 24,
+                width: 22,
+                height: 22,
                 decoration: BoxDecoration(
-                  color: context.colors.primary,
+                  color: primaryColor,
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: context.colors.scaffoldBackground,
@@ -926,9 +1140,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: Center(
                   child: Text(
                     '+3',
-                    style: context.bodySmall.copyWith(
-                      color: context.colors.pureWhite,
-                      fontSize: 9,
+                    style: TextStyle(
+                      color: isDark ? Colors.black : Colors.white,
+                      fontSize: 8.5,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -944,70 +1158,49 @@ class _DashboardPageState extends State<DashboardPage> {
     final name = chat.recipient.displayName;
     final isOnline = chat.recipient.isOnline;
 
+    Widget buildInitialFallback() {
+      return Center(
+        child: Text(
+          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+          style: TextStyle(
+            color: avatarTextColor,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
     return Stack(
+      clipBehavior: Clip.none,
       children: [
         Container(
-          width: CommonSizes.p38,
-          height: CommonSizes.p38,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
+            color: avatarBg,
             shape: BoxShape.circle,
           ),
           child: ClipOval(
             child: (imageUrl != null && imageUrl.isNotEmpty)
-                ? Image.network(
-                    imageUrl,
+                ? CachedNetworkImage(
+                    imageUrl: imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Text(
-                          name.isNotEmpty
-                              ? name.substring(0, 1).toUpperCase()
-                              : '?',
-                          style: context.titleMedium.copyWith(
-                            color: color,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      );
-                    },
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          value: loadingProgress.expectedTotalBytes != null
-                              ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                              : null,
-                        ),
-                      );
-                    },
+                    placeholder: (context, url) => buildInitialFallback(),
+                    errorWidget: (context, url, error) => buildInitialFallback(),
                   )
-                : Center(
-                    child: Text(
-                      name.isNotEmpty
-                          ? name.substring(0, 1).toUpperCase()
-                          : '?',
-                      style: context.titleMedium.copyWith(
-                        color: color,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                : buildInitialFallback(),
           ),
         ),
         if (isOnline)
           Positioned(
-            right: 2,
-            bottom: 2,
+            right: 0,
+            bottom: 0,
             child: Container(
               width: 14,
               height: 14,
               decoration: BoxDecoration(
-                color: context.colors.success,
+                color: const Color(0xFF12B76A),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: context.colors.scaffoldBackground,
@@ -1022,11 +1215,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildSmallAvatar(Color bgColor, String emoji) {
     return Container(
-      width: 24,
-      height: 24,
+      width: 22,
+      height: 22,
       decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
       child: Center(
-        child: Text(emoji, style: context.bodyMedium.copyWith(fontSize: 12)),
+        child: Text(emoji, style: const TextStyle(fontSize: 11)),
       ),
     );
   }
@@ -1053,51 +1246,62 @@ class _DashboardPageState extends State<DashboardPage> {
       debugPrint('Error parsing timestamp: $e');
     }
 
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           timeStr,
-          style: context.bodySmall.copyWith(
+          style: TextStyle(
             fontSize: 12,
-            color: context.colors.textHint,
+            color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+            fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: CommonSizes.p6),
+        const SizedBox(height: 6),
         if (chat.unreadCount > 0)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
             decoration: BoxDecoration(
-              color: context.colors.primary,
+              color: primaryColor,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               chat.unreadCount.toString(),
-              style: context.bodySmall.copyWith(
-                color: context.colors.pureWhite,
+              style: TextStyle(
+                color: isDark ? Colors.black : Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
               ),
             ),
           )
         else
-          Icon(CommonIcons.doneAll, color: context.colors.primary, size: 18),
+          const Icon(
+            Icons.done_all_rounded,
+            color: Color(0xFF12B76A),
+            size: 18,
+          ),
       ],
     );
   }
 
-  Widget _buildChatList(List<ChatModel> chatList) {
-    final visibleChats = chatList
-        .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
-        .toList();
-    
-    debugPrint('DEBUG: DashboardPage building chat list with ${visibleChats.length} visible chats');
-
-    return ListView.builder(
+  Widget _buildChatListFromFiltered(List<ChatModel> visibleChats) {
+    return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 12, bottom: 80),
+      padding: const EdgeInsets.only(top: 4, bottom: 80),
       itemCount: visibleChats.length,
+      separatorBuilder: (context, index) => Divider(
+        height: 1,
+        thickness: 0.6,
+        indent: 84,
+        endIndent: 20,
+        color: context.colors.isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFF0F0F0),
+      ),
       itemBuilder: (context, index) {
         final chat = visibleChats[index];
         final name = chat.isGroup
@@ -1114,21 +1318,13 @@ class _DashboardPageState extends State<DashboardPage> {
           message = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
         }
 
-        return _buildSwipeableChat(
+        return _buildChatTile(
           chat: chat,
           name: name,
           message: message,
         );
       },
     );
-  }
-
-  Widget _buildSwipeableChat({
-    required ChatModel chat,
-    required String name,
-    required String message,
-  }) {
-    return _buildChatTile(chat: chat, name: name, message: message);
   }
 
   Widget _buildChatTile({
@@ -1138,9 +1334,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }) {
     final isSelected = _selectedChatIds.contains(chat.id);
     final isSelectionMode = _selectedChatIds.isNotEmpty;
+    final isDark = context.colors.isDark;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
       onTap: () async {
         if (isSelectionMode) {
           setState(() {
@@ -1182,12 +1378,14 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       },
       child: Container(
-        color: isSelected ? context.colors.primary.withValues(alpha: 0.08) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        color: isSelected
+            ? context.colors.primary.withValues(alpha: 0.1)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
             _buildAvatar(chat),
-            CommonSpaces.w16,
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1197,13 +1395,13 @@ class _DashboardPageState extends State<DashboardPage> {
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.titleSmall.copyWith(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 16,
+                      fontSize: 15.5,
                       color: context.colors.textPrimary,
                     ),
                   ),
-                  CommonSpaces.h4,
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
@@ -1211,27 +1409,31 @@ class _DashboardPageState extends State<DashboardPage> {
                           message,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: context.bodyMedium.copyWith(
+                          style: TextStyle(
                             color: chat.isTyping
-                                ? const Color(0xFF34C759)
-                                : (isSelected 
-                                    ? context.colors.primary 
-                                    : context.colors.textSecondary.withValues(alpha: 0.7)),
+                                ? const Color(0xFF12B76A)
+                                : (isSelected
+                                    ? context.colors.primary
+                                    : (isDark ? Colors.white60 : const Color(0xFF6B7280))),
                             fontWeight: chat.isTyping ? FontWeight.w600 : FontWeight.normal,
-                            fontSize: 14,
+                            fontSize: 13.5,
                           ),
                         ),
                       ),
                       if (_mutedChatIds.contains(chat.id)) ...[
-                        CommonSpaces.w8,
-                        Icon(Icons.notifications_off_rounded, size: 16, color: context.colors.textHint),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.notifications_off_rounded,
+                          size: 16,
+                          color: context.colors.textHint,
+                        ),
                       ],
                     ],
                   ),
                 ],
               ),
             ),
-            CommonSpaces.w12,
+            const SizedBox(width: 10),
             _buildChatStatus(chat),
           ],
         ),
@@ -1240,87 +1442,284 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final isDark = context.colors.isDark;
     return Container(
       decoration: BoxDecoration(
         color: context.colors.scaffoldBackground,
         boxShadow: [
           BoxShadow(
-            color: context.colors.textPrimary.withValues(
-              alpha: getIt<ThemeController>().themeMode == ThemeMode.dark
-                  ? 0.3
-                  : 0.05,
-            ),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-            if (index == 0) {
-              context.read<ChatsBloc>().add(const FetchChats());
-            } else if (index == 3) {
-              _onlyShowSynced = false; // Reset to show all when tapped manually
-            }
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: context.colors.transparent,
-        selectedItemColor: context.colors.primary,
-        unselectedItemColor: context.colors.textHint,
-        showSelectedLabels: true,
-        showUnselectedLabels: true,
-        elevation: 0,
-        selectedLabelStyle: context.bodyMedium.copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildNavItem(
+              index: 0,
+              icon: Icons.chat_bubble_outline_rounded,
+              activeIcon: Icons.chat_bubble_rounded,
+              label: 'Messages',
+            ),
+            _buildNavItem(
+              index: 1,
+              icon: Icons.motion_photos_on_outlined,
+              activeIcon: Icons.motion_photos_on_rounded,
+              label: 'Status',
+            ),
+            _buildNavItem(
+              index: 2,
+              icon: Icons.call_outlined,
+              activeIcon: Icons.phone_rounded,
+              label: 'Calls',
+            ),
+            _buildNavItem(
+              index: 3,
+              icon: Icons.person_add_outlined,
+              activeIcon: Icons.person_add_alt_1_rounded,
+              label: 'New Chat',
+            ),
+          ],
         ),
-        unselectedLabelStyle: context.bodyMedium.copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.normal,
-        ),
-        items: [
-          _buildBottomNavItem(CommonIcons.home, 'Messages', 0),
-          _buildBottomNavItem(CommonIcons.statusIcon, 'Status', 1),
-          _buildBottomNavItem(CommonIcons.call, 'Calls', 2),
-          _buildBottomNavItem(CommonIcons.newChat, 'New Chat', 3),
-        ],
       ),
     );
   }
 
-  BottomNavigationBarItem _buildBottomNavItem(
-    String iconPath,
-    String label,
-    int index,
-  ) {
+  Widget _buildNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+  }) {
     final isActive = _currentIndex == index;
-    return BottomNavigationBarItem(
-      icon: Column(
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final activePillColor = isDark
+        ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+        : const Color(0xFFD1FADF);
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _currentIndex = index;
+          if (index == 0) {
+            context.read<ChatsBloc>().add(const FetchChats());
+          } else if (index == 3) {
+            _onlyShowSynced = false;
+          }
+        });
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: isActive ? 30 : 0,
-            height: 3,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
             decoration: BoxDecoration(
-              color: context.colors.primary,
-              borderRadius: BorderRadius.circular(2),
+              color: isActive ? activePillColor : Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              isActive ? activeIcon : icon,
+              size: 22,
+              color: isActive
+                  ? primaryColor
+                  : (isDark ? Colors.white60 : const Color(0xFF6B7280)),
             ),
           ),
-          CommonSpaces.h6,
-          Image.asset(
-            iconPath,
-            width: 20,
-            height: 20,
-            color: isActive ? context.colors.primary : context.colors.textHint,
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              color: isActive
+                  ? primaryColor
+                  : (isDark ? Colors.white60 : const Color(0xFF6B7280)),
+            ),
           ),
         ],
       ),
-      label: label,
     );
   }
+}
+
+class HomeBackgroundWavePainter extends CustomPainter {
+  final bool isDark;
+  HomeBackgroundWavePainter({required this.isDark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (isDark) {
+      _paintDarkTheme(canvas, size);
+    } else {
+      _paintLightTheme(canvas, size);
+    }
+  }
+
+  void _paintLightTheme(Canvas canvas, Size size) {
+    // 1. Soft mint background ambient glow for Top-Right
+    final trGlowRect = Rect.fromLTWH(size.width * 0.4, 0, size.width * 0.6, 200);
+    final trGlowPaint = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment.topRight,
+        radius: 1.1,
+        colors: [
+          Color(0x38D1FADF),
+          Color(0x15D1FADF),
+          Color(0x00FFFFFF),
+        ],
+        stops: [0.0, 0.6, 1.0],
+      ).createShader(trGlowRect)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(trGlowRect, trGlowPaint);
+
+    // 2. Top-Right flowing wave lines ribbon
+    const int trLineCount = 22;
+    for (int i = 0; i < trLineCount; i++) {
+      final t = i / (trLineCount - 1);
+      final alpha = (0.12 + 0.30 * (1 - (t - 0.5).abs() * 2)).clamp(0.08, 0.42);
+
+      final Color lineColor;
+      if (i % 3 == 0) {
+        lineColor = const Color(0xFF00873C).withValues(alpha: alpha);
+      } else if (i % 3 == 1) {
+        lineColor = const Color(0xFF12B76A).withValues(alpha: alpha);
+      } else {
+        lineColor = const Color(0xFF34D399).withValues(alpha: alpha);
+      }
+
+      final linePaint = Paint()
+        ..color = lineColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0 + 0.3 * (1 - t);
+
+      final path = Path();
+      final startX = size.width * (0.32 + 0.68 * t);
+      final startY = 0.0;
+      final control1X = size.width * (0.48 + 0.48 * t);
+      final control1Y = 25.0 + 65.0 * (1 - t);
+      final control2X = size.width * (0.72 + 0.26 * t);
+      final control2Y = 35.0 + 75.0 * (1 - t);
+      final endX = size.width;
+      final endY = 10.0 + 115.0 * t;
+
+      path.moveTo(startX, startY);
+      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
+      canvas.drawPath(path, linePaint);
+    }
+
+    // 3. Soft mint background ambient glow for Bottom-Left
+    final blGlowRect = Rect.fromLTWH(0, size.height - 220, size.width * 0.65, 220);
+    final blGlowPaint = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment.bottomLeft,
+        radius: 1.1,
+        colors: [
+          Color(0x35D1FADF),
+          Color(0x12D1FADF),
+          Color(0x00FFFFFF),
+        ],
+        stops: [0.0, 0.6, 1.0],
+      ).createShader(blGlowRect)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(blGlowRect, blGlowPaint);
+
+    // 4. Bottom-Left flowing wave lines ribbon
+    const int blLineCount = 22;
+    for (int i = 0; i < blLineCount; i++) {
+      final t = i / (blLineCount - 1);
+      final alpha = (0.12 + 0.30 * (1 - (t - 0.5).abs() * 2)).clamp(0.08, 0.42);
+
+      final Color lineColor;
+      if (i % 3 == 0) {
+        lineColor = const Color(0xFF00873C).withValues(alpha: alpha);
+      } else if (i % 3 == 1) {
+        lineColor = const Color(0xFF12B76A).withValues(alpha: alpha);
+      } else {
+        lineColor = const Color(0xFF34D399).withValues(alpha: alpha);
+      }
+
+      final linePaint = Paint()
+        ..color = lineColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0 + 0.3 * (1 - t);
+
+      final path = Path();
+      final startX = 0.0;
+      final startY = size.height - (165.0 * (1 - t) + 15.0);
+      final control1X = size.width * (0.12 + 0.28 * t);
+      final control1Y = size.height - (125.0 * (1 - t) + 20.0);
+      final control2X = size.width * (0.32 + 0.32 * t);
+      final control2Y = size.height - (55.0 * (1 - t) + 10.0);
+      final endX = size.width * (0.28 + 0.44 * t);
+      final endY = size.height - (8.0 + 15.0 * t);
+
+      path.moveTo(startX, startY);
+      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
+      canvas.drawPath(path, linePaint);
+    }
+  }
+
+  void _paintDarkTheme(Canvas canvas, Size size) {
+    // Top-Right Dark Mode Emerald lines
+    const int trLineCount = 18;
+    for (int i = 0; i < trLineCount; i++) {
+      final t = i / (trLineCount - 1);
+      final alpha = (0.06 + 0.14 * (1 - (t - 0.5).abs() * 2)).clamp(0.04, 0.20);
+      final linePaint = Paint()
+        ..color = const Color(0xFF00FF87).withValues(alpha: alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+
+      final path = Path();
+      final startX = size.width * (0.35 + 0.65 * t);
+      final startY = 0.0;
+      final control1X = size.width * (0.50 + 0.46 * t);
+      final control1Y = 25.0 + 65.0 * (1 - t);
+      final control2X = size.width * (0.72 + 0.26 * t);
+      final control2Y = 35.0 + 75.0 * (1 - t);
+      final endX = size.width;
+      final endY = 10.0 + 115.0 * t;
+
+      path.moveTo(startX, startY);
+      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
+      canvas.drawPath(path, linePaint);
+    }
+
+    // Bottom-Left Dark Mode Emerald lines
+    const int blLineCount = 18;
+    for (int i = 0; i < blLineCount; i++) {
+      final t = i / (blLineCount - 1);
+      final alpha = (0.06 + 0.14 * (1 - (t - 0.5).abs() * 2)).clamp(0.04, 0.20);
+      final linePaint = Paint()
+        ..color = const Color(0xFF00FF87).withValues(alpha: alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+
+      final path = Path();
+      final startX = 0.0;
+      final startY = size.height - (165.0 * (1 - t) + 15.0);
+      final control1X = size.width * (0.12 + 0.28 * t);
+      final control1Y = size.height - (125.0 * (1 - t) + 20.0);
+      final control2X = size.width * (0.32 + 0.32 * t);
+      final control2Y = size.height - (55.0 * (1 - t) + 10.0);
+      final endX = size.width * (0.28 + 0.44 * t);
+      final endY = size.height - (8.0 + 15.0 * t);
+
+      path.moveTo(startX, startY);
+      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
+      canvas.drawPath(path, linePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant HomeBackgroundWavePainter oldDelegate) =>
+      oldDelegate.isDark != isDark;
 }

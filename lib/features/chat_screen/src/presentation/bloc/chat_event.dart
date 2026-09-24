@@ -361,4 +361,8 @@ class ConsumeScreenPermissionEvent extends ChatEvent {
   const ConsumeScreenPermissionEvent({required this.requestId});
 }
 
+class DismissIncomingScreenPermissionRequestEvent extends ChatEvent {
+  const DismissIncomingScreenPermissionRequestEvent();
+}
+
 

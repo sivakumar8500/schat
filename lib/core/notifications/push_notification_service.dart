@@ -8,9 +8,13 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/main.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 
 @lazySingleton
 class PushNotificationService {
@@ -173,7 +177,12 @@ class PushNotificationService {
     
     final type = message.data['type'];
     if (type == 'call_initiate' || type == 'call_incoming') {
-      // Calls are handled by CallNotificationService/CallKit
+      try {
+        final webrtcBloc = getIt<CallWebRtcBloc>();
+        if (webrtcBloc.state is CallIdle) {
+          webrtcBloc.add(HandleIncomingCallEvent(Map<String, dynamic>.from(message.data)));
+        }
+      } catch (_) {}
       return;
     }
 
@@ -189,12 +198,27 @@ class PushNotificationService {
       debugPrint('PushNotificationService: Suppressing push not intended for user $myId (meant for $recipientId)');
       return;
     }
-    
+
+    final convId = (message.data['conversationId'] ?? message.data['conversation_id'])?.toString();
+    try {
+      final inAppService = getIt<InAppNotificationService>();
+      if (inAppService.isChatActive(conversationId: convId, senderId: senderId)) {
+        debugPrint('PushNotificationService: Suppressing notification because user is actively chatting with $senderId / conv $convId');
+        return;
+      }
+    } catch (_) {}
+
     _showLocalNotification(message);
   }
 
   void _handleMessageOpenedApp(RemoteMessage message) {
     debugPrint('PushNotificationService: Message opened app: ${message.messageId}');
+    final type = message.data['type']?.toString();
+    if (type == 'screen_permission_request') {
+      getIt<InAppNotificationService>().checkPendingScreenPermissions();
+      return;
+    }
+
     final convId = (message.data['conversationId'] ?? message.data['conversation_id'])?.toString();
     final senderName = (message.data['sender_name'] ?? message.data['senderName'] ?? message.data['title'] ?? 'sChat').toString();
     final senderId = (message.data['sender_id'] ?? message.data['senderId'] ?? '').toString();
@@ -210,6 +234,12 @@ class PushNotificationService {
       try {
         final data = jsonDecode(response.payload!);
         if (data is Map) {
+          final type = data['type']?.toString();
+          if (type == 'screen_permission_request') {
+            getIt<InAppNotificationService>().checkPendingScreenPermissions();
+            return;
+          }
+
           final convId = (data['conversationId'] ?? data['conversation_id'])?.toString();
           final senderName = (data['sender_name'] ?? data['senderName'] ?? data['title'] ?? 'sChat').toString();
           final senderId = (data['sender_id'] ?? data['senderId'] ?? '').toString();

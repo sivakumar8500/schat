@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
-import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -50,21 +49,6 @@ class _RequestScreenPermissionBottomSheetState
         durationSeconds: _selectedType == 'screen_record' ? _selectedRecordSeconds : null,
       );
 
-      // Also emit over websocket if connected
-      try {
-        final socketRepo = getIt<ChatSocketRepository>();
-        if (socketRepo.isConnected) {
-          socketRepo.emit('screen_permission_request', {
-            'type': 'screen_permission_request',
-            'conversation_id': widget.conversationId,
-            'permission_type': _selectedType,
-            'allowed_count': _selectedType == 'screenshot' ? _selectedScreenshotCount : null,
-            'duration_seconds': _selectedType == 'screen_record' ? _selectedRecordSeconds : null,
-          });
-        }
-      } catch (e) {
-        debugPrint('Socket emit error for screen permission request: $e');
-      }
 
       if (mounted) {
         context.showSuccessNotification(

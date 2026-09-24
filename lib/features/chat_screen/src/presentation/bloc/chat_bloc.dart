@@ -96,6 +96,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveScreenPermissionResponseEvent>(_onReceiveScreenPermissionResponse);
     on<UpdateActiveScreenPermissionEvent>(_onUpdateActiveScreenPermission);
     on<ConsumeScreenPermissionEvent>(_onConsumeScreenPermission);
+    on<DismissIncomingScreenPermissionRequestEvent>(_onDismissIncomingScreenPermissionRequest);
 
     _listenToSocket();
     _startExpiryTimer();
@@ -1537,6 +1538,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  void _onDismissIncomingScreenPermissionRequest(
+    DismissIncomingScreenPermissionRequestEvent event,
+    Emitter<ChatState> emit,
+  ) {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      emit(currentState.copyWith(clearIncomingScreenPermissionRequest: true));
+    }
+  }
+
   void _onReceiveScreenPermissionResponse(
     ReceiveScreenPermissionResponseEvent event,
     Emitter<ChatState> emit,
@@ -1585,12 +1596,29 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
-      try {
-        final updated = await _chatRepository.consumeScreenPermission(event.requestId);
-        if (updated.status == 'completed' || (updated.remainingCount != null && updated.remainingCount! <= 0)) {
+      final currentPerm = currentState.activeScreenPermission;
+
+      // Optimistically update or clear active permission immediately
+      if (currentPerm != null && currentPerm.id == event.requestId) {
+        final remaining = (currentPerm.remainingCount ?? currentPerm.allowedCount ?? 1) - 1;
+        if (remaining <= 0) {
           emit(currentState.copyWith(clearActiveScreenPermission: true));
         } else {
-          emit(currentState.copyWith(activeScreenPermission: updated));
+          emit(currentState.copyWith(
+            activeScreenPermission: currentPerm.copyWith(remainingCount: remaining),
+          ));
+        }
+      }
+
+      try {
+        final updated = await _chatRepository.consumeScreenPermission(event.requestId);
+        if (state is ChatLoaded) {
+          final s = state as ChatLoaded;
+          if (updated.status == 'completed' || (updated.remainingCount != null && updated.remainingCount! <= 0)) {
+            emit(s.copyWith(clearActiveScreenPermission: true));
+          } else {
+            emit(s.copyWith(activeScreenPermission: updated));
+          }
         }
       } catch (e) {
         debugPrint('Error consuming screen permission: $e');

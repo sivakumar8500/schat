@@ -39,19 +39,6 @@ class _IncomingScreenPermissionBottomSheetState
         action: action,
       );
 
-      // Also emit over socket if connected
-      try {
-        final socketRepo = getIt<ChatSocketRepository>();
-        if (socketRepo.isConnected) {
-          socketRepo.emit('screen_permission_respond', {
-            'type': 'screen_permission_respond',
-            'request_id': widget.request.id,
-            'action': action,
-          });
-        }
-      } catch (e) {
-        debugPrint('Socket emit error for screen permission respond: $e');
-      }
 
       if (mounted) {
         if (action == 'accept') {

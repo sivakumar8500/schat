@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -40,8 +41,6 @@ import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
-import 'widgets/incoming_screen_permission_bottom_sheet.dart';
-import '../domain/models/screen_permission_model.dart';
 import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
@@ -78,6 +77,7 @@ class ChatPage extends StatefulWidget {
   final String? initialSharedFileName;
   final String? initialSharedFileType;
   final int? initialDisappearingTimer;
+  final bool isReadOnly;
 
   const ChatPage({
     super.key,
@@ -95,6 +95,7 @@ class ChatPage extends StatefulWidget {
     this.initialSharedFileName,
     this.initialSharedFileType,
     this.initialDisappearingTimer,
+    this.isReadOnly = false,
   });
 
   @override
@@ -115,6 +116,11 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _typingIndicatorTimer;
   late CallWebRtcBloc _callWebRtcBloc;
   StreamSubscription? _callSocketSubscription;
+  StreamSubscription? _screenshotSubscription;
+  Timer? _screenRecordTimer;
+  String? _activeScreenRecordPermissionId;
+  Timer? _screenshotAutoExpireTimer;
+  String? _activeScreenshotPermissionId;
 
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
@@ -164,7 +170,10 @@ class _ChatPageState extends State<ChatPage> {
       }
     });
     debugPrint('DEBUG: ChatPage Initializing for conv: ${widget.conversationId}, recipient: ${widget.recipientId}, initialOnline: ${widget.isOnline}');
-    getIt<InAppNotificationService>().setActiveConversationId(widget.conversationId);
+    getIt<InAppNotificationService>().setActiveChat(
+      conversationId: widget.conversationId,
+      recipientId: widget.recipientId,
+    );
     _chatBloc = ChatBloc()..add(LoadMessagesEvent(
       conversationId: widget.conversationId,
       recipientId: widget.recipientId,
@@ -197,6 +206,31 @@ class _ChatPageState extends State<ChatPage> {
         setState(() {
           _previewPositionSecs = p.inSeconds;
         });
+      }
+    });
+
+    // Listen for screenshots to decrement allowed count and auto turn off
+    _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
+      final state = _chatBloc.state;
+      if (state is ChatLoaded && state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot) {
+        final perm = state.activeScreenPermission!;
+        final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+        final newRemaining = currentRemaining - 1;
+        debugPrint('ScreenProtection: Screenshot taken! newRemaining=$newRemaining / ${perm.allowedCount}');
+
+        if (newRemaining <= 0) {
+          // Immediately re-enable protection locally with 0 delay so no further screenshots are possible!
+          getIt<ScreenProtectionService>().enableProtection();
+          if (mounted) {
+            context.showInfoNotification('All allowed screenshot(s) taken (${perm.allowedCount}/${perm.allowedCount}). Protection re-enabled.');
+          }
+        } else {
+          if (mounted) {
+            context.showInfoNotification('Screenshot taken. $newRemaining of ${perm.allowedCount} screenshot(s) remaining.');
+          }
+        }
+
+        _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
       }
     });
   }
@@ -1445,8 +1479,14 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    getIt<InAppNotificationService>().setActiveConversationId(null);
+    getIt<InAppNotificationService>().clearActiveChat();
     _callSocketSubscription?.cancel();
+    _screenshotSubscription?.cancel();
+    _screenRecordTimer?.cancel();
+    _screenRecordTimer = null;
+    _screenshotAutoExpireTimer?.cancel();
+    _screenshotAutoExpireTimer = null;
+    getIt<ScreenProtectionService>().enableProtection();
     _stopTypingTimer();
     _messageController.dispose();
     _inputFocusNode.dispose();
@@ -2371,23 +2411,67 @@ class _ChatPageState extends State<ChatPage> {
             context.showInfoNotification(state.notificationMessage!);
           }
 
+          if (state is ChatLoaded) {
+            final activePerm = state.activeScreenPermission;
+            final isScreenshotAllowed = activePerm != null &&
+                activePerm.isScreenshot &&
+                !activePerm.isCompleted &&
+                !activePerm.isRejected &&
+                (activePerm.remainingCount ?? 1) > 0;
+            final isScreenRecordAllowed = activePerm != null &&
+                activePerm.isScreenRecord &&
+                !activePerm.isCompleted &&
+                !activePerm.isRejected &&
+                activePerm.durationSeconds != null;
+
+            if (isScreenshotAllowed || isScreenRecordAllowed) {
+              getIt<ScreenProtectionService>().disableProtection();
+
+              // Handle screenshot permission safety auto-lock timer (60s)
+              if (isScreenshotAllowed) {
+                if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != activePerm.id) {
+                  _screenshotAutoExpireTimer?.cancel();
+                  _activeScreenshotPermissionId = activePerm.id;
+                  _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
+                    if (mounted) {
+                      getIt<ScreenProtectionService>().enableProtection();
+                      context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
+                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                    }
+                  });
+                }
+              }
+
+              // Handle screen record timer auto turn off
+              if (isScreenRecordAllowed && activePerm.durationSeconds != null) {
+                if (_screenRecordTimer == null || _activeScreenRecordPermissionId != activePerm.id) {
+                  _screenRecordTimer?.cancel();
+                  _activeScreenRecordPermissionId = activePerm.id;
+                  final duration = activePerm.durationSeconds!;
+                  _screenRecordTimer = Timer(Duration(seconds: duration), () {
+                    if (mounted) {
+                      getIt<ScreenProtectionService>().enableProtection();
+                      context.showInfoNotification('Screen recording permission duration (${duration}s) expired. Protection re-enabled.');
+                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                    }
+                  });
+                }
+              }
+            } else {
+              _screenRecordTimer?.cancel();
+              _screenRecordTimer = null;
+              _activeScreenRecordPermissionId = null;
+              _screenshotAutoExpireTimer?.cancel();
+              _screenshotAutoExpireTimer = null;
+              _activeScreenshotPermissionId = null;
+              getIt<ScreenProtectionService>().enableProtection();
+            }
+          }
+
           if (state is ChatLoaded && state.incomingScreenPermissionRequest != null) {
             final incomingReq = state.incomingScreenPermissionRequest!;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (dialogCtx) => IncomingScreenPermissionBottomSheet(
-                    request: incomingReq,
-                    onResponded: (updated) {
-                      _chatBloc.add(const UpdateActiveScreenPermissionEvent(permissionData: null));
-                    },
-                  ),
-                );
-              }
-            });
+            _chatBloc.add(const DismissIncomingScreenPermissionRequestEvent());
+            getIt<InAppNotificationService>().showIncomingScreenPermissionBottomSheet(incomingReq);
           }
         },
         builder: (context, state) {
@@ -3024,21 +3108,29 @@ class _ChatPageState extends State<ChatPage> {
                     child: ClipOval(
                       child: (widget.profilePictureUrl != null &&
                               widget.profilePictureUrl!.isNotEmpty)
-                          ? Image.network(
-                              widget.profilePictureUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: widget.profilePictureUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Text(
-                                    widget.contactName.isNotEmpty
-                                        ? widget.contactName.substring(0, 1)
-                                        : '?',
-                                    style: context.titleMedium.copyWith(
-                                      color: widget.contactColor,
-                                    ),
+                              placeholder: (context, url) => Center(
+                                child: Text(
+                                  widget.contactName.isNotEmpty
+                                      ? widget.contactName.substring(0, 1)
+                                      : '?',
+                                  style: context.titleMedium.copyWith(
+                                    color: widget.contactColor,
                                   ),
-                                );
-                              },
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Center(
+                                child: Text(
+                                  widget.contactName.isNotEmpty
+                                      ? widget.contactName.substring(0, 1)
+                                      : '?',
+                                  style: context.titleMedium.copyWith(
+                                    color: widget.contactColor,
+                                  ),
+                                ),
+                              ),
                             )
                           : Center(
                               child: Text(
@@ -3106,72 +3198,103 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
       actions: [
-        IconButton(
-          icon: Icon(CommonIcons.videocam),
-          onPressed: () async {
-            final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
-            if (!hasPermission) {
-              if (mounted) {
-                context.showErrorNotification('Camera and Microphone permissions are required for video calls');
-              }
-              return;
-            }
-            
-            final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
-            
-            if (!mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BlocProvider.value(
-                  value: _callWebRtcBloc,
-                  child: VideoCallPage(
-                    conversationId: widget.conversationId,
-                    contactName: widget.contactName,
-                    contactColor: widget.contactColor,
-                    recipientId: widget.recipientId,
-                    isOutgoing: !isAlreadyInCall,
-                    profilePictureUrl: widget.profilePictureUrl,
-                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                  ),
+        if (widget.isReadOnly)
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: context.colors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: context.colors.primary.withValues(alpha: 0.4),
                 ),
               ),
-            );
-          },
-        ),
-        IconButton(
-          icon: Icon(CommonIcons.phone),
-          onPressed: () async {
-            final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
-            if (!hasPermission) {
-              if (mounted) {
-                context.showErrorNotification('Microphone permission is required for audio calls');
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline_rounded, size: 14, color: context.colors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Read Only',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: Icon(CommonIcons.videocam),
+            onPressed: () async {
+              final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
+              if (!hasPermission) {
+                if (mounted) {
+                  context.showErrorNotification('Camera and Microphone permissions are required for video calls');
+                }
+                return;
               }
-              return;
-            }
-
-            final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
-
-            if (!mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BlocProvider.value(
-                  value: _callWebRtcBloc,
-                  child: AudioCallPage(
-                    conversationId: widget.conversationId,
-                    contactName: widget.contactName,
-                    contactColor: widget.contactColor,
-                    recipientId: widget.recipientId,
-                    isOutgoing: !isAlreadyInCall,
-                    profilePictureUrl: widget.profilePictureUrl,
-                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+              
+              final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
+              
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BlocProvider.value(
+                    value: _callWebRtcBloc,
+                    child: VideoCallPage(
+                      conversationId: widget.conversationId,
+                      contactName: widget.contactName,
+                      contactColor: widget.contactColor,
+                      recipientId: widget.recipientId,
+                      isOutgoing: !isAlreadyInCall,
+                      profilePictureUrl: widget.profilePictureUrl,
+                      myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: Icon(CommonIcons.phone),
+            onPressed: () async {
+              final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
+              if (!hasPermission) {
+                if (mounted) {
+                  context.showErrorNotification('Microphone permission is required for audio calls');
+                }
+                return;
+              }
+
+              final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
+
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BlocProvider.value(
+                    value: _callWebRtcBloc,
+                    child: AudioCallPage(
+                      conversationId: widget.conversationId,
+                      contactName: widget.contactName,
+                      contactColor: widget.contactColor,
+                      recipientId: widget.recipientId,
+                      isOutgoing: !isAlreadyInCall,
+                      profilePictureUrl: widget.profilePictureUrl,
+                      myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         PopupMenuButton<String>(
           icon: Icon(CommonIcons.moreVert),
           color: context.colors.scaffoldBackground,
@@ -3399,6 +3522,47 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildInputBar(BuildContext context) {
+    if (widget.isReadOnly) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: context.colors.primary.withValues(alpha: 0.25),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              color: context.colors.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'This conversation is in read-only mode',
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
@@ -4429,6 +4593,10 @@ class _ChatPageState extends State<ChatPage> {
     final isScreenshot = perm.isScreenshot;
     final remaining = perm.remainingCount ?? perm.allowedCount ?? 1;
 
+    if (remaining <= 0 || perm.isCompleted || perm.isRejected) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -4460,8 +4628,15 @@ class _ChatPageState extends State<ChatPage> {
           if (isScreenshot)
             InkWell(
               onTap: () {
+                final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+                final newRemaining = currentRemaining - 1;
+                if (newRemaining <= 0) {
+                  getIt<ScreenProtectionService>().enableProtection();
+                  context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
+                } else {
+                  context.showSuccessNotification('Screenshot used ($newRemaining remaining)');
+                }
                 _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
-                context.showSuccessNotification('Screenshot count updated');
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

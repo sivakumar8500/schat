@@ -16,9 +16,9 @@ class ThemeColors {
   Color get secondary => Colors.pink;
   
   // Backgrounds
-  Color get scaffoldBackground => isDark ? Colors.black : const Color(0xFFF0FDF4);
+  Color get scaffoldBackground => isDark ? const Color(0xFF0F1411) : Colors.white;
   Color get pureBlack => Colors.black;
-  Color get lightBackground => isDark ? const Color(0xFF1E1E1E) : const Color(0xFFE8F5E9);
+  Color get lightBackground => isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF9FAFB);
   
   // Text Colors
   Color get textPrimary => isDark ? Colors.white : Colors.black87;
@@ -51,7 +51,7 @@ class ThemeColors {
 
   // App Theme Accents & Specific Component Colors
   Color get primaryAccent => isDark ? const Color(0xFF81C784) : primary;
-  Color get cardBackground => isDark ? const Color(0xFF1E2B22) : const Color(0xFFF0FDF4);
+  Color get cardBackground => isDark ? const Color(0xFF1E2B22) : Colors.white;
   Color get searchBackground => isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF3F4F6);
   Color get optionGallery => const Color(0xFF6C63FF);
   Color get optionVideo => const Color(0xFFE91E63);

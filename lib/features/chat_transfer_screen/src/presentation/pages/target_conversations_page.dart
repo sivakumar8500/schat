@@ -268,6 +268,7 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
               profilePictureUrl: profilePic,
               recipientId: chat.recipient.id ?? '',
               isGroup: chat.isGroup,
+              isReadOnly: true,
             ),
           ),
         );
