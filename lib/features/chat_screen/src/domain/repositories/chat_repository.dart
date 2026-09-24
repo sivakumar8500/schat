@@ -47,8 +47,19 @@ abstract class ChatRepository {
   /// Fetches the list of available conversation theme colors.
   Future<List<ThemeColorModel>> getThemes();
 
-  /// Updates the conversation theme. Pass [themeColorId] = null to remove the custom theme.
-  Future<void> updateTheme({required String conversationId, String? themeColorId});
+  /// Updates the conversation theme and/or custom wallpaper.
+  Future<void> updateTheme({
+    required String conversationId,
+    String? themeColorId,
+    String? customWallpaperUrl,
+    bool applyToAll = false,
+  });
+
+  /// Resets the conversation theme or default user theme.
+  Future<void> resetTheme({
+    required String conversationId,
+    bool resetAll = false,
+  });
 
   /// PATCH the security object of a message. Only the original owner can set allowShare = false.
   Future<void> updateMessageSecurity(

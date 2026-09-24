@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
@@ -78,6 +79,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ClearChatEvent>(_onClearChat);
     on<LoadThemesEvent>(_onLoadThemes);
     on<UpdateThemeEvent>(_onUpdateTheme);
+    on<ResetThemeEvent>(_onResetTheme);
     on<LoadMoreMessagesEvent>(_onLoadMoreMessages);
     on<UpdateMessageSecurityEvent>(_onUpdateMessageSecurity);
     on<FetchMessageSharesEvent>(_onFetchMessageShares);
@@ -88,6 +90,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveFileActionEvent>(_onReceiveFileAction);
     on<ScheduleMessageEvent>(_onScheduleMessage);
     on<CheckExpiredMessagesEvent>(_onCheckExpiredMessages);
+    on<ReceiveDisappearingTimerUpdatedEvent>(_onReceiveDisappearingTimerUpdated);
 
     _listenToSocket();
     _startExpiryTimer();
@@ -385,6 +388,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId)) {
             add(ReceiveCallLogUpdateEvent(callLogData: cleanData));
           }
+        } else if (type == 'conversation_settings_updated' || type == 'disappearing_timer_updated') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            final dynamic rawTimer = cleanData['disappearing_timer'] ?? cleanData['disappearingTimer'] ?? cleanData['timer'];
+            final int? timerSec = rawTimer != null ? int.tryParse(rawTimer.toString()) : null;
+            add(ReceiveDisappearingTimerUpdatedEvent(seconds: timerSec));
+          }
         } else if (type == 'error') {
           final errorMsg = cleanData['message']?.toString() ?? 'An error occurred';
           add(ShowNotificationEvent(message: errorMsg));
@@ -423,6 +433,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final myId = _storageService.getUserId() ?? '';
     Color? savedColor;
     bool isMuted = false;
+    String? savedWallpaper = event.initialCustomWallpaperUrl;
+    ThemeColorModel? savedThemeColor = event.initialThemeColor;
     
     // 1. Try loading from cache first
     List<MessageModel> cachedMessages = [];
@@ -441,13 +453,25 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         savedColor = Color(cachedColorVal);
       }
 
+      final wallpaperBox = await Hive.openBox('chat_wallpapers');
+      savedWallpaper ??= wallpaperBox.get(event.conversationId) as String?;
+      savedWallpaper ??= wallpaperBox.get('default_wallpaper') as String?;
+
+      if (savedThemeColor == null) {
+        final themeBox = await Hive.openBox('chat_themes');
+        final dynamic rawTheme = themeBox.get(event.conversationId) ?? themeBox.get('default_theme');
+        if (rawTheme != null && rawTheme is Map) {
+          savedThemeColor = ThemeColorModel.fromJson(Map<String, dynamic>.from(rawTheme));
+        }
+      }
+
       final muteBox = await Hive.openBox('muted_chats_box');
       final List<dynamic>? mutedList = muteBox.get('muted_list');
       if (mutedList != null) {
         isMuted = mutedList.contains(event.conversationId);
       }
     } catch (e) {
-      debugPrint('Error loading cached messages: $e');
+      debugPrint('Error loading cached messages or theme: $e');
     }
 
     if (cachedMessages.isNotEmpty) {
@@ -459,7 +483,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isRecipientOnline: _currentIsOnline,
         isRecipientTyping: _currentIsTyping,
         customBgColor: savedColor,
-        themeColor: event.initialThemeColor,
+        customWallpaperUrl: savedWallpaper,
+        themeColor: savedThemeColor,
         disappearingTimer: event.initialDisappearingTimer,
       ));
     } else {
@@ -527,7 +552,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(currentState.copyWith(
           messages: messages,
           pinnedMessages: pinnedMessages,
-          themeColor: event.initialThemeColor,
+          themeColor: savedThemeColor ?? currentState.themeColor,
+          customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
         ));
       } else {
         emit(ChatLoaded(
@@ -538,7 +564,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isRecipientOnline: _currentIsOnline,
           isRecipientTyping: _currentIsTyping,
           customBgColor: savedColor,
-          themeColor: event.initialThemeColor,
+          customWallpaperUrl: savedWallpaper,
+          themeColor: savedThemeColor,
           disappearingTimer: event.initialDisappearingTimer,
         ));
       }
@@ -745,6 +772,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded && _conversationId != null) {
       _chatRepository.setDisappearingTimer(conversationId: _conversationId!, seconds: event.seconds);
+      emit(currentState.copyWith(
+        disappearingTimer: event.seconds,
+      ));
+    }
+  }
+
+  void _onReceiveDisappearingTimerUpdated(ReceiveDisappearingTimerUpdatedEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
       emit(currentState.copyWith(
         disappearingTimer: event.seconds,
       ));
@@ -1227,18 +1263,94 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is! ChatLoaded || _conversationId == null) return;
     try {
+      final wallpaperBox = await Hive.openBox('chat_wallpapers');
+      final themeBox = await Hive.openBox('chat_themes');
+
+      if (event.applyToAll) {
+        if (event.customWallpaperUrl != null) {
+          await wallpaperBox.put('default_wallpaper', event.customWallpaperUrl);
+          await wallpaperBox.put(_conversationId!, event.customWallpaperUrl);
+        } else if (event.clearWallpaper) {
+          await wallpaperBox.delete('default_wallpaper');
+          await wallpaperBox.delete(_conversationId!);
+        }
+
+        if (event.themeColor != null) {
+          await themeBox.put('default_theme', event.themeColor!.toJson());
+          await themeBox.put(_conversationId!, event.themeColor!.toJson());
+        } else if (event.themeColorId == null) {
+          await themeBox.delete('default_theme');
+          await themeBox.delete(_conversationId!);
+        }
+      } else {
+        if (event.customWallpaperUrl != null) {
+          await wallpaperBox.put(_conversationId!, event.customWallpaperUrl);
+        } else if (event.clearWallpaper) {
+          await wallpaperBox.delete(_conversationId!);
+        }
+
+        if (event.themeColor != null) {
+          await themeBox.put(_conversationId!, event.themeColor!.toJson());
+        } else if (event.themeColorId == null) {
+          await themeBox.delete(_conversationId!);
+        }
+      }
+
+      emit(currentState.copyWith(
+        themeColor: event.themeColor,
+        clearThemeColor: event.themeColorId == null && event.themeColor == null,
+        customWallpaperUrl: event.customWallpaperUrl,
+        clearCustomWallpaperUrl: event.clearWallpaper || (event.themeColor != null && event.customWallpaperUrl == null),
+      ));
+
       await _chatRepository.updateTheme(
         conversationId: _conversationId!,
         themeColorId: event.themeColorId,
+        customWallpaperUrl: event.customWallpaperUrl,
+        applyToAll: event.applyToAll,
       );
-      if (event.themeColorId == null) {
-        emit(currentState.copyWith(clearThemeColor: true));
-      } else {
-        emit(currentState.copyWith(themeColor: event.themeColor));
-      }
     } catch (e) {
       debugPrint('Error updating theme: $e');
-      add(ShowNotificationEvent(message: 'Failed to update theme', isError: true));
+      final errorMsg = e.toString();
+      if (errorMsg.contains('403') || errorMsg.toLowerCase().contains('subscription')) {
+        add(const ShowNotificationEvent(
+          message: 'Subscription required to customize chat wallpapers & themes.',
+          isError: true,
+        ));
+      } else {
+        add(const ShowNotificationEvent(message: 'Failed to update theme', isError: true));
+      }
+    }
+  }
+
+  Future<void> _onResetTheme(ResetThemeEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded || _conversationId == null) return;
+    try {
+      final wallpaperBox = await Hive.openBox('chat_wallpapers');
+      final themeBox = await Hive.openBox('chat_themes');
+
+      if (event.resetAll) {
+        await wallpaperBox.clear();
+        await themeBox.clear();
+      } else {
+        await wallpaperBox.delete(_conversationId!);
+        await themeBox.delete(_conversationId!);
+      }
+
+      emit(currentState.copyWith(
+        clearThemeColor: true,
+        clearCustomWallpaperUrl: true,
+      ));
+
+      await _chatRepository.resetTheme(
+        conversationId: _conversationId!,
+        resetAll: event.resetAll,
+      );
+      add(const ShowNotificationEvent(message: 'Theme reset to default', isError: false));
+    } catch (e) {
+      debugPrint('Error resetting theme: $e');
+      add(const ShowNotificationEvent(message: 'Failed to reset theme', isError: true));
     }
   }
 

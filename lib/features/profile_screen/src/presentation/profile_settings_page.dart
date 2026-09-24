@@ -24,6 +24,10 @@ import 'package:schat/features/chat_socket_screen/chat_socket_screen.dart';
 import 'package:schat/features/chat_transfer_screen/chat_transfer_screen.dart';
 import 'package:schat/features/security_scanner/presentation/pages/scan_result_screen.dart';
 
+import 'package:schat/features/tones/data/models/tone_model.dart';
+import 'package:schat/features/tones/presentation/tone_picker_screen.dart';
+import 'package:schat/features/tones/services/tone_api_service.dart';
+
 class ProfileSettingsPage extends StatefulWidget {
   final String username;
   final String? profilePicUrl;
@@ -46,6 +50,8 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
   XFile? _localImageFile;
   final ImagePicker _picker = ImagePicker();
   int? _defaultDisappearingTimer;
+  String _callRingtoneName = "Digital Horizon (Default)";
+  String _messageToneName = "Schat Pop (Default)";
 
   @override
   void initState() {
@@ -54,6 +60,47 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     _currentImageUrl = widget.profilePicUrl;
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
     _defaultDisappearingTimer = null;
+    
+    final cachedCallTone = getIt<StorageService>().getCallRingtoneName();
+    if (cachedCallTone != null && cachedCallTone.isNotEmpty) {
+      _callRingtoneName = cachedCallTone;
+    }
+    final cachedMsgTone = getIt<StorageService>().getMessageToneName();
+    if (cachedMsgTone != null && cachedMsgTone.isNotEmpty) {
+      _messageToneName = cachedMsgTone;
+    }
+    _loadUserTones();
+  }
+
+  Future<void> _loadUserTones() async {
+    try {
+      final pref = await getIt<ToneApiService>().getMyTones();
+      if (pref != null && mounted) {
+        final storage = getIt<StorageService>();
+        if (pref.callRingtone != null) {
+          await storage.saveCallRingtone(
+            name: pref.callRingtone!.name,
+            url: pref.callRingtone!.fileUrl,
+          );
+        }
+        if (pref.messageTone != null) {
+          await storage.saveMessageTone(
+            name: pref.messageTone!.name,
+            url: pref.messageTone!.fileUrl,
+          );
+        }
+        setState(() {
+          if (pref.callRingtone != null) {
+            _callRingtoneName = pref.callRingtone!.name +
+                (pref.callRingtone!.isDefault ? " (Default)" : "");
+          }
+          if (pref.messageTone != null) {
+            _messageToneName = pref.messageTone!.name +
+                (pref.messageTone!.isDefault ? " (Default)" : "");
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   void _showEditProfileBottomSheet(BuildContext context) {
@@ -361,6 +408,52 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
                     ),
                   ),
 
+                  _buildSectionHeader('Notifications & Sounds'),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.ring_volume_rounded,
+                    title: 'Call Ringtone',
+                    subtitle: _callRingtoneName,
+                    onTap: () async {
+                      final Tone? selected = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TonePickerScreen(
+                            toneType: ToneType.CALL,
+                            initialSelectedToneName: _callRingtoneName.replaceAll(' (Default)', ''),
+                          ),
+                        ),
+                      );
+                      if (selected != null && mounted) {
+                        setState(() {
+                          _callRingtoneName = selected.name + (selected.isDefault ? ' (Default)' : '');
+                        });
+                      }
+                    },
+                  ),
+                  _buildListTile(
+                    context: context,
+                    icon: Icons.notifications_active_rounded,
+                    title: 'Message Tone',
+                    subtitle: _messageToneName,
+                    onTap: () async {
+                      final Tone? selected = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TonePickerScreen(
+                            toneType: ToneType.MESSAGE,
+                            initialSelectedToneName: _messageToneName.replaceAll(' (Default)', ''),
+                          ),
+                        ),
+                      );
+                      if (selected != null && mounted) {
+                        setState(() {
+                          _messageToneName = selected.name + (selected.isDefault ? ' (Default)' : '');
+                        });
+                      }
+                    },
+                  ),
+
                   _buildSectionHeader('App Settings'),
                   _buildListTile(
                     context: context,
@@ -518,8 +611,14 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     if (seconds == null || seconds == 0) {
       return 'Off';
     }
+    if (seconds == 1800) {
+      return '30 minutes';
+    }
+    if (seconds == 1440) {
+      return '24 minutes';
+    }
     if (seconds == 86400) {
-      return '1 day';
+      return '24 hours';
     }
     if (seconds == 604800) {
       return '7 days';
@@ -527,8 +626,11 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
     if (seconds == 2592000) {
       return '30 days';
     }
+    if (seconds < 60) return '$seconds seconds';
+    if (seconds < 3600) return '${(seconds / 60).round()} minutes';
+    if (seconds < 86400) return '${(seconds / 3600).round()} hours';
     final days = seconds ~/ 86400;
-    if (days == 1) return '1 day';
+    if (days == 1) return '24 hours';
     if (days % 7 == 0) return '${days ~/ 7} weeks';
     return '$days days';
   }
@@ -576,7 +678,9 @@ class _ProfileSettingsPageState extends State<ProfileSettingsPage> {
               ),
               CommonSpaces.h24,
               _buildDisappearingOption(context, sheetCtx, 'Off', null),
-              _buildDisappearingOption(context, sheetCtx, '1 day', 86400),
+              _buildDisappearingOption(context, sheetCtx, '30 minutes', 1800),
+              _buildDisappearingOption(context, sheetCtx, '24 minutes', 1440),
+              _buildDisappearingOption(context, sheetCtx, '24 hours', 86400),
               _buildDisappearingOption(context, sheetCtx, '7 days', 604800),
               _buildDisappearingOption(context, sheetCtx, '30 days', 2592000),
               CommonSpaces.h20,

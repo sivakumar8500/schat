@@ -55,6 +55,10 @@ class CommonEndpoints {
   // --- Device & Push Notifications ---
   static const String registerFcmToken = '/notifications/register-device';
 
+  // --- Tones & Sound Preferences ---
+  static const String getTones = '/tones';
+  static const String myTones = '/tones/me';
+
   // --- External Integrations ---
   // Message Actions
   static String forwardMessage(String messageId) => '/messages/$messageId/forward';
@@ -92,9 +96,11 @@ class CommonEndpoints {
   static const String createTicket = '/chats/tickets';
   static const String getTickets = '/chats/tickets';
 
-  // Conversation Theme Colors
+  // Conversation Theme Colors & Wallpapers
   static const String getThemes = '/chats/themes';
+  static const String defaultTheme = '/chats/themes/default';
   static String updateTheme(String conversationId) => '/chats/$conversationId/theme';
+  static String resetConversationTheme(String conversationId) => '/chats/$conversationId/theme';
 
   // Notifications
   static const String registerDevice = '/notifications/register-device';

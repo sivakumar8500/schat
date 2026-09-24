@@ -13,6 +13,10 @@ class StorageService {
   static const String _emailKey = 'email';
   static const String _deviceIdKey = 'device_id';
   static const String _hasSeenPermissionsKey = 'has_seen_permissions';
+  static const String _callRingtoneNameKey = 'call_ringtone_name';
+  static const String _callRingtoneUrlKey = 'call_ringtone_url';
+  static const String _messageToneNameKey = 'message_tone_name';
+  static const String _messageToneUrlKey = 'message_tone_url';
 
   final SharedPreferences _prefs;
 
@@ -104,5 +108,29 @@ class StorageService {
 
   bool hasSeenPermissions() {
     return _prefs.getBool(_hasSeenPermissionsKey) ?? false;
+  }
+
+  // --- Tones Preferences ---
+  Future<void> saveCallRingtone({required String name, required String url}) async {
+    await _prefs.setString(_callRingtoneNameKey, name);
+    await _prefs.setString(_callRingtoneUrlKey, url);
+  }
+
+  String? getCallRingtoneName() => _prefs.getString(_callRingtoneNameKey);
+  String? getCallRingtoneUrl() => _prefs.getString(_callRingtoneUrlKey);
+
+  Future<void> saveMessageTone({required String name, required String url}) async {
+    await _prefs.setString(_messageToneNameKey, name);
+    await _prefs.setString(_messageToneUrlKey, url);
+  }
+
+  String? getMessageToneName() => _prefs.getString(_messageToneNameKey);
+  String? getMessageToneUrl() => _prefs.getString(_messageToneUrlKey);
+
+  Future<void> clearTonePreferences() async {
+    await _prefs.remove(_callRingtoneNameKey);
+    await _prefs.remove(_callRingtoneUrlKey);
+    await _prefs.remove(_messageToneNameKey);
+    await _prefs.remove(_messageToneUrlKey);
   }
 }

@@ -128,6 +128,7 @@ import 'features/tickets_screen/src/domain/repositories/tickets_repository.dart'
     as _i981;
 import 'features/tickets_screen/src/presentation/bloc/tickets_bloc.dart'
     as _i582;
+import 'features/tones/services/tone_api_service.dart' as _i144;
 
 extension GetItInjectableX on _i174.GetIt {
   // initializes the registration of main-scope dependencies inside of GetIt
@@ -148,7 +149,6 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i568.ScreenProtectionService>(
       () => _i568.ScreenProtectionService(),
     );
-    gh.lazySingleton<_i849.CallSoundService>(() => _i849.CallSoundService());
     gh.lazySingleton<_i176.WebRtcService>(() => _i176.WebRtcService());
     gh.lazySingleton<_i213.UrlSafetyService>(() => _i213.UrlSafetyService());
     gh.lazySingleton<_i466.PaymentRepository>(
@@ -168,6 +168,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i32.SecureAttachmentService>(
       () => _i32.SecureAttachmentService(gh<_i263.StorageService>()),
+    );
+    gh.lazySingleton<_i849.CallSoundService>(
+      () => _i849.CallSoundService(gh<_i263.StorageService>()),
     );
     gh.lazySingleton<_i628.CheckDeviceIntegrityUseCase>(
       () => _i628.CheckDeviceIntegrityUseCase(gh<_i229.SecurityRepository>()),
@@ -263,6 +266,12 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i374.CallNotificationService>(
       () => _i374.CallNotificationService(
+        gh<_i374.ApiService>(),
+        gh<_i263.StorageService>(),
+      ),
+    );
+    gh.lazySingleton<_i144.ToneApiService>(
+      () => _i144.ToneApiService(
         gh<_i374.ApiService>(),
         gh<_i263.StorageService>(),
       ),

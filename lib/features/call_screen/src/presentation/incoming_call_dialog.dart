@@ -102,9 +102,20 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     super.dispose();
   }
 
+  bool _isDismissed = false;
+
+  void _dismissDialog() {
+    if (_isDismissed) return;
+    _isDismissed = true;
+    FlutterCallkitIncoming.endAllCalls();
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   void _accept() async {
+    if (_isDismissed) return;
     final bloc = context.read<CallWebRtcBloc>();
-    final nav = Navigator.of(context);
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: widget.isVideo);
     if (!hasPermission) {
       if (mounted) {
@@ -115,10 +126,11 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
       return;
     }
     
-    if (!mounted) return;
+    if (!mounted || _isDismissed) return;
+    _isDismissed = true;
+    FlutterCallkitIncoming.endAllCalls();
     bloc.add(AnswerCallEvent(widget.incomingEvent));
-    nav.pop();
-    nav.push(
+    Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
           value: bloc,
@@ -147,19 +159,16 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   }
 
   void _decline() {
+    if (_isDismissed) return;
     context
         .read<CallWebRtcBloc>()
         .add(RejectCallEvent(widget.conversationId));
-    Navigator.of(context).pop();
+    _dismissDialog();
   }
 
   /// Called when the caller cancels before the callee answers.
   void _onCallerHungUp(BuildContext context) {
-    // Stop ringtone
-    context.read<CallWebRtcBloc>(); // ensure bloc is available
-    // Dismiss the CallKit / system notification if any
-    FlutterCallkitIncoming.endAllCalls();
-    if (mounted) Navigator.of(context).pop();
+    _dismissDialog();
   }
 
   @override

@@ -57,13 +57,15 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
   }) async {
     try {
-      final requestData = {
+      final requestData = <String, dynamic>{
         'media_type': mediaType,
         'mime_type': mimeType,
         'file_size_bytes': fileSizeBytes,
         'filename': fileName,
-        'conversation_id': conversationId,
       };
+      if (conversationId.isNotEmpty) {
+        requestData['conversation_id'] = conversationId;
+      }
 
       final requestResult = await _apiService.post<Map<String, dynamic>>(
         CommonEndpoints.requestUpload,
@@ -410,10 +412,44 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<void> updateTheme({required String conversationId, String? themeColorId}) async {
+  Future<void> updateTheme({
+    required String conversationId,
+    String? themeColorId,
+    String? customWallpaperUrl,
+    bool applyToAll = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'themeColorId': themeColorId,
+      'customWallpaperUrl': customWallpaperUrl,
+      'applyToAll': applyToAll,
+    };
+
+    final endpoint = applyToAll
+        ? CommonEndpoints.defaultTheme
+        : CommonEndpoints.updateTheme(conversationId);
+
     final result = await _apiService.put(
-      CommonEndpoints.updateTheme(conversationId),
-      data: {'themeColorId': themeColorId},
+      endpoint,
+      data: payload,
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<void> resetTheme({
+    required String conversationId,
+    bool resetAll = false,
+  }) async {
+    final endpoint = resetAll
+        ? CommonEndpoints.defaultTheme
+        : CommonEndpoints.resetConversationTheme(conversationId);
+
+    final result = await _apiService.delete(
+      endpoint,
       mapper: (data) => data,
     );
     result.when(

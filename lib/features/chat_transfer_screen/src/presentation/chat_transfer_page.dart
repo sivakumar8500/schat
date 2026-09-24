@@ -11,7 +11,6 @@ import 'package:schat/features/chat_transfer_screen/src/presentation/widgets/sen
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 
 class ChatTransferPage extends StatelessWidget {

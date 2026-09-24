@@ -719,9 +719,11 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
   String _getDisappearingText(int? seconds) {
     if (seconds == null || seconds == 0) return 'Off';
     if (seconds == 1800) return '30 minutes';
+    if (seconds == 1440) return '24 minutes';
     if (seconds == 86400) return '24 hours';
     if (seconds == 604800) return '7 days';
     if (seconds == 2592000) return '30 days';
+    if (seconds < 60) return '$seconds seconds';
     if (seconds < 3600) {
       return '${(seconds / 60).round()} minutes';
     } else if (seconds < 86400) {
@@ -774,7 +776,8 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0),
-                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '30 minutes', 1800),
+                _buildDisappearingOption(context, '24 minutes', 1440),
                 _buildDisappearingOption(context, '24 hours', 86400),
                 _buildDisappearingOption(context, '7 days', 604800),
                 _buildDisappearingOption(context, '30 days', 2592000),
@@ -787,48 +790,22 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds) {
+    final bool isSelected = (_disappearingTimer == seconds) || (_disappearingTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () async {
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: context.colors.primary)
+          : const Icon(Icons.chevron_right_rounded),
+      onTap: () {
         int? finalSeconds = seconds == 0 ? null : seconds;
-        String finalLabel = label;
-        
-        if (isCustomTimeOption) {
-          final now = DateTime.now();
-          final TimeOfDay? picked = await showTimePicker(
-            context: context,
-            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
-            helpText: 'Select auto-delete time today (before midnight)',
-          );
-          if (picked != null) {
-            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-            
-            if (target.isAfter(now)) {
-              finalSeconds = target.difference(now).inSeconds;
-              finalLabel = 'Custom (${picked.format(context)})';
-            } else {
-              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
-              finalSeconds = 1800;
-              finalLabel = '30 minutes';
-            }
-          } else {
-            finalSeconds = 1800;
-            finalLabel = '30 minutes';
-          }
-        }
-        
-        if (context.mounted) {
-          Navigator.pop(context);
-        }
-        
+        Navigator.pop(context);
         context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: finalSeconds));
         setState(() {
           _disappearingTimer = finalSeconds;
         });
-        context.showInfoNotification('Disappearing messages set to $finalLabel');
+        context.showInfoNotification('Disappearing messages set to $label');
       },
     );
   }

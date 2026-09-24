@@ -4,7 +4,7 @@ part 'chat_transfer_model.freezed.dart';
 part 'chat_transfer_model.g.dart';
 
 @freezed
-class ChatTransferModel with _$ChatTransferModel {
+abstract class ChatTransferModel with _$ChatTransferModel {
   const factory ChatTransferModel({
     required String id,
   }) = _ChatTransferModel;

@@ -27,8 +27,9 @@ class ChatLoaded extends ChatState {
   final String? lastSeen;
   final Color? customBgColor;
   final String? notificationMessage;
-  // Theme from server API
+  // Theme & Wallpaper from server API
   final ThemeColorModel? themeColor;
+  final String? customWallpaperUrl;
   final List<ThemeColorModel> availableThemes;
 
   // Share tracking (populated after FetchMessageSharesEvent)
@@ -53,6 +54,7 @@ class ChatLoaded extends ChatState {
     this.customBgColor,
     this.notificationMessage,
     this.themeColor,
+    this.customWallpaperUrl,
     this.availableThemes = const [],
     this.sharesData,
     this.sharesMessageId,
@@ -75,6 +77,8 @@ class ChatLoaded extends ChatState {
     String? notificationMessage,
     ThemeColorModel? themeColor,
     bool clearThemeColor = false,
+    String? customWallpaperUrl,
+    bool clearCustomWallpaperUrl = false,
     List<ThemeColorModel>? availableThemes,
     MessageSharesModel? sharesData,
     bool clearSharesData = false,
@@ -96,6 +100,9 @@ class ChatLoaded extends ChatState {
       customBgColor: customBgColor ?? this.customBgColor,
       notificationMessage: notificationMessage,
       themeColor: clearThemeColor ? null : (themeColor ?? this.themeColor),
+      customWallpaperUrl: clearCustomWallpaperUrl
+          ? null
+          : (customWallpaperUrl ?? this.customWallpaperUrl),
       availableThemes: availableThemes ?? this.availableThemes,
       sharesData: clearSharesData ? null : (sharesData ?? this.sharesData),
       sharesMessageId: sharesMessageId ?? this.sharesMessageId,

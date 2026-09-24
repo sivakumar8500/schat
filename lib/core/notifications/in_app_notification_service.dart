@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/call_screen/src/domain/call_sound_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/main.dart';
 import 'package:schat/utils/common_notifications.dart';
 
@@ -120,6 +122,13 @@ class InAppNotificationService {
     }
 
     bool isGroup = message['is_group'] == true || message['isGroup'] == true;
+
+    // Play message notification tone
+    try {
+      getIt<CallSoundService>().playMessageTone();
+    } catch (e) {
+      debugPrint('InAppNotificationService: Error playing message tone: $e');
+    }
 
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return;

@@ -203,6 +203,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       builder: (context, state) {
         final isMuted = state is ChatLoaded ? state.isMuted : false;
         final isLocked = state is ChatLoaded ? state.isLocked : false;
+        final disappearingTimer = state is ChatLoaded ? state.disappearingTimer : null;
 
         return Scaffold(
           backgroundColor: context.colors.scaffoldBackground,
@@ -227,7 +228,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
               const Divider(height: 32),
 
               // Settings Section
-              _buildSettingsSection(context, isMuted, isLocked),
+              _buildSettingsSection(context, isMuted, isLocked, disappearingTimer),
               const Divider(height: 32),
 
               // Destructive Section
@@ -638,7 +639,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
-  Widget _buildSettingsSection(BuildContext context, bool isMuted, bool isLocked) {
+  Widget _buildSettingsSection(BuildContext context, bool isMuted, bool isLocked, int? disappearingTimer) {
     return Column(
       children: [
         ListTile(
@@ -685,11 +686,31 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         ListTile(
           leading: const Icon(CommonIcons.history),
           title: const Text('Disappearing Messages'),
-          trailing: const Text('Off'),
-          onTap: () => _showDisappearingMessagesBottomSheet(context),
+          trailing: Text(
+            _getDisappearingText(disappearingTimer),
+            style: TextStyle(color: context.colors.textSecondary),
+          ),
+          onTap: () => _showDisappearingMessagesBottomSheet(context, disappearingTimer),
         ),
       ],
     );
+  }
+
+  String _getDisappearingText(int? seconds) {
+    if (seconds == null || seconds == 0) return 'Off';
+    if (seconds == 1800) return '30 minutes';
+    if (seconds == 1440) return '24 minutes';
+    if (seconds == 86400) return '24 hours';
+    if (seconds == 604800) return '7 days';
+    if (seconds == 2592000) return '30 days';
+    if (seconds < 60) return '$seconds seconds';
+    if (seconds < 3600) {
+      return '${(seconds / 60).round()} minutes';
+    } else if (seconds < 86400) {
+      return '${(seconds / 3600).round()} hours';
+    } else {
+      return '${(seconds / 86400).round()} days';
+    }
   }
 
   void _showMuteConfirmationDialog(BuildContext context, bool isMuted) {
@@ -779,7 +800,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
-  void _showDisappearingMessagesBottomSheet(BuildContext context) {
+  void _showDisappearingMessagesBottomSheet(BuildContext context, int? currentTimer) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -821,11 +842,12 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                   style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
                 ),
                 CommonSpaces.h24,
-                _buildDisappearingOption(context, 'Off', 0),
-                _buildDisappearingOption(context, '30 minutes', 1800, isCustomTimeOption: true),
-                _buildDisappearingOption(context, '24 hours', 86400),
-                _buildDisappearingOption(context, '7 days', 604800),
-                _buildDisappearingOption(context, '30 days', 2592000),
+                _buildDisappearingOption(context, 'Off', 0, currentTimer),
+                _buildDisappearingOption(context, '30 minutes', 1800, currentTimer),
+                _buildDisappearingOption(context, '24 minutes', 1440, currentTimer),
+                _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
+                _buildDisappearingOption(context, '7 days', 604800, currentTimer),
+                _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
                 CommonSpaces.h20,
               ],
             ),
@@ -835,45 +857,19 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, {bool isCustomTimeOption = false}) {
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer) {
+    final bool isSelected = (currentTimer == seconds) || (currentTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
-      trailing: const Icon(CommonIcons.arrowForward, size: 14),
-      onTap: () async {
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: context.colors.primary)
+          : const Icon(Icons.chevron_right_rounded),
+      onTap: () {
         int? finalSeconds = seconds == 0 ? null : seconds;
-        String finalLabel = label;
-        
-        if (isCustomTimeOption) {
-          final now = DateTime.now();
-          final TimeOfDay? picked = await showTimePicker(
-            context: context,
-            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
-            helpText: 'Select auto-delete time today (before midnight)',
-          );
-          if (picked != null) {
-            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-            
-            if (target.isAfter(now)) {
-              finalSeconds = target.difference(now).inSeconds;
-              finalLabel = 'Custom (${picked.format(context)})';
-            } else {
-              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
-              finalSeconds = 1800;
-              finalLabel = '30 minutes';
-            }
-          } else {
-            finalSeconds = 1800;
-            finalLabel = '30 minutes';
-          }
-        }
-        
-        if (context.mounted) {
-          Navigator.pop(context);
-        }
-        
+        Navigator.pop(context);
         context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: finalSeconds));
-        context.showInfoNotification('Disappearing messages set to $finalLabel');
+        context.showInfoNotification('Disappearing messages set to $label');
       },
     );
   }

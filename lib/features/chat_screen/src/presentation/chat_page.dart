@@ -47,6 +47,8 @@ import 'shared_media_page.dart';
 import 'attachment_preview_page.dart';
 import 'package:schat/utils/permission_helper.dart';
 import '../../../call_screen/call_screen.dart';
+import 'widgets/chat_theme_bottom_sheet.dart';
+import 'package:schat/utils/common_endpoints.dart';
 import '../domain/models/message_model.dart';
 import '../domain/models/chat_media_model.dart';
 import '../domain/models/theme_color_model.dart';
@@ -67,6 +69,7 @@ class ChatPage extends StatefulWidget {
   final String recipientId;
   final bool isGroup;
   final ThemeColorModel? initialThemeColor;
+  final String? initialCustomWallpaperUrl;
   final String? initialSharedText;
   final String? initialSharedFilePath;
   final String? initialSharedFileName;
@@ -83,6 +86,7 @@ class ChatPage extends StatefulWidget {
     this.isGroup = false,
     this.profilePictureUrl,
     this.initialThemeColor,
+    this.initialCustomWallpaperUrl,
     this.initialSharedText,
     this.initialSharedFilePath,
     this.initialSharedFileName,
@@ -164,6 +168,7 @@ class _ChatPageState extends State<ChatPage> {
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
       initialThemeColor: widget.initialThemeColor,
+      initialCustomWallpaperUrl: widget.initialCustomWallpaperUrl,
     ));
 
     // Pre-populate with shared text if provided
@@ -2387,30 +2392,62 @@ class _ChatPageState extends State<ChatPage> {
             return true;
           }).toList();
           final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
-          // Use server API theme color first, then fall back to local customBgColor
+          // Custom Wallpaper or Color Theme
+          final customWallpaperUrl = state is ChatLoaded ? state.customWallpaperUrl : null;
           final apiThemeColor = state is ChatLoaded ? state.themeColor?.toColor() : null;
           final customBgColor = apiThemeColor ?? (state is ChatLoaded ? state.customBgColor : null);
+
+          DecorationImage? bgDecorationImage;
+          if (customWallpaperUrl != null && customWallpaperUrl.isNotEmpty) {
+            ImageProvider? imgProvider;
+            final cleanUrl = customWallpaperUrl.replaceFirst('file://', '');
+            if (customWallpaperUrl.startsWith('http://') || customWallpaperUrl.startsWith('https://')) {
+              var networkUrl = customWallpaperUrl;
+              if (networkUrl.contains('minio')) {
+                try {
+                  final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+                  if (serverUri.host.isNotEmpty) {
+                    networkUrl = networkUrl.replaceAll('minio', serverUri.host);
+                  }
+                } catch (_) {}
+              }
+              imgProvider = NetworkImage(networkUrl);
+            } else if (customWallpaperUrl.startsWith('assets/')) {
+              imgProvider = AssetImage(customWallpaperUrl);
+            } else {
+              final file = File(cleanUrl);
+              if (file.existsSync()) {
+                imgProvider = FileImage(file);
+              } else {
+                imgProvider = NetworkImage(customWallpaperUrl);
+              }
+            }
+            bgDecorationImage = DecorationImage(
+              image: imgProvider,
+              fit: BoxFit.cover,
+            );
+          } else if (customBgColor == null) {
+            bgDecorationImage = DecorationImage(
+              image: const AssetImage('assets/images/chat_bg.png'),
+              fit: BoxFit.cover,
+              opacity: context.colors.isDark ? 0.05 : 0.08,
+              colorFilter: context.colors.isDark
+                  ? const ColorFilter.matrix(<double>[
+                      -1.0, 0.0, 0.0, 0.0, 255.0, // red
+                      0.0, -1.0, 0.0, 0.0, 255.0, // green
+                      0.0, 0.0, -1.0, 0.0, 255.0, // blue
+                      0.0, 0.0, 0.0, 1.0, 0.0,   // alpha
+                    ])
+                  : null,
+            );
+          }
 
           return Scaffold(
             backgroundColor: customBgColor ?? context.colors.scaffoldBackground,
             appBar: _buildAppBar(context, state),
             body: Container(
               decoration: BoxDecoration(
-                image: customBgColor != null
-                    ? null
-                    : DecorationImage(
-                        image: const AssetImage('assets/images/chat_bg.png'),
-                        fit: BoxFit.cover,
-                        opacity: context.colors.isDark ? 0.05 : 0.08,
-                        colorFilter: context.colors.isDark
-                            ? const ColorFilter.matrix(<double>[
-                                -1.0, 0.0, 0.0, 0.0, 255.0, // red
-                                0.0, -1.0, 0.0, 0.0, 255.0, // green
-                                0.0, 0.0, -1.0, 0.0, 255.0, // blue
-                                0.0, 0.0, 0.0, 1.0, 0.0,   // alpha
-                              ])
-                            : null,
-                      ),
+                image: bgDecorationImage,
               ),
               child: Column(
                 children: [
@@ -2591,6 +2628,7 @@ class _ChatPageState extends State<ChatPage> {
                                       onSharePressed: () => _showForwardBottomSheet(context, msg),
                                       fileSize: msg.fileSize,
                                       callMeta: msg.callMeta,
+                                      expiry: msg.expiry,
                                       isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
                                     ),
                                   ),
@@ -4396,7 +4434,8 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0, currentTimer),
-                _buildDisappearingOption(context, '30 minutes', 1800, currentTimer, isCustomTimeOption: true),
+                _buildDisappearingOption(context, '30 minutes', 1800, currentTimer),
+                _buildDisappearingOption(context, '24 minutes', 1440, currentTimer),
                 _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
                 _buildDisappearingOption(context, '7 days', 604800, currentTimer),
                 _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
@@ -4409,7 +4448,7 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer, {bool isCustomTimeOption = false}) {
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer) {
     final bool isSelected = (currentTimer == seconds) || (currentTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -4417,40 +4456,11 @@ class _ChatPageState extends State<ChatPage> {
       trailing: isSelected
           ? Icon(Icons.check_rounded, color: context.colors.primary)
           : const Icon(Icons.chevron_right_rounded),
-      onTap: () async {
+      onTap: () {
         int? finalSeconds = seconds == 0 ? null : seconds;
-        String finalLabel = label;
-        
-        if (isCustomTimeOption) {
-          final now = DateTime.now();
-          final TimeOfDay? picked = await showTimePicker(
-            context: context,
-            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
-            helpText: 'Select auto-delete time today (before midnight)',
-          );
-          if (picked != null) {
-            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-            
-            if (target.isAfter(now)) {
-              finalSeconds = target.difference(now).inSeconds;
-              finalLabel = 'Custom (${picked.format(context)})';
-            } else {
-              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
-              finalSeconds = 1800;
-              finalLabel = '30 minutes';
-            }
-          } else {
-            finalSeconds = 1800;
-            finalLabel = '30 minutes';
-          }
-        }
-        
-        if (context.mounted) {
-          Navigator.pop(context);
-        }
-        
+        Navigator.pop(context);
         _chatBloc.add(SetDisappearingTimerEvent(seconds: finalSeconds));
-        context.showInfoNotification('Disappearing messages set to $finalLabel');
+        context.showInfoNotification('Disappearing messages set to $label');
       },
     );
   }
@@ -4488,168 +4498,13 @@ class _ChatPageState extends State<ChatPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (sheetCtx) {
-        return BlocProvider.value(
-          value: _chatBloc,
-          child: BlocBuilder<ChatBloc, ChatState>(
-            builder: (context, state) {
-              final themes = state is ChatLoaded ? state.availableThemes : <ThemeColorModel>[];
-              final selectedThemeId = state is ChatLoaded ? state.themeColor?.id : null;
-              final isLoading = themes.isEmpty;
-
-              return Container(
-                decoration: BoxDecoration(
-                  color: context.colors.scaffoldBackground,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Drag handle
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              color: context.colors.textHint.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.palette_outlined,
-                                  color: context.colors.primary,
-                                  size: 24,
-                                ),
-                                CommonSpaces.w10,
-                                Text(
-                                  'Chat Theme',
-                                  style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                            if (selectedThemeId != null)
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(sheetCtx);
-                                  _chatBloc.add(const UpdateThemeEvent(themeColorId: null));
-                                },
-                                child: Text(
-                                  'Remove',
-                                  style: TextStyle(
-                                    color: context.colors.error,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        CommonSpaces.h8,
-                        Text(
-                          'Choose a theme color for this chat. Only you will see this change.',
-                          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-                        ),
-                        CommonSpaces.h20,
-                        if (isLoading)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 32),
-                              child: CircularProgressIndicator(color: context.colors.primary),
-                            ),
-                          )
-                        else if (themes.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 32),
-                              child: Column(
-                                children: [
-                                  Icon(Icons.palette_outlined,
-                                      size: 48, color: context.colors.textHint.withValues(alpha: 0.5)),
-                                  CommonSpaces.h12,
-                                  Text(
-                                    'No themes available',
-                                    style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 5,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                            ),
-                            itemCount: themes.length,
-                            itemBuilder: (context, index) {
-                              final theme = themes[index];
-                              final isSelected = theme.id == selectedThemeId;
-                              final themeColor = theme.toColor();
-
-                              return Tooltip(
-                                message: theme.name,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.pop(sheetCtx);
-                                    _chatBloc.add(UpdateThemeEvent(
-                                      themeColorId: theme.id,
-                                      themeColor: theme,
-                                    ));
-                                  },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    decoration: BoxDecoration(
-                                      color: themeColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? context.colors.primary
-                                            : Colors.transparent,
-                                        width: 3,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: themeColor.withValues(alpha: 0.4),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ],
-                                    ),
-                                    child: isSelected
-                                        ? Icon(
-                                            Icons.check_circle_rounded,
-                                            color: context.colors.primary,
-                                            size: 24,
-                                          )
-                                        : null,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        CommonSpaces.h12,
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      builder: (sheetCtx) => BlocProvider.value(
+        value: _chatBloc,
+        child: ChatThemeBottomSheet(
+          conversationId: widget.conversationId,
+          isGroup: widget.isGroup,
+        ),
+      ),
     );
   }
 }

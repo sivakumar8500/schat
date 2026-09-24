@@ -72,6 +72,7 @@ class MessageBubble extends StatelessWidget {
   final double? longitude;
   final String? address;
   final String? locationTitle;
+  final int? expiry;
 
   const MessageBubble({
     super.key,
@@ -116,6 +117,7 @@ class MessageBubble extends StatelessWidget {
     this.longitude,
     this.address,
     this.locationTitle,
+    this.expiry,
   });
 
   String _formatSystemMessage(String msg) {
@@ -342,6 +344,14 @@ class MessageBubble extends StatelessWidget {
                                   : context.colors.textSecondary,
                             ),
                             CommonSpaces.w4,
+                          ],
+                          if (expiry != null && expiry! > 0) ...[
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 11,
+                              color: context.colors.textSecondary,
+                            ),
+                            CommonSpaces.w2,
                           ],
                           Text(
                             time,
