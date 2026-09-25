@@ -3981,13 +3981,15 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     if (result != null && result['send'] == true && mounted) {
-      final caption = result['caption'] as String;
+      final caption = (result['caption'] as String?) ?? '';
+      final sendBytes = (result['bytes'] as Uint8List?) ?? bytes;
+      final sendPath = (result['path'] as String?) ?? (kIsWeb ? null : image.path);
       setState(() {
-        _selectedAttachmentPath = kIsWeb ? null : image.path;
-        _selectedAttachmentBytes = bytes;
+        _selectedAttachmentPath = sendPath;
+        _selectedAttachmentBytes = sendBytes;
         _selectedAttachmentName = name;
         _selectedAttachmentType = 'image';
-        _selectedAttachmentSize = size;
+        _selectedAttachmentSize = sendBytes.length;
         _attachmentAllowShare = true;
         _attachmentAllowDownload = true;
         _attachmentAllowView = true;
@@ -4250,13 +4252,15 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       if (previewResult != null && previewResult['send'] == true && mounted) {
-        final caption = previewResult['caption'] as String;
+        final caption = (previewResult['caption'] as String?) ?? '';
+        final sendBytes = (previewResult['bytes'] as Uint8List?) ?? file.bytes;
+        final sendPath = (previewResult['path'] as String?) ?? file.path;
         setState(() {
-          _selectedAttachmentPath = file.path;
-          _selectedAttachmentBytes = file.bytes;
+          _selectedAttachmentPath = sendPath;
+          _selectedAttachmentBytes = sendBytes;
           _selectedAttachmentName = file.name;
           _selectedAttachmentType = fileType;
-          _selectedAttachmentSize = file.size;
+          _selectedAttachmentSize = sendBytes?.length ?? file.size;
           _attachmentAllowShare = true;
           _attachmentAllowDownload = true;
           _attachmentAllowView = true;
