@@ -418,7 +418,8 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
           if (widget.isMyStatus) {
             _showViewersSheet(viewers, viewCount);
           } else if (contact != null) {
-            _showReplySheet(contact, currentStatusId);
+            final status = contact.statuses.isNotEmpty ? contact.statuses[_currentStatusIndex.clamp(0, contact.statuses.length - 1)] : null;
+            _showReplySheet(contact, status);
           }
         }
       },
@@ -431,7 +432,11 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
             _buildBottomGradient(),
             _buildTopHeader(total, current, name, initial, time, bgColor, avatarUrl, currentStatusId),
             if (widget.isMyStatus) _buildMyStatusBottomView(viewCount, viewers),
-            if (!widget.isMyStatus && contact != null) _buildReplyBox(contact, currentStatusId),
+            if (!widget.isMyStatus && contact != null)
+              _buildReplyBox(
+                contact,
+                contact.statuses.isNotEmpty ? contact.statuses[_currentStatusIndex.clamp(0, contact.statuses.length - 1)] : null,
+              ),
           ],
         ],
       ),
@@ -777,18 +782,35 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     );
   }
 
-  Future<void> _sendReplyMessage(String contactId, String contactName, String text) async {
+  Future<void> _sendReplyMessage(
+    String contactId,
+    String contactName,
+    String text, {
+    StatusItemModel? statusItem,
+  }) async {
     try {
       final dashRepo = getIt<DashboardRepository>();
       final socketRepo = getIt<ChatSocketRepository>();
+
+      String messageToSend = text;
+      if (statusItem != null) {
+        if (statusItem.imagePath != null && statusItem.imagePath!.isNotEmpty) {
+          final caption = (statusItem.text != null && statusItem.text!.isNotEmpty)
+              ? statusItem.text!
+              : 'Photo';
+          messageToSend = '📷 Status: $caption\n$text';
+        } else if (statusItem.text != null && statusItem.text!.isNotEmpty) {
+          messageToSend = '📝 Status: "${statusItem.text}"\n$text';
+        }
+      }
 
       final result = await dashRepo.startDirectChat(contactId);
       result.when(
         success: (chat) {
           socketRepo.sendMessage(
             conversationId: chat.id,
-            type: 'TEXT',
-            text: text,
+            type: 'text',
+            text: messageToSend,
           );
           if (mounted) {
             context.showSuccessNotification('Reply sent to $contactName');
@@ -807,7 +829,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     }
   }
 
-  void _showReplySheet(StatusContactModel contact, String? statusId) {
+  void _showReplySheet(StatusContactModel contact, StatusItemModel? statusItem) {
     _progressController.stop();
     final textController = TextEditingController();
     final emojis = ['❤️', '😂', '😮', '😢', '🙏', '👏', '🔥', '💯'];
@@ -877,7 +899,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                       return InkWell(
                         onTap: () {
                           Navigator.pop(ctx);
-                          _sendReplyMessage(contact.contactId, contact.name, emoji);
+                          _sendReplyMessage(contact.contactId, contact.name, emoji, statusItem: statusItem);
                         },
                         borderRadius: BorderRadius.circular(24),
                         child: Container(
@@ -918,7 +940,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                             final text = val.trim();
                             if (text.isNotEmpty) {
                               Navigator.pop(ctx);
-                              _sendReplyMessage(contact.contactId, contact.name, text);
+                              _sendReplyMessage(contact.contactId, contact.name, text, statusItem: statusItem);
                             }
                           },
                           decoration: const InputDecoration(
@@ -941,7 +963,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                           final text = textController.text.trim();
                           if (text.isNotEmpty) {
                             Navigator.pop(ctx);
-                            _sendReplyMessage(contact.contactId, contact.name, text);
+                            _sendReplyMessage(contact.contactId, contact.name, text, statusItem: statusItem);
                           }
                         },
                       ),
@@ -959,12 +981,12 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     });
   }
 
-  Widget _buildReplyBox(StatusContactModel contact, String? statusId) {
+  Widget _buildReplyBox(StatusContactModel contact, StatusItemModel? statusItem) {
     return Positioned(
       bottom: 12, left: 0, right: 0,
       child: SafeArea(
         child: InkWell(
-          onTap: () => _showReplySheet(contact, statusId),
+          onTap: () => _showReplySheet(contact, statusItem),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
