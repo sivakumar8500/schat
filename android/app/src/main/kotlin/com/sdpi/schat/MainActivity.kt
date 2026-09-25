@@ -38,6 +38,26 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "setCallActive" -> {
                     isCallActive = call.argument<Boolean>("isActive") ?: false
+                    if (isCallActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            val params = PictureInPictureParams.Builder()
+                                .setAspectRatio(Rational(9, 16))
+                                .setAutoEnterEnabled(true)
+                                .build()
+                            setPictureInPictureParams(params)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    } else if (!isCallActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            val params = PictureInPictureParams.Builder()
+                                .setAutoEnterEnabled(false)
+                                .build()
+                            setPictureInPictureParams(params)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                     result.success(true)
                 }
                 "enterPip" -> {
@@ -55,9 +75,13 @@ class MainActivity : FlutterActivity() {
     private fun enterPipMode(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
             try {
-                val params = PictureInPictureParams.Builder()
+                val builder = PictureInPictureParams.Builder()
                     .setAspectRatio(Rational(9, 16))
-                    .build()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    builder.setAutoEnterEnabled(true)
+                }
+                val params = builder.build()
+                setPictureInPictureParams(params)
                 return enterPictureInPictureMode(params)
             } catch (e: Exception) {
                 e.printStackTrace()

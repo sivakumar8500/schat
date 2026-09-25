@@ -49,7 +49,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       debugPrint('CallWebRtcBloc: Wakelock error: $e');
     }
     try {
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
         _pipChannel.invokeMethod('setCallActive', {'isActive': active});
       }
     } catch (e) {

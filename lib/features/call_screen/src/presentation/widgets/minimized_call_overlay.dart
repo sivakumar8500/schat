@@ -69,8 +69,10 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
           final String? profilePictureUrl = state is CallActive
               ? state.profilePictureUrl
               : (state as CallConnecting).profilePictureUrl;
+          final bool isConnected = state is CallActive;
+          final bool isRemoteVideoOff = state is CallActive && state.isRemoteVideoOff;
           final DateTime? startedAt = state is CallActive
-              ? state.startedAt
+              ? (state.startedAt ?? getIt<CallWebRtcBloc>().activeCallStart ?? DateTime.now())
               : null;
 
           void onTapAction() {
@@ -105,155 +107,190 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
             );
           }
 
+          final screenSize = MediaQuery.of(context).size;
+          const double pipWidth = 120.0;
+          const double pipHeight = 180.0;
+
           return Positioned(
             top: _pipY ?? 80,
-            left: _pipX,
-            right: _pipX == null ? 16 : null,
+            left: _pipX ?? (screenSize.width - pipWidth - 16),
             child: SafeArea(
-              child: GestureDetector(
-                onPanUpdate: (details) {
-                  setState(() {
-                    _pipX ??= MediaQuery.of(context).size.width - 16 - 120;
-                    _pipX = (_pipX! + details.delta.dx)
-                        .clamp(0.0, MediaQuery.of(context).size.width - 120.0);
+              child: Material(
+                type: MaterialType.transparency,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      _pipX ??= screenSize.width - pipWidth - 16;
+                      _pipX = (_pipX! + details.delta.dx)
+                          .clamp(0.0, screenSize.width - pipWidth);
 
-                    _pipY ??= 80;
-                    _pipY = (_pipY! + details.delta.dy)
-                        .clamp(0.0, MediaQuery.of(context).size.height - 180.0);
-                  });
-                },
-                onTap: onTapAction,
-                child: Container(
-                  width: 120,
-                  height: 180,
-                  decoration: BoxDecoration(
-                    color: context.colors.scaffoldBackground,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFF00873C).withValues(alpha: 0.6),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
+                      _pipY ??= 80;
+                      _pipY = (_pipY! + details.delta.dy)
+                          .clamp(0.0, screenSize.height - pipHeight - 60.0);
+                    });
+                  },
+                  onTap: onTapAction,
+                  child: Container(
+                    width: pipWidth,
+                    height: pipHeight,
+                    decoration: BoxDecoration(
+                      color: context.colors.scaffoldBackground,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFF00873C).withValues(alpha: 0.6),
+                        width: 1.5,
                       ),
-                    ],
-                  ),
-                  clipBehavior: Clip.hardEdge,
-                  child: Stack(
-                    children: [
-                      if (isVideo)
-                        RTCVideoView(
-                          getIt<WebRtcService>().remoteRenderer,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                          mirror: false,
-                        )
-                      else
-                        Container(
-                          color: context.colors.primary.withValues(alpha: 0.12),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          blurRadius: 14,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: Stack(
+                      children: [
+                        if (isVideo && isConnected && !isRemoteVideoOff)
+                          Positioned.fill(
+                            child: RTCVideoView(
+                              getIt<WebRtcService>().remoteRenderer,
+                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              mirror: false,
+                            ),
+                          )
+                        else
+                          Positioned.fill(
+                            child: Container(
+                              color: context.colors.primary.withValues(alpha: 0.12),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 28,
+                                      backgroundColor: context.colors.primary,
+                                      backgroundImage: profilePictureUrl != null && profilePictureUrl.isNotEmpty
+                                          ? NetworkImage(profilePictureUrl)
+                                          : null,
+                                      child: (profilePictureUrl == null || profilePictureUrl.isEmpty)
+                                          ? Text(
+                                              contactName.isNotEmpty ? contactName[0].toUpperCase() : '?',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 22,
+                                                fontWeight: FontWeight.bold,
+                                                decoration: TextDecoration.none,
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                    CommonSpaces.h8,
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      child: Text(
+                                        contactName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: context.bodySmall.copyWith(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: context.colors.textPrimary,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                    ),
+                                    CommonSpaces.h4,
+                                    if (isRemoteVideoOff)
+                                      Text(
+                                        'Camera Off',
+                                        style: context.bodySmall.copyWith(
+                                          fontSize: 10,
+                                          color: context.colors.textSecondary,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      )
+                                    else if (isConnected && startedAt != null)
+                                      _CallTimerText(startedAt: startedAt, color: const Color(0xFF00873C))
+                                    else
+                                      Text(
+                                        'Connecting...',
+                                        style: context.bodySmall.copyWith(
+                                          fontSize: 10,
+                                          color: context.colors.textSecondary,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (isVideo && !isConnected)
+                          const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            ),
+                          ),
+                        // Top indicator badge
+                        Positioned(
+                          top: 6,
+                          left: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00873C).withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: context.colors.primary,
-                                  backgroundImage: profilePictureUrl != null && profilePictureUrl.isNotEmpty
-                                      ? NetworkImage(profilePictureUrl)
-                                      : null,
-                                  child: (profilePictureUrl == null || profilePictureUrl.isEmpty)
-                                      ? Text(
-                                          contactName.isNotEmpty ? contactName[0].toUpperCase() : '?',
-                                          style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                                        )
-                                      : null,
+                                Icon(
+                                  isVideo ? Icons.videocam : Icons.call,
+                                  color: Colors.white,
+                                  size: 10,
                                 ),
-                                CommonSpaces.h8,
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  child: Text(
-                                    contactName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: context.bodySmall.copyWith(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: context.colors.textPrimary,
-                                    ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  isConnected ? 'Live' : 'Calling',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.none,
                                   ),
                                 ),
-                                CommonSpaces.h4,
-                                if (startedAt != null)
-                                  _CallTimerText(startedAt: startedAt, color: const Color(0xFF00873C))
-                                else
-                                  Text(
-                                    'Connecting...',
-                                    style: context.bodySmall.copyWith(
-                                      fontSize: 10,
-                                      color: context.colors.textSecondary,
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
                         ),
-                      if (isVideo && startedAt == null)
-                        const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
-                      // Top indicator badge
-                      Positioned(
-                        top: 6,
-                        left: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00873C).withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isVideo ? Icons.videocam : Icons.call,
+                        // End call button on floating window
+                        Positioned(
+                          bottom: 6,
+                          right: 6,
+                          child: GestureDetector(
+                            onTap: () {
+                              context.read<CallWebRtcBloc>().add(HangUpCallEvent(conversationId));
+                            },
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: const BoxDecoration(
+                                color: Colors.redAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.call_end,
                                 color: Colors.white,
-                                size: 10,
+                                size: 15,
                               ),
-                              const SizedBox(width: 3),
-                              const Text(
-                                'Live',
-                                style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // End call button on floating window
-                      Positioned(
-                        bottom: 6,
-                        right: 6,
-                        child: GestureDetector(
-                          onTap: () {
-                            context.read<CallWebRtcBloc>().add(HangUpCallEvent(conversationId));
-                          },
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.call_end,
-                              color: Colors.white,
-                              size: 15,
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -304,6 +341,7 @@ class _CallTimerTextState extends State<_CallTimerText> {
           style: context.bodySmall.copyWith(
             color: widget.color ?? Colors.white.withValues(alpha: 0.9),
             fontWeight: FontWeight.w500,
+            decoration: TextDecoration.none,
           ),
         );
       },

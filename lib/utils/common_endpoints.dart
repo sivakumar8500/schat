@@ -121,7 +121,7 @@ class CommonEndpoints {
   // Notifications
   static const String registerDevice = '/notifications/register-device';
 
-  // Status
+  // Status & Stories
   static const String getRecentStatuses = '/statuses/';
   static const String getMyStatuses = '/statuses/me';
   static const String createStatus = '/statuses/';
@@ -130,6 +130,10 @@ class CommonEndpoints {
   static String muteContactStatus(String contactId) => '/statuses/mute/$contactId';
   static String unmuteContactStatus(String contactId) => '/statuses/unmute/$contactId';
   static const String statusPrivacy = '/statuses/privacy';
+  static const String statusPrivacyInclude = '/statuses/privacy/include';
+  static String removeStatusPrivacyInclude(String contactId) => '/statuses/privacy/include/$contactId';
+  static const String statusPrivacyExclude = '/statuses/privacy/exclude';
+  static String removeStatusPrivacyExclude(String contactId) => '/statuses/privacy/exclude/$contactId';
 
   // Screen Capture Permission
   static const String screenPermissionRequest = '/chats/screen-permission/request';

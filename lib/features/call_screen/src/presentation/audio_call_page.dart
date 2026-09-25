@@ -578,7 +578,10 @@ class _AudioCallPageState extends State<AudioCallPage>
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
+              Navigator.of(context).pop();
+            },
             child: Container(
               width: 40,
               height: 40,
