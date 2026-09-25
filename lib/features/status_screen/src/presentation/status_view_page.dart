@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
 import 'package:schat/injection.dart';
@@ -411,9 +413,13 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         _progressController.forward();
       },
       onVerticalDragEnd: (details) {
-        if (widget.isMyStatus && details.primaryVelocity != null && details.primaryVelocity! < -200) {
+        if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
           _progressController.stop();
-          _showViewersSheet(viewers, viewCount);
+          if (widget.isMyStatus) {
+            _showViewersSheet(viewers, viewCount);
+          } else if (contact != null) {
+            _showReplySheet(contact, currentStatusId);
+          }
         }
       },
       child: Stack(
@@ -425,7 +431,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
             _buildBottomGradient(),
             _buildTopHeader(total, current, name, initial, time, bgColor, avatarUrl, currentStatusId),
             if (widget.isMyStatus) _buildMyStatusBottomView(viewCount, viewers),
-            if (!widget.isMyStatus) _buildReplyBox(),
+            if (!widget.isMyStatus && contact != null) _buildReplyBox(contact, currentStatusId),
           ],
         ],
       ),
@@ -771,34 +777,225 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     );
   }
 
-  Widget _buildReplyBox() {
+  Future<void> _sendReplyMessage(String contactId, String contactName, String text) async {
+    try {
+      final dashRepo = getIt<DashboardRepository>();
+      final socketRepo = getIt<ChatSocketRepository>();
+
+      final result = await dashRepo.startDirectChat(contactId);
+      result.when(
+        success: (chat) {
+          socketRepo.sendMessage(
+            conversationId: chat.id,
+            type: 'TEXT',
+            text: text,
+          );
+          if (mounted) {
+            context.showSuccessNotification('Reply sent to $contactName');
+          }
+        },
+        failure: (error, _) {
+          if (mounted) {
+            context.showErrorNotification('Failed to send reply: $error');
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        context.showErrorNotification('Failed to send reply: $e');
+      }
+    }
+  }
+
+  void _showReplySheet(StatusContactModel contact, String? statusId) {
+    _progressController.stop();
+    final textController = TextEditingController();
+    final emojis = ['❤️', '😂', '😮', '😢', '🙏', '👏', '🔥', '💯'];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white38,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Title
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Reply to ${contact.name}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Quick Reactions
+                SizedBox(
+                  height: 48,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: emojis.length,
+                    separatorBuilder: (context, index) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final emoji = emojis[i];
+                      return InkWell(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _sendReplyMessage(contact.contactId, contact.name, emoji);
+                        },
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Text Reply Input
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: TextField(
+                          controller: textController,
+                          style: const TextStyle(color: Colors.white),
+                          autofocus: true,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (val) {
+                            final text = val.trim();
+                            if (text.isNotEmpty) {
+                              Navigator.pop(ctx);
+                              _sendReplyMessage(contact.contactId, contact.name, text);
+                            }
+                          },
+                          decoration: const InputDecoration(
+                            hintText: 'Type a reply...',
+                            hintStyle: TextStyle(color: Colors.white54, fontSize: 14),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00873C),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                        onPressed: () {
+                          final text = textController.text.trim();
+                          if (text.isNotEmpty) {
+                            Navigator.pop(ctx);
+                            _sendReplyMessage(contact.contactId, contact.name, text);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      if (mounted) _progressController.forward();
+    });
+  }
+
+  Widget _buildReplyBox(StatusContactModel contact, String? statusId) {
     return Positioned(
       bottom: 12, left: 0, right: 0,
       child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 22),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white30),
+        child: InkWell(
+          onTap: () => _showReplySheet(contact, statusId),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 22),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white30),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.reply, color: Colors.white70, size: 18),
+                            SizedBox(width: 8),
+                            Text('Reply', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                          ],
+                        ),
                       ),
-                      child: const Text('Reply', style: TextStyle(color: Colors.white70, fontSize: 14)),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
