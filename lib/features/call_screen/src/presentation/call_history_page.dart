@@ -142,23 +142,10 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
   @override
   Widget build(BuildContext context) {
     final bool isSelectionMode = _selectedIds.isNotEmpty;
-    final isDark = context.colors.isDark;
 
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Flowing Wave Lines Background matching Home Screen
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: HomeBackgroundWavePainter(isDark: isDark),
-            ),
-          ),
-        ),
-
-        // Main Content
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
             BlocBuilder<CallHistoryCubit, CallHistoryState>(
               builder: (context, state) {
                 final currentCalls = state.maybeWhen(
@@ -227,9 +214,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
               ),
             ),
           ],
-        ),
-      ],
-    );
+        );
   }
 
   Widget _buildHeader(bool isSelectionMode, List<CallHistoryModel> currentCalls) {

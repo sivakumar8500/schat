@@ -9,7 +9,6 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_s
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -237,8 +236,6 @@ class _UserListPageState extends State<UserListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-
     return MultiBlocProvider(
       providers: [
         BlocProvider.value(
@@ -297,63 +294,49 @@ class _UserListPageState extends State<UserListPage> {
             },
           ),
         ],
-        child: Stack(
-          children: [
-            // Flowing Wave Lines Background matching Home Screen
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: HomeBackgroundWavePainter(isDark: isDark),
-                ),
-              ),
-            ),
-
-            // Main Content
-            DefaultTabController(
-              length: widget.showOnlySynced ? 1 : 2,
-              child: Scaffold(
-                backgroundColor: Colors.transparent,
-                body: SafeArea(
-                  child: Column(
-                    children: [
-                      _buildHeader(context),
-                      _buildSearchBar(),
-                      if (!widget.showOnlySynced) _buildTabBar(context),
-                      Expanded(
-                        child: BlocBuilder<ContactsBloc, ContactsState>(
-                          builder: (context, state) {
-                            if (widget.showOnlySynced) {
-                              return RefreshIndicator(
-                                onRefresh: () async {
-                                  _triggerSync();
-                                  await Future.delayed(const Duration(seconds: 1));
-                                },
-                                color: const Color(0xFF00873C),
-                                child: _buildSchatUsersTab(context, state),
-                              );
-                            }
-                            return RefreshIndicator(
-                              onRefresh: () async {
-                                _triggerSync();
-                                await Future.delayed(const Duration(seconds: 1));
-                              },
-                              color: const Color(0xFF00873C),
-                              child: TabBarView(
-                                children: [
-                                  _buildSchatUsersTab(context, state),
-                                  _buildAllContactsTab(context, state),
-                                ],
-                              ),
-                            );
+        child: DefaultTabController(
+          length: widget.showOnlySynced ? 1 : 2,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(context),
+                  _buildSearchBar(),
+                  if (!widget.showOnlySynced) _buildTabBar(context),
+                  Expanded(
+                    child: BlocBuilder<ContactsBloc, ContactsState>(
+                      builder: (context, state) {
+                        if (widget.showOnlySynced) {
+                          return RefreshIndicator(
+                            onRefresh: () async {
+                              _triggerSync();
+                              await Future.delayed(const Duration(seconds: 1));
+                            },
+                            color: const Color(0xFF00873C),
+                            child: _buildSchatUsersTab(context, state),
+                          );
+                        }
+                        return RefreshIndicator(
+                          onRefresh: () async {
+                            _triggerSync();
+                            await Future.delayed(const Duration(seconds: 1));
                           },
-                        ),
-                      ),
-                    ],
+                          color: const Color(0xFF00873C),
+                          child: TabBarView(
+                            children: [
+                              _buildSchatUsersTab(context, state),
+                              _buildAllContactsTab(context, state),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

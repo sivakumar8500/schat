@@ -110,20 +110,20 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // 1. Flowing Wave Lines Background matching Home Screen
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: HomeBackgroundWavePainter(isDark: isDark),
-                ),
+      body: Stack(
+        children: [
+          // 1. Flowing Wave Lines Background matching Home Screen (Full Screen)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
               ),
             ),
+          ),
 
-            // 2. Main Content
-            Column(
+          // 2. Main Content in SafeArea
+          SafeArea(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(primaryColor),
@@ -147,8 +147,8 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -376,21 +376,10 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
   }
 
   Widget _buildChatsList(List<ChatModel> filteredChats) {
-    final isDark = context.colors.isDark;
-
-    return ListView.separated(
+    return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 8, bottom: 40),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
       itemCount: filteredChats.length,
-      separatorBuilder: (context, index) => Divider(
-        height: 1,
-        thickness: 0.6,
-        indent: 84,
-        endIndent: 20,
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : const Color(0xFFF0F0F0),
-      ),
       itemBuilder: (context, index) {
         final chat = filteredChats[index];
         final name = chat.isGroup
@@ -422,86 +411,110 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
     required String message,
   }) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
-    return InkWell(
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatPage(
-              conversationId: chat.id,
-              contactName: name,
-              contactColor: primaryColor,
-              isOnline: chat.recipient.isOnline,
-              profilePictureUrl: chat.recipient.profilePictureUrl,
-              recipientId: chat.recipient.id,
-              isGroup: chat.isGroup,
-              initialThemeColor: chat.themeColor,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isDark ? context.colors.cardBackground : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: context.colors.border.withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ChatPage(
+                  conversationId: chat.id,
+                  contactName: name,
+                  contactColor: primaryColor,
+                  isOnline: chat.recipient.isOnline,
+                  profilePictureUrl: chat.recipient.profilePictureUrl,
+                  recipientId: chat.recipient.id,
+                  isGroup: chat.isGroup,
+                  initialThemeColor: chat.themeColor,
+                ),
+              ),
+            );
+            _fetchHiddenChats();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                _buildAvatar(chat),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                          color: context.colors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        message,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: chat.isTyping
+                              ? const Color(0xFF00873C)
+                              : isDark
+                                  ? Colors.white60
+                                  : context.colors.textSecondary,
+                          fontSize: 13,
+                          fontWeight: chat.isTyping ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _buildChatStatus(chat),
+                const SizedBox(width: 8),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(
+                      Icons.unarchive_rounded,
+                      color: Color(0xFF00873C),
+                      size: 20,
+                    ),
+                    tooltip: 'Unhide Chat',
+                    onPressed: () => _unhideChat(chat),
+                  ),
+                ),
+              ],
             ),
           ),
-        );
-        _fetchHiddenChats();
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            _buildAvatar(chat),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: context.colors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: chat.isTyping
-                          ? const Color(0xFF12B76A)
-                          : isDark
-                              ? Colors.white60
-                              : const Color(0xFF6B7280),
-                      fontSize: 14,
-                      fontWeight: chat.isTyping ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            _buildChatStatus(chat),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: Icon(
-                Icons.unarchive_outlined,
-                color: primaryColor,
-                size: 22,
-              ),
-              tooltip: 'Unhide Chat',
-              onPressed: () => _unhideChat(chat),
-              constraints: const BoxConstraints(),
-              style: IconButton.styleFrom(
-                backgroundColor: isDark
-                    ? const Color(0xFF00FF87).withValues(alpha: 0.12)
-                    : const Color(0xFFD1FADF),
-                padding: const EdgeInsets.all(8),
-              ),
-            ),
-          ],
         ),
       ),
     );

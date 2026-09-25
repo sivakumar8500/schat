@@ -528,7 +528,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                               icon: Icons.format_size_rounded,
                               title: 'Font Size',
                               subtitle: getIt<ThemeController>().fontSizeName,
-                              onTap: () => _showFontSizeDialog(context),
+                              onTap: () => _showFontSizeBottomSheet(context),
                             ),
                             _buildSettingRow(
                               context: context,
@@ -550,7 +550,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                               icon: Icons.shield_rounded,
                               title: 'Scan Device Security',
                               subtitle: 'Verify attachments & device integrity',
-                              onTap: () => _showSecurityScanConfirmationDialog(context),
+                              onTap: () => _showSecurityScanConfirmationBottomSheet(context),
                             ),
                             _buildSettingRow(
                               context: context,
@@ -616,7 +616,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                               Icons.chevron_right_rounded,
                               color: Color(0xFFE53935),
                             ),
-                            onTap: () => _showLogoutDialog(context),
+                            onTap: () => _showLogoutBottomSheet(context),
                           ),
                         ),
                       ],
@@ -899,76 +899,278 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     );
   }
 
-  void _showFontSizeDialog(BuildContext context) {
+  void _showFontSizeBottomSheet(BuildContext context) {
     final currentSize = getIt<ThemeController>().fontSizeName;
-    showDialog(
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ctx.colors.cardBackground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: Text(
-          'Font Size',
-          style: TextStyle(fontWeight: FontWeight.bold, color: ctx.colors.textPrimary),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: ['Small', 'Medium', 'Large'].map((size) {
-            final isSelected = size.toLowerCase() == currentSize.toLowerCase();
-            return ListTile(
-              title: Text(
-                size,
-                style: TextStyle(
-                  color: isSelected ? const Color(0xFF00873C) : ctx.colors.textPrimary,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              trailing: isSelected
-                  ? const Icon(Icons.check_rounded, color: Color(0xFF00873C))
-                  : null,
-              onTap: () {
-                getIt<ThemeController>().setFontSize(size);
-                Navigator.pop(ctx);
-                setState(() {});
-              },
-            );
-          }).toList(),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
+          ),
+          decoration: BoxDecoration(
+            color: sheetCtx.colors.scaffoldBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.format_size_rounded,
+                          color: Color(0xFF00873C),
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Font Size',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: sheetCtx.colors.textPrimary,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Choose a font size for messages and interface text across the app.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+              ...[
+                {'title': 'Small', 'desc': 'Compact text size for high density'},
+                {'title': 'Medium', 'desc': 'Default standard font size'},
+                {'title': 'Large', 'desc': 'Larger text for better legibility'},
+              ].map((item) {
+                final size = item['title']!;
+                final desc = item['desc']!;
+                final isSelected = size.toLowerCase() == currentSize.toLowerCase();
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+                        : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSelected
+                          ? primaryColor
+                          : sheetCtx.colors.border.withValues(alpha: 0.3),
+                      width: isSelected ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    title: Text(
+                      size,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                        color: isSelected ? primaryColor : sheetCtx.colors.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      desc,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: isSelected
+                            ? (isDark ? Colors.white70 : const Color(0xFF027A48))
+                            : (isDark ? Colors.white54 : const Color(0xFF6B7280)),
+                      ),
+                    ),
+                    trailing: isSelected
+                        ? Container(
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: isDark ? Colors.black : Colors.white,
+                            ),
+                          )
+                        : null,
+                    onTap: () {
+                      getIt<ThemeController>().setFontSize(size);
+                      Navigator.pop(sheetCtx);
+                      setState(() {});
+                    },
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
+          ),
         ),
       ),
     );
-  }
+  },
+);
+}
 
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
+  void _showLogoutBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+
+    showModalBottomSheet(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: dialogContext.colors.cardBackground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: Text(
-          'Logout',
-          style: TextStyle(fontWeight: FontWeight.bold, color: dialogContext.colors.textPrimary),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
         ),
-        content: Text(
-          'Are you sure you want to logout from this device?',
-          style: TextStyle(color: dialogContext.colors.textSecondary),
+        decoration: BoxDecoration(
+          color: sheetCtx.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Cancel', style: TextStyle(color: dialogContext.colors.textHint)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              context.read<ProfileBloc>().add(const LogoutEvent());
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE53935),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE4E2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFFD92D20),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Logout',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: sheetCtx.colors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Are you sure you want to log out from this account on this device?',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.45,
+                    color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetCtx),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: BorderSide(color: sheetCtx.colors.border.withValues(alpha: 0.4)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: sheetCtx.colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          context.read<ProfileBloc>().add(const LogoutEvent());
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: const Color(0xFFD92D20),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text(
+                          'Logout',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
-            child: const Text('Logout'),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1002,55 +1204,89 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   }
 
   void _showDisappearingMessagesBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
+          ),
           decoration: BoxDecoration(
             color: sheetCtx.colors.scaffoldBackground,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.timer_outlined, color: Color(0xFF00873C), size: 24),
-                  CommonSpaces.w12,
-                  Text(
-                    'Disappearing messages',
-                    style: sheetCtx.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.timer_outlined,
+                          color: Color(0xFF00873C),
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Disappearing Messages',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: sheetCtx.colors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'For more privacy and storage, all new messages will disappear from new chats you start after the selected duration.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildDisappearingOption(context, sheetCtx, 'Off', null, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '30 minutes', 1800, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '24 minutes', 1440, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '24 hours', 86400, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '7 days', 604800, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '30 days', 2592000, primaryColor),
+                  const SizedBox(height: 12),
                 ],
               ),
-              CommonSpaces.h16,
-              Text(
-                'For more privacy and storage, all new messages will disappear from new chats you start after the selected duration.',
-                style: sheetCtx.bodyMedium.copyWith(color: sheetCtx.colors.textSecondary),
-              ),
-              CommonSpaces.h24,
-              _buildDisappearingOption(context, sheetCtx, 'Off', null),
-              _buildDisappearingOption(context, sheetCtx, '30 minutes', 1800),
-              _buildDisappearingOption(context, sheetCtx, '24 minutes', 1440),
-              _buildDisappearingOption(context, sheetCtx, '24 hours', 86400),
-              _buildDisappearingOption(context, sheetCtx, '7 days', 604800),
-              _buildDisappearingOption(context, sheetCtx, '30 days', 2592000),
-              CommonSpaces.h20,
-            ],
+            ),
           ),
         );
       },
@@ -1058,61 +1294,182 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   }
 
   Widget _buildDisappearingOption(
-      BuildContext blocContext, BuildContext sheetCtx, String label, int? seconds) {
+      BuildContext blocContext, BuildContext sheetCtx, String label, int? seconds, Color primaryColor) {
     final bool isSelected = _defaultDisappearingTimer == seconds;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label, style: sheetCtx.bodyLarge),
-      trailing: isSelected
-          ? const Icon(Icons.check_rounded, color: Color(0xFF00873C))
-          : const Icon(Icons.chevron_right_rounded),
-      onTap: () {
-        Navigator.pop(sheetCtx);
-        blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
-        blocContext.showInfoNotification('Default disappearing messages set to $label');
-      },
+    final isDark = sheetCtx.colors.isDark;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isSelected
+              ? primaryColor
+              : sheetCtx.colors.border.withValues(alpha: 0.3),
+          width: isSelected ? 1.5 : 1.0,
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+        title: Text(
+          label,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected ? primaryColor : sheetCtx.colors.textPrimary,
+          ),
+        ),
+        trailing: isSelected
+            ? Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: primaryColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_rounded,
+                  size: 15,
+                  color: isDark ? Colors.black : Colors.white,
+                ),
+              )
+            : null,
+        onTap: () {
+          Navigator.pop(sheetCtx);
+          blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
+          blocContext.showInfoNotification('Default disappearing messages set to $label');
+        },
+      ),
     );
   }
 
-  void _showSecurityScanConfirmationDialog(BuildContext context) {
-    showDialog(
+  void _showSecurityScanConfirmationBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ctx.colors.cardBackground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: Row(
-          children: [
-            const Icon(Icons.shield_outlined, color: Color(0xFF00873C), size: 26),
-            CommonSpaces.w10,
-            Text(
-              'Scan Device Security',
-              style: TextStyle(fontWeight: FontWeight.bold, color: ctx.colors.textPrimary),
-            ),
-          ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
         ),
-        content: Text(
-          'This scan checks user-accessible files, downloaded attachments, and URLs for known threats.\n\n'
-          'Note: It functions as an in-app security checker for Schat attachments & links.',
-          style: TextStyle(color: ctx.colors.textSecondary),
+        decoration: BoxDecoration(
+          color: sheetCtx.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: ctx.colors.textHint)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScanResultScreen.navigateTo(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00873C),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.shield_outlined,
+                        color: Color(0xFF00873C),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Scan Device Security',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: sheetCtx.colors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'This scan verifies user-accessible files, downloaded attachments, and links for known threats.\n\nIt runs as a local in-app security verification for your chats.',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.45,
+                    color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetCtx),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: BorderSide(color: sheetCtx.colors.border.withValues(alpha: 0.4)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: sheetCtx.colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          ScanResultScreen.navigateTo(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: primaryColor,
+                          foregroundColor: isDark ? Colors.black : Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Start Scan',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
             ),
-            child: const Text('Start Scan'),
           ),
-        ],
+        ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 
@@ -232,182 +233,235 @@ class _TonePickerScreenState extends State<TonePickerScreen>
     final subtitle = isCall
         ? 'Choose the sound for incoming voice & video calls'
         : 'Choose the sound for new chat message alerts';
+    final isDark = context.colors.isDark;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
-      appBar: AppBar(
-        title: Text(
-          title,
-          style: context.titleLarge.copyWith(fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: context.colors.scaffoldBackground,
-        elevation: 0,
-        foregroundColor: context.colors.textPrimary,
-        actions: [
-          TextButton.icon(
-            onPressed: _isSaving ? null : _resetToDefault,
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('Reset'),
-            style: TextButton.styleFrom(
-              foregroundColor: context.colors.textSecondary,
+      body: Stack(
+        children: [
+          // Wave lines background matching Home & Emergency Contacts
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
+              ),
             ),
           ),
-          IconButton(
-            icon: _isSaving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_rounded, size: 28),
-            color: context.colors.primary,
-            onPressed: _isSaving ? null : _saveSelection,
-            tooltip: 'Save',
+
+          // Main Screen Content
+          SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(context, title),
+                Expanded(
+                  child: _isLoading
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(color: Color(0xFF00873C)),
+                              CommonSpaces.h16,
+                              Text(
+                                'Loading tones...',
+                                style: TextStyle(color: context.colors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _tones.isEmpty
+                          ? _buildEmptyState()
+                          : ListView(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                              children: [
+                                // Hero Header Card
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? context.colors.cardBackground : Colors.white,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: const Color(0xFF00873C).withValues(alpha: 0.25),
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFE8F5E9),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          isCall ? Icons.ring_volume_rounded : Icons.notifications_active_rounded,
+                                          color: const Color(0xFF00873C),
+                                          size: 24,
+                                        ),
+                                      ),
+                                      CommonSpaces.w16,
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                                color: context.colors.textPrimary,
+                                              ),
+                                            ),
+                                            CommonSpaces.h4,
+                                            Text(
+                                              subtitle,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: context.colors.textSecondary,
+                                                height: 1.3,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                CommonSpaces.h20,
+
+                                // Section Title
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                                  child: Text(
+                                    'AVAILABLE TONES',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.8,
+                                      color: Color(0xFF00873C),
+                                    ),
+                                  ),
+                                ),
+                                CommonSpaces.h8,
+
+                                // Tone List Card
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: isDark ? context.colors.cardBackground : Colors.white,
+                                    borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: context.colors.border.withValues(alpha: 0.35),
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      itemCount: _tones.length,
+                                      separatorBuilder: (ctx, i) => Divider(
+                                        height: 1,
+                                        indent: 64,
+                                        endIndent: 16,
+                                        color: context.colors.border.withValues(alpha: 0.25),
+                                      ),
+                                      itemBuilder: (ctx, index) {
+                                        final tone = _tones[index];
+                                        final isSelected = tone.id == _selectedToneId;
+                                        final isPlaying = tone.id == _playingToneId;
+
+                                        return _buildToneTile(
+                                          tone: tone,
+                                          isSelected: isSelected,
+                                          isPlaying: isPlaying,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                CommonSpaces.h32,
+                              ],
+                            ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: context.colors.primary),
-                  CommonSpaces.h16,
-                  Text(
-                    'Loading tones...',
-                    style: TextStyle(color: context.colors.textSecondary),
-                  ),
-                ],
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'save_tone_fab',
+        onPressed: _isSaving ? null : _saveSelection,
+        backgroundColor: const Color(0xFF00873C),
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: _isSaving
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.check_rounded, size: 20),
+        label: Text(
+          _isSaving ? 'Saving...' : 'Set as $title',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: context.colors.lightBackground,
+              border: Border.all(
+                color: context.colors.border.withValues(alpha: 0.3),
               ),
-            )
-          : _tones.isEmpty
-              ? _buildEmptyState()
-              : ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  children: [
-                    // Header Card
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            context.colors.primary.withValues(alpha: 0.12),
-                            context.colors.primary.withValues(alpha: 0.04),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: context.colors.primary.withValues(alpha: 0.25),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: context.colors.primary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              isCall ? Icons.ring_volume_rounded : Icons.notifications_active_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                          CommonSpaces.w16,
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                CommonSpaces.h4,
-                                Text(
-                                  subtitle,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: context.colors.textSecondary,
-                                    height: 1.3,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    CommonSpaces.h20,
-
-                    // Section Title
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                      child: Text(
-                        'AVAILABLE TONES',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
-                          color: context.colors.textSecondary,
-                          fontFamily: CommonFonts.primaryFont,
-                        ),
-                      ),
-                    ),
-                    CommonSpaces.h8,
-
-                    // Tone List
-                    Container(
-                      decoration: BoxDecoration(
-                        color: context.colors.cardBackground,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: context.colors.border.withValues(alpha: 0.5),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(18),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _tones.length,
-                          separatorBuilder: (ctx, i) => Divider(
-                            height: 1,
-                            indent: 64,
-                            endIndent: 16,
-                            color: context.colors.border.withValues(alpha: 0.4),
-                          ),
-                          itemBuilder: (ctx, index) {
-                            final tone = _tones[index];
-                            final isSelected = tone.id == _selectedToneId;
-                            final isPlaying = tone.id == _playingToneId;
-
-                            return _buildToneTile(
-                              tone: tone,
-                              isSelected: isSelected,
-                              isPlaying: isPlaying,
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    CommonSpaces.h32,
-                  ],
-                ),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          CommonSpaces.w12,
+          Expanded(
+            child: Text(
+              title,
+              style: context.h2.copyWith(
+                fontWeight: FontWeight.bold,
+                color: context.colors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _isSaving ? null : _resetToDefault,
+            icon: Icon(Icons.refresh_rounded, size: 16, color: context.colors.textSecondary),
+            label: Text('Reset', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+          ),
+        ],
+      ),
     );
   }
 

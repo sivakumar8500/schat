@@ -484,38 +484,43 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     debugPrint('DEBUG: Building DashboardPage');
+    final isDark = context.colors.isDark;
+
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
-      body: SafeArea(
-        child: IndexedStack(
-          index: _currentIndex,
-          children: [
-            _buildChatsTab(),
-            const StatusPage(),
-            const CallHistoryPage(),
-            UserListPage(
-              forceSync: _shouldSyncContacts,
-              showOnlySynced: _onlyShowSynced,
+      body: Stack(
+        children: [
+          // Full-screen background waves spanning all tabs behind status bar & bottom bar
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
+              ),
             ),
-          ],
-        ),
+          ),
+          SafeArea(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                _buildChatsTab(),
+                const StatusPage(),
+                const CallHistoryPage(),
+                UserListPage(
+                  forceSync: _shouldSyncContacts,
+                  showOnlySynced: _onlyShowSynced,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
   Widget _buildChatsTab() {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: HomeBackgroundWavePainter(isDark: context.colors.isDark),
-            ),
-          ),
-        ),
-        BlocListener<ChatsBloc, ChatsState>(
-          listener: (context, state) {
+    return BlocListener<ChatsBloc, ChatsState>(
+      listener: (context, state) {
         if (state is ChatsLoaded) {
           setState(() {
             _hiddenChatIds.clear();
@@ -629,10 +634,8 @@ class _DashboardPageState extends State<DashboardPage> {
           );
         },
       ),
-    ),
-  ],
-);
-}
+    );
+  }
 
   Widget _buildHeader() {
     final isDark = context.colors.isDark;
