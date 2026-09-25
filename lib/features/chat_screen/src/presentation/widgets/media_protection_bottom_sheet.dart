@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -43,12 +44,18 @@ class MediaProtectionBottomSheet extends StatefulWidget {
 
 class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet> {
   MediaPermissionsModel? _permissions;
+  Future<MediaAccessTreeModel?>? _accessTreeFuture;
   bool _isLoading = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _accessTreeFuture = getIt<ChatRepository>()
+        .getMediaAccessTree(widget.mediaId)
+        .then<MediaAccessTreeModel?>((v) => v)
+        .catchError((_) => null);
+
     if (widget.initialData != null) {
       _permissions = widget.initialData;
       _isLoading = false;
@@ -87,8 +94,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
     final bgColor = isDark ? const Color(0xFF141916) : Colors.white;
-    final cardBg = isDark ? const Color(0xFF1C2420) : const Color(0xFFF6F8F7);
-    final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE5E9E7);
 
     return Container(
       decoration: BoxDecoration(
@@ -107,6 +112,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         left: 20,
         right: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -148,140 +156,133 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 ),
                 child: const Icon(
                   Icons.shield_rounded,
-                  color: Color(0xFF0B2117),
-                  size: 28,
+                  color: Colors.black,
+                  size: 26,
                 ),
               ),
-              CommonSpaces.w12,
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Media Security & Protection',
+                      'Share & Protection Details',
                       style: context.titleMedium.copyWith(
                         fontWeight: FontWeight.bold,
                         color: context.colors.textPrimary,
-                        letterSpacing: -0.2,
+                        fontSize: 17,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      widget.fileName ?? 'Encrypted Attachment Protection',
-                      style: context.bodySmall.copyWith(
-                        color: context.colors.textSecondary,
+                    if (widget.fileName != null)
+                      Text(
+                        widget.fileName!,
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    else
+                      Text(
+                        'Media Access & Lineage',
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
                   ],
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.close_rounded, color: context.colors.textSecondary),
+                icon: Icon(Icons.close, color: context.colors.textSecondary),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
           ),
-          CommonSpaces.h20,
+          CommonSpaces.h16,
 
-          // Body Content
-          if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(
-                      color: context.colors.primary,
-                      strokeWidth: 3,
-                    ),
-                    CommonSpaces.h16,
-                    Text(
-                      'Verifying media permissions...',
-                      style: context.bodyMedium.copyWith(
-                        color: context.colors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else if (_errorMessage != null)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 36),
-                  CommonSpaces.h8,
-                  Text(
-                    'Unable to fetch permissions',
-                    style: context.titleSmall.copyWith(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  CommonSpaces.h4,
-                  Text(
-                    _errorMessage!,
-                    style: context.bodySmall.copyWith(color: context.colors.textSecondary),
-                    textAlign: TextAlign.center,
-                  ),
-                  CommonSpaces.h12,
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colors.primary,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: const Text('Try Again'),
-                    onPressed: _fetchPermissions,
-                  ),
-                ],
-              ),
-            )
-          else
-            _buildPermissionsContent(
-              context,
-              _permissions!,
-              cardBg: cardBg,
-              borderColor: borderColor,
+          // Content
+          Flexible(
+            child: SingleChildScrollView(
+              child: _buildBody(context),
             ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildPermissionsContent(
-    BuildContext context,
-    MediaPermissionsModel model, {
-    required Color cardBg,
-    required Color borderColor,
-  }) {
+  Widget _buildBody(BuildContext context) {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFF00FF87),
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
+          children: [
+            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+            CommonSpaces.h12,
+            Text(
+              'Could not load permissions',
+              style: context.titleSmall.copyWith(
+                fontWeight: FontWeight.bold,
+                color: context.colors.textPrimary,
+              ),
+            ),
+            CommonSpaces.h6,
+            Text(
+              _errorMessage!,
+              style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            CommonSpaces.h16,
+            ElevatedButton.icon(
+              onPressed: _fetchPermissions,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primary,
+                foregroundColor: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final model = _permissions;
+    if (model == null) return const SizedBox.shrink();
+
+    final isDark = context.colors.isDark;
+    final cardBg = isDark ? const Color(0xFF1C2420) : const Color(0xFFF6F8F7);
+    final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE5E9E7);
     final permissions = model.permissions;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Ownership & Identity Card
+        // Ownership & Media ID Banner
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: cardBg,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: borderColor),
           ),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: model.isOwner
                       ? const Color(0xFF00FF87).withValues(alpha: 0.15)
@@ -289,8 +290,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: model.isOwner
-                        ? const Color(0xFF00FF87).withValues(alpha: 0.5)
-                        : Colors.blueAccent.withValues(alpha: 0.5),
+                        ? const Color(0xFF00FF87).withValues(alpha: 0.4)
+                        : Colors.blueAccent.withValues(alpha: 0.4),
                   ),
                 ),
                 child: Row(
@@ -396,56 +397,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         ),
         CommonSpaces.h14,
 
-        // Security & Protection Policy Section
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'ACTIVE PROTECTION POLICIES',
-                style: context.bodySmall.copyWith(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                  color: context.colors.textSecondary,
-                ),
-              ),
-              CommonSpaces.h10,
-              _buildProtectionRow(
-                context,
-                icon: Icons.lock_outline_rounded,
-                title: 'End-to-End Encryption',
-                subtitle: 'AES-256-GCM encrypted in-transit & at-rest',
-                status: 'Enforced',
-                statusColor: const Color(0xFF00FF87),
-              ),
-              const Divider(height: 16, thickness: 0.6),
-              _buildProtectionRow(
-                context,
-                icon: Icons.screenshot_monitor_rounded,
-                title: 'Anti-Screenshot & Capture',
-                subtitle: 'Protected against unauthorized recording & export',
-                status: permissions.canDownload ? 'Allowed' : 'Secured',
-                statusColor: permissions.canDownload ? Colors.orangeAccent : const Color(0xFF00FF87),
-              ),
-              const Divider(height: 16, thickness: 0.6),
-              _buildProtectionRow(
-                context,
-                icon: Icons.security_rounded,
-                title: 'DRM Revocation & Access Control',
-                subtitle: 'Token authenticated via backend security gateway',
-                status: 'Active',
-                statusColor: const Color(0xFF00FF87),
-              ),
-            ],
-          ),
-        ),
+        // Full Shared List / Access Lineage Section
+        _buildSharedLineageSection(context, cardBg, borderColor, isDark),
         CommonSpaces.h16,
 
         // Done Button
@@ -544,57 +497,259 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     );
   }
 
-  Widget _buildProtectionRow(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String status,
-    required Color statusColor,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: context.colors.textSecondary),
-        CommonSpaces.w10,
-        Expanded(
+  Widget _buildSharedLineageSection(
+    BuildContext context,
+    Color cardBg,
+    Color borderColor,
+    bool isDark,
+  ) {
+    const accentGreen = Color(0xFF00FF87);
+
+    return FutureBuilder<MediaAccessTreeModel?>(
+      future: _accessTreeFuture,
+      builder: (context, snapshot) {
+        final isWaiting = snapshot.connectionState == ConnectionState.waiting;
+        final accessTreeModel = snapshot.data;
+        final grants = accessTreeModel?.accessTree ?? [];
+        final totalGrants = accessTreeModel?.totalGrants ?? grants.length;
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: context.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.textPrimary,
-                  fontSize: 13,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'SHARE & ACCESS LINEAGE',
+                    style: context.bodySmall.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                      color: context.colors.textSecondary,
+                    ),
+                  ),
+                  if (!isWaiting)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: accentGreen.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '$totalGrants ${totalGrants == 1 ? 'Share' : 'Shares'}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: accentGreen,
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              Text(
-                subtitle,
-                style: context.bodySmall.copyWith(
-                  fontSize: 11,
-                  color: context.colors.textSecondary,
+              const SizedBox(height: 12),
+              if (isWaiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: accentGreen,
+                      ),
+                    ),
+                  ),
+                )
+              else if (grants.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.share_outlined, size: 20, color: context.colors.textSecondary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'No one has forwarded or reshared this file yet.',
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Column(
+                  children: grants
+                      .map((node) => _buildAccessTreeNodeItem(
+                            context: context,
+                            node: node,
+                            isDark: isDark,
+                            accentGreen: accentGreen,
+                            level: 0,
+                          ))
+                      .toList(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAccessTreeNodeItem({
+    required BuildContext context,
+    required AccessTreeNode node,
+    required bool isDark,
+    required Color accentGreen,
+    required int level,
+  }) {
+    final isActive = node.status.toLowerCase() == 'active';
+    final perms = node.effectivePermissions;
+    final itemBg = isDark ? const Color(0xFF1E2830) : const Color(0xFFF0F3F2);
+
+    return Padding(
+      padding: EdgeInsets.only(left: level * 16.0, bottom: 8.0),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: itemBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? Colors.white12 : Colors.black12,
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (level > 0)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Text('↳', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                  ),
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: accentGreen.withValues(alpha: 0.2),
+                  child: Text(
+                    node.grantee.initials,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        node.grantee.displayName,
+                        style: context.bodySmall.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: context.colors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (node.granter.displayName.isNotEmpty)
+                        Text(
+                          'Shared by ${node.granter.displayName}',
+                          style: context.bodySmall.copyWith(
+                            fontSize: 10,
+                            color: context.colors.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (isActive ? accentGreen : Colors.redAccent).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    node.status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: isActive ? accentGreen : Colors.redAccent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Permission Badges
+            Row(
+              children: [
+                _buildPermissionChip('View', perms.canView, isDark),
+                const SizedBox(width: 4),
+                _buildPermissionChip('Download', perms.canDownload, isDark),
+                const SizedBox(width: 4),
+                _buildPermissionChip('Share', perms.canShare, isDark),
+              ],
+            ),
+            if (node.downstreamShares.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...node.downstreamShares.map(
+                (child) => _buildAccessTreeNodeItem(
+                  context: context,
+                  node: child,
+                  isDark: isDark,
+                  accentGreen: accentGreen,
+                  level: level + 1,
                 ),
               ),
             ],
-          ),
+          ],
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: statusColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: statusColor.withValues(alpha: 0.4), width: 0.8),
+      ),
+    );
+  }
+
+  Widget _buildPermissionChip(String label, bool allowed, bool isDark) {
+    const accentGreen = Color(0xFF00FF87);
+    final color = allowed ? accentGreen : Colors.redAccent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            allowed ? Icons.check_circle_outline : Icons.cancel_outlined,
+            size: 10,
+            color: color,
           ),
-          child: Text(
-            status,
-            style: context.bodySmall.copyWith(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: statusColor,
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
