@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:injectable/injectable.dart';
@@ -20,10 +21,11 @@ class StatusRepositoryImpl implements StatusRepository {
         CommonEndpoints.getRecentStatuses,
         mapper: (data) => (data as List).map((e) => StatusContactModel.fromJson(e)).toList(),
       );
-      return result.when(
+      final list = result.when(
         success: (data) => data,
-        failure: (message, _) => [],
+        failure: (message, _) => <StatusContactModel>[],
       );
+      return list;
     } catch (e) {
       // Fallback for testing UI if API is not fully ready
       return [];
@@ -67,15 +69,26 @@ class StatusRepositoryImpl implements StatusRepository {
     String? finalMediaId = mediaFileId;
 
     // Handle file upload if provided
-    if (fileName != null && mimeType != null && fileSizeBytes != null) {
+    if (fileName != null && mimeType != null) {
       try {
+        dynamic bytes = fileBytes;
+        if (bytes == null && filePath != null) {
+          final file = File(filePath);
+          if (await file.exists()) {
+            bytes = await file.readAsBytes();
+          }
+        }
+
+        final size = bytes != null ? (bytes as Uint8List).length : (fileSizeBytes ?? 1024);
+        final isVideo = mimeType.toLowerCase().contains('video') || (fileName.endsWith('.mp4'));
+        final mediaType = isVideo ? 'CHAT_VIDEO' : 'CHAT_IMAGE';
+
         // Step 1: Request upload URL
         final requestData = {
-          'media_type': 'STATUS_MEDIA',
+          'media_type': mediaType,
           'mime_type': mimeType,
-          'file_size_bytes': fileSizeBytes,
+          'file_size_bytes': size,
           'filename': fileName,
-          'conversation_id': 'STATUS_UPLOAD',
         };
 
         final requestResult = await _apiService.post<Map<String, dynamic>>(
@@ -106,14 +119,6 @@ class StatusRepositoryImpl implements StatusRepository {
         }
 
         // Step 2: Upload file binary directly
-        dynamic bytes = fileBytes;
-        if (bytes == null && filePath != null) {
-          final file = File(filePath);
-          if (await file.exists()) {
-            bytes = await file.readAsBytes();
-          }
-        }
-
         if (bytes != null) {
           final uploadResponse = await http.put(
             Uri.parse(uploadUrl),
@@ -140,15 +145,25 @@ class StatusRepositoryImpl implements StatusRepository {
     }
 
     // Create the actual status
+    final createPayload = <String, dynamic>{
+      'statusType': statusType,
+    };
+    if (textContent != null && textContent.trim().isNotEmpty) {
+      createPayload['textContent'] = textContent.trim();
+    }
+    if (finalMediaId != null && finalMediaId.trim().isNotEmpty) {
+      createPayload['mediaFileId'] = finalMediaId.trim();
+    }
+    if (privacyType != null && privacyType.isNotEmpty) {
+      createPayload['privacyType'] = privacyType;
+    }
+    if (privacyUserIds != null) {
+      createPayload['privacyUserIds'] = privacyUserIds;
+    }
+
     final result = await _apiService.post(
       CommonEndpoints.createStatus,
-      data: {
-        'statusType': statusType,
-        'textContent': ?textContent,
-        'mediaFileId': ?finalMediaId,
-        'privacyType': ?privacyType,
-        'privacyUserIds': ?privacyUserIds,
-      },
+      data: createPayload,
     );
     
     result.when(

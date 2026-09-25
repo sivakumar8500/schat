@@ -111,6 +111,7 @@ class StatusPageContent extends StatelessWidget {
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx);
+                context.showInfoNotification('Uploading status...');
                 context.read<StatusBloc>().add(UploadMediaStatusEvent(
                   path: path,
                   bytes: bytes,
@@ -123,6 +124,7 @@ class StatusPageContent extends StatelessWidget {
               onPressed: () {
                 final caption = controller.text.trim();
                 Navigator.pop(ctx);
+                context.showInfoNotification('Uploading status...');
                 context.read<StatusBloc>().add(UploadMediaStatusEvent(
                   path: path,
                   bytes: bytes,
@@ -399,9 +401,6 @@ class StatusPageContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<StatusBloc, StatusState>(
       builder: (context, state) {
-        if (state is StatusFailure) {
-          return const SizedBox.shrink();
-        }
         final isLoading = state is StatusLoading || state is StatusInitial;
         final recentStatuses = state is StatusLoaded ? state.recentUpdates : <StatusContactModel>[];
         final mutedStatuses = state is StatusLoaded ? state.mutedUpdates : <StatusContactModel>[];

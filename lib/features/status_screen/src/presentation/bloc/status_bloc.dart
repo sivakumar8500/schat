@@ -19,30 +19,41 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
 
   Future<void> _onLoadStatusUpdates(LoadStatusUpdatesEvent event, Emitter<StatusState> emit) async {
     final currentState = state;
-    emit(const StatusLoading());
+    if (currentState is! StatusLoaded) {
+      emit(const StatusLoading());
+    }
     try {
       final recent = await _repository.getRecentUpdates();
       final muted = await _repository.getMutedUpdates();
-      
-      if (currentState is StatusLoaded) {
-        emit(currentState.copyWith(
-          recentUpdates: recent,
-          mutedUpdates: muted,
-        ));
-      } else {
-        emit(StatusLoaded(
-          recentUpdates: recent,
-          mutedUpdates: muted,
-        ));
+      final myStatuses = await _repository.getMyStatuses();
+
+      String? myText;
+      String? myPath;
+      DateTime? myTime;
+      if (myStatuses.isNotEmpty) {
+        final latest = myStatuses.first;
+        myText = latest.text;
+        myPath = latest.imagePath;
+        myTime = latest.timestamp;
       }
+
+      emit(StatusLoaded(
+        recentUpdates: recent,
+        mutedUpdates: muted,
+        myStatusText: myText,
+        myStatusPath: myPath,
+        myStatusTime: myTime,
+      ));
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      if (currentState is StatusLoaded) {
+        emit(currentState);
+      } else {
+        emit(StatusFailure(errorMessage: e.toString()));
+      }
     }
   }
 
   Future<void> _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) async {
-    final currentState = state;
-    emit(const StatusLoading());
     try {
       await _repository.createStatus(
         statusType: 'text',
@@ -50,15 +61,13 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
       );
-      add(const LoadStatusUpdatesEvent());
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      // Log and continue to reload
     }
+    add(const LoadStatusUpdatesEvent());
   }
 
   Future<void> _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) async {
-    final currentState = state;
-    emit(const StatusLoading());
     try {
       await _repository.createStatus(
         statusType: event.path != null && event.path!.endsWith('.mp4') ? 'video' : 'image',
@@ -71,10 +80,10 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
       );
-      add(const LoadStatusUpdatesEvent());
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      // Log and continue to reload
     }
+    add(const LoadStatusUpdatesEvent());
   }
 
   Future<void> _onMuteContact(MuteContactEvent event, Emitter<StatusState> emit) async {
