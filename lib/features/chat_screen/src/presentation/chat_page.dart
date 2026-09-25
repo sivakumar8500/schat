@@ -2970,33 +2970,55 @@ class _ChatPageState extends State<ChatPage> {
             });
           },
         ),
-        title: TextField(
-          controller: _searchController,
-          autofocus: true,
-          style: context.bodyLarge.copyWith(color: context.colors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Search...',
-            hintStyle: context.bodyLarge.copyWith(color: context.colors.textHint),
-            border: InputBorder.none,
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
-        ),
-        actions: [
-          if (_searchQuery.isNotEmpty)
-            IconButton(
-              icon: Icon(CommonIcons.close, color: context.colors.textPrimary),
-              onPressed: () {
-                setState(() {
-                  _searchQuery = '';
-                  _searchController.clear();
-                });
-              },
+        title: Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: context.colors.isDark ? const Color(0xFF1E2822) : const Color(0xFFF0F4F2),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: context.colors.primary.withValues(alpha: 0.6),
+              width: 1.2,
             ),
-          CommonSpaces.w8,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 20, color: context.colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search in conversation...',
+                    hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ),
+              if (_searchQuery.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _searchQuery = '';
+                      _searchController.clear();
+                    });
+                  },
+                  child: Icon(Icons.close, size: 18, color: context.colors.textSecondary),
+                ),
+            ],
+          ),
+        ),
+        actions: const [
+          SizedBox(width: 8),
         ],
       );
     }

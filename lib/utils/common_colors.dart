@@ -12,7 +12,7 @@ class ThemeColors {
 
   // Brand Colors
   Color get primary => isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
-  Color get sentBubble => const Color(0xffc8dfea); // light blue sent bubble
+  Color get sentBubble => isDark ? const Color(0xFF005C4B) : const Color(0xFFE7FFDB);
   Color get secondary => Colors.pink;
   
   // Backgrounds
