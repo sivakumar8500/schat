@@ -8,6 +8,9 @@ import android.os.FileObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.app.PictureInPictureParams
+import android.content.pm.PackageManager
+import android.util.Rational
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,7 +18,10 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
+    private val PIP_CHANNEL = "com.sdpi.schat/pip"
     private var methodChannel: MethodChannel? = null
+    private var pipMethodChannel: MethodChannel? = null
+    private var isCallActive = false
     private var contentObserver: ContentObserver? = null
     private var screenCaptureCallback: Any? = null
     private var fileObservers: MutableList<FileObserver> = mutableListOf()
@@ -26,6 +32,45 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         setupScreenshotDetection()
+
+        pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
+        pipMethodChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setCallActive" -> {
+                    isCallActive = call.argument<Boolean>("isActive") ?: false
+                    result.success(true)
+                }
+                "enterPip" -> {
+                    val success = enterPipMode()
+                    result.success(success)
+                }
+                "isPipSupported" -> {
+                    result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun enterPipMode(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(9, 16))
+                    .build()
+                return enterPictureInPictureMode(params)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return false
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (isCallActive) {
+            enterPipMode()
+        }
     }
 
     private fun setupScreenshotDetection() {

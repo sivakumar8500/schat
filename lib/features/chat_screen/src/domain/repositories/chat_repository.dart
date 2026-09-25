@@ -5,6 +5,9 @@ import 'package:schat/features/chat_screen/src/domain/models/message_shares_mode
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 
 abstract class ChatRepository {
   Future<List<MessageModel>> getMessages(String conversationId, {int? limit, int? skip});
@@ -68,6 +71,7 @@ abstract class ChatRepository {
     String messageId, {
     required bool allowShare,
     required bool allowDownload,
+    bool allowView = true,
     bool isLocked = false,
     List<String> accessUsers = const [],
   });
@@ -78,6 +82,21 @@ abstract class ChatRepository {
 
   /// POST /messages/scheduled to schedule a message for a future date/time.
   Future<bool> scheduleMessage(Map<String, dynamic> requestData);
+
+  /// GET /messages/scheduled to retrieve pending scheduled messages.
+  Future<List<ScheduledMessageModel>> getScheduledMessages({String? conversationId});
+
+  /// DELETE /messages/scheduled/{id} to cancel/delete a scheduled message.
+  Future<bool> cancelScheduledMessage(String scheduledMessageId);
+
+  /// PUT /messages/scheduled/{id} to edit/update a scheduled message.
+  Future<ScheduledMessageModel> updateScheduledMessage(String scheduledMessageId, Map<String, dynamic> requestData);
+
+  /// GET /media/{mediaId}/permissions to fetch media DRM and access control permissions.
+  Future<MediaPermissionsModel> getMediaPermissions(String mediaId);
+
+  /// GET /media/{mediaId}/access-tree to fetch the hierarchical access and downstream share tree.
+  Future<MediaAccessTreeModel> getMediaAccessTree(String mediaId);
 
   /// Screen capture permission methods
   Future<ScreenPermissionModel> requestScreenPermission({

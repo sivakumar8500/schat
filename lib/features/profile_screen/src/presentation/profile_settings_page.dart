@@ -22,7 +22,6 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/theme_controller.dart';
 import 'package:schat/features/chat_socket_screen/chat_socket_screen.dart';
-import 'package:schat/features/chat_transfer_screen/chat_transfer_screen.dart';
 import 'package:schat/features/security_scanner/presentation/pages/scan_result_screen.dart';
 
 import 'package:schat/features/tones/data/models/tone_model.dart';
@@ -388,16 +387,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                         _buildSectionContainer(
                           title: 'Account & Security',
                           items: [
-                            _buildSettingRow(
-                              context: context,
-                              icon: Icons.supervisor_account_rounded,
-                              title: 'Chat Access & Transfer',
-                              subtitle: 'Manage active multi-device transfers',
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const ChatTransferPage()),
-                              ),
-                            ),
                             _buildSettingRow(
                               context: context,
                               icon: Icons.block_rounded,
@@ -1175,18 +1164,38 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     );
   }
 
+  int _encodeDailyCutoffTime(int hour, int minute) {
+    return -((hour * 3600 + minute * 60) + 1);
+  }
+
+  TimeOfDay? _decodeDailyCutoffTime(int? encoded) {
+    if (encoded == null || encoded >= 0) return null;
+    final totalSeconds = (-encoded) - 1;
+    final hour = totalSeconds ~/ 3600;
+    final minute = (totalSeconds % 3600) ~/ 60;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _formatDailyCutoffText(int hour, int minute) {
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    final displayMinute = minute == 0 ? '' : ':${minute.toString().padLeft(2, '0')}';
+    return 'Daily at $displayHour$displayMinute $period';
+  }
+
   String _getDisappearingTimerText(int? seconds) {
     if (seconds == null || seconds == 0) {
       return 'Off';
     }
+    if (seconds < 0) {
+      final tod = _decodeDailyCutoffTime(seconds);
+      if (tod != null) {
+        return _formatDailyCutoffText(tod.hour, tod.minute);
+      }
+      return 'Custom daily';
+    }
     if (seconds == 1800) {
       return '30 minutes';
-    }
-    if (seconds == 1440) {
-      return '24 minutes';
-    }
-    if (seconds == 86400) {
-      return '24 hours';
     }
     if (seconds == 604800) {
       return '7 days';
@@ -1278,9 +1287,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   ),
                   const SizedBox(height: 20),
                   _buildDisappearingOption(context, sheetCtx, 'Off', null, primaryColor),
-                  _buildDisappearingOption(context, sheetCtx, '30 minutes', 1800, primaryColor),
-                  _buildDisappearingOption(context, sheetCtx, '24 minutes', 1440, primaryColor),
-                  _buildDisappearingOption(context, sheetCtx, '24 hours', 86400, primaryColor),
+                  _buildCustomDailyTimeOption(context, sheetCtx, primaryColor),
                   _buildDisappearingOption(context, sheetCtx, '7 days', 604800, primaryColor),
                   _buildDisappearingOption(context, sheetCtx, '30 days', 2592000, primaryColor),
                   const SizedBox(height: 12),
@@ -1290,6 +1297,153 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCustomDailyTimeOption(BuildContext blocContext, BuildContext sheetCtx, Color primaryColor) {
+    final bool isCustom = _defaultDisappearingTimer != null && _defaultDisappearingTimer! < 0;
+    final isDark = sheetCtx.colors.isDark;
+    final customText = isCustom ? _getDisappearingTimerText(_defaultDisappearingTimer) : null;
+    final presets = [
+      {'label': '2 AM', 'h': 2, 'm': 0},
+      {'label': '7 AM', 'h': 7, 'm': 0},
+      {'label': '1 PM', 'h': 13, 'm': 0},
+      {'label': '2 PM', 'h': 14, 'm': 0},
+      {'label': '5 PM', 'h': 17, 'm': 0},
+      {'label': '11 PM', 'h': 23, 'm': 0},
+    ];
+
+    void applyCustom(int encoded) {
+      Navigator.pop(sheetCtx);
+      blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: encoded));
+      blocContext.showInfoNotification('Default disappearing messages set to ${_getDisappearingTimerText(encoded)}');
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isCustom
+            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isCustom ? primaryColor : sheetCtx.colors.border.withValues(alpha: 0.3),
+          width: isCustom ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+            title: Text(
+              isCustom ? 'Custom ($customText)' : 'Custom daily time',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: isCustom ? FontWeight.w700 : FontWeight.w500,
+                color: isCustom ? primaryColor : sheetCtx.colors.textPrimary,
+              ),
+            ),
+            subtitle: Text(
+              'Clears last 24h chats daily at selected time',
+              style: TextStyle(fontSize: 12, color: sheetCtx.colors.textSecondary),
+            ),
+            trailing: isCustom
+                ? Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle),
+                    child: Icon(Icons.check_rounded, size: 15, color: isDark ? Colors.black : Colors.white),
+                  )
+                : null,
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: sheetCtx,
+                initialTime: isCustom
+                    ? (_decodeDailyCutoffTime(_defaultDisappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                    : const TimeOfDay(hour: 14, minute: 0),
+              );
+              if (picked != null) {
+                final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                applyCustom(encoded);
+              }
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 10),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ...presets.map((p) {
+                  final encoded = _encodeDailyCutoffTime(p['h'] as int, p['m'] as int);
+                  final isSelected = _defaultDisappearingTimer == encoded;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => applyCustom(encoded),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isSelected ? primaryColor : primaryColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected ? primaryColor : primaryColor.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        p['label'] as String,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? (isDark ? Colors.black : Colors.white) : primaryColor,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: sheetCtx,
+                      initialTime: isCustom
+                          ? (_decodeDailyCutoffTime(_defaultDisappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                          : const TimeOfDay(hour: 14, minute: 0),
+                    );
+                    if (picked != null) {
+                      final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                      applyCustom(encoded);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: primaryColor.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.more_time, size: 12, color: primaryColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Pick Time',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -9,6 +9,7 @@ part of 'call_history.dart';
 _CallHistoryModel _$CallHistoryModelFromJson(Map<String, dynamic> json) =>
     _CallHistoryModel(
       id: json['_id'] as String? ?? '',
+      conversationId: json['conversation_id'] as String?,
       callerId: json['caller_id'] as String?,
       callerName: json['caller_name'] as String?,
       callerAvatar: json['caller_avatar'] as String?,
@@ -26,6 +27,7 @@ _CallHistoryModel _$CallHistoryModelFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$CallHistoryModelToJson(_CallHistoryModel instance) =>
     <String, dynamic>{
       '_id': instance.id,
+      'conversation_id': instance.conversationId,
       'caller_id': instance.callerId,
       'caller_name': instance.callerName,
       'caller_avatar': instance.callerAvatar,

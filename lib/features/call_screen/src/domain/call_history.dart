@@ -9,6 +9,7 @@ abstract class CallHistoryModel with _$CallHistoryModel {
 
   const factory CallHistoryModel({
     @JsonKey(name: '_id') @Default('') String id,
+    @JsonKey(name: 'conversation_id') String? conversationId,
     @JsonKey(name: 'caller_id') String? callerId,
     @JsonKey(name: 'caller_name') String? callerName,
     @JsonKey(name: 'caller_avatar') String? callerAvatar,
@@ -57,6 +58,7 @@ abstract class CallHistoryModel with _$CallHistoryModel {
 Map<String, dynamic> _normalizeCallHistoryJson(Map<String, dynamic> json) {
   final normalized = Map<String, dynamic>.from(json);
   normalized['_id'] = (json['id'] ?? json['_id'] ?? json['call_id'] ?? json['message_id'])?.toString() ?? '';
+  normalized['conversation_id'] = (json['conversation_id'] ?? json['conversationId'])?.toString();
   normalized['caller_id'] = (json['caller_id'] ?? json['callerId'] ?? json['from_user_id'] ?? json['sender_id'] ?? json['senderId'])?.toString();
   
   // Extract participant name/avatar

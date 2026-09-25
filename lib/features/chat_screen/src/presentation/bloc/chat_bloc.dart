@@ -673,6 +673,24 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded) {
       final String now = DateTime.now().toIso8601String();
+      int? expiryTimestamp;
+      if (currentState.disappearingTimer != null && currentState.disappearingTimer != 0) {
+        final timer = currentState.disappearingTimer!;
+        if (timer > 0) {
+          expiryTimestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer;
+        } else if (timer < 0) {
+          final secondsFromMidnight = (-timer) - 1;
+          final targetHour = secondsFromMidnight ~/ 3600;
+          final targetMinute = (secondsFromMidnight % 3600) ~/ 60;
+          final nowDt = DateTime.now();
+          DateTime nextCutoff = DateTime(nowDt.year, nowDt.month, nowDt.day, targetHour, targetMinute);
+          if (!nextCutoff.isAfter(nowDt)) {
+            nextCutoff = nextCutoff.add(const Duration(days: 1));
+          }
+          expiryTimestamp = nextCutoff.millisecondsSinceEpoch ~/ 1000;
+        }
+      }
+
       final newMessage = MessageModel(
         id: event.messageId ?? 'temp_${DateTime.now().millisecondsSinceEpoch}',
         conversationId: event.conversationId,
@@ -697,6 +715,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         allowDownload: event.allowDownload,
         allowView: event.allowView,
         fileSize: event.fileSize,
+        expiry: expiryTimestamp,
       );
 
       final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));

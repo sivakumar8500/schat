@@ -11,7 +11,10 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 
 /// 1-to-1 Audio Call Page — wired to WebRTC via CallWebRtcBloc.
 /// mason make page --name audio_call
@@ -59,6 +62,11 @@ class _AudioCallPageState extends State<AudioCallPage>
   @override
   void initState() {
     super.initState();
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint('Wakelock error in AudioCallPage: $e');
+    }
     _setupAnimations();
 
     getIt<ConnectivityRepository>().currentConnectivity.then((result) {
@@ -250,8 +258,20 @@ class _AudioCallPageState extends State<AudioCallPage>
                   ? state.isSpeakerOn
                   : (state is CallRinging ? state.isSpeakerOn : false));
 
-          return Scaffold(
-            body: Stack(
+          return PopScope(
+            canPop: true,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) {
+                try {
+                  final bloc = context.read<CallWebRtcBloc>();
+                  if (bloc.state is CallActive || bloc.state is CallConnecting) {
+                    bloc.add(const SetCallMinimizedEvent(true));
+                  }
+                } catch (_) {}
+              }
+            },
+            child: Scaffold(
+              body: Stack(
               children: [
                 // Background
                 Positioned.fill(
@@ -386,6 +406,10 @@ class _AudioCallPageState extends State<AudioCallPage>
                             ],
                           ),
                         ),
+                        if (state is CallActive && state.extraParticipants.isNotEmpty)
+                          _buildParticipantsSection(context, state.extraParticipants)
+                        else if (state is CallConnecting && state.extraParticipants.isNotEmpty)
+                          _buildParticipantsSection(context, state.extraParticipants),
                       ],
                     ),
 
@@ -393,16 +417,159 @@ class _AudioCallPageState extends State<AudioCallPage>
 
                     // ─── Dark Pill Control Bar ───
                     _buildControlBar(context, isMuted, isSpeaker),
-                    CommonSpaces.h32,
                   ],
                 ),
               ),
             ],
           ),
-        );
-      },
-    ),
-  );
+        ),
+      );
+    },
+  ),
+);
+}
+
+  Widget _buildParticipantsSection(
+      BuildContext context, List<UserModel> participants) {
+    return Container(
+      margin: const EdgeInsets.only(top: 20, left: 24, right: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.group_rounded, size: 16, color: Color(0xFF34C759)),
+              const SizedBox(width: 6),
+              Text(
+                'Added to Call (${participants.length})',
+                style: context.bodySmall.copyWith(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: participants.map((user) {
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 13,
+                        backgroundColor: const Color(0xFF00873C),
+                        backgroundImage: (user.profilePictureUrl != null &&
+                                user.profilePictureUrl!.isNotEmpty)
+                            ? NetworkImage(user.profilePictureUrl!)
+                            : null,
+                        child: (user.profilePictureUrl == null ||
+                                user.profilePictureUrl!.isEmpty)
+                            ? Text(
+                                user.displayName.isNotEmpty
+                                    ? user.displayName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            user.displayName,
+                            style: context.bodySmall.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            'Calling...',
+                            style: context.bodySmall.copyWith(
+                              color: const Color(0xFF34C759),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openAddUserDialog() async {
+    final bloc = context.read<CallWebRtcBloc>();
+    final state = bloc.state;
+    final List<String> currentExcludeIds = [widget.recipientId];
+    if (state is CallActive) {
+      currentExcludeIds.addAll(state.extraParticipants.map((u) => u.id));
+    } else if (state is CallConnecting) {
+      currentExcludeIds.addAll(state.extraParticipants.map((u) => u.id));
+    }
+
+    final selectedUsers = await showModalBottomSheet<List<UserModel>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        height: MediaQuery.of(sheetContext).size.height * 0.75,
+        decoration: BoxDecoration(
+          color: Theme.of(sheetContext).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: UserListPage(
+            isPicker: true,
+            excludeUserIds: currentExcludeIds,
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || selectedUsers == null || selectedUsers.isEmpty) return;
+
+    bloc.add(AddParticipantsCallEvent(selectedUsers));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Calling ${selectedUsers.map((u) => u.displayName).join(", ")}...'),
+        duration: const Duration(seconds: 3),
+        backgroundColor: const Color(0xFF00873C),
+      ),
+    );
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -424,15 +591,18 @@ class _AudioCallPageState extends State<AudioCallPage>
             ),
           ),
           const Spacer(),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+          GestureDetector(
+            onTap: _openAddUserDialog,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(CommonIcons.addCall,
+                  color: Colors.white, size: 20),
             ),
-            child: const Icon(CommonIcons.addCall,
-                color: Colors.white, size: 20),
           ),
         ],
       ),

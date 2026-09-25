@@ -8,6 +8,9 @@ import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.d
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -127,10 +130,11 @@ class ChatRepositoryImpl implements ChatRepository {
         mapper: (data) => Map<String, dynamic>.from(data as Map),
       );
 
-      return completeResult.when(
+      final res = completeResult.when(
         success: (_) => objectKey,
         failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
       );
+      return res;
     } catch (e) {
       debugPrint('Error in uploadMedia: $e');
       rethrow;
@@ -464,6 +468,7 @@ class ChatRepositoryImpl implements ChatRepository {
     String messageId, {
     required bool allowShare,
     required bool allowDownload,
+    bool allowView = true,
     bool isLocked = false,
     List<String> accessUsers = const [],
   }) async {
@@ -475,13 +480,14 @@ class ChatRepositoryImpl implements ChatRepository {
           'accessUsers': accessUsers,
           'allowDownload': allowDownload,
           'allowShare': allowShare,
+          'allowView': allowView,
         },
       },
       mapper: (data) => data,
     );
     result.when(
       success: (_) {},
-      failure: (error, statusCode) => throw Exception(error),
+      failure: (error, statusCode) => debugPrint('updateMessageSecurity error: $error'),
     );
   }
 
@@ -517,6 +523,82 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<List<ScheduledMessageModel>> getScheduledMessages({String? conversationId}) async {
+    final result = await _apiService.get<List<ScheduledMessageModel>>(
+      CommonEndpoints.getScheduledMessages(conversationId: conversationId),
+      mapper: (data) {
+        if (data is List) {
+          return data
+              .map((item) => ScheduledMessageModel.fromJson(item as Map<String, dynamic>))
+              .toList();
+        }
+        return [];
+      },
+    );
+
+    return result.when(
+      success: (list) => list,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<bool> cancelScheduledMessage(String scheduledMessageId) async {
+    final result = await _apiService.delete(
+      CommonEndpoints.cancelScheduledMessage(scheduledMessageId),
+      mapper: (data) => true,
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<ScheduledMessageModel> updateScheduledMessage(
+    String scheduledMessageId,
+    Map<String, dynamic> requestData,
+  ) async {
+    final result = await _apiService.put<ScheduledMessageModel>(
+      CommonEndpoints.updateScheduledMessage(scheduledMessageId),
+      data: requestData,
+      mapper: (data) => ScheduledMessageModel.fromJson(data as Map<String, dynamic>),
+    );
+
+    return result.when(
+      success: (model) => model,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<MediaPermissionsModel> getMediaPermissions(String mediaId) async {
+    final result = await _apiService.get<MediaPermissionsModel>(
+      CommonEndpoints.mediaPermissions(mediaId),
+      mapper: (data) => MediaPermissionsModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<MediaAccessTreeModel> getMediaAccessTree(String mediaId) async {
+    final result = await _apiService.get<MediaAccessTreeModel>(
+      CommonEndpoints.mediaAccessTree(mediaId),
+      mapper: (data) => MediaAccessTreeModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
   Future<ScreenPermissionModel> requestScreenPermission({
     required String conversationId,
     required String permissionType,
@@ -528,8 +610,8 @@ class ChatRepositoryImpl implements ChatRepository {
       data: {
         'conversation_id': conversationId,
         'permission_type': permissionType,
-        if (allowedCount != null) 'allowed_count': allowedCount,
-        if (durationSeconds != null) 'duration_seconds': durationSeconds,
+        ...?allowedCount == null ? null : {'allowed_count': allowedCount},
+        ...?durationSeconds == null ? null : {'duration_seconds': durationSeconds},
       },
       mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
     );

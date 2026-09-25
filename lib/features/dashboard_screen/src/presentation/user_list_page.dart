@@ -344,94 +344,93 @@ class _UserListPageState extends State<UserListPage> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              if (widget.isPicker || Navigator.canPop(context)) ...[
-                Container(
-                  width: 38,
-                  height: 38,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: context.colors.lightBackground,
-                    border: Border.all(
-                      color: context.colors.border.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ],
-              Text(
-                widget.isPicker
-                    ? 'Select Contacts'
-                    : (widget.showOnlySynced ? 'Select User' : 'Contacts'),
-                style: context.h2.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: context.colors.textPrimary,
+          if (widget.isPicker || Navigator.canPop(context)) ...[
+            Container(
+              width: 38,
+              height: 38,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: context.colors.lightBackground,
+                border: Border.all(
+                  color: context.colors.border.withValues(alpha: 0.3),
                 ),
               ),
-            ],
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ],
+          Expanded(
+            child: Text(
+              widget.isPicker
+                  ? 'Select Contacts'
+                  : (widget.showOnlySynced ? 'Select User' : 'Contacts'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.h2.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                color: context.colors.textPrimary,
+              ),
+            ),
           ),
-          Row(
-            children: [
-              if (widget.isPicker)
-                ElevatedButton(
-                  onPressed: _selectedUsers.isEmpty
-                      ? null
-                      : () => Navigator.pop(context, _selectedUsers),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00873C),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  ),
-                  child: Text(
-                    'Done (${_selectedUsers.length})',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                )
-              else
-                // Sync Button
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE8F5E9),
-                    border: Border.all(
-                      color: const Color(0xFF00873C).withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: _isSyncInProgress
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF00873C),
-                            ),
-                          )
-                        : const Icon(
-                            Icons.sync_rounded,
-                            color: Color(0xFF00873C),
-                            size: 22,
-                          ),
-                    tooltip: 'Sync Contacts',
-                    onPressed: _isSyncInProgress ? null : _triggerSync,
-                  ),
+          const SizedBox(width: 8),
+          if (widget.isPicker)
+            ElevatedButton(
+              onPressed: _selectedUsers.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, _selectedUsers),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00873C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                'Done (${_selectedUsers.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+            )
+          else
+            // Sync Button
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFE8F5E9),
+                border: Border.all(
+                  color: const Color(0xFF00873C).withValues(alpha: 0.3),
                 ),
-            ],
-          ),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: _isSyncInProgress
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF00873C),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.sync_rounded,
+                        color: Color(0xFF00873C),
+                        size: 22,
+                      ),
+                tooltip: 'Sync Contacts',
+                onPressed: _isSyncInProgress ? null : _triggerSync,
+              ),
+            ),
         ],
       ),
     );
@@ -683,17 +682,37 @@ class _UserListPageState extends State<UserListPage> {
             ),
             CommonSpaces.h24,
             if (isSchatOnly)
-              ElevatedButton.icon(
-                onPressed: _triggerSync,
-                icon: const Icon(Icons.sync_rounded, size: 18),
-                label: const Text('Sync Contacts Now'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00873C),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  elevation: 2,
-                ),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _contactsBloc.add(const DiscoverContactsEvent());
+                    },
+                    icon: const Icon(Icons.explore_rounded, size: 18),
+                    label: const Text('Explore All Users'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00873C),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      elevation: 2,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _triggerSync,
+                    icon: const Icon(Icons.sync_rounded, size: 18),
+                    label: const Text('Sync Contacts'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF00873C),
+                      side: const BorderSide(color: Color(0xFF00873C)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                  ),
+                ],
               ),
           ],
         ),

@@ -10,6 +10,8 @@ import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_e
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -114,9 +116,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
-      if (!repo.isConnected) {
-        debugPrint('MyApp: App resumed — reconnecting socket...');
-        repo.connect();
+      repo.onAppResumed();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      try {
+        final callBloc = getIt<CallWebRtcBloc>();
+        if (callBloc.state is CallActive || callBloc.state is CallConnecting) {
+          debugPrint('MyApp: App backgrounded during call — enabling minimized floating overlay');
+          callBloc.add(const SetCallMinimizedEvent(true));
+        }
+      } catch (e) {
+        debugPrint('MyApp: Error updating call state on background: $e');
       }
     }
   }

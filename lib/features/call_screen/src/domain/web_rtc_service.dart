@@ -478,7 +478,7 @@ class WebRtcService {
       if (newType != null) {
         final isVideo = newType == 'video';
         // We already replaced tracks in requestCallSwitch, but just in case we need to refresh UI:
-        debugPrint('WebRTC: Switch to $newType accepted');
+        debugPrint('WebRTC: Switch to $newType accepted (isVideo=$isVideo)');
       }
     } else {
       // Remote rejected the switch.

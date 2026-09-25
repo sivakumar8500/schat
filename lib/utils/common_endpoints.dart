@@ -13,6 +13,11 @@ class CommonEndpoints {
   static const String updateProfile = '/users/me';
   static const String syncContacts = '/users/sync-contacts';
   static const String getContacts = '/users/contacts';
+  static const String discoverUsers = '/users/discover';
+  static String searchUsers({String? query}) => (query != null && query.isNotEmpty)
+      ? '/users/discover?query=${Uri.encodeComponent(query)}'
+      : '/users/discover';
+  static String lookupUserByPhone(String phone) => '/users/lookup?phone_number=${Uri.encodeComponent(phone)}';
   static String getUserProfile(String userId) => '/users/$userId';
   static const String deleteAccount = '/users/me';
   static const String emergencyContacts = '/users/emergency-contacts';
@@ -29,6 +34,12 @@ class CommonEndpoints {
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
   static const String scheduleMessage = '/messages/scheduled';
+  static String getScheduledMessages({String? conversationId}) =>
+      conversationId != null
+          ? '/messages/scheduled?conversation_id=$conversationId'
+          : '/messages/scheduled';
+  static String cancelScheduledMessage(String id) => '/messages/scheduled/$id';
+  static String updateScheduledMessage(String id) => '/messages/scheduled/$id';
   static const String getCalls = '/messages/calls';
   static String getCallHistory({int limit = 50}) => '/messages/calls?limit=$limit';
   static String getGroupDetails(String groupId) => '/groups/$groupId';
@@ -70,10 +81,13 @@ class CommonEndpoints {
   static String updateMessageSecurity(String messageId) => '/messages/$messageId';
   static String getMessageShares(String messageId) => '/messages/$messageId/shares';
 
-  // Media Upload
+  // Media Upload & Permissions
   static const String requestUpload = '/media/request-upload';
   static String completeUpload(String mediaId) => '/media/$mediaId/complete';
   static String getConversationMedia(String conversationId) => '/chats/$conversationId/media';
+  static String mediaPermissions(String mediaId) => '/media/$mediaId/permissions';
+  static String mediaAccessTree(String mediaId) => '/media/$mediaId/access-tree';
+  static String shareMedia(String mediaId) => '/media/$mediaId/share';
 
   // User Lookup
   static const String lookupUser = '/users/lookup';

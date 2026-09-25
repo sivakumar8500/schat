@@ -25,3 +25,8 @@ class UpdateContactStatus extends ContactsEvent {
     this.lastSeen,
   });
 }
+
+class DiscoverContactsEvent extends ContactsEvent {
+  final String? query;
+  const DiscoverContactsEvent({this.query});
+}

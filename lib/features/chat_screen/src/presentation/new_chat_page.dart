@@ -668,19 +668,39 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14, height: 1.4),
             ),
             CommonSpaces.h24,
-            ElevatedButton.icon(
-              onPressed: () {
-                getIt<ContactsBloc>().add(const SyncContactsEvent());
-              },
-              icon: const Icon(Icons.sync_rounded, size: 18),
-              label: const Text('Sync Contacts'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00873C),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                elevation: 2,
-              ),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    getIt<ContactsBloc>().add(const DiscoverContactsEvent());
+                  },
+                  icon: const Icon(Icons.explore_rounded, size: 18),
+                  label: const Text('Explore All Users'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00873C),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    elevation: 2,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    getIt<ContactsBloc>().add(const SyncContactsEvent());
+                  },
+                  icon: const Icon(Icons.sync_rounded, size: 18),
+                  label: const Text('Sync Contacts'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00873C),
+                    side: const BorderSide(color: Color(0xFF00873C)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

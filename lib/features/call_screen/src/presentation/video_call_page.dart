@@ -14,7 +14,10 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 
 /// 1-to-1 Video Call Page — renders real RTCVideoView for remote and local streams.
 /// mason make page --name video_call
@@ -61,6 +64,11 @@ class _VideoCallPageState extends State<VideoCallPage>
   @override
   void initState() {
     super.initState();
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint('Wakelock error in VideoCallPage: $e');
+    }
 
     _fadeController = AnimationController(
       vsync: this,
@@ -224,130 +232,249 @@ class _VideoCallPageState extends State<VideoCallPage>
           bool isFrontCamera = true;
           if (state is CallActive) {
             isFrontCamera = state.isFrontCamera;
-          } else if (state is CallConnecting) isFrontCamera = state.isFrontCamera;
-          else if (state is CallRinging) isFrontCamera = state.isFrontCamera;
+          } else if (state is CallConnecting) {
+            isFrontCamera = state.isFrontCamera;
+          } else if (state is CallRinging) {
+            isFrontCamera = state.isFrontCamera;
+          }
 
-          return Scaffold(
-            backgroundColor: context.colors.pureBlack,
-            body: GestureDetector(
-              onTap: _showControls,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: state is CallActive
-                        ? (_isLocalVideoSmall
-                            ? (state.isRemoteVideoOff 
-                                ? _buildRemoteVideoOffPlaceholder(state)
-                                : RTCVideoView(
-                                    _webRtcService.remoteRenderer,
-                                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                    mirror: false,
-                                  ))
-                            : (isVideoOff
-                                ? _buildLocalVideoOffPlaceholder()
-                                : RTCVideoView(
-                                    _webRtcService.localRenderer,
-                                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                    mirror: isFrontCamera,
-                                  )))
-                        : (isVideoOff
-                            ? _buildWaitingScreen()
-                            : RTCVideoView(
-                                _webRtcService.localRenderer,
-                                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                mirror: isFrontCamera,
-                              )),
-                  ),
+          return PopScope(
+            canPop: true,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) {
+                try {
+                  final bloc = context.read<CallWebRtcBloc>();
+                  if (bloc.state is CallActive || bloc.state is CallConnecting) {
+                    bloc.add(const SetCallMinimizedEvent(true));
+                  }
+                } catch (_) {}
+              }
+            },
+            child: Scaffold(
+              backgroundColor: context.colors.pureBlack,
+              body: GestureDetector(
+                onTap: _showControls,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: state is CallActive
+                          ? (_isLocalVideoSmall
+                              ? (state.isRemoteVideoOff 
+                                  ? _buildRemoteVideoOffPlaceholder(state)
+                                  : RTCVideoView(
+                                      _webRtcService.remoteRenderer,
+                                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                      mirror: false,
+                                    ))
+                              : (isVideoOff
+                                  ? _buildLocalVideoOffPlaceholder()
+                                  : RTCVideoView(
+                                      _webRtcService.localRenderer,
+                                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                      mirror: isFrontCamera,
+                                    )))
+                          : (isVideoOff
+                              ? _buildWaitingScreen()
+                              : RTCVideoView(
+                                  _webRtcService.localRenderer,
+                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                  mirror: isFrontCamera,
+                                )),
+                    ),
 
-                  // ─── Gradient overlays ───
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.center,
-                          colors: [
-                            context.colors.pureBlack.withValues(alpha: 0.5),
-                            context.colors.transparent,
-                          ],
+                    // ─── Gradient overlays ───
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.center,
+                            colors: [
+                              context.colors.pureBlack.withValues(alpha: 0.5),
+                              context.colors.transparent,
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      height: 200,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            context.colors.pureBlack.withValues(alpha: 0.7),
-                            context.colors.transparent,
-                          ],
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        height: 200,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              context.colors.pureBlack.withValues(alpha: 0.7),
+                              context.colors.transparent,
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  // ─── Top Header (fades) ───
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: FadeTransition(
-                      opacity: _fadeController,
-                      child: _buildTopHeader(context, state),
-                    ),
-                  ),
-
-                  // ─── Top Left Minimize Button ───
-                  Positioned(
-                    top: 10,
-                    left: 16,
-                    child: SafeArea(
+                    // ─── Top Header (fades) ───
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
                       child: FadeTransition(
                         opacity: _fadeController,
-                        child: _buildFrostedButton(
-                          icon: CommonIcons.minimize,
-                          onTap: () => Navigator.of(context).pop(),
+                        child: _buildTopHeader(context, state),
+                      ),
+                    ),
+
+                    // ─── Top Left Minimize Button ───
+                    Positioned(
+                      top: 10,
+                      left: 16,
+                      child: SafeArea(
+                        child: FadeTransition(
+                          opacity: _fadeController,
+                          child: _buildFrostedButton(
+                            icon: CommonIcons.minimize,
+                            onTap: () {
+                              context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
+                              Navigator.of(context).pop();
+                            },
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  // ─── Top Right Buttons ───
-                  Positioned(
-                    top: 80,
-                    right: 16,
-                    child: FadeTransition(
-                      opacity: _fadeController,
-                      child: _buildTopRightButtons(context),
+                    // ─── Top Right Buttons ───
+                    Positioned(
+                      top: 80,
+                      right: 16,
+                      child: FadeTransition(
+                        opacity: _fadeController,
+                        child: _buildTopRightButtons(context),
+                      ),
                     ),
-                  ),
 
-                  // ─── Small Video (Picture-in-Picture) ───
-                  if (state is CallActive)
-                    _buildSmallVideoPiP(state, isVideoOff, isFrontCamera),
+                    // ─── Extra Participants Floating Overlay ───
+                    if (state is CallActive && state.extraParticipants.isNotEmpty)
+                      Positioned(
+                        top: 130,
+                        left: 16,
+                        right: 70,
+                        child: FadeTransition(
+                          opacity: _fadeController,
+                          child: _buildExtraParticipantsOverlay(context, state.extraParticipants),
+                        ),
+                      )
+                    else if (state is CallConnecting && state.extraParticipants.isNotEmpty)
+                      Positioned(
+                        top: 130,
+                        left: 16,
+                        right: 70,
+                        child: FadeTransition(
+                          opacity: _fadeController,
+                          child: _buildExtraParticipantsOverlay(context, state.extraParticipants),
+                        ),
+                      ),
 
-                  // ─── Bottom Control Bar ───
-                  Positioned(
-                    bottom: 40,
-                    left: 24,
-                    right: 24,
-                    child: FadeTransition(
-                      opacity: _fadeController,
-                      child: _buildControlBar(context, isMuted, isVideoOff, state),
+                    // ─── Small Video (Picture-in-Picture) ───
+                    if (state is CallActive)
+                      _buildSmallVideoPiP(state, isVideoOff, isFrontCamera),
+
+                    // ─── Bottom Control Bar ───
+                    Positioned(
+                      bottom: 40,
+                      left: 24,
+                      right: 24,
+                      child: FadeTransition(
+                        opacity: _fadeController,
+                        child: _buildControlBar(context, isMuted, isVideoOff, state),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildExtraParticipantsOverlay(
+      BuildContext context, List<UserModel> participants) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: participants.map((user) {
+          return Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.25),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 12,
+                  backgroundColor: const Color(0xFF00873C),
+                  backgroundImage: (user.profilePictureUrl != null &&
+                          user.profilePictureUrl!.isNotEmpty)
+                      ? NetworkImage(user.profilePictureUrl!)
+                      : null,
+                  child: (user.profilePictureUrl == null ||
+                          user.profilePictureUrl!.isEmpty)
+                      ? Text(
+                          user.displayName.isNotEmpty
+                              ? user.displayName[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 6),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      user.displayName,
+                      style: context.bodySmall.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                    Text(
+                      'Calling...',
+                      style: context.bodySmall.copyWith(
+                        color: const Color(0xFF34C759),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -426,16 +553,26 @@ class _VideoCallPageState extends State<VideoCallPage>
             : state is CallConnecting
                 ? 'Calling...'
                 : 'Ringing';
+
+    String title = state is CallActive ? state.contactName : widget.contactName;
+    if (state is CallActive && state.extraParticipants.isNotEmpty) {
+      title = '$title, ${state.extraParticipants.map((u) => u.displayName).join(", ")}';
+    } else if (state is CallConnecting && state.extraParticipants.isNotEmpty) {
+      title = '$title, ${state.extraParticipants.map((u) => u.displayName).join(", ")}';
+    }
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Column(
           children: [
             Text(
-              state is CallActive ? state.contactName : widget.contactName,
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: context.titleMedium.copyWith(
                 color: context.colors.pureWhite,
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
                 shadows: [Shadow(color: context.colors.pureBlack.withValues(alpha: 0.54), blurRadius: 8)],
               ),
@@ -475,13 +612,56 @@ class _VideoCallPageState extends State<VideoCallPage>
     );
   }
 
+  Future<void> _openAddUserDialog() async {
+    final bloc = context.read<CallWebRtcBloc>();
+    final state = bloc.state;
+    final List<String> currentExcludeIds = [widget.recipientId];
+    if (state is CallActive) {
+      currentExcludeIds.addAll(state.extraParticipants.map((u) => u.id));
+    } else if (state is CallConnecting) {
+      currentExcludeIds.addAll(state.extraParticipants.map((u) => u.id));
+    }
+
+    final selectedUsers = await showModalBottomSheet<List<UserModel>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        height: MediaQuery.of(sheetContext).size.height * 0.75,
+        decoration: BoxDecoration(
+          color: Theme.of(sheetContext).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: UserListPage(
+            isPicker: true,
+            excludeUserIds: currentExcludeIds,
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || selectedUsers == null || selectedUsers.isEmpty) return;
+
+    bloc.add(AddParticipantsCallEvent(selectedUsers));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Calling ${selectedUsers.map((u) => u.displayName).join(", ")}...'),
+        duration: const Duration(seconds: 3),
+        backgroundColor: const Color(0xFF00873C),
+      ),
+    );
+  }
+
   Widget _buildTopRightButtons(BuildContext context) {
     return SafeArea(
       child: Column(
         children: [
           _buildFrostedButton(
             icon: CommonIcons.addCall,
-            onTap: () {},
+            onTap: _openAddUserDialog,
           ),
           CommonSpaces.h12,
           _buildFrostedButton(

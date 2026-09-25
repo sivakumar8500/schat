@@ -12,6 +12,9 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart' show CallMeta;
+import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -23,14 +26,12 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
-
-import 'package:schat/features/chat_screen/src/domain/models/message_model.dart' show CallMeta;
 import 'dart:async' show StreamSubscription;
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 
-class MessageBubble extends StatelessWidget {
+class MessageBubble extends StatefulWidget {
   final String messageId;
   final String conversationId;
   final String message;
@@ -120,6 +121,66 @@ class MessageBubble extends StatelessWidget {
     this.expiry,
   });
 
+  @override
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<MessageBubble> {
+  String get messageId => widget.messageId;
+  String get conversationId => widget.conversationId;
+  String get message => widget.message;
+  String get time => widget.time;
+  bool get isMe => widget.isMe;
+  bool get isRead => widget.isRead;
+  bool get isDelivered => widget.isDelivered;
+  bool get isDeleted => widget.isDeleted;
+  String get type => widget.type;
+  double? get duration => widget.duration;
+  String? get attachmentPath => widget.attachmentPath;
+  String? get attachmentName => widget.attachmentName;
+  Uint8List? get attachmentBytes => widget.attachmentBytes;
+  bool get isReply => widget.isReply;
+  String? get replyMessageId => widget.replyMessageId;
+  String? get replyMessageBody => widget.replyMessageBody;
+  String? get replyMessageSenderName => widget.replyMessageSenderName;
+  bool get isEdited => widget.isEdited;
+  bool get isPinned => widget.isPinned;
+  bool get isSelected => widget.isSelected;
+  bool get isHighlighted => widget.isHighlighted;
+  bool get isUploading => widget.isUploading;
+  bool get isFailed => widget.isFailed;
+  VoidCallback? get onResendPressed => widget.onResendPressed;
+  bool get isGroup => widget.isGroup;
+  bool get allowShare => widget.allowShare;
+  bool get allowDownload => widget.allowDownload;
+  bool get allowView => widget.allowView;
+  bool get isFileViewed => widget.isFileViewed;
+  bool get isFileDownloaded => widget.isFileDownloaded;
+  bool get isFileShared => widget.isFileShared;
+  VoidCallback? get onSharePressed => widget.onSharePressed;
+  int? get fileSize => widget.fileSize;
+  CallMeta? get callMeta => widget.callMeta;
+  bool get isRecipientOnline => widget.isRecipientOnline;
+  VoidCallback? get onReplyTap => widget.onReplyTap;
+  int? get pinnedAt => widget.pinnedAt;
+  double? get latitude => widget.latitude;
+  double? get longitude => widget.longitude;
+  String? get address => widget.address;
+  String? get locationTitle => widget.locationTitle;
+  int? get expiry => widget.expiry;
+
+  bool get _isMediaMessage {
+    if (type == 'image' || type == 'video' || type == 'file') return true;
+    if ((attachmentPath != null || attachmentBytes != null) &&
+        type != 'call' &&
+        type != 'location' &&
+        type != 'contact' &&
+        type != 'text') {
+      return true;
+    }
+    return false;
+  }
+
   String _formatSystemMessage(String msg) {
     final RegExp regex = RegExp(r'(\d+)\s*seconds?');
     return msg.replaceAllMapped(regex, (match) {
@@ -185,13 +246,15 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
+    final isMedia = _isMediaMessage;
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       color: isSelected
           ? context.colors.primary.withValues(alpha: 0.15)
           : (isHighlighted ? context.colors.primary.withValues(alpha: 0.25) : context.colors.transparent),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
         child: Row(
           mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -231,20 +294,37 @@ class MessageBubble extends StatelessWidget {
             Flexible(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                  maxWidth: isMedia ? 244 : MediaQuery.of(context).size.width * 0.72,
                 ),
                 child: Container(
-                  padding: const EdgeInsets.all(16),
+                  width: isMedia ? 244 : null,
+                  padding: isMedia
+                      ? const EdgeInsets.all(8)
+                      : const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: isMe
-                        ? context.colors.sentBubble
-                        : context.colors.lightBackground,
+                        ? (isMedia
+                            ? (Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF132B25)
+                                : context.colors.sentBubble)
+                            : context.colors.sentBubble)
+                        : (isMedia
+                            ? (Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF1E2B33)
+                                : context.colors.lightBackground)
+                            : context.colors.lightBackground),
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(20),
-                      topRight: const Radius.circular(20),
-                      bottomLeft: isMe ? const Radius.circular(20) : const Radius.circular(0),
-                      bottomRight: isMe ? const Radius.circular(0) : const Radius.circular(20),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: isMe ? const Radius.circular(18) : const Radius.circular(4),
+                      bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(18),
                     ),
+                    border: isMedia
+                        ? Border.all(
+                            color: const Color(0xFF00D084).withValues(alpha: 0.15),
+                            width: 0.8,
+                          )
+                        : null,
                     boxShadow: [
                       BoxShadow(
                         color: context.colors.textPrimary.withValues(alpha: 0.05),
@@ -309,105 +389,36 @@ class MessageBubble extends StatelessWidget {
                             ),
                           ),
                         ),
-                      if (!isDeleted) _buildAttachment(context),
-                      if (!isDeleted) _buildPermissionControls(context),
-                      _buildMessageText(
-                        context,
-                        context.bodyLarge.copyWith(
-                          fontSize: 16,
-                          color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
-                        ),
-                        type == 'location' ? '' : message,
-                      ),
-                      if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isEdited) ...[
-                            Text(
-                              '(edited) ',
-                              style: context.bodySmall.copyWith(
-                                fontSize: 10,
-                                fontStyle: FontStyle.italic,
-                                color: isMe
-                                    ? context.colors.textSecondary
-                                    : context.colors.textSecondary,
+                      if (isMedia) ...[
+                        if (!isDeleted) _buildAttachment(context),
+                        if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+                            child: _buildMessageText(
+                              context,
+                              context.bodyLarge.copyWith(
+                                fontSize: 14,
+                                color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
                               ),
-                            ),
-                          ],
-                          if (isPinned) ...[
-                            Icon(
-                              CommonIcons.pin,
-                              size: 10,
-                              color: isMe
-                                  ? context.colors.textSecondary
-                                  : context.colors.textSecondary,
-                            ),
-                            CommonSpaces.w4,
-                          ],
-                          if (expiry != null && expiry! > 0) ...[
-                            Icon(
-                              Icons.timer_outlined,
-                              size: 11,
-                              color: context.colors.textSecondary,
-                            ),
-                            CommonSpaces.w2,
-                          ],
-                          Text(
-                            time,
-                            style: context.bodySmall.copyWith(
-                              fontSize: 11,
-                              color: isMe
-                                  ? context.colors.textSecondary
-                                  : context.colors.textSecondary,
+                              message,
                             ),
                           ),
-                          if (isMe) ...[
-                            CommonSpaces.w4,
-                            Builder(
-                              builder: (context) {
-                                // Pending = temp ID, uploading, OR not yet server-confirmed (covers network-drop case)
-                                final isPending = messageId.startsWith('temp_') ||
-                                    isUploading ||
-                                    (!isDelivered && !isRead && !isFailed);
-                                // ✓ single grey tick — sending / not yet server-confirmed
-                                if (isPending && !isFailed) {
-                                  return Icon(
-                                    CommonIcons.done,
-                                    size: 14,
-                                    color: context.colors.textSecondary,
-                                  );
-                                }
-
-                                // ✓✓ blue — read
-                                if (isRead) {
-                                  return Icon(
-                                    CommonIcons.doneAll,
-                                    size: 14,
-                                    color: const Color(0xFF2196F3), // blue
-                                  );
-                                }
-
-                                // ✓✓ grey — delivered
-                                if (isDelivered) {
-                                  return Icon(
-                                    CommonIcons.doneAll,
-                                    size: 14,
-                                    color: context.colors.textSecondary,
-                                  );
-                                }
-
-                                // ✓ grey — sent (reached server, not yet delivered)
-                                return Icon(
-                                  CommonIcons.done,
-                                  size: 14,
-                                  color: context.colors.textSecondary,
-                                );
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
+                        if (!isDeleted) _buildMediaActionBar(context),
+                        if (!isDeleted) _buildMediaFooter(context),
+                      ] else ...[
+                        if (!isDeleted) _buildAttachment(context),
+                        if (!isDeleted) _buildPermissionControls(context),
+                        _buildMessageText(
+                          context,
+                          context.bodyLarge.copyWith(
+                            fontSize: 16,
+                            color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                          ),
+                          type == 'location' ? '' : message,
+                        ),
+                        if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
+                        _buildDefaultTimestampRow(context),
+                      ],
                     ],
                   ),
                 ),
@@ -416,6 +427,976 @@ class MessageBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMediaActionBar(BuildContext context) {
+    const accentGreen = Color(0xFF00D084);
+    final textColor = isMe ? context.colors.pureWhite : context.colors.textPrimary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final List<Widget> actionButtons = [];
+
+    // 1. View Action (Show if isMe or allowView is granted)
+    if (isMe || allowView) {
+      actionButtons.add(
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            if (!allowView && !isMe) {
+              context.showInfoNotification('View permission is restricted by sender');
+              return;
+            }
+            _openInAppViewer(context);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  allowView || isMe ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  size: 16,
+                  color: allowView || isMe ? accentGreen : context.colors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'View',
+                  style: context.bodySmall.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 2. Download Action (Show if isMe or allowDownload is granted)
+    if (isMe || allowDownload) {
+      actionButtons.add(
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            if (!allowDownload && !isMe) {
+              context.showInfoNotification('Download permission is locked by sender');
+              return;
+            }
+            _triggerDownload(context);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  allowDownload || isMe ? Icons.file_download_outlined : Icons.file_download_off_outlined,
+                  size: 16,
+                  color: allowDownload || isMe ? accentGreen : context.colors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Download',
+                  style: context.bodySmall.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 3. Share Action (Show if isMe or allowShare is granted)
+    if (isMe || allowShare) {
+      actionButtons.add(
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            if (!allowShare && !isMe) {
+              context.showInfoNotification('Share permission is locked by sender');
+              return;
+            }
+            _triggerShare(context);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  allowShare || isMe ? Icons.share_outlined : Icons.block_outlined,
+                  size: 15,
+                  color: allowShare || isMe ? accentGreen : context.colors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Share',
+                  style: context.bodySmall.copyWith(
+                    color: textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (actionButtons.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_outline, size: 13, color: isDark ? Colors.white60 : Colors.black54),
+            const SizedBox(width: 5),
+            Text(
+              'Access restricted by sender',
+              style: TextStyle(
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 2.0),
+      child: Row(
+        mainAxisAlignment: actionButtons.length == 3 ? MainAxisAlignment.spaceBetween : MainAxisAlignment.spaceEvenly,
+        children: actionButtons,
+      ),
+    );
+  }
+
+  Widget _buildMediaFooter(BuildContext context) {
+    const accentGreen = Color(0xFF00D084);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
+      child: Row(
+        mainAxisAlignment: isMe ? MainAxisAlignment.spaceBetween : MainAxisAlignment.end,
+        children: [
+          // Left: Show share details > (ONLY FOR SENDER)
+          if (isMe)
+            Flexible(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _openShareDetailsBottomSheet(context),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.assignment_outlined,
+                        size: 14,
+                        color: accentGreen,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          'Show share details',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.bodySmall.copyWith(
+                            color: accentGreen,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 1),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 15,
+                        color: accentGreen,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (isMe) const SizedBox(width: 6),
+
+          // Right: Timestamp and checkmark status
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 12,
+                color: context.colors.textSecondary,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                time,
+                style: context.bodySmall.copyWith(
+                  fontSize: 11,
+                  color: context.colors.textSecondary,
+                ),
+              ),
+              if (isMe) ...[
+                CommonSpaces.w4,
+                _buildDeliveryStatus(context),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _getMediaId() {
+    final uuidRegex = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+    if (widget.attachmentPath != null) {
+      final matches = uuidRegex.allMatches(widget.attachmentPath!);
+      if (matches.isNotEmpty) {
+        return matches.last.group(0);
+      }
+    }
+    if (uuidRegex.hasMatch(widget.messageId)) {
+      return widget.messageId;
+    }
+    return null;
+  }
+
+  void _openShareDetailsBottomSheet(BuildContext context) {
+    final mediaId = _getMediaId();
+    final Future<MediaAccessTreeModel?> accessTreeFuture = (mediaId != null && mediaId.isNotEmpty)
+        ? getIt<ChatRepository>().getMediaAccessTree(mediaId).then<MediaAccessTreeModel?>((v) => v).catchError((_) => null)
+        : Future<MediaAccessTreeModel?>.value(null);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            const accentGreen = Color(0xFF00D084);
+            final sheetBg = isDark ? const Color(0xFF1B232A) : context.colors.pureWhite;
+            final cardBg = isDark ? const Color(0xFF131A20) : context.colors.lightBackground;
+            final textColor = isDark ? Colors.white : context.colors.textPrimary;
+            final subTextColor = isDark ? Colors.white70 : context.colors.textSecondary;
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.88,
+              ),
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle Bar
+                    Center(
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 12, bottom: 8),
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: accentGreen.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.security,
+                              color: accentGreen,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isMe ? 'Share & Protection Details' : 'Security & Protection',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                  ),
+                                ),
+                                Text(
+                                  attachmentName ?? (type == 'image' ? 'Image File' : (type == 'video' ? 'Video File' : 'Media Attachment')),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: subTextColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, color: subTextColor, size: 20),
+                            onPressed: () => Navigator.pop(sheetContext),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const Divider(height: 1),
+
+                    // Content
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Section 1: Compact Access Permissions Card (Icons Only)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: accentGreen.withValues(alpha: 0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: accentGreen.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.lock_outline, size: 16, color: accentGreen),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          isMe ? 'Access Permissions' : 'File Protection',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                            color: textColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          isMe ? 'Tap icon to toggle' : 'Policies by sender',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: subTextColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Compact Square Icons (View, Download, Share)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildCompactPermissionIcon(
+                                        context: context,
+                                        icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                                        tooltip: allowView ? 'View: Allowed' : 'View: Locked',
+                                        allowed: allowView,
+                                        isInteractive: isMe,
+                                        onTap: isMe
+                                            ? () {
+                                                _updatePermissions(context, view: !allowView);
+                                                setModalState(() {});
+                                              }
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _buildCompactPermissionIcon(
+                                        context: context,
+                                        icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
+                                        tooltip: allowDownload ? 'Download: Allowed' : 'Download: Locked',
+                                        allowed: allowDownload,
+                                        isInteractive: isMe,
+                                        onTap: isMe
+                                            ? () {
+                                                _updatePermissions(context, download: !allowDownload);
+                                                setModalState(() {});
+                                              }
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _buildCompactPermissionIcon(
+                                        context: context,
+                                        icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
+                                        tooltip: allowShare ? 'Share: Allowed' : 'Share: Locked',
+                                        allowed: allowShare,
+                                        isInteractive: isMe,
+                                        onTap: isMe
+                                            ? () {
+                                                _updatePermissions(context, share: !allowShare);
+                                                setModalState(() {});
+                                              }
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+
+                            // Section 2: Share & Access Lineage (Access Tree API)
+                            FutureBuilder<MediaAccessTreeModel?>(
+                              future: accessTreeFuture,
+                              builder: (context, snapshot) {
+                                final isWaiting = snapshot.connectionState == ConnectionState.waiting;
+                                final accessTreeModel = snapshot.data;
+                                final grants = accessTreeModel?.accessTree ?? [];
+                                final totalGrants = accessTreeModel?.totalGrants ?? grants.length;
+
+                                return Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: cardBg,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isDark ? const Color(0xFF2A3630) : const Color(0xFFE5E9E7),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'SHARE & ACCESS LINEAGE',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1.1,
+                                              color: subTextColor,
+                                            ),
+                                          ),
+                                          if (!isWaiting)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: accentGreen.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                '$totalGrants ${totalGrants == 1 ? 'Share' : 'Shares'}',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: accentGreen,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      if (isWaiting)
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 16),
+                                          child: Center(
+                                            child: SizedBox(
+                                              width: 22,
+                                              height: 22,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: accentGreen,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      else if (grants.isEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.share_outlined, size: 16, color: subTextColor),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  'No one has forwarded or reshared this file yet.',
+                                                  style: TextStyle(fontSize: 12, color: subTextColor),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      else
+                                        Column(
+                                          children: grants
+                                              .map((node) => _buildAccessTreeNodeItem(
+                                                    node: node,
+                                                    isDark: isDark,
+                                                    textColor: textColor,
+                                                    subTextColor: subTextColor,
+                                                    accentGreen: accentGreen,
+                                                    level: 0,
+                                                  ))
+                                              .toList(),
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 14),
+
+                            // Section 3: Active Protection Policies
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF2A3630) : const Color(0xFFE5E9E7),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'ACTIVE PROTECTION POLICIES',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.1,
+                                      color: subTextColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.lock_outline_rounded, size: 18, color: subTextColor),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'End-to-End Encryption',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                color: textColor,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            Text(
+                                              'AES-256-GCM encrypted in-transit & at-rest',
+                                              style: TextStyle(fontSize: 11, color: subTextColor),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: accentGreen.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: accentGreen.withValues(alpha: 0.4), width: 0.8),
+                                        ),
+                                        child: const Text(
+                                          'Enforced',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: accentGreen,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 16, thickness: 0.6),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.screenshot_monitor_rounded, size: 18, color: subTextColor),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Anti-Screenshot & DRM',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                color: textColor,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Protected against unauthorized capture',
+                                              style: TextStyle(fontSize: 11, color: subTextColor),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: (allowDownload ? Colors.orangeAccent : accentGreen).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: (allowDownload ? Colors.orangeAccent : accentGreen).withValues(alpha: 0.4),
+                                            width: 0.8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          allowDownload ? 'Allowed' : 'Secured',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: allowDownload ? Colors.orangeAccent : accentGreen,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+
+                            // Done Button
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: accentGreen,
+                                  foregroundColor: Colors.black,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () => Navigator.pop(sheetContext),
+                                child: const Text(
+                                  'Done',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAccessTreeNodeItem({
+    required AccessTreeNode node,
+    required bool isDark,
+    required Color textColor,
+    required Color subTextColor,
+    required Color accentGreen,
+    required int level,
+  }) {
+    final isActive = node.status.toLowerCase() == 'active';
+    final perms = node.effectivePermissions;
+
+    return Padding(
+      padding: EdgeInsets.only(left: level * 16.0, bottom: 8.0),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E2830) : const Color(0xFFF4F6F5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isDark ? Colors.white12 : Colors.black12,
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                if (level > 0)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Text('↳', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                  ),
+                CircleAvatar(
+                  radius: 12,
+                  backgroundColor: accentGreen.withValues(alpha: 0.2),
+                  child: Text(
+                    node.grantee.initials,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        node.grantee.displayName,
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (node.granter.displayName.isNotEmpty)
+                        Text(
+                          'Shared by ${node.granter.displayName}',
+                          style: TextStyle(fontSize: 10, color: subTextColor),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: (isActive ? accentGreen : Colors.redAccent).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    node.status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: isActive ? accentGreen : Colors.redAccent,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Permission Badges
+            Row(
+              children: [
+                _buildPermissionChip('View', perms.canView, isDark),
+                const SizedBox(width: 4),
+                _buildPermissionChip('Download', perms.canDownload, isDark),
+                const SizedBox(width: 4),
+                _buildPermissionChip('Share', perms.canShare, isDark),
+              ],
+            ),
+            if (node.downstreamShares.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...node.downstreamShares.map(
+                (child) => _buildAccessTreeNodeItem(
+                  node: child,
+                  isDark: isDark,
+                  textColor: textColor,
+                  subTextColor: subTextColor,
+                  accentGreen: accentGreen,
+                  level: level + 1,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPermissionChip(String label, bool allowed, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: allowed
+            ? (const Color(0xFF00D084)).withValues(alpha: 0.12)
+            : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            allowed ? Icons.check : Icons.close,
+            size: 10,
+            color: allowed ? const Color(0xFF00D084) : Colors.grey,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: allowed ? const Color(0xFF00D084) : Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactPermissionIcon({
+    required BuildContext context,
+    required IconData icon,
+    required String tooltip,
+    required bool allowed,
+    required bool isInteractive,
+    VoidCallback? onTap,
+  }) {
+    const accentGreen = Color(0xFF00D084);
+    final color = allowed ? accentGreen : context.colors.error;
+    final bg = color.withValues(alpha: allowed ? 0.15 : 0.1);
+    final border = color.withValues(alpha: 0.4);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: border, width: 1),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: color,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryStatus(BuildContext context) {
+    final isPending = messageId.startsWith('temp_') ||
+        isUploading ||
+        (!isDelivered && !isRead && !isFailed);
+    if (isPending && !isFailed) {
+      return Icon(
+        CommonIcons.done,
+        size: 14,
+        color: context.colors.textSecondary,
+      );
+    }
+    if (isRead) {
+      return const Icon(
+        CommonIcons.doneAll,
+        size: 14,
+        color: Color(0xFF2196F3),
+      );
+    }
+    if (isDelivered) {
+      return Icon(
+        CommonIcons.doneAll,
+        size: 14,
+        color: context.colors.textSecondary,
+      );
+    }
+    return Icon(
+      CommonIcons.done,
+      size: 14,
+      color: context.colors.textSecondary,
+    );
+  }
+
+  Widget _buildDefaultTimestampRow(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isEdited) ...[
+          Text(
+            '(edited) ',
+            style: context.bodySmall.copyWith(
+              fontSize: 10,
+              fontStyle: FontStyle.italic,
+              color: isMe
+                  ? context.colors.textSecondary
+                  : context.colors.textSecondary,
+            ),
+          ),
+        ],
+        if (isPinned) ...[
+          Icon(
+            CommonIcons.pin,
+            size: 10,
+            color: isMe
+                ? context.colors.textSecondary
+                : context.colors.textSecondary,
+          ),
+          CommonSpaces.w4,
+        ],
+        if (expiry != null && expiry! > 0) ...[
+          Icon(
+            Icons.timer_outlined,
+            size: 11,
+            color: context.colors.textSecondary,
+          ),
+          CommonSpaces.w2,
+        ],
+        Text(
+          time,
+          style: context.bodySmall.copyWith(
+            fontSize: 11,
+            color: isMe
+                ? context.colors.textSecondary
+                : context.colors.textSecondary,
+          ),
+        ),
+        if (isMe) ...[
+          CommonSpaces.w4,
+          _buildDeliveryStatus(context),
+        ],
+      ],
     );
   }
 
@@ -432,8 +1413,8 @@ class MessageBubble extends StatelessWidget {
       if (attachmentBytes != null) {
         imageWidget = Image.memory(
           attachmentBytes!,
-          height: 200,
-          width: 220,
+          height: 220,
+          width: double.infinity,
           fit: BoxFit.cover,
         );
       } else if (attachmentPath != null) {
@@ -453,8 +1434,8 @@ class MessageBubble extends StatelessWidget {
             displayUrl.startsWith('https')) {
           imageWidget = Image.network(
             displayUrl,
-            height: 200,
-            width: 220,
+            height: 220,
+            width: double.infinity,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) =>
                 _fileChip(context, CommonIcons.brokenImage, 'Image error'),
@@ -462,8 +1443,8 @@ class MessageBubble extends StatelessWidget {
         } else if (isLocalFile) {
           imageWidget = Image.file(
             File(displayUrl),
-            height: 200,
-            width: 220,
+            height: 220,
+            width: double.infinity,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => _fileChip(
               context,
@@ -487,8 +1468,8 @@ class MessageBubble extends StatelessWidget {
           final s3Url = '$s3BaseUrl$displayUrl';
           imageWidget = Image.network(
             s3Url,
-            height: 200,
-            width: 220,
+            height: 220,
+            width: double.infinity,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) =>
                 _fileChip(context, CommonIcons.brokenImage, 'Image error'),
@@ -1192,6 +2173,17 @@ class MessageBubble extends StatelessWidget {
         'allowView': newView,
       },
     ));
+
+    if (messageId.isNotEmpty) {
+      getIt<ChatRepository>().updateMessageSecurity(
+        messageId,
+        allowShare: newShare,
+        allowDownload: newDownload,
+        allowView: newView,
+      ).catchError((e) {
+        debugPrint('Failed to persist security permissions: $e');
+      });
+    }
   }
 
   void _openInAppViewer(BuildContext context) {
@@ -1232,6 +2224,7 @@ class MessageBubble extends StatelessWidget {
       url: url,
       fileName: attachmentName ?? 'File',
       type: type,
+      mediaId: messageId,
       allowShare: allowShare,
       allowDownload: allowDownload,
       onSharePressed: () {

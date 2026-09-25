@@ -718,9 +718,14 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
 
   String _getDisappearingText(int? seconds) {
     if (seconds == null || seconds == 0) return 'Off';
+    if (seconds < 0) {
+      final tod = _decodeDailyCutoffTime(seconds);
+      if (tod != null) {
+        return _formatDailyCutoffText(tod.hour, tod.minute);
+      }
+      return 'Custom daily';
+    }
     if (seconds == 1800) return '30 minutes';
-    if (seconds == 1440) return '24 minutes';
-    if (seconds == 86400) return '24 hours';
     if (seconds == 604800) return '7 days';
     if (seconds == 2592000) return '30 days';
     if (seconds < 60) return '$seconds seconds';
@@ -731,6 +736,25 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     } else {
       return '${(seconds / 86400).round()} days';
     }
+  }
+
+  int _encodeDailyCutoffTime(int hour, int minute) {
+    return -((hour * 3600 + minute * 60) + 1);
+  }
+
+  TimeOfDay? _decodeDailyCutoffTime(int? encoded) {
+    if (encoded == null || encoded >= 0) return null;
+    final totalSeconds = (-encoded) - 1;
+    final hour = totalSeconds ~/ 3600;
+    final minute = (totalSeconds % 3600) ~/ 60;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _formatDailyCutoffText(int hour, int minute) {
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    final displayMinute = minute == 0 ? '' : ':${minute.toString().padLeft(2, '0')}';
+    return 'Daily at $displayHour$displayMinute $period';
   }
 
   void _showDisappearingMessagesBottomSheet(BuildContext context) {
@@ -776,9 +800,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0),
-                _buildDisappearingOption(context, '30 minutes', 1800),
-                _buildDisappearingOption(context, '24 minutes', 1440),
-                _buildDisappearingOption(context, '24 hours', 86400),
+                _buildCustomDailyTimeOption(context),
                 _buildDisappearingOption(context, '7 days', 604800),
                 _buildDisappearingOption(context, '30 days', 2592000),
                 CommonSpaces.h20,
@@ -787,6 +809,145 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCustomDailyTimeOption(BuildContext context) {
+    final bool isCustom = _disappearingTimer != null && _disappearingTimer! < 0;
+    final customText = isCustom ? _getDisappearingText(_disappearingTimer) : null;
+    final presets = [
+      {'label': '2 AM', 'h': 2, 'm': 0},
+      {'label': '7 AM', 'h': 7, 'm': 0},
+      {'label': '1 PM', 'h': 13, 'm': 0},
+      {'label': '2 PM', 'h': 14, 'm': 0},
+      {'label': '5 PM', 'h': 17, 'm': 0},
+      {'label': '11 PM', 'h': 23, 'm': 0},
+    ];
+
+    void applyCustomTime(int encoded) {
+      Navigator.pop(context);
+      context.read<ChatBloc>().add(SetDisappearingTimerEvent(seconds: encoded));
+      setState(() {
+        _disappearingTimer = encoded;
+      });
+      context.showInfoNotification('Disappearing messages set to ${_getDisappearingText(encoded)}');
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isCustom ? context.colors.primary.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: isCustom ? Border.all(color: context.colors.primary.withValues(alpha: 0.3)) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.schedule, color: isCustom ? context.colors.primary : context.colors.textSecondary),
+            title: Text(
+              isCustom ? 'Custom ($customText)' : 'Custom daily time',
+              style: context.bodyLarge.copyWith(
+                fontWeight: isCustom ? FontWeight.bold : FontWeight.normal,
+                color: isCustom ? context.colors.primary : null,
+              ),
+            ),
+            subtitle: Text(
+              'Clears last 24h chats daily at selected time',
+              style: context.bodySmall.copyWith(fontSize: 11, color: context.colors.textSecondary),
+            ),
+            trailing: isCustom
+                ? Icon(Icons.check_rounded, color: context.colors.primary)
+                : const Icon(Icons.keyboard_arrow_down_rounded),
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: isCustom
+                    ? (_decodeDailyCutoffTime(_disappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                    : const TimeOfDay(hour: 14, minute: 0),
+              );
+              if (picked != null) {
+                final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                applyCustomTime(encoded);
+              }
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ...presets.map((p) {
+                  final encoded = _encodeDailyCutoffTime(p['h'] as int, p['m'] as int);
+                  final isSelected = _disappearingTimer == encoded;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => applyCustomTime(encoded),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isSelected ? context.colors.primary : context.colors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected ? context.colors.primary : context.colors.primary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        p['label'] as String,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : context.colors.primary,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: isCustom
+                          ? (_decodeDailyCutoffTime(_disappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                          : const TimeOfDay(hour: 14, minute: 0),
+                    );
+                    if (picked != null) {
+                      final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                      applyCustomTime(encoded);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: context.colors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: context.colors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.more_time, size: 12, color: context.colors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Pick Time',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: context.colors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

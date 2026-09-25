@@ -21,6 +21,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_even
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/features/profile_screen/src/presentation/profile_settings_page.dart';
+import 'package:schat/features/chat_transfer_screen/src/presentation/chat_transfer_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -837,6 +838,13 @@ class _DashboardPageState extends State<DashboardPage> {
                     builder: (context) => const HiddenChatsPage(),
                   ),
                 );
+              } else if (value == 'chat_transfer') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ChatTransferPage(),
+                  ),
+                );
               }
             },
             itemBuilder: (context) => [
@@ -873,6 +881,16 @@ class _DashboardPageState extends State<DashboardPage> {
                     Icon(Icons.archive_rounded, color: context.colors.primary, size: 20),
                     CommonSpaces.w12,
                     Text('Hidden Chats', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'chat_transfer',
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz_rounded, color: context.colors.primary, size: 20),
+                    CommonSpaces.w12,
+                    Text('Chat Transfer', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
                   ],
                 ),
               ),

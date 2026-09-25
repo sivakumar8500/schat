@@ -332,7 +332,7 @@ class MessageModel {
         if (rawExpiry is int) return rawExpiry;
         if (rawExpiry is num) return rawExpiry.toInt();
         if (rawExpiry is Map) {
-          final expAt = rawExpiry['expireAt'] ?? rawExpiry['expire_at'] ?? rawExpiry['expiry'];
+          final expAt = rawExpiry['expires_at'] ?? rawExpiry['expireAt'] ?? rawExpiry['expire_at'] ?? rawExpiry['expiry'];
           if (expAt is int) return expAt;
           if (expAt is num) return expAt.toInt();
           if (expAt is String) {

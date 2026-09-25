@@ -14,7 +14,9 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_history_st
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 
 enum CallFilter { all, missed, audio, video, incoming, outgoing }
 
@@ -100,6 +102,21 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
         ? call.callerId!
         : (call.receiverId ?? '');
 
+    String conversationId = call.conversationId ?? '';
+
+    if (conversationId.isEmpty && recipientId.isNotEmpty) {
+      try {
+        final result = await getIt<DashboardRepository>().startDirectChat(recipientId);
+        if (result is Success<ChatModel>) {
+          conversationId = result.data.id;
+        }
+      } catch (e) {
+        debugPrint('CallHistoryPage: Error resolving conversationId: $e');
+      }
+    }
+
+    if (!mounted) return;
+
     if (isVideo) {
       Navigator.push(
         context,
@@ -107,7 +124,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
           builder: (_) => BlocProvider.value(
             value: getIt<CallWebRtcBloc>(),
             child: VideoCallPage(
-              conversationId: '',
+              conversationId: conversationId,
               contactName: contactName,
               contactColor: const Color(0xFF00873C),
               recipientId: recipientId,
@@ -125,7 +142,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
           builder: (_) => BlocProvider.value(
             value: getIt<CallWebRtcBloc>(),
             child: AudioCallPage(
-              conversationId: '',
+              conversationId: conversationId,
               contactName: contactName,
               contactColor: const Color(0xFF00873C),
               recipientId: recipientId,
@@ -494,6 +511,8 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
         onTap: () {
           if (isSelectionMode) {
             _toggleSelection(call.id);
+          } else {
+            _startCall(call, isVideo: call.isVideoCall);
           }
         },
         onLongPress: () {
