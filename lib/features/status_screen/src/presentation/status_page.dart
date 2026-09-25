@@ -384,10 +384,6 @@ class StatusPageContent extends StatelessWidget {
                     ),
                   ),
                   actions: [
-                    IconButton(
-                      icon: Icon(Icons.search, color: context.colors.textPrimary, size: 24),
-                      onPressed: () {},
-                    ),
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert, color: context.colors.textPrimary, size: 24),
                       color: context.colors.scaffoldBackground,
