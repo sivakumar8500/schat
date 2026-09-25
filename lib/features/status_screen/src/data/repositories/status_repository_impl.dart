@@ -268,10 +268,11 @@ class StatusRepositoryImpl implements StatusRepository {
         CommonEndpoints.statusPrivacy,
         mapper: (data) => StatusPrivacyModel.fromJson(Map<String, dynamic>.from(data as Map)),
       );
-      return result.when(
+      final model = result.when(
         success: (data) => data,
         failure: (error, _) => const StatusPrivacyModel(),
       );
+      return model;
     } catch (_) {
       return const StatusPrivacyModel();
     }
@@ -294,10 +295,11 @@ class StatusRepositoryImpl implements StatusRepository {
         data: data,
         mapper: (data) => StatusPrivacyModel.fromJson(Map<String, dynamic>.from(data as Map)),
       );
-      return result.when(
+      final model = result.when(
         success: (data) => data,
         failure: (error, _) => const StatusPrivacyModel(),
       );
+      return model;
     } catch (_) {
       return const StatusPrivacyModel();
     }

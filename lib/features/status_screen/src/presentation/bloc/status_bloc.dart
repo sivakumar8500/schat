@@ -1,16 +1,22 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
 import 'package:schat/injection.dart';
 import 'status_event.dart';
 import 'status_state.dart';
 
-
 class StatusBloc extends Bloc<StatusEvent, StatusState> {
   final StatusRepository _repository;
+  final ChatSocketRepository _socketRepository;
+  StreamSubscription? _socketSubscription;
 
-  StatusBloc({StatusRepository? repository})
-      : _repository = repository ?? getIt<StatusRepository>(),
+  StatusBloc({
+    StatusRepository? repository,
+    ChatSocketRepository? socketRepository,
+  })  : _repository = repository ?? getIt<StatusRepository>(),
+        _socketRepository = socketRepository ?? getIt<ChatSocketRepository>(),
         super(const StatusInitial()) {
     on<LoadStatusUpdatesEvent>(_onLoadStatusUpdates);
     on<UploadTextStatusEvent>(_onUploadTextStatus);
@@ -19,6 +25,28 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     on<DeleteMyStatusEvent>(_onDeleteMyStatus);
     on<FetchStatusPrivacyEvent>(_onFetchStatusPrivacy);
     on<UpdateStatusPrivacyEvent>(_onUpdateStatusPrivacy);
+
+    _listenToSocket();
+  }
+
+  void _listenToSocket() {
+    _socketSubscription = _socketRepository.onMessage.listen((data) {
+      if (data is Map) {
+        final type = data['type']?.toString();
+        if (type == 'status_created' ||
+            type == 'status_deleted' ||
+            type == 'status_viewed' ||
+            type == 'status_update') {
+          add(const LoadStatusUpdatesEvent());
+        }
+      }
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _socketSubscription?.cancel();
+    return super.close();
   }
 
   Future<void> _onLoadStatusUpdates(LoadStatusUpdatesEvent event, Emitter<StatusState> emit) async {
