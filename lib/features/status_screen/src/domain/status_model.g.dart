@@ -13,6 +13,7 @@ _StatusItemModel _$StatusItemModelFromJson(Map<String, dynamic> json) =>
       statusType: json['statusType'] as String?,
       text: json['textContent'] as String?,
       imagePath: json['mediaUrl'] as String?,
+      textColor: json['textColor'] as String?,
       timestamp: DateTime.parse(json['createdAt'] as String),
       expiresAt: json['expiresAt'] == null
           ? null
@@ -38,28 +39,12 @@ Map<String, dynamic> _$StatusItemModelToJson(_StatusItemModel instance) =>
       'statusType': instance.statusType,
       'textContent': instance.text,
       'mediaUrl': instance.imagePath,
+      'textColor': instance.textColor,
       'createdAt': instance.timestamp.toIso8601String(),
       'expiresAt': instance.expiresAt?.toIso8601String(),
       'viewCount': instance.viewCount,
-      'viewers': instance.viewers,
       'privacyType': instance.privacyType,
       'privacyUserIds': instance.privacyUserIds,
-    };
-
-_StatusViewerModel _$StatusViewerModelFromJson(Map<String, dynamic> json) =>
-    _StatusViewerModel(
-      viewerId: json['viewerId'] as String,
-      username: json['username'] as String?,
-      displayName: json['displayName'] as String?,
-      viewedAt: (json['viewedAt'] as num?)?.toInt(),
-    );
-
-Map<String, dynamic> _$StatusViewerModelToJson(_StatusViewerModel instance) =>
-    <String, dynamic>{
-      'viewerId': instance.viewerId,
-      'username': instance.username,
-      'displayName': instance.displayName,
-      'viewedAt': instance.viewedAt,
     };
 
 _StatusContactModel _$StatusContactModelFromJson(Map<String, dynamic> json) =>
@@ -82,4 +67,61 @@ Map<String, dynamic> _$StatusContactModelToJson(_StatusContactModel instance) =>
       'username': instance.username,
       'profilePictureUrl': instance.profilePictureUrl,
       'statuses': instance.statuses,
+    };
+
+_StatusPrivacyContact _$StatusPrivacyContactFromJson(
+  Map<String, dynamic> json,
+) => _StatusPrivacyContact(
+  id: json['id'] as String,
+  username: json['username'] as String?,
+  phoneNumber: json['phoneNumber'] as String?,
+  displayName: json['displayName'] as String?,
+  profilePictureUrl: json['profilePictureUrl'] as String?,
+);
+
+Map<String, dynamic> _$StatusPrivacyContactToJson(
+  _StatusPrivacyContact instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'username': instance.username,
+  'phoneNumber': instance.phoneNumber,
+  'displayName': instance.displayName,
+  'profilePictureUrl': instance.profilePictureUrl,
+};
+
+_StatusPrivacyModel _$StatusPrivacyModelFromJson(
+  Map<String, dynamic> json,
+) => _StatusPrivacyModel(
+  privacyType: json['privacyType'] as String? ?? 'ALL',
+  includedUserIds:
+      (json['includedUserIds'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  excludedUserIds:
+      (json['excludedUserIds'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  includedContacts:
+      (json['includedContacts'] as List<dynamic>?)
+          ?.map((e) => StatusPrivacyContact.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
+  excludedContacts:
+      (json['excludedContacts'] as List<dynamic>?)
+          ?.map((e) => StatusPrivacyContact.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
+  updatedAt: (json['updatedAt'] as num?)?.toInt(),
+);
+
+Map<String, dynamic> _$StatusPrivacyModelToJson(_StatusPrivacyModel instance) =>
+    <String, dynamic>{
+      'privacyType': instance.privacyType,
+      'includedUserIds': instance.includedUserIds,
+      'excludedUserIds': instance.excludedUserIds,
+      'includedContacts': instance.includedContacts,
+      'excludedContacts': instance.excludedContacts,
+      'updatedAt': instance.updatedAt,
     };

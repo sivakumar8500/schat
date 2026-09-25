@@ -18,38 +18,50 @@ class StatusLoaded extends StatusState {
   final List<StatusContactModel> mutedUpdates;
   
   // My status
+  final List<StatusItemModel> myStatuses;
   final Uint8List? myStatusBytes;
   final String? myStatusPath;
   final String? myStatusText;
   final DateTime? myStatusTime;
 
+  // Privacy
+  final StatusPrivacyModel? privacyModel;
+
   const StatusLoaded({
     required this.recentUpdates,
     required this.mutedUpdates,
+    this.myStatuses = const [],
     this.myStatusBytes,
     this.myStatusPath,
     this.myStatusText,
     this.myStatusTime,
+    this.privacyModel,
   });
 
   StatusLoaded copyWith({
     List<StatusContactModel>? recentUpdates,
     List<StatusContactModel>? mutedUpdates,
+    List<StatusItemModel>? myStatuses,
     Uint8List? Function()? myStatusBytes,
     String? Function()? myStatusPath,
     String? Function()? myStatusText,
     DateTime? Function()? myStatusTime,
+    StatusPrivacyModel? privacyModel,
   }) {
     return StatusLoaded(
       recentUpdates: recentUpdates ?? this.recentUpdates,
       mutedUpdates: mutedUpdates ?? this.mutedUpdates,
+      myStatuses: myStatuses ?? this.myStatuses,
       myStatusBytes: myStatusBytes != null ? myStatusBytes() : this.myStatusBytes,
       myStatusPath: myStatusPath != null ? myStatusPath() : this.myStatusPath,
       myStatusText: myStatusText != null ? myStatusText() : this.myStatusText,
       myStatusTime: myStatusTime != null ? myStatusTime() : this.myStatusTime,
+      privacyModel: privacyModel ?? this.privacyModel,
     );
   }
 }
+
+
 
 class StatusFailure extends StatusState {
   final String errorMessage;

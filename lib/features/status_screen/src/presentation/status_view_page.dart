@@ -1,14 +1,17 @@
-import 'package:schat/utils/common_sizes.dart';
-
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class StatusViewPage extends StatefulWidget {
   final List<StatusContactModel> contacts;
   final int initialIndex;
 
-  // Optional fields for "My Status" when it's not yet uploaded to a backend
+  // Optional fields for "My Status"
+  final List<StatusItemModel>? myStatuses;
   final Uint8List? myBytes;
   final String? myPath;
   final String? myText;
@@ -18,6 +21,7 @@ class StatusViewPage extends StatefulWidget {
     super.key,
     required this.contacts,
     this.initialIndex = 0,
+    this.myStatuses,
     this.myBytes,
     this.myPath,
     this.myText,
@@ -33,6 +37,141 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   late AnimationController _progressController;
   int _currentContactIndex = 0;
   int _currentStatusIndex = 0;
+  bool _isHolding = false;
+  final Set<String> _viewedStatusIds = {};
+
+  void _markStatusViewed(String? statusId) {
+    if (statusId == null || statusId.isEmpty || widget.isMyStatus) return;
+    if (_viewedStatusIds.contains(statusId)) return;
+    _viewedStatusIds.add(statusId);
+    getIt<StatusRepository>().viewStatus(statusId).catchError((e) {
+      debugPrint('Error marking status as viewed: $e');
+    });
+  }
+
+  void _showStatusOptionsMenu(String? statusId) {
+    _progressController.stop();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.white30,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (widget.isMyStatus && statusId != null && statusId.isNotEmpty) ...[
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text(
+                  'Delete Status',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmAndDeleteStatus(statusId);
+                },
+              ),
+            ] else ...[
+              ListTile(
+                leading: const Icon(Icons.close, color: Colors.white),
+                title: const Text('Close', style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(ctx),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _progressController.forward();
+    });
+  }
+
+  Future<void> _confirmAndDeleteStatus(String statusId) async {
+    _progressController.stop();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2C),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Delete Status?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'This status update will be deleted for all viewers.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) {
+      if (mounted) _progressController.forward();
+      return;
+    }
+
+    try {
+      await getIt<StatusRepository>().deleteStatus(statusId);
+      if (!mounted) return;
+
+      context.showSuccessNotification('Status deleted');
+
+      final list = widget.myStatuses;
+      if (list != null && list.isNotEmpty) {
+        list.removeWhere((item) => item.id == statusId);
+        if (list.isEmpty) {
+          Navigator.pop(context);
+          return;
+        } else {
+          setState(() {
+            if (_currentStatusIndex >= list.length) {
+              _currentStatusIndex = list.length - 1;
+            }
+          });
+          _startProgress();
+        }
+      } else {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        context.showErrorNotification('Failed to delete status: $e');
+        _progressController.forward();
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -56,7 +195,15 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   void _nextStatus() {
     if (widget.isMyStatus) {
-      Navigator.pop(context);
+      final list = widget.myStatuses ?? [];
+      if (list.isNotEmpty && _currentStatusIndex < list.length - 1) {
+        setState(() {
+          _currentStatusIndex++;
+        });
+        _startProgress();
+      } else {
+        Navigator.pop(context);
+      }
       return;
     }
 
@@ -72,7 +219,15 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _previousStatus() {
-    if (widget.isMyStatus) return;
+    if (widget.isMyStatus) {
+      if (_currentStatusIndex > 0) {
+        setState(() {
+          _currentStatusIndex--;
+        });
+        _startProgress();
+      }
+      return;
+    }
 
     if (_currentStatusIndex > 0) {
       setState(() {
@@ -108,7 +263,10 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     if (widget.isMyStatus) {
-      return _buildViewer(null);
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: _buildViewer(null),
+      );
     }
 
     return Scaffold(
@@ -132,91 +290,105 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   Widget _buildViewer(StatusContactModel? contact) {
-    Color bgColor = Colors.black;
+    Color bgColor = const Color(0xFF00897B);
     String name = "My Status";
     String time = "Just now";
     String initial = "M";
+    String? avatarUrl;
     int total = 1;
     int current = 0;
+    int viewCount = 0;
+    List<StatusViewerModel> viewers = [];
+    String? currentStatusId;
     
     Widget content;
 
     if (widget.isMyStatus) {
-      if (widget.myBytes != null) {
-        content = Image.memory(widget.myBytes!, fit: BoxFit.contain);
-      } else if (widget.myText != null) {
-        bgColor = Colors.blueAccent;
+      final myStatusesList = widget.myStatuses ?? [];
+      if (myStatusesList.isNotEmpty) {
+        total = myStatusesList.length;
+        current = _currentStatusIndex.clamp(0, total - 1);
+        final item = myStatusesList[current];
+        currentStatusId = item.id;
+        time = _formatTime(item.timestamp);
+        viewCount = item.viewCount ?? item.viewers.length;
+        viewers = item.viewers;
+
+        if (item.imagePath != null && item.imagePath!.isNotEmpty) {
+          content = _buildMediaStatusContent(
+            imageUrl: item.imagePath!,
+            caption: item.text,
+            isMyStatus: true,
+          );
+        } else if (item.text != null && item.text!.isNotEmpty) {
+          bgColor = item.parsedBackgroundColor;
+          content = _buildTextStatusContent(
+            text: item.text!,
+            bgColor: bgColor,
+          );
+        } else {
+          content = Container(
+            color: Colors.black,
+            alignment: Alignment.center,
+            child: const Icon(Icons.photo, size: 80, color: Colors.white54),
+          );
+        }
+      } else if (widget.myBytes != null) {
         content = Container(
-          color: bgColor,
+          color: Colors.black,
           alignment: Alignment.center,
-          padding: const EdgeInsets.all(40),
-          child: Text(
-            widget.myText!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
+          child: Image.memory(widget.myBytes!, fit: BoxFit.contain),
+        );
+      } else if (widget.myText != null) {
+        content = _buildTextStatusContent(
+          text: widget.myText!,
+          bgColor: const Color(0xFF00897B),
         );
       } else {
-        content = const Center(child: Text('T', style: TextStyle(fontSize: 100, color: Colors.white)));
+        content = Container(
+          color: Colors.black,
+          alignment: Alignment.center,
+          child: const Icon(Icons.person, size: 80, color: Colors.white54),
+        );
       }
     } else {
       bgColor = contact!.profileColor;
       name = contact.name;
-      initial = name[0];
+      initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+      avatarUrl = contact.profilePictureUrl;
       final status = contact.statuses[_currentStatusIndex];
+      currentStatusId = status.id;
       time = _formatTime(status.timestamp);
       total = contact.statuses.length;
       current = _currentStatusIndex;
 
       if (status.imagePath != null && status.imagePath!.isNotEmpty) {
-        content = Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.network(
-              status.imagePath!,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(child: Icon(Icons.broken_image, size: 50, color: Colors.white54));
-              },
-            ),
-            if (status.text != null && status.text!.isNotEmpty)
-              Positioned(
-                bottom: 120, // above the reply box
-                left: 20,
-                right: 20,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    status.text!,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: Colors.white),
-                  ),
-                ),
-              ),
-          ],
+        content = _buildMediaStatusContent(
+          imageUrl: status.imagePath!,
+          caption: status.text,
+          isMyStatus: false,
         );
       } else if (status.text != null && status.text!.isNotEmpty) {
-        content = Container(
-          color: status.backgroundColor,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.all(40),
-          child: Text(
-            status.text!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
+        bgColor = status.parsedBackgroundColor;
+        content = _buildTextStatusContent(
+          text: status.text!,
+          bgColor: bgColor,
         );
       } else {
-        content = Container(color: bgColor, child: Center(child: Text(initial, style: const TextStyle(fontSize: 100, color: Colors.white))));
+        content = Container(
+          color: bgColor,
+          alignment: Alignment.center,
+          child: Text(initial, style: const TextStyle(fontSize: 100, color: Colors.white, fontWeight: FontWeight.bold)),
+        );
       }
     }
 
+    _markStatusViewed(currentStatusId);
+
     return GestureDetector(
-      onTapDown: (_) => _progressController.stop(),
+      onTapDown: (_) {
+        _progressController.stop();
+      },
       onTapUp: (d) {
         final x = d.globalPosition.dx;
         final width = MediaQuery.of(context).size.width;
@@ -226,29 +398,265 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
           _nextStatus();
         }
       },
-      onLongPressStart: (_) => _progressController.stop(),
-      onLongPressEnd: (_) => _progressController.forward(),
+      onLongPressStart: (_) {
+        setState(() {
+          _isHolding = true;
+        });
+        _progressController.stop();
+      },
+      onLongPressEnd: (_) {
+        setState(() {
+          _isHolding = false;
+        });
+        _progressController.forward();
+      },
+      onVerticalDragEnd: (details) {
+        if (widget.isMyStatus && details.primaryVelocity != null && details.primaryVelocity! < -200) {
+          _progressController.stop();
+          _showViewersSheet(viewers, viewCount);
+        }
+      },
       child: Stack(
+        fit: StackFit.expand,
         children: [
           Positioned.fill(child: content),
-          _buildTopGradient(),
-          if (!widget.isMyStatus) _buildBottomGradient(),
-          _buildProgressBars(total, current),
-          _buildHeader(name, initial, time, bgColor),
-          if (!widget.isMyStatus) _buildReplyBox(),
+          if (!_isHolding) ...[
+            _buildTopGradient(),
+            _buildBottomGradient(),
+            _buildTopHeader(total, current, name, initial, time, bgColor, avatarUrl, currentStatusId),
+            if (widget.isMyStatus) _buildMyStatusBottomView(viewCount, viewers),
+            if (!widget.isMyStatus) _buildReplyBox(),
+          ],
         ],
       ),
     );
   }
 
+  Widget _buildMediaStatusContent({
+    required String imageUrl,
+    String? caption,
+    required bool isMyStatus,
+  }) {
+    final isLocalFile = File(imageUrl).existsSync();
+    Widget imageWidget;
+    if (isLocalFile) {
+      imageWidget = Image.file(
+        File(imageUrl),
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.broken_image, size: 60, color: Colors.white54),
+                SizedBox(height: 12),
+                Text('Failed to load image', style: TextStyle(color: Colors.white54, fontSize: 14)),
+              ],
+            ),
+          );
+        },
+      );
+    } else {
+      imageWidget = Image.network(
+        imageUrl,
+        fit: BoxFit.contain,
+        loadingBuilder: (ctx, child, progress) {
+          if (progress == null) return child;
+          return const Center(child: CircularProgressIndicator(color: Colors.white70));
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.broken_image, size: 60, color: Colors.white54),
+                SizedBox(height: 12),
+                Text('Failed to load image', style: TextStyle(color: Colors.white54, fontSize: 14)),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    return Container(
+      color: Colors.black,
+      width: double.infinity,
+      height: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(child: imageWidget),
+          if (caption != null && caption.isNotEmpty)
+            Positioned(
+              bottom: isMyStatus ? 90 : 100,
+              left: 0,
+              right: 0,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                color: Colors.black.withValues(alpha: 0.6),
+                child: Text(
+                  caption,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextStatusContent({
+    required String text,
+    required Color bgColor,
+  }) {
+    return Container(
+      color: bgColor,
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 120),
+      child: SingleChildScrollView(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            height: 1.3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMyStatusBottomView(int viewCount, List<StatusViewerModel> viewers) {
+    return Positioned(
+      bottom: 20,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        child: Center(
+          child: GestureDetector(
+            onTap: () {
+              _progressController.stop();
+              _showViewersSheet(viewers, viewCount);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 24),
+                const SizedBox(height: 2),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.remove_red_eye, color: Colors.white, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$viewCount ${viewCount == 1 ? 'view' : 'views'}',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showViewersSheet(List<StatusViewerModel> viewers, int totalViews) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Row(
+              children: [
+                const Icon(Icons.remove_red_eye, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Text(
+                  'Viewed by $totalViews',
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const Divider(color: Colors.white24, height: 24),
+            if (viewers.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text('No views yet', style: TextStyle(color: Colors.white54, fontSize: 15)),
+                ),
+              )
+            else
+              LimitedBox(
+                maxHeight: 250,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: viewers.length,
+                  itemBuilder: (_, i) {
+                    final v = viewers[i];
+                    final vName = v.displayName ?? v.username ?? 'Contact';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.purple.shade300,
+                        child: Text(vName[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                      title: Text(vName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      subtitle: v.username != null ? Text('@${v.username}', style: const TextStyle(color: Colors.white54, fontSize: 12)) : null,
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _progressController.forward();
+    });
+  }
+
   Widget _buildTopGradient() {
     return Positioned(
       top: 0, left: 0, right: 0, height: 140,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
+            ),
           ),
         ),
       ),
@@ -257,68 +665,105 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   Widget _buildBottomGradient() {
     return Positioned(
-      bottom: 0, left: 0, right: 0, height: 100,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter, end: Alignment.topCenter,
-            colors: [Colors.black.withValues(alpha: 0.6), Colors.transparent],
+      bottom: 0, left: 0, right: 0, height: 150,
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter, end: Alignment.topCenter,
+              colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildProgressBars(int total, int current) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 8, left: 8, right: 8),
-        child: Row(
-          children: List.generate(total, (i) => Expanded(
-            child: Container(
-              height: 2.5,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              child: AnimatedBuilder(
-                animation: _progressController,
-                builder: (_, _) => LinearProgressIndicator(
-                  value: i < current ? 1 : (i == current ? _progressController.value : 0),
-                  backgroundColor: Colors.white.withValues(alpha: 0.3),
-                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                  borderRadius: BorderRadius.circular(2),
+  Widget _buildTopHeader(
+    int total,
+    int current,
+    String name,
+    String initial,
+    String time,
+    Color bgColor,
+    String? avatarUrl,
+    String? statusId,
+  ) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Segmented Progress Bars
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 10, right: 10, bottom: 4),
+              child: Row(
+                children: List.generate(
+                  total,
+                  (i) => Expanded(
+                    child: Container(
+                      height: 2.5,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      child: AnimatedBuilder(
+                        animation: _progressController,
+                        builder: (_, _) => LinearProgressIndicator(
+                          value: i < current ? 1.0 : (i == current ? _progressController.value : 0.0),
+                          backgroundColor: Colors.white.withValues(alpha: 0.35),
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          )),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(String name, String initial, String time, Color bgColor) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 20, left: 16, right: 12),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: bgColor.withValues(alpha: 0.7),
-              child: Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(width: CommonSizes.p12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+            // Contact Header Bar
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 8, top: 4, bottom: 4),
+              child: Row(
                 children: [
-                  Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                  Text(time, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: bgColor.withValues(alpha: 0.8),
+                    backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                    child: avatarUrl == null || avatarUrl.isEmpty
+                        ? Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14))
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 16),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          time,
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, color: Colors.white, size: 24),
+                    onPressed: () => _showStatusOptionsMenu(statusId),
+                  ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
             ),
           ],
         ),
@@ -328,34 +773,32 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   Widget _buildReplyBox() {
     return Positioned(
-      bottom: 0, left: 0, right: 0,
+      bottom: 12, left: 0, right: 0,
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 22),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: Colors.white30),
+                      ),
+                      child: const Text('Reply', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                    ),
                   ),
-                  child: const Text('Reply to status...', style: TextStyle(color: Colors.white70)),
-                ),
+                ],
               ),
-              const SizedBox(width: CommonSizes.p12),
-              GestureDetector(
-                onTap: () {},
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
-                  child: const Icon(Icons.send_rounded, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

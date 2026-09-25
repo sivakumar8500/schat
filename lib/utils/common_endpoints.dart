@@ -28,6 +28,8 @@ class CommonEndpoints {
   static const String getChats = '/chats/';
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
+  static const String searchMessages = '/messages/search';
+  static String searchMessagesInChat(String conversationId) => '/messages/search/$conversationId';
   static const String scheduleMessage = '/messages/scheduled';
   static const String getCalls = '/messages/calls';
   static String getCallHistory({int limit = 50}) => '/messages/calls?limit=$limit';
@@ -101,4 +103,5 @@ class CommonEndpoints {
   static String viewStatus(String statusId) => '/statuses/$statusId/view';
   static String muteContactStatus(String contactId) => '/statuses/mute/$contactId';
   static String unmuteContactStatus(String contactId) => '/statuses/unmute/$contactId';
+  static const String statusPrivacy = '/statuses/privacy';
 }

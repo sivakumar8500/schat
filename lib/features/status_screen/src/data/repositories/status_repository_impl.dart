@@ -18,17 +18,64 @@ class StatusRepositoryImpl implements StatusRepository {
     try {
       final result = await _apiService.get<List<StatusContactModel>>(
         CommonEndpoints.getRecentStatuses,
-        mapper: (data) => (data as List).map((e) => StatusContactModel.fromJson(e)).toList(),
+        mapper: (data) => _parseStatusesResponse(data),
       );
       return result.when(
         success: (data) => data,
         failure: (message, _) => [],
       );
     } catch (e) {
-      // Fallback for testing UI if API is not fully ready
+      debugPrint('Error fetching recent status updates: $e');
       return [];
     }
   }
+
+  List<StatusContactModel> _parseStatusesResponse(dynamic data) {
+    if (data is! List) return [];
+
+    // Case 1: Backend returns contact-grouped list [{ "userId": "...", "displayName": "...", "statuses": [...] }]
+    if (data.isNotEmpty && data.first is Map && (data.first as Map).containsKey('statuses')) {
+      return data.map((e) => StatusContactModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    }
+
+    // Case 2: Backend returns flat status list [{ "id": "...", "userId": "...", "textContent": "...", "user": {...} }]
+    final Map<String, List<StatusItemModel>> groupedStatuses = {};
+    final Map<String, Map<String, dynamic>> userMeta = {};
+
+    for (final raw in data) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final item = StatusItemModel.fromJson(map);
+
+      final userObj = map['user'] is Map ? Map<String, dynamic>.from(map['user'] as Map) : map;
+      final userId = item.userId ?? (userObj['userId'] ?? userObj['id'] ?? userObj['_id'] ?? 'unknown').toString();
+      final displayName = (userObj['displayName'] ?? userObj['first_name'] ?? userObj['username'] ?? 'User').toString();
+      final username = userObj['username']?.toString();
+      final avatar = (userObj['profilePictureUrl'] ?? userObj['profile_picture_url'])?.toString();
+
+      groupedStatuses.putIfAbsent(userId, () => []).add(item);
+      if (!userMeta.containsKey(userId)) {
+        userMeta[userId] = {
+          'userId': userId,
+          'displayName': displayName,
+          'username': username,
+          'profilePictureUrl': avatar,
+        };
+      }
+    }
+
+    return groupedStatuses.entries.map((entry) {
+      final meta = userMeta[entry.key] ?? {'userId': entry.key, 'displayName': 'User'};
+      return StatusContactModel(
+        contactId: entry.key,
+        name: meta['displayName']?.toString() ?? 'User',
+        username: meta['username']?.toString(),
+        profilePictureUrl: meta['profilePictureUrl']?.toString(),
+        statuses: entry.value,
+      );
+    }).toList();
+  }
+
 
   @override
   Future<List<StatusContactModel>> getViewedUpdates() async {
@@ -53,9 +100,11 @@ class StatusRepositoryImpl implements StatusRepository {
 
   @override
   Future<void> createStatus({
+
     required String statusType,
     String? textContent,
     String? mediaFileId,
+    String? textColor,
     String? filePath,
     String? fileName,
     String? mimeType,
@@ -70,13 +119,15 @@ class StatusRepositoryImpl implements StatusRepository {
     if (fileName != null && mimeType != null && fileSizeBytes != null) {
       try {
         // Step 1: Request upload URL
+        final mediaType = mimeType.startsWith('video') ? 'CHAT_VIDEO' : 'CHAT_IMAGE';
         final requestData = {
-          'media_type': 'STATUS_MEDIA',
+          'media_type': mediaType,
           'mime_type': mimeType,
           'file_size_bytes': fileSizeBytes,
           'filename': fileName,
-          'conversation_id': 'STATUS_UPLOAD',
+          'conversation_id': '00000000-0000-0000-0000-000000000000',
         };
+
 
         final requestResult = await _apiService.post<Map<String, dynamic>>(
           CommonEndpoints.requestUpload,
@@ -140,15 +191,19 @@ class StatusRepositoryImpl implements StatusRepository {
     }
 
     // Create the actual status
+    final payload = <String, dynamic>{
+      'statusType': statusType,
+      'textContent': textContent,
+      'mediaFileId': finalMediaId,
+      'textColor': textColor,
+      'privacyType': privacyType ?? '',
+      'privacyUserIds': privacyUserIds ?? [],
+    };
+
+
     final result = await _apiService.post(
       CommonEndpoints.createStatus,
-      data: {
-        'statusType': statusType,
-        'textContent': ?textContent,
-        'mediaFileId': ?finalMediaId,
-        'privacyType': ?privacyType,
-        'privacyUserIds': ?privacyUserIds,
-      },
+      data: payload,
     );
     
     result.when(
@@ -157,11 +212,25 @@ class StatusRepositoryImpl implements StatusRepository {
     );
   }
 
+
   @override
   Future<List<StatusItemModel>> getMyStatuses() async {
     final result = await _apiService.get<List<StatusItemModel>>(
       CommonEndpoints.getMyStatuses,
-      mapper: (data) => (data as List).map((e) => StatusItemModel.fromJson(e)).toList(),
+      mapper: (data) {
+        if (data is List) {
+          return data
+              .whereType<Map>()
+              .map((e) => StatusItemModel.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        } else if (data is Map && data.containsKey('statuses') && data['statuses'] is List) {
+          return (data['statuses'] as List)
+              .whereType<Map>()
+              .map((e) => StatusItemModel.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+        }
+        return [];
+      },
     );
     return result.when(
       success: (data) => data,
@@ -178,4 +247,48 @@ class StatusRepositoryImpl implements StatusRepository {
   Future<void> viewStatus(String statusId) async {
     await _apiService.post(CommonEndpoints.viewStatus(statusId));
   }
+
+  @override
+  Future<StatusPrivacyModel> getStatusPrivacy() async {
+    try {
+      final result = await _apiService.get<StatusPrivacyModel>(
+        CommonEndpoints.statusPrivacy,
+        mapper: (data) => StatusPrivacyModel.fromJson(Map<String, dynamic>.from(data as Map)),
+      );
+      return result.when(
+        success: (data) => data,
+        failure: (error, _) => const StatusPrivacyModel(),
+      );
+    } catch (_) {
+      return const StatusPrivacyModel();
+    }
+  }
+
+  @override
+  Future<StatusPrivacyModel> updateStatusPrivacy({
+    required String privacyType,
+    List<String>? includedUserIds,
+    List<String>? excludedUserIds,
+  }) async {
+    final data = {
+      'privacyType': privacyType,
+      'includedUserIds': includedUserIds ?? [],
+      'excludedUserIds': excludedUserIds ?? [],
+    };
+    try {
+      final result = await _apiService.put<StatusPrivacyModel>(
+        CommonEndpoints.statusPrivacy,
+        data: data,
+        mapper: (data) => StatusPrivacyModel.fromJson(Map<String, dynamic>.from(data as Map)),
+      );
+      return result.when(
+        success: (data) => data,
+        failure: (error, _) => const StatusPrivacyModel(),
+      );
+    } catch (_) {
+      return const StatusPrivacyModel();
+    }
+  }
 }
+
+

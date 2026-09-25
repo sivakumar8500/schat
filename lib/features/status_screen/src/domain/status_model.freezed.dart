@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$StatusItemModel {
 
- String get id;@JsonKey(name: 'userId') String? get userId;@JsonKey(name: 'statusType') String? get statusType;@JsonKey(name: 'textContent') String? get text;@JsonKey(name: 'mediaUrl') String? get imagePath;@JsonKey(name: 'createdAt') DateTime get timestamp;@JsonKey(name: 'expiresAt') DateTime? get expiresAt;@JsonKey(name: 'viewCount', defaultValue: 0) int? get viewCount;@JsonKey(name: 'viewers') List<StatusViewerModel> get viewers;@JsonKey(name: 'privacyType') String? get privacyType;@JsonKey(name: 'privacyUserIds') List<String>? get privacyUserIds;@JsonKey(includeFromJson: false, includeToJson: false) Color get backgroundColor;@JsonKey(includeFromJson: false, includeToJson: false) bool get viewed;
+ String get id;@JsonKey(name: 'userId') String? get userId;@JsonKey(name: 'statusType') String? get statusType;@JsonKey(name: 'textContent') String? get text;@JsonKey(name: 'mediaUrl') String? get imagePath;@JsonKey(name: 'textColor') String? get textColor;@JsonKey(name: 'createdAt') DateTime get timestamp;@JsonKey(name: 'expiresAt') DateTime? get expiresAt;@JsonKey(name: 'viewCount', defaultValue: 0) int? get viewCount;@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> get viewers;@JsonKey(name: 'privacyType') String? get privacyType;@JsonKey(name: 'privacyUserIds') List<String>? get privacyUserIds;@JsonKey(includeFromJson: false, includeToJson: false) Color get backgroundColor;@JsonKey(includeFromJson: false, includeToJson: false) bool get viewed;
 /// Create a copy of StatusItemModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $StatusItemModelCopyWith<StatusItemModel> get copyWith => _$StatusItemModelCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusItemModel&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.statusType, statusType) || other.statusType == statusType)&&(identical(other.text, text) || other.text == text)&&(identical(other.imagePath, imagePath) || other.imagePath == imagePath)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt)&&(identical(other.viewCount, viewCount) || other.viewCount == viewCount)&&const DeepCollectionEquality().equals(other.viewers, viewers)&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other.privacyUserIds, privacyUserIds)&&(identical(other.backgroundColor, backgroundColor) || other.backgroundColor == backgroundColor)&&(identical(other.viewed, viewed) || other.viewed == viewed));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusItemModel&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.statusType, statusType) || other.statusType == statusType)&&(identical(other.text, text) || other.text == text)&&(identical(other.imagePath, imagePath) || other.imagePath == imagePath)&&(identical(other.textColor, textColor) || other.textColor == textColor)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt)&&(identical(other.viewCount, viewCount) || other.viewCount == viewCount)&&const DeepCollectionEquality().equals(other.viewers, viewers)&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other.privacyUserIds, privacyUserIds)&&(identical(other.backgroundColor, backgroundColor) || other.backgroundColor == backgroundColor)&&(identical(other.viewed, viewed) || other.viewed == viewed));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,statusType,text,imagePath,timestamp,expiresAt,viewCount,const DeepCollectionEquality().hash(viewers),privacyType,const DeepCollectionEquality().hash(privacyUserIds),backgroundColor,viewed);
+int get hashCode => Object.hash(runtimeType,id,userId,statusType,text,imagePath,textColor,timestamp,expiresAt,viewCount,const DeepCollectionEquality().hash(viewers),privacyType,const DeepCollectionEquality().hash(privacyUserIds),backgroundColor,viewed);
 
 @override
 String toString() {
-  return 'StatusItemModel(id: $id, userId: $userId, statusType: $statusType, text: $text, imagePath: $imagePath, timestamp: $timestamp, expiresAt: $expiresAt, viewCount: $viewCount, viewers: $viewers, privacyType: $privacyType, privacyUserIds: $privacyUserIds, backgroundColor: $backgroundColor, viewed: $viewed)';
+  return 'StatusItemModel(id: $id, userId: $userId, statusType: $statusType, text: $text, imagePath: $imagePath, textColor: $textColor, timestamp: $timestamp, expiresAt: $expiresAt, viewCount: $viewCount, viewers: $viewers, privacyType: $privacyType, privacyUserIds: $privacyUserIds, backgroundColor: $backgroundColor, viewed: $viewed)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $StatusItemModelCopyWith<$Res>  {
   factory $StatusItemModelCopyWith(StatusItemModel value, $Res Function(StatusItemModel) _then) = _$StatusItemModelCopyWithImpl;
 @useResult
 $Res call({
- String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers') List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
+ String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
 });
 
 
@@ -65,13 +65,14 @@ class _$StatusItemModelCopyWithImpl<$Res>
 
 /// Create a copy of StatusItemModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = freezed,Object? statusType = freezed,Object? text = freezed,Object? imagePath = freezed,Object? timestamp = null,Object? expiresAt = freezed,Object? viewCount = freezed,Object? viewers = null,Object? privacyType = freezed,Object? privacyUserIds = freezed,Object? backgroundColor = null,Object? viewed = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = freezed,Object? statusType = freezed,Object? text = freezed,Object? imagePath = freezed,Object? textColor = freezed,Object? timestamp = null,Object? expiresAt = freezed,Object? viewCount = freezed,Object? viewers = null,Object? privacyType = freezed,Object? privacyUserIds = freezed,Object? backgroundColor = null,Object? viewed = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: freezed == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String?,statusType: freezed == statusType ? _self.statusType : statusType // ignore: cast_nullable_to_non_nullable
 as String?,text: freezed == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String?,imagePath: freezed == imagePath ? _self.imagePath : imagePath // ignore: cast_nullable_to_non_nullable
+as String?,textColor: freezed == textColor ? _self.textColor : textColor // ignore: cast_nullable_to_non_nullable
 as String?,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
 as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,viewCount: freezed == viewCount ? _self.viewCount : viewCount // ignore: cast_nullable_to_non_nullable
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers')  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _StatusItemModel() when $default != null:
-return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
+return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers')  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)  $default,) {final _that = this;
 switch (_that) {
 case _StatusItemModel():
-return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
+return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers')  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,) {final _that = this;
 switch (_that) {
 case _StatusItemModel() when $default != null:
-return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
+return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
   return null;
 
 }
@@ -220,8 +221,8 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 /// @nodoc
 @JsonSerializable()
 
-class _StatusItemModel implements StatusItemModel {
-  const _StatusItemModel({required this.id, @JsonKey(name: 'userId') this.userId, @JsonKey(name: 'statusType') this.statusType, @JsonKey(name: 'textContent') this.text, @JsonKey(name: 'mediaUrl') this.imagePath, @JsonKey(name: 'createdAt') required this.timestamp, @JsonKey(name: 'expiresAt') this.expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0) this.viewCount, @JsonKey(name: 'viewers') final  List<StatusViewerModel> viewers = const [], @JsonKey(name: 'privacyType') this.privacyType, @JsonKey(name: 'privacyUserIds') final  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false) this.backgroundColor = Colors.black, @JsonKey(includeFromJson: false, includeToJson: false) this.viewed = false}): _viewers = viewers,_privacyUserIds = privacyUserIds;
+class _StatusItemModel extends StatusItemModel {
+  const _StatusItemModel({required this.id, @JsonKey(name: 'userId') this.userId, @JsonKey(name: 'statusType') this.statusType, @JsonKey(name: 'textContent') this.text, @JsonKey(name: 'mediaUrl') this.imagePath, @JsonKey(name: 'textColor') this.textColor, @JsonKey(name: 'createdAt') required this.timestamp, @JsonKey(name: 'expiresAt') this.expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0) this.viewCount, @JsonKey(name: 'viewers', includeToJson: false) final  List<StatusViewerModel> viewers = const [], @JsonKey(name: 'privacyType') this.privacyType, @JsonKey(name: 'privacyUserIds') final  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false) this.backgroundColor = Colors.black, @JsonKey(includeFromJson: false, includeToJson: false) this.viewed = false}): _viewers = viewers,_privacyUserIds = privacyUserIds,super._();
   factory _StatusItemModel.fromJson(Map<String, dynamic> json) => _$StatusItemModelFromJson(json);
 
 @override final  String id;
@@ -229,11 +230,12 @@ class _StatusItemModel implements StatusItemModel {
 @override@JsonKey(name: 'statusType') final  String? statusType;
 @override@JsonKey(name: 'textContent') final  String? text;
 @override@JsonKey(name: 'mediaUrl') final  String? imagePath;
+@override@JsonKey(name: 'textColor') final  String? textColor;
 @override@JsonKey(name: 'createdAt') final  DateTime timestamp;
 @override@JsonKey(name: 'expiresAt') final  DateTime? expiresAt;
 @override@JsonKey(name: 'viewCount', defaultValue: 0) final  int? viewCount;
  final  List<StatusViewerModel> _viewers;
-@override@JsonKey(name: 'viewers') List<StatusViewerModel> get viewers {
+@override@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> get viewers {
   if (_viewers is EqualUnmodifiableListView) return _viewers;
   // ignore: implicit_dynamic_type
   return EqualUnmodifiableListView(_viewers);
@@ -265,16 +267,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusItemModel&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.statusType, statusType) || other.statusType == statusType)&&(identical(other.text, text) || other.text == text)&&(identical(other.imagePath, imagePath) || other.imagePath == imagePath)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt)&&(identical(other.viewCount, viewCount) || other.viewCount == viewCount)&&const DeepCollectionEquality().equals(other._viewers, _viewers)&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other._privacyUserIds, _privacyUserIds)&&(identical(other.backgroundColor, backgroundColor) || other.backgroundColor == backgroundColor)&&(identical(other.viewed, viewed) || other.viewed == viewed));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusItemModel&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.statusType, statusType) || other.statusType == statusType)&&(identical(other.text, text) || other.text == text)&&(identical(other.imagePath, imagePath) || other.imagePath == imagePath)&&(identical(other.textColor, textColor) || other.textColor == textColor)&&(identical(other.timestamp, timestamp) || other.timestamp == timestamp)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt)&&(identical(other.viewCount, viewCount) || other.viewCount == viewCount)&&const DeepCollectionEquality().equals(other._viewers, _viewers)&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other._privacyUserIds, _privacyUserIds)&&(identical(other.backgroundColor, backgroundColor) || other.backgroundColor == backgroundColor)&&(identical(other.viewed, viewed) || other.viewed == viewed));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,statusType,text,imagePath,timestamp,expiresAt,viewCount,const DeepCollectionEquality().hash(_viewers),privacyType,const DeepCollectionEquality().hash(_privacyUserIds),backgroundColor,viewed);
+int get hashCode => Object.hash(runtimeType,id,userId,statusType,text,imagePath,textColor,timestamp,expiresAt,viewCount,const DeepCollectionEquality().hash(_viewers),privacyType,const DeepCollectionEquality().hash(_privacyUserIds),backgroundColor,viewed);
 
 @override
 String toString() {
-  return 'StatusItemModel(id: $id, userId: $userId, statusType: $statusType, text: $text, imagePath: $imagePath, timestamp: $timestamp, expiresAt: $expiresAt, viewCount: $viewCount, viewers: $viewers, privacyType: $privacyType, privacyUserIds: $privacyUserIds, backgroundColor: $backgroundColor, viewed: $viewed)';
+  return 'StatusItemModel(id: $id, userId: $userId, statusType: $statusType, text: $text, imagePath: $imagePath, textColor: $textColor, timestamp: $timestamp, expiresAt: $expiresAt, viewCount: $viewCount, viewers: $viewers, privacyType: $privacyType, privacyUserIds: $privacyUserIds, backgroundColor: $backgroundColor, viewed: $viewed)';
 }
 
 
@@ -285,7 +287,7 @@ abstract mixin class _$StatusItemModelCopyWith<$Res> implements $StatusItemModel
   factory _$StatusItemModelCopyWith(_StatusItemModel value, $Res Function(_StatusItemModel) _then) = __$StatusItemModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers') List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
+ String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
 });
 
 
@@ -302,13 +304,14 @@ class __$StatusItemModelCopyWithImpl<$Res>
 
 /// Create a copy of StatusItemModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = freezed,Object? statusType = freezed,Object? text = freezed,Object? imagePath = freezed,Object? timestamp = null,Object? expiresAt = freezed,Object? viewCount = freezed,Object? viewers = null,Object? privacyType = freezed,Object? privacyUserIds = freezed,Object? backgroundColor = null,Object? viewed = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = freezed,Object? statusType = freezed,Object? text = freezed,Object? imagePath = freezed,Object? textColor = freezed,Object? timestamp = null,Object? expiresAt = freezed,Object? viewCount = freezed,Object? viewers = null,Object? privacyType = freezed,Object? privacyUserIds = freezed,Object? backgroundColor = null,Object? viewed = null,}) {
   return _then(_StatusItemModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: freezed == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String?,statusType: freezed == statusType ? _self.statusType : statusType // ignore: cast_nullable_to_non_nullable
 as String?,text: freezed == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String?,imagePath: freezed == imagePath ? _self.imagePath : imagePath // ignore: cast_nullable_to_non_nullable
+as String?,textColor: freezed == textColor ? _self.textColor : textColor // ignore: cast_nullable_to_non_nullable
 as String?,timestamp: null == timestamp ? _self.timestamp : timestamp // ignore: cast_nullable_to_non_nullable
 as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,viewCount: freezed == viewCount ? _self.viewCount : viewCount // ignore: cast_nullable_to_non_nullable
@@ -324,7 +327,6 @@ as bool,
 
 }
 
-
 /// @nodoc
 mixin _$StatusViewerModel {
 
@@ -335,8 +337,6 @@ mixin _$StatusViewerModel {
 @pragma('vm:prefer-inline')
 $StatusViewerModelCopyWith<StatusViewerModel> get copyWith => _$StatusViewerModelCopyWithImpl<StatusViewerModel>(this as StatusViewerModel, _$identity);
 
-  /// Serializes this StatusViewerModel to a JSON map.
-  Map<String, dynamic> toJson();
 
 
 @override
@@ -344,7 +344,7 @@ bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
 }
 
-@JsonKey(includeFromJson: false, includeToJson: false)
+
 @override
 int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,viewedAt);
 
@@ -522,11 +522,11 @@ return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);
 }
 
 /// @nodoc
-@JsonSerializable()
+
 
 class _StatusViewerModel implements StatusViewerModel {
   const _StatusViewerModel({required this.viewerId, this.username, this.displayName, @JsonKey(name: 'viewedAt') this.viewedAt});
-  factory _StatusViewerModel.fromJson(Map<String, dynamic> json) => _$StatusViewerModelFromJson(json);
+  
 
 @override final  String viewerId;
 @override final  String? username;
@@ -539,17 +539,14 @@ class _StatusViewerModel implements StatusViewerModel {
 @pragma('vm:prefer-inline')
 _$StatusViewerModelCopyWith<_StatusViewerModel> get copyWith => __$StatusViewerModelCopyWithImpl<_StatusViewerModel>(this, _$identity);
 
-@override
-Map<String, dynamic> toJson() {
-  return _$StatusViewerModelToJson(this, );
-}
+
 
 @override
 bool operator ==(Object other) {
   return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
 }
 
-@JsonKey(includeFromJson: false, includeToJson: false)
+
 @override
 int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,viewedAt);
 
@@ -877,6 +874,583 @@ as String?,profileColor: null == profileColor ? _self.profileColor : profileColo
 as Color,statuses: null == statuses ? _self._statuses : statuses // ignore: cast_nullable_to_non_nullable
 as List<StatusItemModel>,isMuted: null == isMuted ? _self.isMuted : isMuted // ignore: cast_nullable_to_non_nullable
 as bool,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$StatusPrivacyContact {
+
+ String get id; String? get username; String? get phoneNumber; String? get displayName; String? get profilePictureUrl;
+/// Create a copy of StatusPrivacyContact
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StatusPrivacyContactCopyWith<StatusPrivacyContact> get copyWith => _$StatusPrivacyContactCopyWithImpl<StatusPrivacyContact>(this as StatusPrivacyContact, _$identity);
+
+  /// Serializes this StatusPrivacyContact to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusPrivacyContact&&(identical(other.id, id) || other.id == id)&&(identical(other.username, username) || other.username == username)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,username,phoneNumber,displayName,profilePictureUrl);
+
+@override
+String toString() {
+  return 'StatusPrivacyContact(id: $id, username: $username, phoneNumber: $phoneNumber, displayName: $displayName, profilePictureUrl: $profilePictureUrl)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StatusPrivacyContactCopyWith<$Res>  {
+  factory $StatusPrivacyContactCopyWith(StatusPrivacyContact value, $Res Function(StatusPrivacyContact) _then) = _$StatusPrivacyContactCopyWithImpl;
+@useResult
+$Res call({
+ String id, String? username, String? phoneNumber, String? displayName, String? profilePictureUrl
+});
+
+
+
+
+}
+/// @nodoc
+class _$StatusPrivacyContactCopyWithImpl<$Res>
+    implements $StatusPrivacyContactCopyWith<$Res> {
+  _$StatusPrivacyContactCopyWithImpl(this._self, this._then);
+
+  final StatusPrivacyContact _self;
+  final $Res Function(StatusPrivacyContact) _then;
+
+/// Create a copy of StatusPrivacyContact
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? username = freezed,Object? phoneNumber = freezed,Object? displayName = freezed,Object? profilePictureUrl = freezed,}) {
+  return _then(_self.copyWith(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
+as String?,phoneNumber: freezed == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
+as String?,displayName: freezed == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [StatusPrivacyContact].
+extension StatusPrivacyContactPatterns on StatusPrivacyContact {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _StatusPrivacyContact value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyContact() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _StatusPrivacyContact value)  $default,){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyContact():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _StatusPrivacyContact value)?  $default,){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyContact() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String? username,  String? phoneNumber,  String? displayName,  String? profilePictureUrl)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _StatusPrivacyContact() when $default != null:
+return $default(_that.id,_that.username,_that.phoneNumber,_that.displayName,_that.profilePictureUrl);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String? username,  String? phoneNumber,  String? displayName,  String? profilePictureUrl)  $default,) {final _that = this;
+switch (_that) {
+case _StatusPrivacyContact():
+return $default(_that.id,_that.username,_that.phoneNumber,_that.displayName,_that.profilePictureUrl);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String? username,  String? phoneNumber,  String? displayName,  String? profilePictureUrl)?  $default,) {final _that = this;
+switch (_that) {
+case _StatusPrivacyContact() when $default != null:
+return $default(_that.id,_that.username,_that.phoneNumber,_that.displayName,_that.profilePictureUrl);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _StatusPrivacyContact implements StatusPrivacyContact {
+  const _StatusPrivacyContact({required this.id, this.username, this.phoneNumber, this.displayName, this.profilePictureUrl});
+  factory _StatusPrivacyContact.fromJson(Map<String, dynamic> json) => _$StatusPrivacyContactFromJson(json);
+
+@override final  String id;
+@override final  String? username;
+@override final  String? phoneNumber;
+@override final  String? displayName;
+@override final  String? profilePictureUrl;
+
+/// Create a copy of StatusPrivacyContact
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$StatusPrivacyContactCopyWith<_StatusPrivacyContact> get copyWith => __$StatusPrivacyContactCopyWithImpl<_StatusPrivacyContact>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$StatusPrivacyContactToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusPrivacyContact&&(identical(other.id, id) || other.id == id)&&(identical(other.username, username) || other.username == username)&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,id,username,phoneNumber,displayName,profilePictureUrl);
+
+@override
+String toString() {
+  return 'StatusPrivacyContact(id: $id, username: $username, phoneNumber: $phoneNumber, displayName: $displayName, profilePictureUrl: $profilePictureUrl)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$StatusPrivacyContactCopyWith<$Res> implements $StatusPrivacyContactCopyWith<$Res> {
+  factory _$StatusPrivacyContactCopyWith(_StatusPrivacyContact value, $Res Function(_StatusPrivacyContact) _then) = __$StatusPrivacyContactCopyWithImpl;
+@override @useResult
+$Res call({
+ String id, String? username, String? phoneNumber, String? displayName, String? profilePictureUrl
+});
+
+
+
+
+}
+/// @nodoc
+class __$StatusPrivacyContactCopyWithImpl<$Res>
+    implements _$StatusPrivacyContactCopyWith<$Res> {
+  __$StatusPrivacyContactCopyWithImpl(this._self, this._then);
+
+  final _StatusPrivacyContact _self;
+  final $Res Function(_StatusPrivacyContact) _then;
+
+/// Create a copy of StatusPrivacyContact
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? username = freezed,Object? phoneNumber = freezed,Object? displayName = freezed,Object? profilePictureUrl = freezed,}) {
+  return _then(_StatusPrivacyContact(
+id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
+as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
+as String?,phoneNumber: freezed == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
+as String?,displayName: freezed == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$StatusPrivacyModel {
+
+@JsonKey(name: 'privacyType', defaultValue: 'ALL') String? get privacyType;@JsonKey(name: 'includedUserIds') List<String> get includedUserIds;@JsonKey(name: 'excludedUserIds') List<String> get excludedUserIds;@JsonKey(name: 'includedContacts') List<StatusPrivacyContact> get includedContacts;@JsonKey(name: 'excludedContacts') List<StatusPrivacyContact> get excludedContacts;@JsonKey(name: 'updatedAt') int? get updatedAt;
+/// Create a copy of StatusPrivacyModel
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$StatusPrivacyModelCopyWith<StatusPrivacyModel> get copyWith => _$StatusPrivacyModelCopyWithImpl<StatusPrivacyModel>(this as StatusPrivacyModel, _$identity);
+
+  /// Serializes this StatusPrivacyModel to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusPrivacyModel&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other.includedUserIds, includedUserIds)&&const DeepCollectionEquality().equals(other.excludedUserIds, excludedUserIds)&&const DeepCollectionEquality().equals(other.includedContacts, includedContacts)&&const DeepCollectionEquality().equals(other.excludedContacts, excludedContacts)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,privacyType,const DeepCollectionEquality().hash(includedUserIds),const DeepCollectionEquality().hash(excludedUserIds),const DeepCollectionEquality().hash(includedContacts),const DeepCollectionEquality().hash(excludedContacts),updatedAt);
+
+@override
+String toString() {
+  return 'StatusPrivacyModel(privacyType: $privacyType, includedUserIds: $includedUserIds, excludedUserIds: $excludedUserIds, includedContacts: $includedContacts, excludedContacts: $excludedContacts, updatedAt: $updatedAt)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $StatusPrivacyModelCopyWith<$Res>  {
+  factory $StatusPrivacyModelCopyWith(StatusPrivacyModel value, $Res Function(StatusPrivacyModel) _then) = _$StatusPrivacyModelCopyWithImpl;
+@useResult
+$Res call({
+@JsonKey(name: 'privacyType', defaultValue: 'ALL') String? privacyType,@JsonKey(name: 'includedUserIds') List<String> includedUserIds,@JsonKey(name: 'excludedUserIds') List<String> excludedUserIds,@JsonKey(name: 'includedContacts') List<StatusPrivacyContact> includedContacts,@JsonKey(name: 'excludedContacts') List<StatusPrivacyContact> excludedContacts,@JsonKey(name: 'updatedAt') int? updatedAt
+});
+
+
+
+
+}
+/// @nodoc
+class _$StatusPrivacyModelCopyWithImpl<$Res>
+    implements $StatusPrivacyModelCopyWith<$Res> {
+  _$StatusPrivacyModelCopyWithImpl(this._self, this._then);
+
+  final StatusPrivacyModel _self;
+  final $Res Function(StatusPrivacyModel) _then;
+
+/// Create a copy of StatusPrivacyModel
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? privacyType = freezed,Object? includedUserIds = null,Object? excludedUserIds = null,Object? includedContacts = null,Object? excludedContacts = null,Object? updatedAt = freezed,}) {
+  return _then(_self.copyWith(
+privacyType: freezed == privacyType ? _self.privacyType : privacyType // ignore: cast_nullable_to_non_nullable
+as String?,includedUserIds: null == includedUserIds ? _self.includedUserIds : includedUserIds // ignore: cast_nullable_to_non_nullable
+as List<String>,excludedUserIds: null == excludedUserIds ? _self.excludedUserIds : excludedUserIds // ignore: cast_nullable_to_non_nullable
+as List<String>,includedContacts: null == includedContacts ? _self.includedContacts : includedContacts // ignore: cast_nullable_to_non_nullable
+as List<StatusPrivacyContact>,excludedContacts: null == excludedContacts ? _self.excludedContacts : excludedContacts // ignore: cast_nullable_to_non_nullable
+as List<StatusPrivacyContact>,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as int?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [StatusPrivacyModel].
+extension StatusPrivacyModelPatterns on StatusPrivacyModel {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _StatusPrivacyModel value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyModel() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _StatusPrivacyModel value)  $default,){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyModel():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _StatusPrivacyModel value)?  $default,){
+final _that = this;
+switch (_that) {
+case _StatusPrivacyModel() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'privacyType', defaultValue: 'ALL')  String? privacyType, @JsonKey(name: 'includedUserIds')  List<String> includedUserIds, @JsonKey(name: 'excludedUserIds')  List<String> excludedUserIds, @JsonKey(name: 'includedContacts')  List<StatusPrivacyContact> includedContacts, @JsonKey(name: 'excludedContacts')  List<StatusPrivacyContact> excludedContacts, @JsonKey(name: 'updatedAt')  int? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _StatusPrivacyModel() when $default != null:
+return $default(_that.privacyType,_that.includedUserIds,_that.excludedUserIds,_that.includedContacts,_that.excludedContacts,_that.updatedAt);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'privacyType', defaultValue: 'ALL')  String? privacyType, @JsonKey(name: 'includedUserIds')  List<String> includedUserIds, @JsonKey(name: 'excludedUserIds')  List<String> excludedUserIds, @JsonKey(name: 'includedContacts')  List<StatusPrivacyContact> includedContacts, @JsonKey(name: 'excludedContacts')  List<StatusPrivacyContact> excludedContacts, @JsonKey(name: 'updatedAt')  int? updatedAt)  $default,) {final _that = this;
+switch (_that) {
+case _StatusPrivacyModel():
+return $default(_that.privacyType,_that.includedUserIds,_that.excludedUserIds,_that.includedContacts,_that.excludedContacts,_that.updatedAt);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'privacyType', defaultValue: 'ALL')  String? privacyType, @JsonKey(name: 'includedUserIds')  List<String> includedUserIds, @JsonKey(name: 'excludedUserIds')  List<String> excludedUserIds, @JsonKey(name: 'includedContacts')  List<StatusPrivacyContact> includedContacts, @JsonKey(name: 'excludedContacts')  List<StatusPrivacyContact> excludedContacts, @JsonKey(name: 'updatedAt')  int? updatedAt)?  $default,) {final _that = this;
+switch (_that) {
+case _StatusPrivacyModel() when $default != null:
+return $default(_that.privacyType,_that.includedUserIds,_that.excludedUserIds,_that.includedContacts,_that.excludedContacts,_that.updatedAt);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _StatusPrivacyModel implements StatusPrivacyModel {
+  const _StatusPrivacyModel({@JsonKey(name: 'privacyType', defaultValue: 'ALL') this.privacyType, @JsonKey(name: 'includedUserIds') final  List<String> includedUserIds = const [], @JsonKey(name: 'excludedUserIds') final  List<String> excludedUserIds = const [], @JsonKey(name: 'includedContacts') final  List<StatusPrivacyContact> includedContacts = const [], @JsonKey(name: 'excludedContacts') final  List<StatusPrivacyContact> excludedContacts = const [], @JsonKey(name: 'updatedAt') this.updatedAt}): _includedUserIds = includedUserIds,_excludedUserIds = excludedUserIds,_includedContacts = includedContacts,_excludedContacts = excludedContacts;
+  factory _StatusPrivacyModel.fromJson(Map<String, dynamic> json) => _$StatusPrivacyModelFromJson(json);
+
+@override@JsonKey(name: 'privacyType', defaultValue: 'ALL') final  String? privacyType;
+ final  List<String> _includedUserIds;
+@override@JsonKey(name: 'includedUserIds') List<String> get includedUserIds {
+  if (_includedUserIds is EqualUnmodifiableListView) return _includedUserIds;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_includedUserIds);
+}
+
+ final  List<String> _excludedUserIds;
+@override@JsonKey(name: 'excludedUserIds') List<String> get excludedUserIds {
+  if (_excludedUserIds is EqualUnmodifiableListView) return _excludedUserIds;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_excludedUserIds);
+}
+
+ final  List<StatusPrivacyContact> _includedContacts;
+@override@JsonKey(name: 'includedContacts') List<StatusPrivacyContact> get includedContacts {
+  if (_includedContacts is EqualUnmodifiableListView) return _includedContacts;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_includedContacts);
+}
+
+ final  List<StatusPrivacyContact> _excludedContacts;
+@override@JsonKey(name: 'excludedContacts') List<StatusPrivacyContact> get excludedContacts {
+  if (_excludedContacts is EqualUnmodifiableListView) return _excludedContacts;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_excludedContacts);
+}
+
+@override@JsonKey(name: 'updatedAt') final  int? updatedAt;
+
+/// Create a copy of StatusPrivacyModel
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$StatusPrivacyModelCopyWith<_StatusPrivacyModel> get copyWith => __$StatusPrivacyModelCopyWithImpl<_StatusPrivacyModel>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$StatusPrivacyModelToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusPrivacyModel&&(identical(other.privacyType, privacyType) || other.privacyType == privacyType)&&const DeepCollectionEquality().equals(other._includedUserIds, _includedUserIds)&&const DeepCollectionEquality().equals(other._excludedUserIds, _excludedUserIds)&&const DeepCollectionEquality().equals(other._includedContacts, _includedContacts)&&const DeepCollectionEquality().equals(other._excludedContacts, _excludedContacts)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,privacyType,const DeepCollectionEquality().hash(_includedUserIds),const DeepCollectionEquality().hash(_excludedUserIds),const DeepCollectionEquality().hash(_includedContacts),const DeepCollectionEquality().hash(_excludedContacts),updatedAt);
+
+@override
+String toString() {
+  return 'StatusPrivacyModel(privacyType: $privacyType, includedUserIds: $includedUserIds, excludedUserIds: $excludedUserIds, includedContacts: $includedContacts, excludedContacts: $excludedContacts, updatedAt: $updatedAt)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$StatusPrivacyModelCopyWith<$Res> implements $StatusPrivacyModelCopyWith<$Res> {
+  factory _$StatusPrivacyModelCopyWith(_StatusPrivacyModel value, $Res Function(_StatusPrivacyModel) _then) = __$StatusPrivacyModelCopyWithImpl;
+@override @useResult
+$Res call({
+@JsonKey(name: 'privacyType', defaultValue: 'ALL') String? privacyType,@JsonKey(name: 'includedUserIds') List<String> includedUserIds,@JsonKey(name: 'excludedUserIds') List<String> excludedUserIds,@JsonKey(name: 'includedContacts') List<StatusPrivacyContact> includedContacts,@JsonKey(name: 'excludedContacts') List<StatusPrivacyContact> excludedContacts,@JsonKey(name: 'updatedAt') int? updatedAt
+});
+
+
+
+
+}
+/// @nodoc
+class __$StatusPrivacyModelCopyWithImpl<$Res>
+    implements _$StatusPrivacyModelCopyWith<$Res> {
+  __$StatusPrivacyModelCopyWithImpl(this._self, this._then);
+
+  final _StatusPrivacyModel _self;
+  final $Res Function(_StatusPrivacyModel) _then;
+
+/// Create a copy of StatusPrivacyModel
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? privacyType = freezed,Object? includedUserIds = null,Object? excludedUserIds = null,Object? includedContacts = null,Object? excludedContacts = null,Object? updatedAt = freezed,}) {
+  return _then(_StatusPrivacyModel(
+privacyType: freezed == privacyType ? _self.privacyType : privacyType // ignore: cast_nullable_to_non_nullable
+as String?,includedUserIds: null == includedUserIds ? _self._includedUserIds : includedUserIds // ignore: cast_nullable_to_non_nullable
+as List<String>,excludedUserIds: null == excludedUserIds ? _self._excludedUserIds : excludedUserIds // ignore: cast_nullable_to_non_nullable
+as List<String>,includedContacts: null == includedContacts ? _self._includedContacts : includedContacts // ignore: cast_nullable_to_non_nullable
+as List<StatusPrivacyContact>,excludedContacts: null == excludedContacts ? _self._excludedContacts : excludedContacts // ignore: cast_nullable_to_non_nullable
+as List<StatusPrivacyContact>,updatedAt: freezed == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

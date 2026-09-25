@@ -11,6 +11,7 @@ abstract class StatusRepository {
     required String statusType,
     String? textContent,
     String? mediaFileId,
+    String? textColor,
     String? filePath,
     String? fileName,
     String? mimeType,
@@ -19,7 +20,16 @@ abstract class StatusRepository {
     String? privacyType,
     List<String>? privacyUserIds,
   });
+
   Future<List<StatusItemModel>> getMyStatuses();
   Future<void> deleteStatus(String statusId);
   Future<void> viewStatus(String statusId);
+  Future<StatusPrivacyModel> getStatusPrivacy();
+  Future<StatusPrivacyModel> updateStatusPrivacy({
+    required String privacyType,
+    List<String>? includedUserIds,
+    List<String>? excludedUserIds,
+  });
 }
+
+
