@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:another_flushbar/flushbar.dart';
 import 'package:flutter/material.dart';
 import 'package:schat/main.dart';
 import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 
@@ -316,7 +314,7 @@ class _InAppNotificationBannerWidgetState extends State<_InAppNotificationBanner
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 300),
     );
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, -0.6),
@@ -344,18 +342,12 @@ class _InAppNotificationBannerWidgetState extends State<_InAppNotificationBanner
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    final topPadding = mediaQuery.padding.top > 0 ? mediaQuery.padding.top + 6 : 16.0;
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final primaryTextColor = isDarkMode ? Colors.white : const Color(0xFF111B21);
-    final secondaryTextColor = isDarkMode ? const Color(0xFFA0AEC0) : const Color(0xFF64748B);
-    final borderHighlightColor = isDarkMode
-        ? Colors.white.withValues(alpha: 0.22)
-        : Colors.white.withValues(alpha: 0.75);
+    final topPadding = mediaQuery.padding.top > 0 ? mediaQuery.padding.top + 8 : 16.0;
 
     return Positioned(
       top: topPadding,
-      left: 14,
-      right: 14,
+      left: 12,
+      right: 12,
       child: Material(
         color: Colors.transparent,
         child: SlideTransition(
@@ -371,137 +363,126 @@ class _InAppNotificationBannerWidgetState extends State<_InAppNotificationBanner
               },
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(32),
+                  color: const Color(0xFF383B3E),
+                  borderRadius: BorderRadius.circular(22),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDarkMode ? 0.40 : 0.14),
-                      offset: const Offset(0, 10),
-                      blurRadius: 28,
+                      color: Colors.black.withValues(alpha: 0.35),
+                      offset: const Offset(0, 8),
+                      blurRadius: 24,
                       spreadRadius: 0,
                     ),
                   ],
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(32),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 18, 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: isDarkMode
-                              ? [
-                                  const Color(0xFF222831).withValues(alpha: 0.85),
-                                  const Color(0xFF1B2028).withValues(alpha: 0.92),
-                                ]
-                              : [
-                                  Colors.white.withValues(alpha: 0.88),
-                                  const Color(0xFFF1F5F9).withValues(alpha: 0.94),
-                                ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Circular Avatar with App Icon Badge
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF4A4E54),
+                          ),
+                          child: ClipOval(
+                            child: (widget.profilePictureUrl != null &&
+                                    widget.profilePictureUrl!.trim().isNotEmpty)
+                                ? Image.network(
+                                    widget.profilePictureUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        _buildNotificationAvatarPlaceholder(widget.senderName),
+                                  )
+                                : _buildNotificationAvatarPlaceholder(widget.senderName),
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(32),
-                        border: Border.all(
-                          color: borderHighlightColor,
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Squircle Avatar: User Profile Picture or SChat Logo
-                          Container(
-                            width: 44,
-                            height: 44,
+                        // Small App Icon Badge in Bottom-Right
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 18,
+                            height: 18,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(13),
+                              color: const Color(0xFF25D366),
+                              shape: BoxShape.circle,
                               border: Border.all(
-                                color: isDarkMode
-                                    ? Colors.white.withValues(alpha: 0.18)
-                                    : Colors.black.withValues(alpha: 0.08),
-                                width: 1,
+                                color: const Color(0xFF383B3E),
+                                width: 2,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.12),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
                             ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: (widget.profilePictureUrl != null &&
-                                      widget.profilePictureUrl!.trim().isNotEmpty)
-                                  ? Image.network(
-                                      widget.profilePictureUrl!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
-                                          _buildNotificationAppLogo(),
-                                    )
-                                  : _buildNotificationAppLogo(),
+                            child: const Center(
+                              child: Icon(
+                                Icons.chat_bubble_rounded,
+                                color: Colors.white,
+                                size: 9,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 14),
-                          // Content Column (Sender Name + now timestamp, message preview)
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                                  textBaseline: TextBaseline.alphabetic,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        widget.senderName,
-                                        style: TextStyle(
-                                          fontSize: 15.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: primaryTextColor,
-                                          fontFamily: CommonFonts.primaryFont,
-                                          letterSpacing: -0.2,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'now',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w500,
-                                        color: secondaryTextColor,
-                                        fontFamily: CommonFonts.primaryFont,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  widget.messageText,
-                                  style: TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w400,
-                                    color: secondaryTextColor,
-                                    fontFamily: CommonFonts.primaryFont,
-                                    height: 1.25,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 14),
+
+                    // Content Column (Sender Name + now + chevron, Message text)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  widget.senderName,
+                                  style: const TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    letterSpacing: -0.1,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'now',
+                                style: TextStyle(
+                                  fontSize: 12.0,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white60,
+                                ),
+                              ),
+                              const Spacer(),
+                              const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Colors.white54,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.messageText,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              height: 1.25,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -512,25 +493,21 @@ class _InAppNotificationBannerWidgetState extends State<_InAppNotificationBanner
   }
 }
 
-Widget _buildNotificationAppLogo() {
+Widget _buildNotificationAvatarPlaceholder(String name) {
+  final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : 'S';
   return Container(
     width: 44,
     height: 44,
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Color(0xFF25D366), Color(0xFF128C7E)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-    ),
-    padding: const EdgeInsets.all(7),
-    child: Image.asset(
-      CommonIcons.logo,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) => const Center(
-        child: Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 22),
+    color: const Color(0xFF00873C),
+    child: Center(
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+        ),
       ),
     ),
   );
 }
-
