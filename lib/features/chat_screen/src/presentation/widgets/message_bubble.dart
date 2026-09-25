@@ -23,6 +23,8 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/core/services/link_metadata_service.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/link_preview_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -2645,79 +2647,105 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
 
     final RegExp urlRegex = RegExp(
-      r'(https?://\S+|www\.\S+)',
+      r'(https?://[^\s<>"{}|\^`]+|www\.[^\s<>"{}|\^`]+)',
       caseSensitive: false,
     );
 
     final matches = urlRegex.allMatches(text);
+    final String? firstUrl = LinkMetadataService.extractFirstUrl(text);
+
+    Widget contentWidget;
+
     if (matches.isEmpty) {
-      return Text(
+      contentWidget = Text(
         text,
         style: baseStyle,
       );
-    }
+    } else {
+      final List<InlineSpan> spans = [];
+      int lastEnd = 0;
 
-    final List<InlineSpan> spans = [];
-    int lastEnd = 0;
+      for (final match in matches) {
+        if (match.start > lastEnd) {
+          spans.add(TextSpan(
+            text: text.substring(lastEnd, match.start),
+          ));
+        }
 
-    for (final match in matches) {
-      if (match.start > lastEnd) {
+        final rawUrl = text.substring(match.start, match.end);
+        final cleanUrl = rawUrl.replaceAll(RegExp(r'[.,)>\];]+$'), '');
+        final trailingPunctuation = rawUrl.substring(cleanUrl.length);
+        final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
+
         spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
+          text: cleanUrl,
+          style: context.bodyMedium.copyWith(
+            color: linkColor,
+            decoration: TextDecoration.underline,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () async {
+              var openUrl = cleanUrl;
+              if (openUrl.toLowerCase().startsWith('www.')) {
+                openUrl = 'https://$openUrl';
+              }
+              final uri = Uri.tryParse(openUrl);
+              if (uri != null) {
+                try {
+                  final can = await canLaunchUrl(uri);
+                  if (can) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else {
+                    if (context.mounted) {
+                      context.showErrorNotification('Could not open link');
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('Error launching url: $e');
+                  if (context.mounted) {
+                    context.showErrorNotification('Error opening link');
+                  }
+                }
+              }
+            },
+        ));
+
+        if (trailingPunctuation.isNotEmpty) {
+          spans.add(TextSpan(text: trailingPunctuation));
+        }
+
+        lastEnd = match.end;
+      }
+
+      if (lastEnd < text.length) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd),
         ));
       }
 
-      final url = text.substring(match.start, match.end);
-      final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
-
-      spans.add(TextSpan(
-        text: url,
-        style: context.bodyMedium.copyWith(
-          color: linkColor,
-          decoration: TextDecoration.underline,
+      contentWidget = RichText(
+        text: TextSpan(
+          style: baseStyle,
+          children: spans,
         ),
-        recognizer: TapGestureRecognizer()
-          ..onTap = () async {
-            var openUrl = url;
-            if (openUrl.toLowerCase().startsWith('www.')) {
-              openUrl = 'https://$openUrl';
-            }
-            final uri = Uri.tryParse(openUrl);
-            if (uri != null) {
-              try {
-                final can = await canLaunchUrl(uri);
-                if (can) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                } else {
-                  if (context.mounted) {
-                    context.showErrorNotification('Could not open link');
-                  }
-                }
-              } catch (e) {
-                debugPrint('Error launching url: $e');
-                if (context.mounted) {
-                  context.showErrorNotification('Error opening link');
-                }
-              }
-            }
-          },
-      ));
-
-      lastEnd = match.end;
+      );
     }
 
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-      ));
+    if (firstUrl != null && !isDeleted) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LinkPreviewCard(
+            url: firstUrl,
+            isMe: isMe,
+          ),
+          contentWidget,
+        ],
+      );
     }
 
-    return RichText(
-      text: TextSpan(
-        style: baseStyle,
-        children: spans,
-      ),
-    );
+    return contentWidget;
   }
 
   bool _isGroupEvent(String msg) {
