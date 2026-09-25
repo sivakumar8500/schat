@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
+import 'package:fast_contacts/fast_contacts.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:injectable/injectable.dart';
@@ -26,6 +27,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   ) : super(const ContactsInitial()) {
     on<LoadContacts>(_onLoadContacts);
     on<SyncContactsEvent>(_onSyncContacts);
+    on<DiscoverContactsEvent>(_onDiscoverContacts);
     on<RemoveContact>(_onRemoveContact);
     on<UpdateContactStatus>(_onUpdateContactStatus);
 
@@ -129,6 +131,34 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     }
   }
 
+  Future<void> _onDiscoverContacts(
+    DiscoverContactsEvent event,
+    Emitter<ContactsState> emit,
+  ) async {
+    try {
+      final result = await _contactsRepository.discoverUsers(query: event.query);
+      if (result is Success<List<UserModel>>) {
+        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+        final filtered = result.data.where((u) => !hidden.contains(u.phoneNumber)).toList();
+        
+        List<Contact> existingContacts = [];
+        if (state is ContactsLoaded) {
+          existingContacts = (state as ContactsLoaded).contacts;
+        }
+        
+        emit(
+          ContactsLoaded(
+            contacts: existingContacts,
+            syncedContacts: filtered,
+            hiddenPhoneNumbers: hidden,
+          ),
+        );
+      }
+    } catch (e) {
+      log('Error in _onDiscoverContacts: $e');
+    }
+  }
+
   Future<void> _onLoadContacts(
     LoadContacts event,
     Emitter<ContactsState> emit,
@@ -141,8 +171,13 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         var cachedUsers = await _contactsRepository.getCachedContacts();
         if (cachedUsers.isEmpty) {
           final serverResult = await _contactsRepository.fetchSyncedContacts();
-          if (serverResult is Success<List<UserModel>>) {
+          if (serverResult is Success<List<UserModel>> && serverResult.data.isNotEmpty) {
             cachedUsers = serverResult.data;
+          } else {
+            final discoverResult = await _contactsRepository.discoverUsers();
+            if (discoverResult is Success<List<UserModel>>) {
+              cachedUsers = discoverResult.data;
+            }
           }
         }
         final hidden = await _contactsRepository.getHiddenPhoneNumbers();
@@ -164,13 +199,19 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       if (status.isGranted) {
         await _loadAndSync(emit);
       } else {
-        final cachedUsers = await _contactsRepository.getCachedContacts();
+        var cachedUsers = await _contactsRepository.getCachedContacts();
         final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+        if (cachedUsers.isEmpty) {
+          final discoverResult = await _contactsRepository.discoverUsers();
+          if (discoverResult is Success<List<UserModel>>) {
+            cachedUsers = discoverResult.data;
+          }
+        }
         if (cachedUsers.isNotEmpty) {
           emit(
             ContactsLoaded(
               contacts: const [],
-              syncedContacts: cachedUsers,
+              syncedContacts: cachedUsers.where((u) => !hidden.contains(u.phoneNumber)).toList(),
               hiddenPhoneNumbers: hidden,
             ),
           );
@@ -183,7 +224,19 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
           if (requestStatus.isGranted) {
             await _loadAndSync(emit);
           } else {
-            emit(const ContactsPermissionDenied());
+            // Even if permission is denied, show discovered registered users
+            final discoverResult = await _contactsRepository.discoverUsers();
+            if (discoverResult is Success<List<UserModel>> && discoverResult.data.isNotEmpty) {
+              emit(
+                ContactsLoaded(
+                  contacts: const [],
+                  syncedContacts: discoverResult.data.where((u) => !hidden.contains(u.phoneNumber)).toList(),
+                  hiddenPhoneNumbers: hidden,
+                ),
+              );
+            } else {
+              emit(const ContactsPermissionDenied());
+            }
           }
         }
       }
@@ -203,14 +256,28 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
       if (cachedUsers.isEmpty) {
         final serverResult = await _contactsRepository.fetchSyncedContacts();
-        if (serverResult is Success<List<UserModel>>) {
+        if (serverResult is Success<List<UserModel>> && serverResult.data.isNotEmpty) {
           cachedUsers = serverResult.data;
+        } else {
+          final discoverResult = await _contactsRepository.discoverUsers();
+          if (discoverResult is Success<List<UserModel>>) {
+            cachedUsers = discoverResult.data;
+          }
         }
       }
 
-      final filteredCached = cachedUsers
+      var filteredCached = cachedUsers
           .where((u) => !hidden.contains(u.phoneNumber))
           .toList();
+
+      if (filteredCached.isEmpty) {
+        final discoverResult = await _contactsRepository.discoverUsers();
+        if (discoverResult is Success<List<UserModel>>) {
+          filteredCached = discoverResult.data
+              .where((u) => !hidden.contains(u.phoneNumber))
+              .toList();
+        }
+      }
 
       emit(
         ContactsLoaded(
@@ -225,7 +292,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         final syncData = _extractSyncData(contacts);
         if (syncData.isNotEmpty) {
           final result = await _contactsRepository.syncContacts(syncData);
-          if (result is Success<List<UserModel>>) {
+          if (result is Success<List<UserModel>> && result.data.isNotEmpty) {
             final filteredResult = result.data
                 .where((u) => !hidden.contains(u.phoneNumber))
                 .toList();

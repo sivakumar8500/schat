@@ -34,13 +34,14 @@ class CallHistoryRepositoryImpl implements CallHistoryRepository {
         },
       );
 
-      return result.when(
+      final history = result.when(
         success: (data) => data,
         failure: (message, statusCode) {
           debugPrint('Error fetching call history: $message (code: $statusCode)');
           return <CallHistoryModel>[];
         },
       );
+      return history;
     } catch (e, stack) {
       debugPrint('Exception in getCallHistory: $e\n$stack');
       return <CallHistoryModel>[];

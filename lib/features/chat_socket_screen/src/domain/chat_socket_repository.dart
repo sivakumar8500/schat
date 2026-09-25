@@ -83,6 +83,7 @@ abstract class ChatSocketRepository {
     Map<String, dynamic>? data,
   });
   void sendPing();
+  void onAppResumed();
   bool get isConnected;
   Stream<dynamic> get onMessage;
   List<SocketEventLog> get eventLogs;
@@ -102,6 +103,17 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   bool _isConnected = false;
 
   ChatSocketRepositoryImpl(this._storageService);
+
+  @override
+  void onAppResumed() {
+    _lastPongReceived = DateTime.now();
+    if (!_isConnected) {
+      debugPrint('ChatSocketRepository: App resumed and socket disconnected — reconnecting...');
+      connect();
+    } else {
+      sendPing();
+    }
+  }
 
   @override
   Stream<SocketEventLog> get onEventLog => _eventLogController.stream;

@@ -23,7 +23,9 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
 
   Future<void> _onLoadStatusUpdates(LoadStatusUpdatesEvent event, Emitter<StatusState> emit) async {
     final currentState = state;
-    emit(const StatusLoading());
+    if (currentState is! StatusLoaded) {
+      emit(const StatusLoading());
+    }
     try {
       final results = await Future.wait([
         _repository.getRecentUpdates(),
@@ -37,11 +39,24 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
       final muted = results[2] as List<StatusContactModel>;
       final privacy = results[3] as StatusPrivacyModel;
 
+      String? myText;
+      String? myPath;
+      DateTime? myTime;
+      if (myStatuses.isNotEmpty) {
+        final latest = myStatuses.first;
+        myText = latest.text;
+        myPath = latest.imagePath;
+        myTime = latest.timestamp;
+      }
+
       if (currentState is StatusLoaded) {
         emit(currentState.copyWith(
           recentUpdates: recent,
           mutedUpdates: muted,
           myStatuses: myStatuses,
+          myStatusText: () => myText,
+          myStatusPath: () => myPath,
+          myStatusTime: () => myTime,
           privacyModel: privacy,
         ));
       } else {
@@ -49,11 +64,18 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
           recentUpdates: recent,
           mutedUpdates: muted,
           myStatuses: myStatuses,
+          myStatusText: myText,
+          myStatusPath: myPath,
+          myStatusTime: myTime,
           privacyModel: privacy,
         ));
       }
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      if (currentState is StatusLoaded) {
+        emit(currentState);
+      } else {
+        emit(StatusFailure(errorMessage: e.toString()));
+      }
     }
   }
 
@@ -61,7 +83,6 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
 
 
   Future<void> _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) async {
-    emit(const StatusLoading());
     try {
       await _repository.createStatus(
         statusType: 'text',
@@ -70,16 +91,14 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
       );
-      add(const LoadStatusUpdatesEvent());
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      // Log and continue to reload
     }
+    add(const LoadStatusUpdatesEvent());
   }
 
 
   Future<void> _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) async {
-    emit(const StatusLoading());
-
     try {
       await _repository.createStatus(
         statusType: event.path != null && event.path!.endsWith('.mp4') ? 'video' : 'image',
@@ -92,10 +111,10 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
       );
-      add(const LoadStatusUpdatesEvent());
     } catch (e) {
-      emit(StatusFailure(errorMessage: e.toString()));
+      // Log and continue to reload
     }
+    add(const LoadStatusUpdatesEvent());
   }
 
   Future<void> _onMuteContact(MuteContactEvent event, Emitter<StatusState> emit) async {

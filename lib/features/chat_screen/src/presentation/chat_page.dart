@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -15,6 +16,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 
 import 'package:schat/utils/common_strings.dart';
@@ -38,6 +40,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_
 import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
+import 'widgets/request_screen_permission_bottom_sheet.dart';
 import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
@@ -46,6 +49,8 @@ import 'shared_media_page.dart';
 import 'attachment_preview_page.dart';
 import 'package:schat/utils/permission_helper.dart';
 import '../../../call_screen/call_screen.dart';
+import 'widgets/chat_theme_bottom_sheet.dart';
+import 'package:schat/utils/common_endpoints.dart';
 import '../domain/models/message_model.dart';
 import '../domain/models/chat_media_model.dart';
 import '../domain/models/theme_color_model.dart';
@@ -66,11 +71,13 @@ class ChatPage extends StatefulWidget {
   final String recipientId;
   final bool isGroup;
   final ThemeColorModel? initialThemeColor;
+  final String? initialCustomWallpaperUrl;
   final String? initialSharedText;
   final String? initialSharedFilePath;
   final String? initialSharedFileName;
   final String? initialSharedFileType;
   final int? initialDisappearingTimer;
+  final bool isReadOnly;
 
   const ChatPage({
     super.key,
@@ -82,11 +89,13 @@ class ChatPage extends StatefulWidget {
     this.isGroup = false,
     this.profilePictureUrl,
     this.initialThemeColor,
+    this.initialCustomWallpaperUrl,
     this.initialSharedText,
     this.initialSharedFilePath,
     this.initialSharedFileName,
     this.initialSharedFileType,
     this.initialDisappearingTimer,
+    this.isReadOnly = false,
   });
 
   @override
@@ -107,6 +116,11 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _typingIndicatorTimer;
   late CallWebRtcBloc _callWebRtcBloc;
   StreamSubscription? _callSocketSubscription;
+  StreamSubscription? _screenshotSubscription;
+  Timer? _screenRecordTimer;
+  String? _activeScreenRecordPermissionId;
+  Timer? _screenshotAutoExpireTimer;
+  String? _activeScreenshotPermissionId;
 
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
@@ -140,7 +154,6 @@ class _ChatPageState extends State<ChatPage> {
   int _previewPositionSecs = 0;
   Timer? _previewPositionTimer;
 
-  StreamSubscription? _screenshotSubscription;
   bool _isAdmin = false;
 
   @override
@@ -157,11 +170,16 @@ class _ChatPageState extends State<ChatPage> {
       }
     });
     debugPrint('DEBUG: ChatPage Initializing for conv: ${widget.conversationId}, recipient: ${widget.recipientId}, initialOnline: ${widget.isOnline}');
+    getIt<InAppNotificationService>().setActiveChat(
+      conversationId: widget.conversationId,
+      recipientId: widget.recipientId,
+    );
     _chatBloc = ChatBloc()..add(LoadMessagesEvent(
       conversationId: widget.conversationId,
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
       initialThemeColor: widget.initialThemeColor,
+      initialCustomWallpaperUrl: widget.initialCustomWallpaperUrl,
     ));
 
     // Pre-populate with shared text if provided
@@ -173,8 +191,6 @@ class _ChatPageState extends State<ChatPage> {
     // Init CallWebRtcBloc and listen for incoming call socket events
     _callWebRtcBloc = getIt<CallWebRtcBloc>();
     // _listenForCallEvents(); // CallWebRtcBloc now listens to socket internally
-
-    _setupScreenshotListener();
 
     // Listen to preview player events
     _previewPlayer.onPlayerComplete.listen((_) {
@@ -190,6 +206,31 @@ class _ChatPageState extends State<ChatPage> {
         setState(() {
           _previewPositionSecs = p.inSeconds;
         });
+      }
+    });
+
+    // Listen for screenshots to decrement allowed count and auto turn off
+    _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
+      final state = _chatBloc.state;
+      if (state is ChatLoaded && state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot) {
+        final perm = state.activeScreenPermission!;
+        final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+        final newRemaining = currentRemaining - 1;
+        debugPrint('ScreenProtection: Screenshot taken! newRemaining=$newRemaining / ${perm.allowedCount}');
+
+        if (newRemaining <= 0) {
+          // Immediately re-enable protection locally with 0 delay so no further screenshots are possible!
+          getIt<ScreenProtectionService>().enableProtection();
+          if (mounted) {
+            context.showInfoNotification('All allowed screenshot(s) taken (${perm.allowedCount}/${perm.allowedCount}). Protection re-enabled.');
+          }
+        } else {
+          if (mounted) {
+            context.showInfoNotification('Screenshot taken. $newRemaining of ${perm.allowedCount} screenshot(s) remaining.');
+          }
+        }
+
+        _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
       }
     });
   }
@@ -1409,15 +1450,6 @@ class _ChatPageState extends State<ChatPage> {
   }
 
 
-  void _setupScreenshotListener() {
-    final securityService = getIt<ScreenProtectionService>();
-    _screenshotSubscription = securityService.onScreenshot.listen((_) {
-      if (mounted) {
-        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
-      }
-    });
-  }
-
   Future<void> _checkIfAdmin() async {
     if (!widget.isGroup) return;
     try {
@@ -1447,8 +1479,14 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
-    _screenshotSubscription?.cancel();
+    getIt<InAppNotificationService>().clearActiveChat();
     _callSocketSubscription?.cancel();
+    _screenshotSubscription?.cancel();
+    _screenRecordTimer?.cancel();
+    _screenRecordTimer = null;
+    _screenshotAutoExpireTimer?.cancel();
+    _screenshotAutoExpireTimer = null;
+    getIt<ScreenProtectionService>().enableProtection();
     _stopTypingTimer();
     _messageController.dispose();
     _inputFocusNode.dispose();
@@ -1804,11 +1842,27 @@ class _ChatPageState extends State<ChatPage> {
     final state = _chatBloc.state;
     if (state is ChatLoaded) {
       final timer = state.disappearingTimer;
-      if (timer != null && timer > 0) {
-        return {
-          'timer_seconds': timer,
-          'expires_at': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer,
-        };
+      if (timer != null && timer != 0) {
+        if (timer > 0) {
+          return {
+            'timer_seconds': timer,
+            'expires_at': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer,
+          };
+        } else if (timer < 0) {
+          final secondsFromMidnight = (-timer) - 1;
+          final targetHour = secondsFromMidnight ~/ 3600;
+          final targetMinute = (secondsFromMidnight % 3600) ~/ 60;
+          final now = DateTime.now();
+          DateTime nextCutoff = DateTime(now.year, now.month, now.day, targetHour, targetMinute);
+          if (!nextCutoff.isAfter(now)) {
+            nextCutoff = nextCutoff.add(const Duration(days: 1));
+          }
+          final expiresAt = nextCutoff.millisecondsSinceEpoch ~/ 1000;
+          return {
+            'timer_seconds': timer,
+            'expires_at': expiresAt,
+          };
+        }
       }
     }
     return null;
@@ -2372,6 +2426,69 @@ class _ChatPageState extends State<ChatPage> {
           } else if (state is ChatLoaded && state.notificationMessage != null) {
             context.showInfoNotification(state.notificationMessage!);
           }
+
+          if (state is ChatLoaded) {
+            final activePerm = state.activeScreenPermission;
+            final isScreenshotAllowed = activePerm != null &&
+                activePerm.isScreenshot &&
+                !activePerm.isCompleted &&
+                !activePerm.isRejected &&
+                (activePerm.remainingCount ?? 1) > 0;
+            final isScreenRecordAllowed = activePerm != null &&
+                activePerm.isScreenRecord &&
+                !activePerm.isCompleted &&
+                !activePerm.isRejected &&
+                activePerm.durationSeconds != null;
+
+            if (isScreenshotAllowed || isScreenRecordAllowed) {
+              getIt<ScreenProtectionService>().disableProtection();
+
+              // Handle screenshot permission safety auto-lock timer (60s)
+              if (isScreenshotAllowed) {
+                if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != activePerm.id) {
+                  _screenshotAutoExpireTimer?.cancel();
+                  _activeScreenshotPermissionId = activePerm.id;
+                  _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
+                    if (mounted) {
+                      getIt<ScreenProtectionService>().enableProtection();
+                      context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
+                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                    }
+                  });
+                }
+              }
+
+              // Handle screen record timer auto turn off
+              if (isScreenRecordAllowed && activePerm.durationSeconds != null) {
+                if (_screenRecordTimer == null || _activeScreenRecordPermissionId != activePerm.id) {
+                  _screenRecordTimer?.cancel();
+                  _activeScreenRecordPermissionId = activePerm.id;
+                  final duration = activePerm.durationSeconds!;
+                  _screenRecordTimer = Timer(Duration(seconds: duration), () {
+                    if (mounted) {
+                      getIt<ScreenProtectionService>().enableProtection();
+                      context.showInfoNotification('Screen recording permission duration (${duration}s) expired. Protection re-enabled.');
+                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                    }
+                  });
+                }
+              }
+            } else {
+              _screenRecordTimer?.cancel();
+              _screenRecordTimer = null;
+              _activeScreenRecordPermissionId = null;
+              _screenshotAutoExpireTimer?.cancel();
+              _screenshotAutoExpireTimer = null;
+              _activeScreenshotPermissionId = null;
+              getIt<ScreenProtectionService>().enableProtection();
+            }
+          }
+
+          if (state is ChatLoaded && state.incomingScreenPermissionRequest != null) {
+            final incomingReq = state.incomingScreenPermissionRequest!;
+            _chatBloc.add(const DismissIncomingScreenPermissionRequestEvent());
+            getIt<InAppNotificationService>().showIncomingScreenPermissionBottomSheet(incomingReq);
+          }
         },
         builder: (context, state) {
           final isLoading = state is ChatLoading || state is ChatInitial;
@@ -2384,36 +2501,74 @@ class _ChatPageState extends State<ChatPage> {
             return true;
           }).toList();
           final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
-          // Use server API theme color first, then fall back to local customBgColor
+          // Custom Wallpaper or Color Theme
+          final customWallpaperUrl = state is ChatLoaded ? state.customWallpaperUrl : null;
           final apiThemeColor = state is ChatLoaded ? state.themeColor?.toColor() : null;
           final customBgColor = apiThemeColor ?? (state is ChatLoaded ? state.customBgColor : null);
+
+          DecorationImage? bgDecorationImage;
+          if (customWallpaperUrl != null && customWallpaperUrl.isNotEmpty) {
+            ImageProvider? imgProvider;
+            final cleanUrl = customWallpaperUrl.replaceFirst('file://', '');
+            if (customWallpaperUrl.startsWith('http://') || customWallpaperUrl.startsWith('https://')) {
+              var networkUrl = customWallpaperUrl;
+              if (networkUrl.contains('minio')) {
+                try {
+                  final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+                  if (serverUri.host.isNotEmpty) {
+                    networkUrl = networkUrl.replaceAll('minio', serverUri.host);
+                  }
+                } catch (_) {}
+              }
+              imgProvider = NetworkImage(networkUrl);
+            } else if (customWallpaperUrl.startsWith('assets/')) {
+              imgProvider = AssetImage(customWallpaperUrl);
+            } else {
+              final file = File(cleanUrl);
+              if (file.existsSync()) {
+                imgProvider = FileImage(file);
+              } else {
+                imgProvider = NetworkImage(customWallpaperUrl);
+              }
+            }
+            bgDecorationImage = DecorationImage(
+              image: imgProvider,
+              fit: BoxFit.cover,
+            );
+          } else if (customBgColor == null) {
+            bgDecorationImage = DecorationImage(
+              image: const AssetImage('assets/images/chat_bg.png'),
+              fit: BoxFit.cover,
+              opacity: context.colors.isDark ? 0.05 : 0.08,
+              colorFilter: context.colors.isDark
+                  ? const ColorFilter.matrix(<double>[
+                      -1.0, 0.0, 0.0, 0.0, 255.0, // red
+                      0.0, -1.0, 0.0, 0.0, 255.0, // green
+                      0.0, 0.0, -1.0, 0.0, 255.0, // blue
+                      0.0, 0.0, 0.0, 1.0, 0.0,   // alpha
+                    ])
+                  : null,
+            );
+          }
 
           return Scaffold(
             backgroundColor: customBgColor ?? context.colors.scaffoldBackground,
             appBar: _buildAppBar(context, state),
             body: Container(
               decoration: BoxDecoration(
-                image: customBgColor != null
-                    ? null
-                    : DecorationImage(
-                        image: const AssetImage('assets/images/chat_bg.png'),
-                        fit: BoxFit.cover,
-                        opacity: context.colors.isDark ? 0.05 : 0.08,
-                        colorFilter: context.colors.isDark
-                            ? const ColorFilter.matrix(<double>[
-                                -1.0, 0.0, 0.0, 0.0, 255.0, // red
-                                0.0, -1.0, 0.0, 0.0, 255.0, // green
-                                0.0, 0.0, -1.0, 0.0, 255.0, // blue
-                                0.0, 0.0, 0.0, 1.0, 0.0,   // alpha
-                              ])
-                            : null,
-                      ),
+                image: bgDecorationImage,
               ),
               child: Column(
                 children: [
                   SafeArea(
                     bottom: false,
-                    child: _buildPinnedMessageBanner(state),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildPinnedMessageBanner(state),
+                        _buildActiveScreenPermissionBanner(state),
+                      ],
+                    ),
                   ),
                   Expanded(
                     child: NotificationListener<ScrollNotification>(
@@ -2588,6 +2743,7 @@ class _ChatPageState extends State<ChatPage> {
                                       onSharePressed: () => _showForwardBottomSheet(context, msg),
                                       fileSize: msg.fileSize,
                                       callMeta: msg.callMeta,
+                                      expiry: msg.expiry,
                                       isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
                                     ),
                                   ),
@@ -2814,33 +2970,55 @@ class _ChatPageState extends State<ChatPage> {
             });
           },
         ),
-        title: TextField(
-          controller: _searchController,
-          autofocus: true,
-          style: context.bodyLarge.copyWith(color: context.colors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Search...',
-            hintStyle: context.bodyLarge.copyWith(color: context.colors.textHint),
-            border: InputBorder.none,
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
-        ),
-        actions: [
-          if (_searchQuery.isNotEmpty)
-            IconButton(
-              icon: Icon(CommonIcons.close, color: context.colors.textPrimary),
-              onPressed: () {
-                setState(() {
-                  _searchQuery = '';
-                  _searchController.clear();
-                });
-              },
+        title: Container(
+          height: 42,
+          decoration: BoxDecoration(
+            color: context.colors.isDark ? const Color(0xFF1E2822) : const Color(0xFFF0F4F2),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: context.colors.primary.withValues(alpha: 0.6),
+              width: 1.2,
             ),
-          CommonSpaces.w8,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 20, color: context.colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search in conversation...',
+                    hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ),
+              if (_searchQuery.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _searchQuery = '';
+                      _searchController.clear();
+                    });
+                  },
+                  child: Icon(Icons.close, size: 18, color: context.colors.textSecondary),
+                ),
+            ],
+          ),
+        ),
+        actions: const [
+          SizedBox(width: 8),
         ],
       );
     }
@@ -2968,21 +3146,29 @@ class _ChatPageState extends State<ChatPage> {
                     child: ClipOval(
                       child: (widget.profilePictureUrl != null &&
                               widget.profilePictureUrl!.isNotEmpty)
-                          ? Image.network(
-                              widget.profilePictureUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: widget.profilePictureUrl!,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Text(
-                                    widget.contactName.isNotEmpty
-                                        ? widget.contactName.substring(0, 1)
-                                        : '?',
-                                    style: context.titleMedium.copyWith(
-                                      color: widget.contactColor,
-                                    ),
+                              placeholder: (context, url) => Center(
+                                child: Text(
+                                  widget.contactName.isNotEmpty
+                                      ? widget.contactName.substring(0, 1)
+                                      : '?',
+                                  style: context.titleMedium.copyWith(
+                                    color: widget.contactColor,
                                   ),
-                                );
-                              },
+                                ),
+                              ),
+                              errorWidget: (context, url, error) => Center(
+                                child: Text(
+                                  widget.contactName.isNotEmpty
+                                      ? widget.contactName.substring(0, 1)
+                                      : '?',
+                                  style: context.titleMedium.copyWith(
+                                    color: widget.contactColor,
+                                  ),
+                                ),
+                              ),
                             )
                           : Center(
                               child: Text(
@@ -3050,72 +3236,103 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
       actions: [
-        IconButton(
-          icon: Icon(CommonIcons.videocam),
-          onPressed: () async {
-            final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
-            if (!hasPermission) {
-              if (mounted) {
-                context.showErrorNotification('Camera and Microphone permissions are required for video calls');
-              }
-              return;
-            }
-            
-            final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
-            
-            if (!mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BlocProvider.value(
-                  value: _callWebRtcBloc,
-                  child: VideoCallPage(
-                    conversationId: widget.conversationId,
-                    contactName: widget.contactName,
-                    contactColor: widget.contactColor,
-                    recipientId: widget.recipientId,
-                    isOutgoing: !isAlreadyInCall,
-                    profilePictureUrl: widget.profilePictureUrl,
-                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                  ),
+        if (widget.isReadOnly)
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: context.colors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: context.colors.primary.withValues(alpha: 0.4),
                 ),
               ),
-            );
-          },
-        ),
-        IconButton(
-          icon: Icon(CommonIcons.phone),
-          onPressed: () async {
-            final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
-            if (!hasPermission) {
-              if (mounted) {
-                context.showErrorNotification('Microphone permission is required for audio calls');
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline_rounded, size: 14, color: context.colors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Read Only',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: Icon(CommonIcons.videocam),
+            onPressed: () async {
+              final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
+              if (!hasPermission) {
+                if (mounted) {
+                  context.showErrorNotification('Camera and Microphone permissions are required for video calls');
+                }
+                return;
               }
-              return;
-            }
-
-            final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
-
-            if (!mounted) return;
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BlocProvider.value(
-                  value: _callWebRtcBloc,
-                  child: AudioCallPage(
-                    conversationId: widget.conversationId,
-                    contactName: widget.contactName,
-                    contactColor: widget.contactColor,
-                    recipientId: widget.recipientId,
-                    isOutgoing: !isAlreadyInCall,
-                    profilePictureUrl: widget.profilePictureUrl,
-                    myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+              
+              final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
+              
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BlocProvider.value(
+                    value: _callWebRtcBloc,
+                    child: VideoCallPage(
+                      conversationId: widget.conversationId,
+                      contactName: widget.contactName,
+                      contactColor: widget.contactColor,
+                      recipientId: widget.recipientId,
+                      isOutgoing: !isAlreadyInCall,
+                      profilePictureUrl: widget.profilePictureUrl,
+                      myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: Icon(CommonIcons.phone),
+            onPressed: () async {
+              final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
+              if (!hasPermission) {
+                if (mounted) {
+                  context.showErrorNotification('Microphone permission is required for audio calls');
+                }
+                return;
+              }
+
+              final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
+
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BlocProvider.value(
+                    value: _callWebRtcBloc,
+                    child: AudioCallPage(
+                      conversationId: widget.conversationId,
+                      contactName: widget.contactName,
+                      contactColor: widget.contactColor,
+                      recipientId: widget.recipientId,
+                      isOutgoing: !isAlreadyInCall,
+                      profilePictureUrl: widget.profilePictureUrl,
+                      myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         PopupMenuButton<String>(
           icon: Icon(CommonIcons.moreVert),
           color: context.colors.scaffoldBackground,
@@ -3236,6 +3453,8 @@ class _ChatPageState extends State<ChatPage> {
               }
             } else if (value == 'scheduled') {
               _showScheduleMessageBottomSheet(context);
+            } else if (value == 'screen_permission') {
+              _showRequestScreenPermissionBottomSheet(context);
             }
           },
           itemBuilder: (BuildContext context) {
@@ -3259,6 +3478,7 @@ class _ChatPageState extends State<ChatPage> {
             } else {
               return [
                 _buildMenuItem('search', CommonIcons.search, 'Search message'),
+                _buildMenuItem('screen_permission', Icons.security_rounded, 'Request Screenshot / Record'),
                 _buildMenuItem('new_group', Icons.group_add_rounded, 'New group'),
                 _buildMenuItem('view_contact', CommonIcons.personOutline, 'View contact'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Media, links, and docs'),
@@ -3340,6 +3560,47 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildInputBar(BuildContext context) {
+    if (widget.isReadOnly) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: context.colors.primary.withValues(alpha: 0.25),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              color: context.colors.primary,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'This conversation is in read-only mode',
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
@@ -3742,13 +4003,15 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     if (result != null && result['send'] == true && mounted) {
-      final caption = result['caption'] as String;
+      final caption = (result['caption'] as String?) ?? '';
+      final sendBytes = (result['bytes'] as Uint8List?) ?? bytes;
+      final sendPath = (result['path'] as String?) ?? (kIsWeb ? null : image.path);
       setState(() {
-        _selectedAttachmentPath = kIsWeb ? null : image.path;
-        _selectedAttachmentBytes = bytes;
+        _selectedAttachmentPath = sendPath;
+        _selectedAttachmentBytes = sendBytes;
         _selectedAttachmentName = name;
         _selectedAttachmentType = 'image';
-        _selectedAttachmentSize = size;
+        _selectedAttachmentSize = sendBytes.length;
         _attachmentAllowShare = true;
         _attachmentAllowDownload = true;
         _attachmentAllowView = true;
@@ -4011,13 +4274,15 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       if (previewResult != null && previewResult['send'] == true && mounted) {
-        final caption = previewResult['caption'] as String;
+        final caption = (previewResult['caption'] as String?) ?? '';
+        final sendBytes = (previewResult['bytes'] as Uint8List?) ?? file.bytes;
+        final sendPath = (previewResult['path'] as String?) ?? file.path;
         setState(() {
-          _selectedAttachmentPath = file.path;
-          _selectedAttachmentBytes = file.bytes;
+          _selectedAttachmentPath = sendPath;
+          _selectedAttachmentBytes = sendBytes;
           _selectedAttachmentName = file.name;
           _selectedAttachmentType = fileType;
-          _selectedAttachmentSize = file.size;
+          _selectedAttachmentSize = sendBytes?.length ?? file.size;
           _attachmentAllowShare = true;
           _attachmentAllowDownload = true;
           _attachmentAllowView = true;
@@ -4253,6 +4518,7 @@ class _ChatPageState extends State<ChatPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (dialogCtx) => ScheduleMessageBottomSheet(
+        conversationId: widget.conversationId,
         contactName: widget.contactName,
       ),
     );
@@ -4350,6 +4616,91 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  void _showRequestScreenPermissionBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (dialogCtx) => RequestScreenPermissionBottomSheet(
+        conversationId: widget.conversationId,
+        contactName: widget.contactName,
+      ),
+    );
+  }
+
+  Widget _buildActiveScreenPermissionBanner(ChatState state) {
+    if (state is! ChatLoaded || state.activeScreenPermission == null) {
+      return const SizedBox.shrink();
+    }
+    final perm = state.activeScreenPermission!;
+    final isScreenshot = perm.isScreenshot;
+    final remaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+
+    if (remaining <= 0 || perm.isCompleted || perm.isRejected) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.primary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.primary.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isScreenshot ? Icons.camera_alt_rounded : Icons.videocam_rounded,
+            color: context.colors.primary,
+            size: 20,
+          ),
+          CommonSpaces.w10,
+          Expanded(
+            child: Text(
+              isScreenshot
+                  ? 'Screenshot allowed: $remaining remaining'
+                  : 'Screen recording allowed: ${perm.durationSeconds ?? 30}s',
+              style: context.bodySmall.copyWith(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (isScreenshot)
+            InkWell(
+              onTap: () {
+                final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+                final newRemaining = currentRemaining - 1;
+                if (newRemaining <= 0) {
+                  getIt<ScreenProtectionService>().enableProtection();
+                  context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
+                } else {
+                  context.showSuccessNotification('Screenshot used ($newRemaining remaining)');
+                }
+                _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.colors.primary,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Use 1',
+                  style: context.bodySmall.copyWith(
+                    color: context.colors.textLight,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   void _showDisappearingMessagesBottomSheet(BuildContext context, int? currentTimer) {
     showModalBottomSheet(
       context: context,
@@ -4393,8 +4744,7 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0, currentTimer),
-                _buildDisappearingOption(context, '30 minutes', 1800, currentTimer, isCustomTimeOption: true),
-                _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
+                _buildCustomDailyTimeOption(context, currentTimer),
                 _buildDisappearingOption(context, '7 days', 604800, currentTimer),
                 _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
                 CommonSpaces.h20,
@@ -4406,7 +4756,184 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer, {bool isCustomTimeOption = false}) {
+  int _encodeDailyCutoffTime(int hour, int minute) {
+    return -((hour * 3600 + minute * 60) + 1);
+  }
+
+  TimeOfDay? _decodeDailyCutoffTime(int? encoded) {
+    if (encoded == null || encoded >= 0) return null;
+    final totalSeconds = (-encoded) - 1;
+    final hour = totalSeconds ~/ 3600;
+    final minute = (totalSeconds % 3600) ~/ 60;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  String _formatDailyCutoffText(int hour, int minute) {
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    final displayMinute = minute == 0 ? '' : ':${minute.toString().padLeft(2, '0')}';
+    return 'Daily at $displayHour$displayMinute $period';
+  }
+
+  String _getDisappearingText(int? seconds) {
+    if (seconds == null || seconds == 0) return 'Off';
+    if (seconds < 0) {
+      final tod = _decodeDailyCutoffTime(seconds);
+      if (tod != null) {
+        return _formatDailyCutoffText(tod.hour, tod.minute);
+      }
+      return 'Custom daily';
+    }
+    if (seconds == 1800) return '30 minutes';
+    if (seconds == 604800) return '7 days';
+    if (seconds == 2592000) return '30 days';
+    if (seconds < 60) return '$seconds seconds';
+    if (seconds < 3600) {
+      return '${(seconds / 60).round()} minutes';
+    } else if (seconds < 86400) {
+      return '${(seconds / 3600).round()} hours';
+    } else {
+      return '${(seconds / 86400).round()} days';
+    }
+  }
+
+  Widget _buildCustomDailyTimeOption(BuildContext context, int? currentTimer) {
+    final bool isCustom = currentTimer != null && currentTimer < 0;
+    final customText = isCustom ? _getDisappearingText(currentTimer) : null;
+    final presets = [
+      {'label': '2 AM', 'h': 2, 'm': 0},
+      {'label': '7 AM', 'h': 7, 'm': 0},
+      {'label': '1 PM', 'h': 13, 'm': 0},
+      {'label': '2 PM', 'h': 14, 'm': 0},
+      {'label': '5 PM', 'h': 17, 'm': 0},
+      {'label': '11 PM', 'h': 23, 'm': 0},
+    ];
+
+    void applyCustomTime(int encoded) {
+      Navigator.pop(context);
+      _chatBloc.add(SetDisappearingTimerEvent(seconds: encoded));
+      context.showInfoNotification('Disappearing messages set to ${_getDisappearingText(encoded)}');
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isCustom ? context.colors.primary.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: isCustom ? Border.all(color: context.colors.primary.withValues(alpha: 0.3)) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.schedule, color: isCustom ? context.colors.primary : context.colors.textSecondary),
+            title: Text(
+              isCustom ? 'Custom ($customText)' : 'Custom daily time',
+              style: context.bodyLarge.copyWith(
+                fontWeight: isCustom ? FontWeight.bold : FontWeight.normal,
+                color: isCustom ? context.colors.primary : null,
+              ),
+            ),
+            subtitle: Text(
+              'Clears last 24h chats daily at selected time',
+              style: context.bodySmall.copyWith(fontSize: 11, color: context.colors.textSecondary),
+            ),
+            trailing: isCustom
+                ? Icon(Icons.check_rounded, color: context.colors.primary)
+                : const Icon(Icons.keyboard_arrow_down_rounded),
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: isCustom
+                    ? (_decodeDailyCutoffTime(currentTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                    : const TimeOfDay(hour: 14, minute: 0),
+              );
+              if (picked != null) {
+                final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                applyCustomTime(encoded);
+              }
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 4, bottom: 8),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ...presets.map((p) {
+                  final encoded = _encodeDailyCutoffTime(p['h'] as int, p['m'] as int);
+                  final isSelected = currentTimer == encoded;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => applyCustomTime(encoded),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isSelected ? context.colors.primary : context.colors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected ? context.colors.primary : context.colors.primary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        p['label'] as String,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected ? Colors.white : context.colors.primary,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: context,
+                      initialTime: isCustom
+                          ? (_decodeDailyCutoffTime(currentTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                          : const TimeOfDay(hour: 14, minute: 0),
+                    );
+                    if (picked != null) {
+                      final encoded = _encodeDailyCutoffTime(picked.hour, picked.minute);
+                      applyCustomTime(encoded);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: context.colors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: context.colors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.more_time, size: 12, color: context.colors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Pick Time',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: context.colors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, int? currentTimer) {
     final bool isSelected = (currentTimer == seconds) || (currentTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -4414,40 +4941,11 @@ class _ChatPageState extends State<ChatPage> {
       trailing: isSelected
           ? Icon(Icons.check_rounded, color: context.colors.primary)
           : const Icon(Icons.chevron_right_rounded),
-      onTap: () async {
+      onTap: () {
         int? finalSeconds = seconds == 0 ? null : seconds;
-        String finalLabel = label;
-        
-        if (isCustomTimeOption) {
-          final now = DateTime.now();
-          final TimeOfDay? picked = await showTimePicker(
-            context: context,
-            initialTime: TimeOfDay.fromDateTime(now.add(const Duration(minutes: 30))),
-            helpText: 'Select auto-delete time today (before midnight)',
-          );
-          if (picked != null) {
-            final target = DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-            
-            if (target.isAfter(now)) {
-              finalSeconds = target.difference(now).inSeconds;
-              finalLabel = 'Custom (${picked.format(context)})';
-            } else {
-              context.showErrorNotification('Selected time has already passed today. Defaulting to 30 minutes.');
-              finalSeconds = 1800;
-              finalLabel = '30 minutes';
-            }
-          } else {
-            finalSeconds = 1800;
-            finalLabel = '30 minutes';
-          }
-        }
-        
-        if (context.mounted) {
-          Navigator.pop(context);
-        }
-        
+        Navigator.pop(context);
         _chatBloc.add(SetDisappearingTimerEvent(seconds: finalSeconds));
-        context.showInfoNotification('Disappearing messages set to $finalLabel');
+        context.showInfoNotification('Disappearing messages set to $label');
       },
     );
   }
@@ -4485,168 +4983,13 @@ class _ChatPageState extends State<ChatPage> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (sheetCtx) {
-        return BlocProvider.value(
-          value: _chatBloc,
-          child: BlocBuilder<ChatBloc, ChatState>(
-            builder: (context, state) {
-              final themes = state is ChatLoaded ? state.availableThemes : <ThemeColorModel>[];
-              final selectedThemeId = state is ChatLoaded ? state.themeColor?.id : null;
-              final isLoading = themes.isEmpty;
-
-              return Container(
-                decoration: BoxDecoration(
-                  color: context.colors.scaffoldBackground,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Drag handle
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              color: context.colors.textHint.withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.palette_outlined,
-                                  color: context.colors.primary,
-                                  size: 24,
-                                ),
-                                CommonSpaces.w10,
-                                Text(
-                                  'Chat Theme',
-                                  style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ],
-                            ),
-                            if (selectedThemeId != null)
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(sheetCtx);
-                                  _chatBloc.add(const UpdateThemeEvent(themeColorId: null));
-                                },
-                                child: Text(
-                                  'Remove',
-                                  style: TextStyle(
-                                    color: context.colors.error,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        CommonSpaces.h8,
-                        Text(
-                          'Choose a theme color for this chat. Only you will see this change.',
-                          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-                        ),
-                        CommonSpaces.h20,
-                        if (isLoading)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 32),
-                              child: CircularProgressIndicator(color: context.colors.primary),
-                            ),
-                          )
-                        else if (themes.isEmpty)
-                          Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 32),
-                              child: Column(
-                                children: [
-                                  Icon(Icons.palette_outlined,
-                                      size: 48, color: context.colors.textHint.withValues(alpha: 0.5)),
-                                  CommonSpaces.h12,
-                                  Text(
-                                    'No themes available',
-                                    style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        else
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 5,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                            ),
-                            itemCount: themes.length,
-                            itemBuilder: (context, index) {
-                              final theme = themes[index];
-                              final isSelected = theme.id == selectedThemeId;
-                              final themeColor = theme.toColor();
-
-                              return Tooltip(
-                                message: theme.name,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    Navigator.pop(sheetCtx);
-                                    _chatBloc.add(UpdateThemeEvent(
-                                      themeColorId: theme.id,
-                                      themeColor: theme,
-                                    ));
-                                  },
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    decoration: BoxDecoration(
-                                      color: themeColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? context.colors.primary
-                                            : Colors.transparent,
-                                        width: 3,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: themeColor.withValues(alpha: 0.4),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ],
-                                    ),
-                                    child: isSelected
-                                        ? Icon(
-                                            Icons.check_circle_rounded,
-                                            color: context.colors.primary,
-                                            size: 24,
-                                          )
-                                        : null,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        CommonSpaces.h12,
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+      builder: (sheetCtx) => BlocProvider.value(
+        value: _chatBloc,
+        child: ChatThemeBottomSheet(
+          conversationId: widget.conversationId,
+          isGroup: widget.isGroup,
+        ),
+      ),
     );
   }
 }

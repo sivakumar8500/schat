@@ -327,7 +327,30 @@ class MessageModel {
       callMeta: callMeta,
       duration: duration,
       deletedFor: deletedForList,
-      expiry: int.tryParse((json['expiry'] ?? json['expires_at'])?.toString() ?? ''),
+      expiry: () {
+        final dynamic rawExpiry = json['expiry'] ?? json['expiry_config'] ?? json['expires_at'] ?? json['expire_at'];
+        if (rawExpiry is int) return rawExpiry;
+        if (rawExpiry is num) return rawExpiry.toInt();
+        if (rawExpiry is Map) {
+          final expAt = rawExpiry['expires_at'] ?? rawExpiry['expireAt'] ?? rawExpiry['expire_at'] ?? rawExpiry['expiry'];
+          if (expAt is int) return expAt;
+          if (expAt is num) return expAt.toInt();
+          if (expAt is String) {
+            final parsed = int.tryParse(expAt);
+            if (parsed != null) return parsed;
+            final dt = DateTime.tryParse(expAt);
+            if (dt != null) return dt.toUtc().millisecondsSinceEpoch ~/ 1000;
+          }
+          return null;
+        }
+        if (rawExpiry is String) {
+          final parsed = int.tryParse(rawExpiry);
+          if (parsed != null) return parsed;
+          final dt = DateTime.tryParse(rawExpiry);
+          if (dt != null) return dt.toUtc().millisecondsSinceEpoch ~/ 1000;
+        }
+        return null;
+      }(),
     );
   }
 

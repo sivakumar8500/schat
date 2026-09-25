@@ -102,7 +102,20 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     super.dispose();
   }
 
-  void _accept(BuildContext context) async {
+  bool _isDismissed = false;
+
+  void _dismissDialog() {
+    if (_isDismissed) return;
+    _isDismissed = true;
+    FlutterCallkitIncoming.endAllCalls();
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _accept() async {
+    if (_isDismissed) return;
+    final bloc = context.read<CallWebRtcBloc>();
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: widget.isVideo);
     if (!hasPermission) {
       if (mounted) {
@@ -113,13 +126,14 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
       return;
     }
     
-    if (!mounted) return;
-    context.read<CallWebRtcBloc>().add(AnswerCallEvent(widget.incomingEvent));
-    Navigator.of(context).pop();
-    Navigator.of(context).push(
+    if (!mounted || _isDismissed) return;
+    _isDismissed = true;
+    FlutterCallkitIncoming.endAllCalls();
+    bloc.add(AnswerCallEvent(widget.incomingEvent));
+    Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
-          value: context.read<CallWebRtcBloc>(),
+          value: bloc,
           child: widget.isVideo
               ? VideoCallPage(
                   conversationId: widget.conversationId,
@@ -144,20 +158,17 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     );
   }
 
-  void _decline(BuildContext context) {
+  void _decline() {
+    if (_isDismissed) return;
     context
         .read<CallWebRtcBloc>()
         .add(RejectCallEvent(widget.conversationId));
-    Navigator.of(context).pop();
+    _dismissDialog();
   }
 
   /// Called when the caller cancels before the callee answers.
   void _onCallerHungUp(BuildContext context) {
-    // Stop ringtone
-    context.read<CallWebRtcBloc>(); // ensure bloc is available
-    // Dismiss the CallKit / system notification if any
-    FlutterCallkitIncoming.endAllCalls();
-    if (mounted) Navigator.of(context).pop();
+    _dismissDialog();
   }
 
   @override
@@ -317,29 +328,25 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
 
               const Spacer(),
 
-              // Accept / Decline buttons
+              // Bottom Actions: Two Buttons (Decline & Accept)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
+                padding: const EdgeInsets.fromLTRB(48, 0, 48, 48),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Decline
-                    _buildCallButton(
+                    // Decline Button (Red)
+                    _buildMainCallButton(
+                      label: 'Decline',
                       icon: CommonIcons.callEnd,
                       color: const Color(0xFFFF3B30),
-                      label: 'Decline',
-                      onTap: () => _decline(context),
+                      onTap: _decline,
                     ),
-
-                    // Accept
-                    _buildCallButton(
-                      icon: widget.isVideo
-                          ? CommonIcons.videocam
-                          : CommonIcons.phone,
-                      color: const Color(0xFF34C759),
+                    // Accept Button (Green)
+                    _buildMainCallButton(
                       label: 'Accept',
-                      onTap: () => _accept(context),
+                      icon: widget.isVideo ? CommonIcons.videocam : CommonIcons.phone,
+                      color: const Color(0xFF34C759),
+                      onTap: _accept,
                     ),
                   ],
                 ),
@@ -350,6 +357,53 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
       ],
     ),
     ),
+    );
+  }
+
+  Widget _buildMainCallButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.45),
+                  blurRadius: 20,
+                  spreadRadius: 4,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: 34,
+            ),
+          ),
+          CommonSpaces.h12,
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -366,46 +420,6 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
             width: 2,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildCallButton({
-    required IconData icon,
-    required Color color,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.4),
-                  blurRadius: 20,
-                  spreadRadius: 4,
-                ),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: 32),
-          ),
-          CommonSpaces.h12,
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -436,3 +450,4 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     );
   }
 }
+

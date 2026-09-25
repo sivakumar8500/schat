@@ -1,4 +1,4 @@
-// mason make bloc --name call_webrtc
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 
 abstract class CallWebRtcState {
   const CallWebRtcState();
@@ -17,6 +17,8 @@ class CallConnecting extends CallWebRtcState {
   final String? profilePictureUrl;
   final bool isSpeakerOn;
   final bool isFrontCamera;
+  final List<UserModel> extraParticipants;
+
   const CallConnecting({
     required this.conversationId,
     required this.isVideo,
@@ -26,6 +28,7 @@ class CallConnecting extends CallWebRtcState {
     this.profilePictureUrl,
     bool? isSpeakerOn,
     this.isFrontCamera = true,
+    this.extraParticipants = const [],
   }) : isSpeakerOn = isSpeakerOn ?? isVideo;
 
   CallConnecting copyWith({
@@ -35,6 +38,7 @@ class CallConnecting extends CallWebRtcState {
     String? profilePictureUrl,
     bool? isSpeakerOn,
     bool? isFrontCamera,
+    List<UserModel>? extraParticipants,
   }) {
     return CallConnecting(
       conversationId: conversationId,
@@ -45,6 +49,7 @@ class CallConnecting extends CallWebRtcState {
       profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isFrontCamera: isFrontCamera ?? this.isFrontCamera,
+      extraParticipants: extraParticipants ?? this.extraParticipants,
     );
   }
 }
@@ -58,6 +63,8 @@ class CallRinging extends CallWebRtcState {
   final String? profilePictureUrl;
   final bool isSpeakerOn;
   final bool isFrontCamera;
+  final List<UserModel> extraParticipants;
+
   const CallRinging({
     required this.incomingEvent,
     required this.callerName,
@@ -66,11 +73,13 @@ class CallRinging extends CallWebRtcState {
     this.profilePictureUrl,
     bool? isSpeakerOn,
     this.isFrontCamera = true,
+    this.extraParticipants = const [],
   }) : isSpeakerOn = isSpeakerOn ?? isVideo;
   
   CallRinging copyWith({
     bool? isSpeakerOn,
     bool? isFrontCamera,
+    List<UserModel>? extraParticipants,
   }) {
     return CallRinging(
       incomingEvent: incomingEvent,
@@ -80,6 +89,7 @@ class CallRinging extends CallWebRtcState {
       profilePictureUrl: profilePictureUrl,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isFrontCamera: isFrontCamera ?? this.isFrontCamera,
+      extraParticipants: extraParticipants ?? this.extraParticipants,
     );
   }
 }
@@ -100,6 +110,7 @@ class CallActive extends CallWebRtcState {
   final DateTime? startedAt;
   final String? switchRequestedCallType;
   final Map<String, dynamic>? switchRequestedEvent;
+  final List<UserModel> extraParticipants;
 
   const CallActive({
     required this.conversationId,
@@ -117,6 +128,7 @@ class CallActive extends CallWebRtcState {
     this.startedAt,
     this.switchRequestedCallType,
     this.switchRequestedEvent,
+    this.extraParticipants = const [],
   });
 
   CallActive copyWith({
@@ -131,6 +143,7 @@ class CallActive extends CallWebRtcState {
     String? switchRequestedCallType,
     Map<String, dynamic>? switchRequestedEvent,
     bool clearSwitchRequest = false,
+    List<UserModel>? extraParticipants,
   }) {
     return CallActive(
       conversationId: conversationId,
@@ -148,6 +161,7 @@ class CallActive extends CallWebRtcState {
       startedAt: startedAt,
       switchRequestedCallType: clearSwitchRequest ? null : (switchRequestedCallType ?? this.switchRequestedCallType),
       switchRequestedEvent: clearSwitchRequest ? null : (switchRequestedEvent ?? this.switchRequestedEvent),
+      extraParticipants: extraParticipants ?? this.extraParticipants,
     );
   }
 
@@ -167,6 +181,7 @@ class CallActive extends CallWebRtcState {
         startedAt,
         switchRequestedCallType,
         switchRequestedEvent,
+        extraParticipants,
       ];
 }
 

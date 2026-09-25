@@ -12,12 +12,14 @@ import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
 
 import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/injection.dart';
 
 class InAppViewer extends StatefulWidget {
   final String url;
   final String fileName;
   final String type; // 'image', 'video', 'audio', 'file'
+  final String? mediaId;
   final bool allowShare;
   final bool allowDownload;
   final VoidCallback? onSharePressed;
@@ -28,6 +30,7 @@ class InAppViewer extends StatefulWidget {
     required this.url,
     required this.fileName,
     required this.type,
+    this.mediaId,
     this.allowShare = true,
     this.allowDownload = true,
     this.onSharePressed,
@@ -39,6 +42,7 @@ class InAppViewer extends StatefulWidget {
     required String url,
     required String fileName,
     required String type,
+    String? mediaId,
     bool allowShare = true,
     bool allowDownload = true,
     VoidCallback? onSharePressed,
@@ -51,6 +55,7 @@ class InAppViewer extends StatefulWidget {
           url: url,
           fileName: fileName,
           type: type,
+          mediaId: mediaId,
           allowShare: allowShare,
           allowDownload: allowDownload,
           onSharePressed: onSharePressed,
@@ -64,15 +69,87 @@ class InAppViewer extends StatefulWidget {
   State<InAppViewer> createState() => _InAppViewerState();
 }
 
-class _InAppViewerState extends State<InAppViewer> {
+class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStateMixin {
   File? _decryptedTempFile;
   bool _isLoading = true;
   String? _errorMessage;
 
+  final TransformationController _transformationController = TransformationController();
+  late AnimationController _animationController;
+  Animation<Matrix4>? _zoomAnimation;
+  double _currentScale = 1.0;
+  Offset? _doubleTapPosition;
+
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..addListener(() {
+        if (_zoomAnimation != null) {
+          _transformationController.value = _zoomAnimation!.value;
+        }
+      });
+    _transformationController.addListener(_onTransformationChanged);
     _prepareAttachment();
+  }
+
+  void _onTransformationChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if ((scale - _currentScale).abs() > 0.04) {
+      if (mounted) {
+        setState(() {
+          _currentScale = scale;
+        });
+      }
+    }
+  }
+
+  void _animateToMatrix(Matrix4 targetMatrix) {
+    _zoomAnimation = Matrix4Tween(
+      begin: _transformationController.value,
+      end: targetMatrix,
+    ).animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic));
+    _animationController.forward(from: 0);
+  }
+
+  void _zoomIn() {
+    final double targetScale = (_currentScale * 1.5).clamp(1.0, 8.0);
+    _zoomToScale(targetScale);
+  }
+
+  void _zoomOut() {
+    final double targetScale = (_currentScale / 1.5).clamp(1.0, 8.0);
+    _zoomToScale(targetScale);
+  }
+
+  void _resetZoom() {
+    _animateToMatrix(Matrix4.identity());
+  }
+
+  void _zoomToScale(double targetScale) {
+    final Matrix4 target = Matrix4.diagonal3Values(targetScale, targetScale, 1.0);
+    _animateToMatrix(target);
+  }
+
+  void _handleDoubleTapDown(TapDownDetails details) {
+    _doubleTapPosition = details.localPosition;
+  }
+
+  void _handleDoubleTap() {
+    if (_currentScale > 1.25) {
+      _resetZoom();
+    } else {
+      final position = _doubleTapPosition ?? Offset.zero;
+      const targetScale = 2.5;
+      final x = -position.dx * (targetScale - 1);
+      final y = -position.dy * (targetScale - 1);
+      final Matrix4 target = Matrix4.identity()
+        ..setTranslationRaw(x, y, 0.0)
+        ..scaleByDouble(targetScale, targetScale, 1.0, 1.0);
+      _animateToMatrix(target);
+    }
   }
 
   Future<void> _prepareAttachment() async {
@@ -111,11 +188,93 @@ class _InAppViewerState extends State<InAppViewer> {
 
   @override
   void dispose() {
-    // Delete decrypted temporary file immediately when viewer is closed
+    _animationController.dispose();
+    _transformationController.removeListener(_onTransformationChanged);
+    _transformationController.dispose();
     if (_decryptedTempFile != null) {
       getIt<SecureAttachmentService>().cleanupTempFile(_decryptedTempFile);
     }
     super.dispose();
+  }
+
+  Widget _buildZoomControls() {
+    final percent = (_currentScale * 100).round();
+    const accentGreen = Color(0xFF00D084);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white24, width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Zoom out button
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline, color: Colors.white, size: 22),
+            tooltip: 'Zoom Out',
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            onPressed: _currentScale > 1.05 ? _zoomOut : null,
+          ),
+          const SizedBox(width: 8),
+          // Scale percentage indicator & tap to reset
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: _resetZoom,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white12,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '$percent%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Zoom in button
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white, size: 22),
+            tooltip: 'Zoom In',
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            onPressed: _currentScale < 7.95 ? _zoomIn : null,
+          ),
+          if (_currentScale > 1.15) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              height: 16,
+              width: 1,
+              color: Colors.white24,
+            ),
+            IconButton(
+              icon: const Icon(Icons.fit_screen_rounded, color: accentGreen, size: 20),
+              tooltip: 'Fit to Screen',
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
+              onPressed: _resetZoom,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -149,42 +308,49 @@ class _InAppViewerState extends State<InAppViewer> {
 
       if (widget.type == 'image') {
         final isLocal = !kIsWeb && File(activePath).existsSync();
-        viewerWidget = InteractiveViewer(
-          maxScale: 4.0,
-          child: Center(
-            child: isLocal
-                ? Image.file(
-                    File(activePath),
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
-                          CommonSpaces.h16,
-                          Text('Failed to load image', style: TextStyle(color: Colors.white70)),
-                        ],
+        viewerWidget = GestureDetector(
+          onDoubleTapDown: _handleDoubleTapDown,
+          onDoubleTap: _handleDoubleTap,
+          child: InteractiveViewer(
+            transformationController: _transformationController,
+            minScale: 0.5,
+            maxScale: 8.0,
+            clipBehavior: Clip.none,
+            child: Center(
+              child: isLocal
+                  ? Image.file(
+                      File(activePath),
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                            CommonSpaces.h16,
+                            Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Image.network(
+                      activePath,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const Center(child: CircularProgressIndicator(color: Colors.white));
+                      },
+                      errorBuilder: (context, error, stackTrace) => const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                            CommonSpaces.h16,
+                            Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                          ],
+                        ),
                       ),
                     ),
-                  )
-                : Image.network(
-                    activePath,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return const Center(child: CircularProgressIndicator(color: Colors.white));
-                    },
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
-                          CommonSpaces.h16,
-                          Text('Failed to load image', style: TextStyle(color: Colors.white70)),
-                        ],
-                      ),
-                    ),
-                  ),
+            ),
           ),
         );
       } else if (widget.type == 'video') {
@@ -267,6 +433,20 @@ class _InAppViewerState extends State<InAppViewer> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.shield_outlined, color: Colors.white),
+            tooltip: 'Security & Protection',
+            onPressed: () {
+              final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
+                  ? widget.mediaId!
+                  : '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+              MediaProtectionBottomSheet.show(
+                context,
+                mediaId: idToUse,
+                fileName: widget.fileName,
+              );
+            },
+          ),
           if (widget.allowShare && widget.onSharePressed != null)
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
@@ -342,8 +522,23 @@ class _InAppViewerState extends State<InAppViewer> {
           CommonSpaces.w8,
         ],
       ),
-      body: SafeArea(
-        child: viewerWidget,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: SafeArea(
+              child: viewerWidget,
+            ),
+          ),
+          if (widget.type == 'image' && !_isLoading && _errorMessage == null)
+            Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _buildZoomControls(),
+              ),
+            ),
+        ],
       ),
     );
   }

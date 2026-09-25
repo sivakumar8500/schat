@@ -17,11 +17,14 @@ import 'package:schat/features/call_screen/src/presentation/incoming_call_dialog
 import 'package:schat/main.dart';
 import 'package:schat/injection.dart';
 import 'package:injectable/injectable.dart';
+import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'call_webrtc_event.dart';
 import 'call_webrtc_state.dart';
 
 @lazySingleton
 class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
+  static const MethodChannel _pipChannel = MethodChannel('com.sdpi.schat/pip');
   final WebRtcService _webRtcService;
   final ChatSocketRepository _repository;
   final CallSoundService _soundService = getIt<CallSoundService>();
@@ -34,6 +37,36 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   DateTime? _activeCallStart;
 
   DateTime? get activeCallStart => _activeCallStart;
+
+  void _updateCallActive(bool active) {
+    try {
+      if (active) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    } catch (e) {
+      debugPrint('CallWebRtcBloc: Wakelock error: $e');
+    }
+    try {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        _pipChannel.invokeMethod('setCallActive', {'isActive': active});
+      }
+    } catch (e) {
+      debugPrint('CallWebRtcBloc: PipChannel error: $e');
+    }
+  }
+
+  @override
+  void onChange(Change<CallWebRtcState> change) {
+    super.onChange(change);
+    final next = change.nextState;
+    if (next is CallActive || next is CallConnecting || next is CallRinging) {
+      _updateCallActive(true);
+    } else if (next is CallEnded || next is CallError || next is CallIdle || next is CallRejected) {
+      _updateCallActive(false);
+    }
+  }
 
   CallWebRtcBloc(this._webRtcService, this._repository)
       : super(const CallIdle()) {
@@ -56,6 +89,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<HandleCallSwitchRequestedEvent>(_onHandleCallSwitchRequested);
     on<RespondToCallSwitchEvent>(_onRespondToCallSwitch);
     on<HandleCallSwitchRespondedEvent>(_onHandleCallSwitchResponded);
+    on<AddParticipantsCallEvent>(_onAddParticipants);
     on<HandleCallErrorEvent>((event, emit) {
       _cancelCallTimeoutTimer();
       _activeCallStart = null;
@@ -97,6 +131,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           break;
         case 'call_initiate':
         case 'call_incoming':
+          final senderId = (data['sender_id'] ?? data['senderId'])?.toString();
+          final myId = getIt<StorageService>().getUserId();
+          if (senderId != null && myId != null && senderId == myId) {
+            debugPrint('CallWebRtcBloc: Ignoring incoming call event from self');
+            return;
+          }
           add(HandleIncomingCallEvent(Map<String, dynamic>.from(data)));
           break;
         case 'call_response':
@@ -744,7 +784,6 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   Future<void> _onRequestCallSwitch(
       RequestCallSwitchEvent event, Emitter<CallWebRtcState> emit) async {
     if (state is CallActive) {
-      final current = state as CallActive;
       await _webRtcService.requestCallSwitch(
         callType: event.callType,
         repository: _repository,
@@ -816,4 +855,52 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       }
     }
   }
+
+  void _onAddParticipants(
+      AddParticipantsCallEvent event, Emitter<CallWebRtcState> emit) {
+    if (event.users.isEmpty) return;
+
+    if (state is CallActive) {
+      final current = state as CallActive;
+      final existingIds = current.extraParticipants.map((u) => u.id).toSet();
+      existingIds.add(current.recipientId);
+      final newUsers =
+          event.users.where((u) => !existingIds.contains(u.id)).toList();
+      if (newUsers.isEmpty) return;
+
+      final updated = [...current.extraParticipants, ...newUsers];
+      emit(current.copyWith(extraParticipants: updated));
+
+      for (final user in newUsers) {
+        _repository.emit('message', {
+          'type': 'call_initiate',
+          'conversation_id': current.conversationId,
+          'recipient_id': user.id,
+          'call_type': current.isVideo ? 'video' : 'audio',
+          'caller_name': current.contactName,
+        });
+      }
+    } else if (state is CallConnecting) {
+      final current = state as CallConnecting;
+      final existingIds = current.extraParticipants.map((u) => u.id).toSet();
+      existingIds.add(current.recipientId);
+      final newUsers =
+          event.users.where((u) => !existingIds.contains(u.id)).toList();
+      if (newUsers.isEmpty) return;
+
+      final updated = [...current.extraParticipants, ...newUsers];
+      emit(current.copyWith(extraParticipants: updated));
+
+      for (final user in newUsers) {
+        _repository.emit('message', {
+          'type': 'call_initiate',
+          'conversation_id': current.conversationId,
+          'recipient_id': user.id,
+          'call_type': current.isVideo ? 'video' : 'audio',
+          'caller_name': current.contactName,
+        });
+      }
+    }
+  }
 }
+

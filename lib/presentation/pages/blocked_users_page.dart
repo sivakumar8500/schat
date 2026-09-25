@@ -4,10 +4,10 @@ import 'package:hive/hive.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_notifications.dart';
 
@@ -131,7 +131,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
     if (selected != null && selected.isNotEmpty) {
       final selectedUser = selected.first;
       final userName = selectedUser.username ?? selectedUser.phoneNumber;
-      
+
       // Prevent blocking already blocked users
       if (_blockedList.any((u) => u['id'] == selectedUser.id)) {
         if (mounted) {
@@ -170,20 +170,29 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.scaffoldBackground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: context.colors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Text(
           'Unblock $userName?',
-          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold, color: context.colors.textPrimary),
+        ),
+        content: Text(
+          'They will be able to call you and send you messages.',
+          style: TextStyle(color: context.colors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textHint)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Unblock', style: TextStyle(color: context.colors.primary, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00873C),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Unblock', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -194,54 +203,143 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
     }
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    return AppBar(
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.colors.isDark;
+
+    return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
-      elevation: 0,
-      foregroundColor: context.colors.textPrimary,
-      leading: IconButton(
-        icon: Icon(CommonIcons.arrowBack),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      body: Stack(
         children: [
-          Text(
-            'Blocked contacts',
-            style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
-          ),
-          if (!_isLoading)
-            Text(
-              '${_blockedList.length} ${_blockedList.length == 1 ? 'contact' : 'contacts'}',
-              style: context.bodySmall.copyWith(
-                color: context.colors.textSecondary,
-                fontSize: 12,
+          // Home Wave Lines Background matching Home Screen
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
               ),
             ),
+          ),
+
+          // Main Content
+          SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
+                _buildSearchBar(),
+                Expanded(
+                  child: _isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Color(0xFF00873C)),
+                        )
+                      : _blockedList.isEmpty
+                          ? _buildEmptyState()
+                          : _buildBlockedList(),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
-      actions: [
-        IconButton(
-          icon: Icon(CommonIcons.personAdd),
-          tooltip: 'Add Blocked Contact',
-          onPressed: _addBlockedUser,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addBlockedUser,
+        backgroundColor: const Color(0xFF00873C),
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: const Icon(Icons.person_add_rounded, size: 22),
+        label: const Text(
+          'Block Contact',
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.lightBackground,
+                  border: Border.all(
+                    color: context.colors.border.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              CommonSpaces.w12,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Blocked Contacts',
+                    style: context.h2.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  if (!_isLoading && _blockedList.isNotEmpty)
+                    Text(
+                      '${_blockedList.length} ${_blockedList.length == 1 ? 'contact' : 'contacts'}',
+                      style: TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFE8F5E9),
+              border: Border.all(
+                color: const Color(0xFF00873C).withValues(alpha: 0.3),
+              ),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 20),
+              tooltip: 'Add Blocked Contact',
+              onPressed: _addBlockedUser,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSearchBar() {
-    final searchBgColor = context.colors.isDark
-        ? context.colors.pureWhite.withValues(alpha: 0.1)
-        : context.colors.primary.withValues(alpha: 0.05);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: Container(
-        height: 52,
         decoration: BoxDecoration(
-          color: searchBgColor,
-          borderRadius: BorderRadius.circular(26),
+          color: context.colors.cardBackground,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: context.colors.border.withValues(alpha: 0.4),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: TextField(
           controller: _searchController,
@@ -250,18 +348,14 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
               _searchQuery = value;
             });
           },
+          style: TextStyle(color: context.colors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Search blocked contacts...',
-            hintStyle: context.bodyLarge.copyWith(
-              color: context.colors.textHint.withValues(alpha: 0.7),
-            ),
-            prefixIcon: Icon(
-              CommonIcons.search,
-              color: context.colors.textHint.withValues(alpha: 0.7),
-            ),
+            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 14),
+            prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00873C), size: 20),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
-                    icon: Icon(CommonIcons.close, size: 20),
+                    icon: Icon(Icons.clear, color: context.colors.textHint, size: 18),
                     onPressed: () {
                       _searchController.clear();
                       setState(() {
@@ -271,63 +365,59 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
                   )
                 : null,
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
           ),
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.colors.scaffoldBackground,
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          _buildSearchBar(),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _blockedList.isEmpty
-                    ? _buildEmptyState()
-                    : _buildBlockedList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            CommonIcons.block,
-            size: 64,
-            color: context.colors.textSecondary.withValues(alpha: 0.5),
-          ),
-          CommonSpaces.h16,
-          Text(
-            'No blocked users',
-            style: context.titleMedium.copyWith(
-              color: context.colors.textSecondary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          CommonSpaces.h8,
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'Contacts you block will be listed here and will not be able to message or call you.',
-              textAlign: TextAlign.center,
-              style: context.bodyMedium.copyWith(
-                color: context.colors.textHint,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE8F5E9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.block_rounded,
+                size: 42,
+                color: Color(0xFF00873C),
               ),
             ),
-          ),
-        ],
+            CommonSpaces.h20,
+            Text(
+              'No Blocked Contacts',
+              style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+            ),
+            CommonSpaces.h8,
+            Text(
+              'Contacts you block will appear here. They will not be able to message or call you on Schat.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.colors.textSecondary, fontSize: 14, height: 1.4),
+            ),
+            CommonSpaces.h24,
+            ElevatedButton.icon(
+              onPressed: _addBlockedUser,
+              icon: const Icon(Icons.person_add_rounded, size: 20),
+              label: const Text('Block a Contact'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00873C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                elevation: 2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -344,18 +434,16 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
       return Center(
         child: Text(
           'No matching contacts found',
-          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+          style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
         ),
       );
     }
 
-    return ListView.separated(
+    final isDark = context.colors.isDark;
+
+    return ListView.builder(
       itemCount: filteredList.length,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      separatorBuilder: (context, index) => Divider(
-        height: 1,
-        color: context.colors.textHint.withValues(alpha: 0.1),
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
       itemBuilder: (context, index) {
         final user = filteredList[index];
         final String userId = user['id'] ?? '';
@@ -363,76 +451,89 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
         final String? phone = user['phoneNumber'];
         final String? avatarUrl = user['profilePictureUrl'];
 
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          onTap: () => _showUnblockDialog(userId, name),
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: context.colors.primary.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: isDark ? context.colors.cardBackground : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: context.colors.border.withValues(alpha: 0.35),
             ),
-            child: ClipOval(
-              child: (avatarUrl != null && avatarUrl.isNotEmpty)
-                  ? Image.network(
-                      avatarUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Center(
-                        child: Text(
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: const Color(0xFFFFEBEE),
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? Text(
                           name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'B',
-                          style: context.bodyMedium.copyWith(
-                            color: context.colors.primary,
+                          style: const TextStyle(
+                            color: Color(0xFFE53935),
                             fontWeight: FontWeight.bold,
-                            fontSize: 16,
+                            fontSize: 17,
+                          ),
+                        )
+                      : null,
+                ),
+                CommonSpaces.w12,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          color: context.colors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (phone != null && phone.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          phone,
+                          style: TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 13,
                           ),
                         ),
-                      ),
-                    )
-                  : Center(
-                      child: Text(
-                        name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'B',
-                        style: context.bodyMedium.copyWith(
-                          color: context.colors.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          title: Text(
-            name,
-            style: context.bodyMedium.copyWith(
-              fontWeight: FontWeight.bold,
-              color: context.colors.textPrimary,
-            ),
-          ),
-          subtitle: phone != null && phone.isNotEmpty
-              ? Text(
-                  phone,
-                  style: context.bodySmall.copyWith(
-                    color: context.colors.textSecondary,
+                      ],
+                    ],
                   ),
-                )
-              : null,
-          trailing: OutlinedButton(
-            onPressed: () => _showUnblockDialog(userId, name),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: context.colors.primary,
-              side: BorderSide(color: context.colors.primary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              minimumSize: const Size(80, 32),
-            ),
-            child: Text(
-              'Unblock',
-              style: context.bodySmall.copyWith(
-                color: context.colors.primary,
-                fontWeight: FontWeight.bold,
-              ),
+                ),
+                ElevatedButton(
+                  onPressed: () => _showUnblockDialog(userId, name),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE8F5E9),
+                    foregroundColor: const Color(0xFF00873C),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: const BorderSide(color: Color(0xFF00873C), width: 1),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                  child: const Text(
+                    'Unblock',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ],
             ),
           ),
         );

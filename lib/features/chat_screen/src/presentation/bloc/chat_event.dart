@@ -11,12 +11,14 @@ class LoadMessagesEvent extends ChatEvent {
   final String? recipientId;
   final bool? initialIsOnline;
   final ThemeColorModel? initialThemeColor;
+  final String? initialCustomWallpaperUrl;
   final int? initialDisappearingTimer;
   const LoadMessagesEvent({
     required this.conversationId,
     this.recipientId,
     this.initialIsOnline,
     this.initialThemeColor,
+    this.initialCustomWallpaperUrl,
     this.initialDisappearingTimer,
   });
 }
@@ -247,7 +249,22 @@ class LoadThemesEvent extends ChatEvent {
 class UpdateThemeEvent extends ChatEvent {
   final String? themeColorId; // null to remove theme
   final ThemeColorModel? themeColor;
-  const UpdateThemeEvent({this.themeColorId, this.themeColor});
+  final String? customWallpaperUrl;
+  final bool clearWallpaper;
+  final bool applyToAll;
+
+  const UpdateThemeEvent({
+    this.themeColorId,
+    this.themeColor,
+    this.customWallpaperUrl,
+    this.clearWallpaper = false,
+    this.applyToAll = false,
+  });
+}
+
+class ResetThemeEvent extends ChatEvent {
+  final bool resetAll;
+  const ResetThemeEvent({this.resetAll = false});
 }
 
 class LoadMoreMessagesEvent extends ChatEvent {
@@ -317,3 +334,35 @@ class ScheduleMessageEvent extends ChatEvent {
 class CheckExpiredMessagesEvent extends ChatEvent {
   const CheckExpiredMessagesEvent();
 }
+
+class ReceiveDisappearingTimerUpdatedEvent extends ChatEvent {
+  final int? seconds;
+  const ReceiveDisappearingTimerUpdatedEvent({this.seconds});
+}
+
+class ReceiveScreenPermissionRequestEvent extends ChatEvent {
+  final Map<String, dynamic> requestData;
+  const ReceiveScreenPermissionRequestEvent({required this.requestData});
+}
+
+class ReceiveScreenPermissionResponseEvent extends ChatEvent {
+  final Map<String, dynamic> requestData;
+  final String action;
+  const ReceiveScreenPermissionResponseEvent({required this.requestData, required this.action});
+}
+
+class UpdateActiveScreenPermissionEvent extends ChatEvent {
+  final Map<String, dynamic>? permissionData;
+  const UpdateActiveScreenPermissionEvent({this.permissionData});
+}
+
+class ConsumeScreenPermissionEvent extends ChatEvent {
+  final String requestId;
+  const ConsumeScreenPermissionEvent({required this.requestId});
+}
+
+class DismissIncomingScreenPermissionRequestEvent extends ChatEvent {
+  const DismissIncomingScreenPermissionRequestEvent();
+}
+
+

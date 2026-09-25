@@ -32,6 +32,17 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += listOf("**/*.so")
         }
     }
 }
@@ -48,6 +59,7 @@ flutter {
 
 configurations.all {
     resolutionStrategy {
+        force("com.google.android.material:material:1.12.0")
         force("androidx.browser:browser:1.8.0")
         force("androidx.core:core-ktx:1.13.1")
         force("androidx.core:core:1.13.1")
@@ -58,5 +70,6 @@ configurations.all {
 }
 
 dependencies {
+    implementation("com.google.android.material:material:1.12.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

@@ -1,4 +1,4 @@
-// mason make bloc --name call_webrtc
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 
 abstract class CallWebRtcEvent {
   const CallWebRtcEvent();
@@ -123,4 +123,10 @@ class RespondToCallSwitchEvent extends CallWebRtcEvent {
 class HandleCallSwitchRespondedEvent extends CallWebRtcEvent {
   final Map<String, dynamic> event;
   const HandleCallSwitchRespondedEvent(this.event);
+}
+
+/// Event to add new participants into the ongoing call
+class AddParticipantsCallEvent extends CallWebRtcEvent {
+  final List<UserModel> users;
+  const AddParticipantsCallEvent(this.users);
 }

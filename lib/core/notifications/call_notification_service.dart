@@ -5,14 +5,19 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
+@pragma('vm:entry-point')
 @lazySingleton
 class CallNotificationService {
   final ApiService _apiService;
@@ -36,9 +41,19 @@ class CallNotificationService {
     FlutterCallkitIncoming.onEvent.listen(_onCallKitEvent);
 
     // Listen for foreground messages.
-    // Suppress foreground FCM if socket is likely handling it via CallWebRtcBloc.
     FirebaseMessaging.onMessage.listen((message) {
       if (kDebugMode) print('FCM Foreground Message: ${message.data}');
+      final type = message.data['type']?.toString();
+      if (type == 'call_initiate' || type == 'call_incoming') {
+        try {
+          final webrtcBloc = getIt<CallWebRtcBloc>();
+          if (webrtcBloc.state is CallIdle) {
+            webrtcBloc.add(HandleIncomingCallEvent(Map<String, dynamic>.from(message.data)));
+          }
+        } catch (e) {
+          debugPrint('CallNotificationService: Error handling foreground call message: $e');
+        }
+      }
     });
   }
 
@@ -102,25 +117,78 @@ class CallNotificationService {
     );
   }
 
+  static String _resolveImageUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return '';
+    final trimmed = url.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    final base = CommonEndpoints.baseUrl.endsWith('/')
+        ? CommonEndpoints.baseUrl.substring(0, CommonEndpoints.baseUrl.length - 1)
+        : CommonEndpoints.baseUrl;
+    final path = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    return '$base$path';
+  }
+
+  static ({String name, String avatar}) _extractCallerInfo(Map<String, dynamic> data) {
+    final dynamic callerDetailsRaw = data['caller_details'] ?? data['callerDetails'];
+    final dynamic callerDetails = _tryParseJson(callerDetailsRaw);
+
+    String name = (data['caller_name'] ??
+            data['callerName'] ??
+            data['name'] ??
+            data['username'] ??
+            '')
+        .toString()
+        .trim();
+
+    String avatar = (data['caller_profile_picture_url'] ??
+            data['profile_picture_url'] ??
+            data['profilePictureUrl'] ??
+            data['avatar'] ??
+            '')
+        .toString()
+        .trim();
+
+    if (callerDetails is Map) {
+      if (name.isEmpty || name == 'Unknown' || name == 'null') {
+        name = (callerDetails['name'] ??
+                callerDetails['username'] ??
+                callerDetails['phone_number'] ??
+                callerDetails['phoneNumber'] ??
+                '')
+            .toString()
+            .trim();
+      }
+      if (avatar.isEmpty || avatar == 'null') {
+        avatar = (callerDetails['profile_picture_url'] ??
+                callerDetails['profilePictureUrl'] ??
+                callerDetails['avatar'] ??
+                '')
+            .toString()
+            .trim();
+      }
+    }
+
+    if (name.isEmpty || name == 'null') {
+      name = 'Unknown';
+    }
+
+    final resolvedAvatar = _resolveImageUrl(avatar);
+    return (name: name, avatar: resolvedAvatar);
+  }
+
   Future<void> showIncomingCall(Map<String, dynamic> data) async {
     if (kIsWeb) {
       debugPrint('CallNotificationService: showIncomingCall skipped on Web');
       return;
     }
     final String uuid = _uuid.v4();
-    final String callerName = data['caller_name'] ?? 'Unknown';
-    final String conversationId = data['conversation_id'] ?? '';
-    final bool isVideo = data['call_type'] == 'video';
-    final callerDetails = data['caller_details'] ?? data['callerDetails'];
-    String? profilePicUrl;
-    if (callerDetails is Map) {
-      profilePicUrl = callerDetails['profile_picture_url'] ??
-          callerDetails['profilePictureUrl'];
-    }
-    profilePicUrl ??= data['caller_profile_picture_url'] ??
-        data['profile_picture_url'] ??
-        data['profilePictureUrl'] ??
-        '';
+    final callerInfo = _extractCallerInfo(data);
+    final String callerName = callerInfo.name;
+    final String profilePicUrl = callerInfo.avatar;
+    final String conversationId = (data['conversation_id'] ?? data['conversationId'] ?? '').toString();
+    final bool isVideo = data['call_type'] == 'video' || data['callType'] == 'video';
 
     // FCM delivers all payload values as Strings — parse `offer` to a Map.
     final dynamic offerParsed = _tryParseJson(data['offer']);
@@ -129,27 +197,32 @@ class CallNotificationService {
       id: uuid,
       nameCaller: callerName,
       appName: 'sChat',
-      avatar: profilePicUrl,
+      avatar: profilePicUrl.isNotEmpty ? profilePicUrl : null,
       handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
       type: isVideo ? 1 : 0,
       duration: 30000,
       extra: <String, dynamic>{
         'conversation_id': conversationId,
         'caller_name': callerName,
-        'call_type': data['call_type'],
+        'call_type': data['call_type'] ?? (isVideo ? 'video' : 'audio'),
         'offer': offerParsed,
-        'recipient_id': data['recipient_id'],
+        'recipient_id': data['recipient_id'] ?? data['recipientId'],
         'profile_picture_url': profilePicUrl,
+        'avatar': profilePicUrl,
       },
       android: const AndroidParams(
-        isCustomNotification: true,
+        isCustomNotification: false,
         isShowLogo: false,
+        isShowCallID: true,
+        isShowFullLockedScreen: true,
+        isFullScreen: true,
+        isImportant: true,
         ringtonePath: 'system_ringtone_default',
         backgroundColor: '#0F3460',
-        backgroundUrl: 'https://i.pravatar.cc/500',
         actionColor: '#4CAF50',
-        incomingCallNotificationChannelName: 'Incoming Call',
-        textAccept: 'Accept',
+        textColor: '#FFFFFF',
+        incomingCallNotificationChannelName: 'Incoming Calls',
+        textAccept: 'Answer',
         textDecline: 'Decline',
       ),
       ios: const IOSParams(
@@ -225,64 +298,160 @@ class CallNotificationService {
   // Static background FCM handler (runs in isolate, no DI/getIt)
   // ─────────────────────────────────────────────────────────────
 
+  @pragma('vm:entry-point')
   static Future<void> handleBackgroundMessage(RemoteMessage message) async {
     debugPrint('FCM Background Message received: ${message.data}');
-    if (message.data['type'] != 'call_initiate') return;
+    final type = message.data['type']?.toString();
 
-    final Uuid uuid = const Uuid();
-    final String callUuid = uuid.v4();
-    final String callerName = message.data['caller_name'] ?? 'Unknown';
-    final bool isVideo = message.data['call_type'] == 'video';
+    // 1. Incoming Call (CallKit VoIP)
+    if (type == 'call_initiate' || type == 'call_incoming') {
+      final Uuid uuid = const Uuid();
+      final String callUuid = uuid.v4();
+      final callerInfo = _extractCallerInfo(message.data);
+      final String callerName = callerInfo.name;
+      final String profilePicUrl = callerInfo.avatar;
+      final bool isVideo = message.data['call_type'] == 'video' || message.data['callType'] == 'video';
 
-    // FCM delivers all values as Strings — parse `offer` JSON string to Map.
-    final dynamic offerParsed = _tryParseJson(message.data['offer']);
+      final dynamic offerParsed = _tryParseJson(message.data['offer']);
 
-    final dynamic callerDetailsRaw =
-        message.data['caller_details'] ?? message.data['callerDetails'];
-    final dynamic callerDetailsParsed = _tryParseJson(callerDetailsRaw);
-    String? profilePicUrl;
-    if (callerDetailsParsed is Map) {
-      profilePicUrl = callerDetailsParsed['profile_picture_url'] ??
-          callerDetailsParsed['profilePictureUrl'];
+      final Map<String, dynamic> extra = {
+        ...message.data,
+        'offer': offerParsed,
+        'caller_name': callerName,
+        'profile_picture_url': profilePicUrl,
+        'avatar': profilePicUrl,
+      };
+
+      final CallKitParams params = CallKitParams(
+        id: callUuid,
+        nameCaller: callerName,
+        appName: 'sChat',
+        avatar: profilePicUrl.isNotEmpty ? profilePicUrl : null,
+        handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
+        type: isVideo ? 1 : 0,
+        duration: 30000,
+        extra: extra,
+        android: const AndroidParams(
+          isCustomNotification: false,
+          isShowLogo: false,
+          isShowCallID: true,
+          isShowFullLockedScreen: true,
+          isFullScreen: true,
+          isImportant: true,
+          ringtonePath: 'system_ringtone_default',
+          backgroundColor: '#0F3460',
+          actionColor: '#4CAF50',
+          textColor: '#FFFFFF',
+          incomingCallNotificationChannelName: 'Incoming Calls',
+          textAccept: 'Answer',
+          textDecline: 'Decline',
+        ),
+        ios: const IOSParams(
+          iconName: 'AppIcon',
+          handleType: 'generic',
+          supportsVideo: true,
+          maximumCallGroups: 1,
+          maximumCallsPerCallGroup: 1,
+          ringtonePath: 'system_ringtone_default',
+        ),
+      );
+      await FlutterCallkitIncoming.showCallkitIncoming(params);
+      return;
     }
-    profilePicUrl ??= message.data['caller_profile_picture_url'] ??
-        message.data['profile_picture_url'] ??
-        message.data['profilePictureUrl'];
 
-    final Map<String, dynamic> extra = {
-      ...message.data,
-      'offer': offerParsed,
-      'profile_picture_url': profilePicUrl,
-    };
+    // 2. Chat / Data Message (System Notification)
+    try {
+      final notification = message.notification;
+      // If Firebase already displayed a notification for notification payload on Android, skip to avoid duplicates
+      if (notification != null) {
+        return;
+      }
+      String title = '';
+      String body = '';
 
-    final CallKitParams params = CallKitParams(
-      id: callUuid,
-      nameCaller: callerName,
-      appName: 'sChat',
-      avatar: profilePicUrl,
-      handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
-      type: isVideo ? 1 : 0,
-      duration: 30000,
-      extra: extra,
-      android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: false,
-        ringtonePath: 'system_ringtone_default',
-        backgroundColor: '#0F3460',
-        actionColor: '#4CAF50',
-        incomingCallNotificationChannelName: 'Incoming Call',
-        textAccept: 'Accept',
-        textDecline: 'Decline',
-      ),
-      ios: const IOSParams(
-        iconName: 'AppIcon',
-        handleType: 'generic',
-        supportsVideo: true,
-        maximumCallGroups: 1,
-        maximumCallsPerCallGroup: 1,
-        ringtonePath: 'system_ringtone_default',
-      ),
-    );
-    await FlutterCallkitIncoming.showCallkitIncoming(params);
+      if (title.isEmpty) {
+        title = (message.data['sender_name'] ??
+                message.data['senderName'] ??
+                message.data['username'] ??
+                message.data['title'] ??
+                'sChat')
+            .toString();
+      }
+
+      if (body.isEmpty) {
+        final content = message.data['content'] ??
+            message.data['message'] ??
+            message.data['text'] ??
+            message.data['body'];
+        if (content is Map) {
+          body = (content['text'] ?? 'New message received').toString();
+        } else if (content is String && content.isNotEmpty) {
+          body = content;
+        } else {
+          body = 'New message received';
+        }
+      }
+
+      final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      const initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/launcher_icon');
+      const initializationSettingsIOS = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const initializationSettings = InitializationSettings(
+        android: initializationSettingsAndroid,
+        iOS: initializationSettingsIOS,
+      );
+
+      await flutterLocalNotificationsPlugin.initialize(settings: initializationSettings);
+
+      final androidPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        const channel = AndroidNotificationChannel(
+          'schat_general_channel',
+          'General Notifications',
+          description: 'Notifications for chats and other alerts',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+        );
+        await androidPlugin.createNotificationChannel(channel);
+      }
+
+      const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+        'schat_general_channel',
+        'General Notifications',
+        channelDescription: 'Notifications for chats and other alerts',
+        importance: Importance.max,
+        priority: Priority.high,
+        showWhen: true,
+        icon: '@mipmap/launcher_icon',
+      );
+      const iOSPlatformChannelSpecifics = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+      const platformChannelSpecifics = NotificationDetails(
+        android: androidPlatformChannelSpecifics,
+        iOS: iOSPlatformChannelSpecifics,
+      );
+
+      final int notificationId =
+          message.messageId?.hashCode ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+
+      await flutterLocalNotificationsPlugin.show(
+        id: notificationId,
+        title: title,
+        body: body,
+        notificationDetails: platformChannelSpecifics,
+        payload: jsonEncode(message.data),
+      );
+    } catch (e) {
+      debugPrint('CallNotificationService: Error displaying background chat notification: $e');
+    }
   }
 }

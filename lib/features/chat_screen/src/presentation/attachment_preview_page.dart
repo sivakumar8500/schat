@@ -7,6 +7,9 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor_crop_view.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor_filter_view.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor_doodle_view.dart';
 
 class AttachmentPreviewPage extends StatefulWidget {
   final String? path;
@@ -35,9 +38,14 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   VideoPlayerController? _videoPlayerController;
   bool _isVideoPlaying = false;
 
+  Uint8List? _currentBytes;
+  Uint8List? _originalBytes;
+  bool _hasEdits = false;
+
   @override
   void initState() {
     super.initState();
+    _initImageBytes();
     if (widget.type == 'video' && widget.path != null) {
       if (kIsWeb) {
         _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(widget.path!));
@@ -52,6 +60,27 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     }
   }
 
+  Future<void> _initImageBytes() async {
+    if (widget.type == 'image') {
+      if (widget.bytes != null) {
+        _currentBytes = widget.bytes;
+        _originalBytes = widget.bytes;
+      } else if (widget.path != null && !kIsWeb) {
+        try {
+          final fileBytes = await File(widget.path!).readAsBytes();
+          if (mounted) {
+            setState(() {
+              _currentBytes = fileBytes;
+              _originalBytes = fileBytes;
+            });
+          }
+        } catch (e) {
+          debugPrint('Error reading image bytes: $e');
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _captionController.dispose();
@@ -59,24 +88,127 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     super.dispose();
   }
 
+  void _openCrop() {
+    if (_currentBytes == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ImageEditorCropView(
+          imageBytes: _currentBytes!,
+          onCropped: (croppedBytes) {
+            Navigator.pop(ctx);
+            setState(() {
+              _currentBytes = croppedBytes;
+              _hasEdits = true;
+            });
+          },
+          onCancel: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
+
+  void _openFilters() {
+    if (_currentBytes == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ImageEditorFilterView(
+          imageBytes: _currentBytes!,
+          onApplied: (filteredBytes) {
+            Navigator.pop(ctx);
+            setState(() {
+              _currentBytes = filteredBytes;
+              _hasEdits = true;
+            });
+          },
+          onCancel: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
+
+  void _openDoodle() {
+    if (_currentBytes == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ImageEditorDoodleView(
+          imageBytes: _currentBytes!,
+          onApplied: (doodledBytes) {
+            Navigator.pop(ctx);
+            setState(() {
+              _currentBytes = doodledBytes;
+              _hasEdits = true;
+            });
+          },
+          onCancel: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
+
+  void _resetEdits() {
+    if (_originalBytes != null) {
+      setState(() {
+        _currentBytes = _originalBytes;
+        _hasEdits = false;
+      });
+    }
+  }
+
   void _onSend() {
     Navigator.pop(context, {
       'send': true,
       'caption': _captionController.text.trim(),
+      'bytes': _currentBytes ?? widget.bytes,
+      'path': widget.path,
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final isImage = widget.type == 'image';
+
     return Scaffold(
       backgroundColor: context.colors.pureBlack,
       appBar: AppBar(
-        backgroundColor: context.colors.pureBlack.withValues(alpha: 0.5),
+        backgroundColor: context.colors.pureBlack.withValues(alpha: 0.7),
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.close, color: context.colors.pureWhite),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          if (isImage && _currentBytes != null) ...[
+            // Crop & Rotate
+            IconButton(
+              icon: const Icon(Icons.crop_rotate, color: Colors.white),
+              tooltip: 'Crop & Rotate',
+              onPressed: _openCrop,
+            ),
+            // Filters & Effects
+            IconButton(
+              icon: const Icon(Icons.auto_awesome, color: Colors.white),
+              tooltip: 'Filters & Effects',
+              onPressed: _openFilters,
+            ),
+            // Draw & Doodle
+            IconButton(
+              icon: const Icon(Icons.brush, color: Colors.white),
+              tooltip: 'Draw & Text',
+              onPressed: _openDoodle,
+            ),
+            // Reset edits button
+            if (_hasEdits)
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.amberAccent),
+                tooltip: 'Reset to Original',
+                onPressed: _resetEdits,
+              ),
+            const SizedBox(width: 4),
+          ],
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -95,7 +227,13 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
   Widget _buildPreview() {
     if (widget.type == 'image') {
-      if (widget.bytes != null) {
+      if (_currentBytes != null) {
+        return Image.memory(
+          _currentBytes!,
+          fit: BoxFit.contain,
+          key: ValueKey(_currentBytes!.hashCode),
+        );
+      } else if (widget.bytes != null) {
         return Image.memory(widget.bytes!, fit: BoxFit.contain);
       } else if (widget.path != null) {
         return kIsWeb

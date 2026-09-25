@@ -13,26 +13,39 @@ void main() {
 
   group('ScheduleMessageBottomSheet Widget Tests', () {
     testWidgets('renders schedule message title and form fields', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
       await tester.pumpWidget(
         buildTestableWidget(
           const ScheduleMessageBottomSheet(contactName: 'Test Contact'),
         ),
       );
+      await tester.pumpAndSettle();
 
-      expect(find.text('Schedule Message'), findsOneWidget);
-      expect(find.text('Scheduling message for Test Contact'), findsOneWidget);
+      expect(find.text('Scheduled Messages'), findsOneWidget);
+      expect(find.text('Test Contact'), findsOneWidget);
+      expect(find.text('Schedule New'), findsOneWidget);
+      expect(find.text('Scheduled (0)'), findsOneWidget);
       expect(find.text('MESSAGE TYPE'), findsOneWidget);
       expect(find.text('Confirm & Schedule'), findsOneWidget);
     });
 
     testWidgets('shows validation error when submitting empty text and no file', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
       await tester.pumpWidget(
         buildTestableWidget(
           const ScheduleMessageBottomSheet(contactName: 'Test Contact'),
         ),
       );
+      await tester.pumpAndSettle();
 
       final submitBtn = find.text('Confirm & Schedule');
+      await tester.ensureVisible(submitBtn);
       await tester.tap(submitBtn);
       await tester.pumpAndSettle();
 

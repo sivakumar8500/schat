@@ -10,16 +10,19 @@ import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_e
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
-import 'package:schat/utils/common_notifications.dart';
 
 import 'injection.dart';
 
@@ -32,6 +35,16 @@ import 'package:schat/core/services/share_receiver_service.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (_) {}
+  await CallNotificationService.handleBackgroundMessage(message);
+}
+
 Future<void> main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
@@ -41,8 +54,8 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     
-    // Register background message handler
-    FirebaseMessaging.onBackgroundMessage(CallNotificationService.handleBackgroundMessage);
+    // Register top-level background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // Initialize Hive
     await Hive.initFlutter();
@@ -52,6 +65,13 @@ Future<void> main() async {
     // Initialize CallNotificationService
     await getIt<CallNotificationService>().initialize();
     
+    // Initialize InAppNotificationService
+    getIt<InAppNotificationService>().initialize();
+
+    // Initialize PushNotificationService
+    await getIt<PushNotificationService>().initialize();
+    await getIt<PushNotificationService>().registerToken();
+
     // Initialize ScreenProtectionService
     await getIt<ScreenProtectionService>().initialize();
     
@@ -81,14 +101,10 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  StreamSubscription? _screenshotSubscription;
-  StreamSubscription? _recordSubscription;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _setupSecurityListeners();
     ShareReceiverService().init();
   }
 
@@ -100,43 +116,29 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
-      if (!repo.isConnected) {
-        debugPrint('MyApp: App resumed — reconnecting socket...');
-        repo.connect();
+      repo.onAppResumed();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      try {
+        final callBloc = getIt<CallWebRtcBloc>();
+        if (callBloc.state is CallActive || callBloc.state is CallConnecting) {
+          debugPrint('MyApp: App backgrounded during call — enabling minimized floating overlay');
+          callBloc.add(const SetCallMinimizedEvent(true));
+        }
+      } catch (e) {
+        debugPrint('MyApp: Error updating call state on background: $e');
       }
     }
-  }
-
-  void _setupSecurityListeners() {
-    final securityService = getIt<ScreenProtectionService>();
-    
-    _screenshotSubscription = securityService.onScreenshot.listen((_) {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        context.showInfoNotification("Screenshot detected! Sharing screenshots is restricted.");
-      }
-    });
-
-    _recordSubscription = securityService.onScreenRecord.listen((isRecording) {
-      final context = navigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        if (isRecording) {
-          context.showErrorNotification("Screen recording is active! Protection enabled.");
-        } else {
-          context.showInfoNotification("Screen recording stopped.");
-        }
-      }
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _screenshotSubscription?.cancel();
-    _recordSubscription?.cancel();
     ShareReceiverService().dispose();
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {

@@ -11,6 +11,8 @@ abstract class ContactsRepository {
   Future<List<Contact>> getContacts();
   Future<ApiResult<List<UserModel>>> syncContacts(List<Map<String, String>> contacts);
   Future<ApiResult<List<UserModel>>> fetchSyncedContacts();
+  Future<ApiResult<List<UserModel>>> discoverUsers({String? query});
+  Future<ApiResult<UserModel?>> lookupUser(String phoneNumber);
   Future<List<UserModel>> getCachedContacts();
   Future<void> cacheContacts(List<UserModel> contacts);
   Future<void> removeContactFromCache(String userId);
@@ -75,6 +77,42 @@ class ContactsRepositoryImpl implements ContactsRepository {
     }
 
     return result;
+  }
+
+  @override
+  Future<ApiResult<List<UserModel>>> discoverUsers({String? query}) async {
+    final endpoint = CommonEndpoints.searchUsers(query: query);
+    final result = await _apiService.get<List<UserModel>>(
+      endpoint,
+      mapper: (data) {
+        if (data is List) {
+          return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+        return [];
+      },
+    );
+
+    if (result is Success<List<UserModel>> && (query == null || query.isEmpty)) {
+      if (result.data.isNotEmpty) {
+        await cacheContacts(result.data);
+      }
+    }
+
+    return result;
+  }
+
+  @override
+  Future<ApiResult<UserModel?>> lookupUser(String phoneNumber) async {
+    final endpoint = CommonEndpoints.lookupUserByPhone(phoneNumber);
+    return await _apiService.get<UserModel?>(
+      endpoint,
+      mapper: (data) {
+        if (data is Map && data['exists'] == true && data['user'] != null) {
+          return UserModel.fromJson(data['user'] as Map<String, dynamic>);
+        }
+        return null;
+      },
+    );
   }
 
   @override
