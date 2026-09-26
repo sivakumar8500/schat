@@ -35,11 +35,27 @@ class PipCallView extends StatelessWidget {
     final bool isConnected = state is CallActive;
     final bool isRemoteVideoOff =
         state is CallActive && (state as CallActive).isRemoteVideoOff;
+    final bool isLocalVideoOff =
+        state is CallActive ? (state as CallActive).isVideoOff : false;
+    final bool isFrontCamera = state is CallActive
+        ? (state as CallActive).isFrontCamera
+        : (state is CallConnecting
+            ? (state as CallConnecting).isFrontCamera
+            : true);
     final DateTime? startedAt = state is CallActive
         ? ((state as CallActive).startedAt ??
             getIt<CallWebRtcBloc>().activeCallStart ??
             DateTime.now())
         : null;
+
+    final webRtcService = getIt<WebRtcService>();
+    final bool hasRemoteVideo = isVideo &&
+        isConnected &&
+        !isRemoteVideoOff &&
+        webRtcService.remoteRenderer.srcObject != null;
+    final bool hasLocalVideo = isVideo &&
+        !isLocalVideoOff &&
+        webRtcService.localRenderer.srcObject != null;
 
     return Container(
       color: Colors.black,
@@ -49,12 +65,22 @@ class PipCallView extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           // ─── Main Content (Video or Audio Call Card) ───
-          if (isVideo && isConnected && !isRemoteVideoOff)
+          if (hasRemoteVideo)
             Positioned.fill(
               child: RTCVideoView(
-                getIt<WebRtcService>().remoteRenderer,
+                webRtcService.remoteRenderer,
+                key: ValueKey('pip_remote_${webRtcService.remoteRenderer.textureId}'),
                 objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 mirror: false,
+              ),
+            )
+          else if (hasLocalVideo)
+            Positioned.fill(
+              child: RTCVideoView(
+                webRtcService.localRenderer,
+                key: ValueKey('pip_local_main_${webRtcService.localRenderer.textureId}'),
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                mirror: isFrontCamera,
               ),
             )
           else
@@ -77,7 +103,7 @@ class PipCallView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircleAvatar(
-                        radius: 34,
+                        radius: 30,
                         backgroundColor: const Color(0xFF00873C),
                         backgroundImage: profilePictureUrl != null &&
                                 profilePictureUrl.isNotEmpty
@@ -91,34 +117,34 @@ class PipCallView extends StatelessWidget {
                                     : '?',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 24,
+                                  fontSize: 22,
                                   fontWeight: FontWeight.bold,
                                   decoration: TextDecoration.none,
                                 ),
                               )
                             : null,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
                           contactName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                             decoration: TextDecoration.none,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      if (isRemoteVideoOff)
+                      const SizedBox(height: 3),
+                      if (isRemoteVideoOff && isConnected)
                         const Text(
                           'Camera Off',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: Colors.white70,
                             decoration: TextDecoration.none,
                           ),
@@ -129,13 +155,41 @@ class PipCallView extends StatelessWidget {
                         const Text(
                           'Connecting...',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: Colors.white70,
                             decoration: TextDecoration.none,
                           ),
                         ),
                     ],
                   ),
+                ),
+              ),
+            ),
+
+          // ─── Local Video Inset (when remote is active) ───
+          if (hasRemoteVideo && hasLocalVideo)
+            Positioned(
+              bottom: 8,
+              left: 8,
+              width: 36,
+              height: 52,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white54, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: RTCVideoView(
+                  webRtcService.localRenderer,
+                  key: ValueKey('pip_local_inset_${webRtcService.localRenderer.textureId}'),
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  mirror: isFrontCamera,
                 ),
               ),
             ),
@@ -182,8 +236,8 @@ class PipCallView extends StatelessWidget {
                 context.read<CallWebRtcBloc>().add(HangUpCallEvent(conversationId));
               },
               child: Container(
-                width: 30,
-                height: 30,
+                width: 28,
+                height: 28,
                 decoration: const BoxDecoration(
                   color: Colors.redAccent,
                   shape: BoxShape.circle,
@@ -191,7 +245,7 @@ class PipCallView extends StatelessWidget {
                 child: const Icon(
                   Icons.call_end,
                   color: Colors.white,
-                  size: 16,
+                  size: 15,
                 ),
               ),
             ),

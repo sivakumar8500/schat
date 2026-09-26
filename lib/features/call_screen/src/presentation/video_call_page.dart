@@ -1,7 +1,5 @@
 // mason make page --name video_call
 import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -240,6 +238,9 @@ class _VideoCallPageState extends State<VideoCallPage>
             isFrontCamera = state.isFrontCamera;
           }
 
+          final bool isSystemPip = (state is CallActive && state.isSystemPip) ||
+              (state is CallConnecting && state.isSystemPip);
+
           return PopScope(
             canPop: true,
             onPopInvokedWithResult: (didPop, result) {
@@ -259,29 +260,34 @@ class _VideoCallPageState extends State<VideoCallPage>
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: state is CallActive
-                          ? (_isLocalVideoSmall
-                              ? (state.isRemoteVideoOff 
-                                  ? _buildRemoteVideoOffPlaceholder(state)
-                                  : RTCVideoView(
-                                      _webRtcService.remoteRenderer,
-                                      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                      mirror: false,
-                                    ))
+                      child: isSystemPip
+                          ? Container(color: Colors.black)
+                          : (state is CallActive
+                              ? (_isLocalVideoSmall
+                                  ? (state.isRemoteVideoOff 
+                                      ? _buildRemoteVideoOffPlaceholder(state)
+                                      : RTCVideoView(
+                                          _webRtcService.remoteRenderer,
+                                          key: ValueKey('main_remote_${_webRtcService.remoteRenderer.textureId}'),
+                                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                          mirror: false,
+                                        ))
+                                  : (isVideoOff
+                                      ? _buildLocalVideoOffPlaceholder()
+                                      : RTCVideoView(
+                                          _webRtcService.localRenderer,
+                                          key: ValueKey('main_local_${_webRtcService.localRenderer.textureId}'),
+                                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                          mirror: isFrontCamera,
+                                        )))
                               : (isVideoOff
-                                  ? _buildLocalVideoOffPlaceholder()
+                                  ? _buildWaitingScreen()
                                   : RTCVideoView(
                                       _webRtcService.localRenderer,
+                                      key: ValueKey('main_local_${_webRtcService.localRenderer.textureId}'),
                                       objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                       mirror: isFrontCamera,
-                                    )))
-                          : (isVideoOff
-                              ? _buildWaitingScreen()
-                              : RTCVideoView(
-                                  _webRtcService.localRenderer,
-                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                  mirror: isFrontCamera,
-                                )),
+                                    ))),
                     ),
 
                     // ─── Gradient overlays ───
@@ -339,11 +345,6 @@ class _VideoCallPageState extends State<VideoCallPage>
                           child: _buildFrostedButton(
                             icon: CommonIcons.minimize,
                             onTap: () {
-                              try {
-                                if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
-                                  const MethodChannel('com.sdpi.schat/pip').invokeMethod('enterPip');
-                                }
-                              } catch (_) {}
                               context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
                               Navigator.of(context).pop();
                             },
@@ -748,21 +749,25 @@ class _VideoCallPageState extends State<VideoCallPage>
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
-              child: _isLocalVideoSmall
-                  ? (isVideoOff
-                      ? _buildLocalVideoOffPlaceholder()
-                      : RTCVideoView(
-                          _webRtcService.localRenderer,
-                          mirror: isFrontCamera,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                        ))
-                  : (state == null || state.isRemoteVideoOff
-                      ? _buildRemoteVideoOffPlaceholder(state)
-                      : RTCVideoView(
-                          _webRtcService.remoteRenderer,
-                          mirror: false,
-                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                        )),
+              child: (state?.isSystemPip ?? false)
+                  ? const SizedBox.shrink()
+                  : (_isLocalVideoSmall
+                      ? (isVideoOff
+                          ? _buildLocalVideoOffPlaceholder()
+                          : RTCVideoView(
+                              _webRtcService.localRenderer,
+                              key: ValueKey('inset_local_${_webRtcService.localRenderer.textureId}'),
+                              mirror: isFrontCamera,
+                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            ))
+                      : (state == null || state.isRemoteVideoOff
+                          ? _buildRemoteVideoOffPlaceholder(state)
+                          : RTCVideoView(
+                              _webRtcService.remoteRenderer,
+                              key: ValueKey('inset_remote_${_webRtcService.remoteRenderer.textureId}'),
+                              mirror: false,
+                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            ))),
             ),
           ),
         ),

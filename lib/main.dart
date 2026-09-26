@@ -220,13 +220,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   final isSystemPip = (callState is CallActive && callState.isSystemPip) ||
                       (callState is CallConnecting && callState.isSystemPip);
 
-                  if (isSystemPip) {
-                    return Material(
-                      color: Colors.black,
-                      child: PipCallView(state: callState),
-                    );
-                  }
-
                   return MediaQuery(
                     data: MediaQuery.of(context).copyWith(
                       textScaler: TextScaler.linear(
@@ -235,9 +228,21 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                     ),
                     child: Stack(
                       children: [
-                        child!,
-                        const InternetConnectionPopup(),
-                        const MinimizedCallOverlay(),
+                        Offstage(
+                          offstage: isSystemPip,
+                          child: child ?? const SizedBox.shrink(),
+                        ),
+                        if (isSystemPip)
+                          Positioned.fill(
+                            child: Material(
+                              color: Colors.black,
+                              child: PipCallView(state: callState),
+                            ),
+                          )
+                        else ...[
+                          const InternetConnectionPopup(),
+                          const MinimizedCallOverlay(),
+                        ],
                       ],
                     ),
                   );

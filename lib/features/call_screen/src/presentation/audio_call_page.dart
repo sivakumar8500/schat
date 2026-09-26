@@ -1,7 +1,5 @@
 // mason make page --name audio_call
 import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/core/network/connectivity_repository.dart';
@@ -581,11 +579,6 @@ class _AudioCallPageState extends State<AudioCallPage>
         children: [
           GestureDetector(
             onTap: () {
-              try {
-                if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
-                  const MethodChannel('com.sdpi.schat/pip').invokeMethod('enterPip');
-                }
-              } catch (_) {}
               context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
               Navigator.of(context).pop();
             },

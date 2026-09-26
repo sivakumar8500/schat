@@ -74,9 +74,22 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
               : (state as CallConnecting).profilePictureUrl;
           final bool isConnected = state is CallActive;
           final bool isRemoteVideoOff = state is CallActive && state.isRemoteVideoOff;
+          final bool isLocalVideoOff = state is CallActive ? state.isVideoOff : false;
+          final bool isFrontCamera = state is CallActive
+              ? state.isFrontCamera
+              : (state is CallConnecting ? state.isFrontCamera : true);
           final DateTime? startedAt = state is CallActive
               ? (state.startedAt ?? getIt<CallWebRtcBloc>().activeCallStart ?? DateTime.now())
               : null;
+
+          final webRtcService = getIt<WebRtcService>();
+          final bool hasRemoteVideo = isVideo &&
+              isConnected &&
+              !isRemoteVideoOff &&
+              webRtcService.remoteRenderer.srcObject != null;
+          final bool hasLocalVideo = isVideo &&
+              !isLocalVideoOff &&
+              webRtcService.localRenderer.srcObject != null;
 
           void onTapAction() {
             context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
@@ -154,12 +167,22 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                     clipBehavior: Clip.hardEdge,
                     child: Stack(
                       children: [
-                        if (isVideo && isConnected && !isRemoteVideoOff)
+                        if (hasRemoteVideo)
                           Positioned.fill(
                             child: RTCVideoView(
-                              getIt<WebRtcService>().remoteRenderer,
+                              webRtcService.remoteRenderer,
+                              key: ValueKey('overlay_remote_${webRtcService.remoteRenderer.textureId}'),
                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                               mirror: false,
+                            ),
+                          )
+                        else if (hasLocalVideo)
+                          Positioned.fill(
+                            child: RTCVideoView(
+                              webRtcService.localRenderer,
+                              key: ValueKey('overlay_local_${webRtcService.localRenderer.textureId}'),
+                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                              mirror: isFrontCamera,
                             ),
                           )
                         else
