@@ -82,6 +82,9 @@ import AVFoundation
       case "enterPip":
         let started = self.startPictureInPicture()
         result(started)
+      case "exitPip":
+        self.stopPictureInPicture()
+        result(true)
       case "isPipSupported":
         result(AVPictureInPictureController.isPictureInPictureSupported())
       default:

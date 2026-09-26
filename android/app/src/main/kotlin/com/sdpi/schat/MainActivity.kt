@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
 import android.util.Rational
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -63,6 +64,18 @@ class MainActivity : FlutterActivity() {
                 "enterPip" -> {
                     val success = enterPipMode()
                     result.success(success)
+                }
+                "exitPip" -> {
+                    try {
+                        val intent = Intent(this, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        result.success(false)
+                    }
                 }
                 "isPipSupported" -> {
                     result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))

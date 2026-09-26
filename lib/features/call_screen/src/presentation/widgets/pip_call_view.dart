@@ -1,11 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/src/domain/web_rtc_service.dart';
+import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
+import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/main.dart';
 
 /// Full-frame edge-to-edge PiP view that renders ONLY the active call window.
 /// Displays video stream (or caller avatar + duration for audio / camera off calls)
@@ -13,6 +19,68 @@ import 'package:schat/injection.dart';
 class PipCallView extends StatelessWidget {
   final CallWebRtcState state;
   const PipCallView({super.key, required this.state});
+
+  void _openFullCallWindow(BuildContext context) {
+    try {
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        const MethodChannel('com.sdpi.schat/pip').invokeMethod('exitPip');
+      }
+    } catch (_) {}
+
+    final bloc = context.read<CallWebRtcBloc>();
+    bloc.add(const SetSystemPipModeEvent(false));
+    bloc.add(const SetCallMinimizedEvent(false));
+
+    final currentState = bloc.state;
+    if (currentState is! CallActive && currentState is! CallConnecting) return;
+
+    final bool isVideo = currentState is CallActive
+        ? currentState.isVideo
+        : (currentState as CallConnecting).isVideo;
+    final String conversationId = currentState is CallActive
+        ? currentState.conversationId
+        : (currentState as CallConnecting).conversationId;
+    final String contactName = currentState is CallActive
+        ? currentState.contactName
+        : (currentState as CallConnecting).contactName;
+    final String recipientId = currentState is CallActive
+        ? currentState.recipientId
+        : (currentState as CallConnecting).recipientId;
+    final String? profilePictureUrl = currentState is CallActive
+        ? currentState.profilePictureUrl
+        : (currentState as CallConnecting).profilePictureUrl;
+
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: isVideo
+              ? VideoCallPage(
+                  conversationId: conversationId,
+                  contactName: contactName,
+                  contactColor: const Color(0xFF00873C),
+                  recipientId: recipientId,
+                  isOutgoing: false,
+                  profilePictureUrl: profilePictureUrl,
+                  myProfilePictureUrl:
+                      getIt<StorageService>().getProfilePic(),
+                )
+              : AudioCallPage(
+                  conversationId: conversationId,
+                  contactName: contactName,
+                  contactColor: const Color(0xFF00873C),
+                  recipientId: recipientId,
+                  isOutgoing: false,
+                  profilePictureUrl: profilePictureUrl,
+                  myProfilePictureUrl:
+                      getIt<StorageService>().getProfilePic(),
+                ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,13 +125,16 @@ class PipCallView extends StatelessWidget {
         !isLocalVideoOff &&
         webRtcService.localRenderer.srcObject != null;
 
-    return Container(
-      color: Colors.black,
-      width: double.infinity,
-      height: double.infinity,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openFullCallWindow(context),
+      child: Container(
+        color: Colors.black,
+        width: double.infinity,
+        height: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
           // ─── Main Content (Video or Audio Call Card) ───
           if (hasRemoteVideo)
             Positioned.fill(
@@ -252,8 +323,9 @@ class PipCallView extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _PipCallTimerText extends StatefulWidget {

@@ -103,6 +103,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         if (call.method == 'onPipModeChanged') {
           final bool isInPip = call.arguments?['isInPip'] ?? false;
           add(SetSystemPipModeEvent(isInPip));
+          if (!isInPip) {
+            add(const SetCallMinimizedEvent(false));
+          }
         }
       });
     }
