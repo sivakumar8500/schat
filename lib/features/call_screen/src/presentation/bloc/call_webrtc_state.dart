@@ -14,6 +14,7 @@ class CallConnecting extends CallWebRtcState {
   final String contactName;
   final String recipientId;
   final bool isMinimized;
+  final bool isSystemPip;
   final String? profilePictureUrl;
   final bool isSpeakerOn;
   final bool isFrontCamera;
@@ -25,6 +26,7 @@ class CallConnecting extends CallWebRtcState {
     required this.contactName,
     this.recipientId = '',
     this.isMinimized = false,
+    this.isSystemPip = false,
     this.profilePictureUrl,
     bool? isSpeakerOn,
     this.isFrontCamera = true,
@@ -35,6 +37,7 @@ class CallConnecting extends CallWebRtcState {
     String? contactName,
     String? recipientId,
     bool? isMinimized,
+    bool? isSystemPip,
     String? profilePictureUrl,
     bool? isSpeakerOn,
     bool? isFrontCamera,
@@ -46,6 +49,7 @@ class CallConnecting extends CallWebRtcState {
       contactName: contactName ?? this.contactName,
       recipientId: recipientId ?? this.recipientId,
       isMinimized: isMinimized ?? this.isMinimized,
+      isSystemPip: isSystemPip ?? this.isSystemPip,
       profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isFrontCamera: isFrontCamera ?? this.isFrontCamera,
@@ -106,6 +110,7 @@ class CallActive extends CallWebRtcState {
   final bool isRemoteMuted;
   final bool isFrontCamera;
   final bool isMinimized;
+  final bool isSystemPip;
   final String? profilePictureUrl;
   final DateTime? startedAt;
   final String? switchRequestedCallType;
@@ -124,6 +129,7 @@ class CallActive extends CallWebRtcState {
     this.isRemoteVideoOff = false,
     this.isSpeakerOn = false,
     this.isMinimized = false,
+    this.isSystemPip = false,
     this.profilePictureUrl,
     this.startedAt,
     this.switchRequestedCallType,
@@ -139,6 +145,7 @@ class CallActive extends CallWebRtcState {
     bool? isRemoteVideoOff,
     bool? isSpeakerOn,
     bool? isMinimized,
+    bool? isSystemPip,
     bool? isVideo,
     String? switchRequestedCallType,
     Map<String, dynamic>? switchRequestedEvent,
@@ -157,6 +164,7 @@ class CallActive extends CallWebRtcState {
       isRemoteVideoOff: isRemoteVideoOff ?? this.isRemoteVideoOff,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isMinimized: isMinimized ?? this.isMinimized,
+      isSystemPip: isSystemPip ?? this.isSystemPip,
       profilePictureUrl: profilePictureUrl,
       startedAt: startedAt,
       switchRequestedCallType: clearSwitchRequest ? null : (switchRequestedCallType ?? this.switchRequestedCallType),
@@ -177,6 +185,7 @@ class CallActive extends CallWebRtcState {
         isRemoteVideoOff,
         isSpeakerOn,
         isMinimized,
+        isSystemPip,
         profilePictureUrl,
         startedAt,
         switchRequestedCallType,

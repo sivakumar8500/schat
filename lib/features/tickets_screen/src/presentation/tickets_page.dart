@@ -99,12 +99,12 @@ class _TicketsPageState extends State<TicketsPage> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: nameController,
-                      style: TextStyle(color: context.colors.textPrimary, fontSize: 15),
+                      style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                       decoration: InputDecoration(
                         labelText: 'Ticket Subject',
                         labelStyle: TextStyle(
                           color: isDark ? Colors.white60 : const Color(0xFF6B7280),
-                          fontSize: 14,
+                          fontSize: 16,
                         ),
                         filled: true,
                         fillColor: isDark
@@ -132,12 +132,12 @@ class _TicketsPageState extends State<TicketsPage> {
                     TextField(
                       controller: descController,
                       maxLines: 4,
-                      style: TextStyle(color: context.colors.textPrimary, fontSize: 15),
+                      style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                       decoration: InputDecoration(
                         labelText: 'Description',
                         labelStyle: TextStyle(
                           color: isDark ? Colors.white60 : const Color(0xFF6B7280),
-                          fontSize: 14,
+                          fontSize: 16,
                         ),
                         filled: true,
                         fillColor: isDark

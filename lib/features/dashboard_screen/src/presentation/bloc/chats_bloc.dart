@@ -38,6 +38,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<CallLogUpdated>(_onCallLogUpdated);
     on<UpdateChatTypingStatus>(_onUpdateChatTypingStatus);
     on<MessageDeleted>(_onMessageDeleted);
+    on<UpdateDisappearingTimer>(_onUpdateDisappearingTimer);
 
     _listenToSocket();
   }
@@ -162,6 +163,13 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               conversationId: convId,
               isTyping: isTyping,
             ));
+          }
+        } else if (type == 'conversation_settings_updated' || type == 'disappearing_timer_updated') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (convId != null) {
+            final dynamic rawTimer = cleanData['disappearing_timer'] ?? cleanData['disappearingTimer'] ?? cleanData['timer'] ?? cleanData['timer_seconds'];
+            final int? timerSec = rawTimer != null ? int.tryParse(rawTimer.toString()) : null;
+            add(UpdateDisappearingTimer(conversationId: convId, seconds: timerSec));
           }
         }
       } catch (e) {
@@ -321,6 +329,19 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (chat.id == event.conversationId) {
           return chat.copyWith(isTyping: event.isTyping);
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onUpdateDisappearingTimer(UpdateDisappearingTimer event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (chat.id == event.conversationId) {
+          return chat.copyWith(disappearingTimer: event.seconds);
         }
         return chat;
       }).toList();

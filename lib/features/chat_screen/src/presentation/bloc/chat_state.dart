@@ -94,6 +94,7 @@ class ChatLoaded extends ChatState {
     String? groupName,
     String? groupPictureUrl,
     int? disappearingTimer,
+    bool clearDisappearingTimer = false,
     ScreenPermissionModel? activeScreenPermission,
     bool clearActiveScreenPermission = false,
     ScreenPermissionModel? incomingScreenPermissionRequest,
@@ -120,7 +121,9 @@ class ChatLoaded extends ChatState {
       sharesMessageId: sharesMessageId ?? this.sharesMessageId,
       groupName: groupName ?? this.groupName,
       groupPictureUrl: groupPictureUrl ?? this.groupPictureUrl,
-      disappearingTimer: disappearingTimer ?? this.disappearingTimer,
+      disappearingTimer: clearDisappearingTimer
+          ? null
+          : (disappearingTimer ?? this.disappearingTimer),
       activeScreenPermission: clearActiveScreenPermission
           ? null
           : (activeScreenPermission ?? this.activeScreenPermission),

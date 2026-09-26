@@ -90,6 +90,11 @@ class MainActivity : FlutterActivity() {
         return false
     }
 
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipMethodChannel?.invokeMethod("onPipModeChanged", mapOf("isInPip" to isInPictureInPictureMode))
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (isCallActive) {

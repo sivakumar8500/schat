@@ -227,9 +227,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   // Username Field
                   TextField(
                     controller: usernameController,
+                    style: TextStyle(color: sheetCtx.colors.textPrimary, fontSize: 16),
                     decoration: InputDecoration(
                       labelText: 'Username',
-                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary),
+                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary, fontSize: 16),
                       prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF00873C)),
                       filled: true,
                       fillColor: sheetCtx.colors.cardBackground,
@@ -244,9 +245,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   TextField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: sheetCtx.colors.textPrimary, fontSize: 16),
                     decoration: InputDecoration(
                       labelText: 'Email',
-                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary),
+                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary, fontSize: 16),
                       prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF00873C)),
                       filled: true,
                       fillColor: sheetCtx.colors.cardBackground,
@@ -261,9 +263,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   TextField(
                     controller: aboutController,
                     maxLines: 2,
+                    style: TextStyle(color: sheetCtx.colors.textPrimary, fontSize: 16),
                     decoration: InputDecoration(
                       labelText: 'About',
-                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary),
+                      labelStyle: TextStyle(color: sheetCtx.colors.textSecondary, fontSize: 16),
                       prefixIcon: const Icon(Icons.info_outline, color: Color(0xFF00873C)),
                       filled: true,
                       fillColor: sheetCtx.colors.cardBackground,
@@ -1287,9 +1290,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   ),
                   const SizedBox(height: 20),
                   _buildDisappearingOption(context, sheetCtx, 'Off', null, primaryColor),
-                  _buildCustomDailyTimeOption(context, sheetCtx, primaryColor),
+                  _buildDisappearingOption(context, sheetCtx, '24 hours', 86400, primaryColor),
                   _buildDisappearingOption(context, sheetCtx, '7 days', 604800, primaryColor),
                   _buildDisappearingOption(context, sheetCtx, '30 days', 2592000, primaryColor),
+                  _buildCustomDailyTimeOption(context, sheetCtx, primaryColor),
                   const SizedBox(height: 12),
                 ],
               ),

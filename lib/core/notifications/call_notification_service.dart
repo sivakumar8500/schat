@@ -370,19 +370,20 @@ class CallNotificationService {
       String body = '';
 
       if (title.isEmpty) {
-        title = (message.data['sender_name'] ??
+        title = (message.data['title'] ??
+                message.data['sender_name'] ??
                 message.data['senderName'] ??
+                message.data['name'] ??
                 message.data['username'] ??
-                message.data['title'] ??
                 'sChat')
             .toString();
       }
 
       if (body.isEmpty) {
-        final content = message.data['content'] ??
+        final content = message.data['body'] ??
             message.data['message'] ??
-            message.data['text'] ??
-            message.data['body'];
+            message.data['content'] ??
+            message.data['text'];
         if (content is Map) {
           body = (content['text'] ?? 'New message received').toString();
         } else if (content is String && content.isNotEmpty) {
@@ -421,7 +422,7 @@ class CallNotificationService {
         await androidPlugin.createNotificationChannel(channel);
       }
 
-      const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+      final androidPlatformChannelSpecifics = AndroidNotificationDetails(
         'schat_general_channel',
         'General Notifications',
         channelDescription: 'Notifications for chats and other alerts',
@@ -429,13 +430,26 @@ class CallNotificationService {
         priority: Priority.high,
         showWhen: true,
         icon: '@mipmap/launcher_icon',
+        playSound: true,
+        enableVibration: true,
+        styleInformation: BigTextStyleInformation(
+          body,
+          contentTitle: title,
+          htmlFormatBigText: false,
+          htmlFormatContentTitle: false,
+        ),
+        category: AndroidNotificationCategory.message,
       );
       const iOSPlatformChannelSpecifics = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        presentBanner: true,
+        presentList: true,
+        sound: 'default',
+        interruptionLevel: InterruptionLevel.timeSensitive,
       );
-      const platformChannelSpecifics = NotificationDetails(
+      final platformChannelSpecifics = NotificationDetails(
         android: androidPlatformChannelSpecifics,
         iOS: iOSPlatformChannelSpecifics,
       );

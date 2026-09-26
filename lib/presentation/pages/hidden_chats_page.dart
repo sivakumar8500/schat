@@ -246,14 +246,14 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
                 controller: _searchController,
                 style: TextStyle(
                   color: context.colors.textPrimary,
-                  fontSize: 15,
+                  fontSize: 16,
                   fontWeight: FontWeight.normal,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Search hidden conversations',
                   hintStyle: TextStyle(
                     color: isDark ? Colors.white54 : const Color(0xFF6B7280),
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.normal,
                   ),
                   border: InputBorder.none,

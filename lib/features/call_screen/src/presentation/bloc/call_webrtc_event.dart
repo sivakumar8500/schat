@@ -87,6 +87,12 @@ class SetCallMinimizedEvent extends CallWebRtcEvent {
   const SetCallMinimizedEvent(this.isMinimized);
 }
 
+/// Set system PiP mode (Android / iOS native PiP)
+class SetSystemPipModeEvent extends CallWebRtcEvent {
+  final bool isSystemPip;
+  const SetSystemPipModeEvent(this.isSystemPip);
+}
+
 /// Remote party toggled their video
 class HandleRemoteVideoToggleEvent extends CallWebRtcEvent {
   final bool isVideoOff;

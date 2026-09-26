@@ -18,7 +18,7 @@ import 'package:schat/features/profile_screen/src/domain/models/user_model.dart'
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-
+import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_strings.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -2989,10 +2989,18 @@ class _ChatPageState extends State<ChatPage> {
                 child: TextField(
                   controller: _searchController,
                   autofocus: true,
-                  style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontFamily: CommonFonts.primaryFont,
+                    color: context.colors.textPrimary,
+                  ),
                   decoration: InputDecoration(
                     hintText: 'Search in conversation...',
-                    hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
+                    hintStyle: TextStyle(
+                      fontSize: 18,
+                      fontFamily: CommonFonts.primaryFont,
+                      color: context.colors.textHint,
+                    ),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(vertical: 8),
@@ -3645,11 +3653,21 @@ class _ChatPageState extends State<ChatPage> {
                         controller: _messageController,
                         textCapitalization: TextCapitalization.sentences,
                         maxLines: null,
-                        style: context.bodyMedium.copyWith(color: context.colors.textPrimary),
+                        style: TextStyle(
+                          fontSize: 18.5,
+                          fontWeight: FontWeight.w400,
+                          fontFamily: CommonFonts.primaryFont,
+                          color: context.colors.textPrimary,
+                          height: 1.25,
+                        ),
                         onChanged: _onTextChanged,
                         decoration: InputDecoration(
                           hintText: CommonStrings.typeMessage,
-                          hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
+                          hintStyle: TextStyle(
+                            fontSize: 18,
+                            fontFamily: CommonFonts.primaryFont,
+                            color: context.colors.textHint,
+                          ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(vertical: 12),
                         ),
@@ -3977,47 +3995,54 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
-    if (image == null || !mounted) return;
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
+      if (image == null || !mounted) return;
 
-    final String name = image.name;
-    final int size = await image.length();
-    if (!mounted) return;
+      final String name = image.name;
+      final int size = await image.length();
+      if (!mounted) return;
 
-    final Uint8List bytes = await image.readAsBytes();
-    if (!mounted) return;
+      final Uint8List bytes = await image.readAsBytes();
+      if (!mounted) return;
 
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AttachmentPreviewPage(
-          path: kIsWeb ? null : image.path,
-          bytes: bytes,
-          name: name,
-          type: 'image',
-          size: size,
-          contactName: widget.contactName,
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AttachmentPreviewPage(
+            path: kIsWeb ? null : image.path,
+            bytes: bytes,
+            name: name,
+            type: 'image',
+            size: size,
+            contactName: widget.contactName,
+          ),
         ),
-      ),
-    );
+      );
 
-    if (result != null && result['send'] == true && mounted) {
-      final caption = (result['caption'] as String?) ?? '';
-      final sendBytes = (result['bytes'] as Uint8List?) ?? bytes;
-      final sendPath = (result['path'] as String?) ?? (kIsWeb ? null : image.path);
-      setState(() {
-        _selectedAttachmentPath = sendPath;
-        _selectedAttachmentBytes = sendBytes;
-        _selectedAttachmentName = name;
-        _selectedAttachmentType = 'image';
-        _selectedAttachmentSize = sendBytes.length;
-        _attachmentAllowShare = true;
-        _attachmentAllowDownload = true;
-        _attachmentAllowView = true;
-        _messageController.text = caption;
-      });
-      _uploadAndSendAttachment(context);
+      if (result != null && result['send'] == true && mounted) {
+        final caption = (result['caption'] as String?) ?? '';
+        final sendBytes = (result['bytes'] as Uint8List?) ?? bytes;
+        final sendPath = (result['path'] as String?) ?? (kIsWeb ? null : image.path);
+        setState(() {
+          _selectedAttachmentPath = sendPath;
+          _selectedAttachmentBytes = sendBytes;
+          _selectedAttachmentName = name;
+          _selectedAttachmentType = 'image';
+          _selectedAttachmentSize = sendBytes.length;
+          _attachmentAllowShare = true;
+          _attachmentAllowDownload = true;
+          _attachmentAllowView = true;
+          _messageController.text = caption;
+        });
+        _uploadAndSendAttachment(context);
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
+        context.showErrorNotification('Failed to pick image: $e');
+      }
     }
   }
 
@@ -4384,9 +4409,18 @@ class _ChatPageState extends State<ChatPage> {
                               searchQuery = value.toLowerCase();
                             });
                           },
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontFamily: CommonFonts.primaryFont,
+                            color: context.colors.textPrimary,
+                          ),
                           decoration: InputDecoration(
                             hintText: 'Search contacts...',
-                            hintStyle: context.bodyMedium.copyWith(color: context.colors.textHint),
+                            hintStyle: TextStyle(
+                              fontSize: 18,
+                              fontFamily: CommonFonts.primaryFont,
+                              color: context.colors.textHint,
+                            ),
                             prefixIcon: Icon(CommonIcons.search, size: 20, color: context.colors.textHint),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(vertical: 10),
@@ -4744,9 +4778,10 @@ class _ChatPageState extends State<ChatPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0, currentTimer),
-                _buildCustomDailyTimeOption(context, currentTimer),
+                _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
                 _buildDisappearingOption(context, '7 days', 604800, currentTimer),
                 _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
+                _buildCustomDailyTimeOption(context, currentTimer),
                 CommonSpaces.h20,
               ],
             ),
@@ -4785,12 +4820,14 @@ class _ChatPageState extends State<ChatPage> {
       return 'Custom daily';
     }
     if (seconds == 1800) return '30 minutes';
+    if (seconds == 86400) return '24 hours';
     if (seconds == 604800) return '7 days';
     if (seconds == 2592000) return '30 days';
+    if (seconds == 7776000) return '90 days';
     if (seconds < 60) return '$seconds seconds';
     if (seconds < 3600) {
       return '${(seconds / 60).round()} minutes';
-    } else if (seconds < 86400) {
+    } else if (seconds <= 86400) {
       return '${(seconds / 3600).round()} hours';
     } else {
       return '${(seconds / 86400).round()} days';

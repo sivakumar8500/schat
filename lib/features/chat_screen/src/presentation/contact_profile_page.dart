@@ -706,12 +706,14 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       return 'Custom daily';
     }
     if (seconds == 1800) return '30 minutes';
+    if (seconds == 86400) return '24 hours';
     if (seconds == 604800) return '7 days';
     if (seconds == 2592000) return '30 days';
+    if (seconds == 7776000) return '90 days';
     if (seconds < 60) return '$seconds seconds';
     if (seconds < 3600) {
       return '${(seconds / 60).round()} minutes';
-    } else if (seconds < 86400) {
+    } else if (seconds <= 86400) {
       return '${(seconds / 3600).round()} hours';
     } else {
       return '${(seconds / 86400).round()} days';
@@ -867,9 +869,10 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0, currentTimer),
-                _buildCustomDailyTimeOption(context, currentTimer),
+                _buildDisappearingOption(context, '24 hours', 86400, currentTimer),
                 _buildDisappearingOption(context, '7 days', 604800, currentTimer),
                 _buildDisappearingOption(context, '30 days', 2592000, currentTimer),
+                _buildCustomDailyTimeOption(context, currentTimer),
                 CommonSpaces.h20,
               ],
             ),

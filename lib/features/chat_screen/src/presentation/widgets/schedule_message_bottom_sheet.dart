@@ -329,15 +329,71 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
             if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
 
-            final requestData = {
+            String? fileKey;
+            String? fileName = _attachedFileName;
+            int fileSize = 0;
+            String? mimeType;
+
+            if (_attachedFile != null) {
+              fileName = _attachedFile!.path.split('/').last;
+              fileSize = await _attachedFile!.length();
+              mimeType = _getMimeType(_attachedFile!.path, typeStr);
+              fileKey = await repo.uploadMedia(
+                conversationId: widget.conversationId ?? '',
+                filePath: _attachedFile!.path,
+                fileName: fileName,
+                mediaType: _getMediaType(typeStr),
+                mimeType: mimeType,
+                fileSizeBytes: fileSize,
+              );
+            }
+
+            final requestData = <String, dynamic>{
               "conversationId": widget.conversationId,
+              "conversation_id": widget.conversationId,
               "messageType": typeStr,
+              "message_type": typeStr,
+              "parentMessageId": null,
+              "parent_message_id": null,
               "content": {
                 "text": text,
-                "fileName": _attachedFileName,
+                "fileKey": fileKey,
+                "file_key": fileKey,
+                "fileName": fileName,
+                "file_name": fileName,
+                "fileSize": fileSize,
+                "file_size": fileSize,
+                "mimeType": mimeType,
+                "mime_type": mimeType,
+                "duration": 0,
+                "isForwarded": false,
+                "forwardCount": 0,
+                "isEdited": false,
               },
-              "scheduledAt": scheduled.toUtc().toIso8601String()
+              "security": {
+                "isLocked": false,
+                "accessUsers": [],
+                "allowDownload": true,
+                "allowShare": true,
+                "allowView": true,
+              },
+              "viewControl": {
+                "type": "normal",
+                "maxViews": 1,
+                "viewedBy": [],
+                "isOpened": false,
+              },
+              "expiry": {
+                "isEnabled": false,
+                "disappearAfterRead": false,
+                "readTimerSeconds": 0,
+              },
+              "callMeta": null,
+              "call_meta": null,
+              "scheduledAt": scheduled.toUtc().toIso8601String(),
+              "scheduled_at": scheduled.toUtc().toIso8601String(),
             };
+
             await repo.scheduleMessage(requestData);
             if (mounted) {
               context.showSuccessNotification('Message scheduled successfully');
@@ -361,6 +417,34 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         }
       }
     }
+  }
+
+  String _getMimeType(String path, String messageType) {
+    final ext = path.split('.').last.toLowerCase();
+    if (messageType == 'image') {
+      if (ext == 'png') return 'image/png';
+      if (ext == 'webp') return 'image/webp';
+      if (ext == 'gif') return 'image/gif';
+      return 'image/jpeg';
+    } else if (messageType == 'audio') {
+      if (ext == 'mp3') return 'audio/mpeg';
+      if (ext == 'm4a') return 'audio/mp4';
+      if (ext == 'aac') return 'audio/aac';
+      if (ext == 'wav') return 'audio/wav';
+      return 'audio/m4a';
+    } else {
+      if (ext == 'pdf') return 'application/pdf';
+      if (ext == 'doc' || ext == 'docx') return 'application/msword';
+      if (ext == 'xls' || ext == 'xlsx') return 'application/vnd.ms-excel';
+      if (ext == 'zip') return 'application/zip';
+      return 'application/octet-stream';
+    }
+  }
+
+  String _getMediaType(String messageType) {
+    if (messageType == 'image') return 'image';
+    if (messageType == 'audio') return 'audio';
+    return 'document';
   }
 
   Future<void> _confirmCancelScheduledMessage(ScheduledMessageModel msg) async {

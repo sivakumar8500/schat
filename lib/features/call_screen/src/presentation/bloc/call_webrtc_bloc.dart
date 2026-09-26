@@ -83,6 +83,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<SwitchCameraCallEvent>(_onSwitchCamera);
     on  <ToggleSpeakerCallEvent>(_onToggleSpeaker);
     on<SetCallMinimizedEvent>(_onSetMinimized);
+    on<SetSystemPipModeEvent>(_onSetSystemPipMode);
     on<HandleRemoteVideoToggleEvent>(_onHandleRemoteVideoToggle);
     on<HandleRemoteMuteUpdateEvent>(_onHandleRemoteMuteUpdate);
     on<RequestCallSwitchEvent>(_onRequestCallSwitch);
@@ -95,6 +96,16 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       _activeCallStart = null;
       emit(CallError(event.error));
     });
+
+    // Listen to PiP state changes from native platform
+    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+      _pipChannel.setMethodCallHandler((call) async {
+        if (call.method == 'onPipModeChanged') {
+          final bool isInPip = call.arguments?['isInPip'] ?? false;
+          add(SetSystemPipModeEvent(isInPip));
+        }
+      });
+    }
 
     // Listen to WebRTC connection signals (e.g. call ended from ICE failure)
     _webRtcSignalSubscription = _webRtcService.callSignalState.listen((state) {
@@ -736,6 +747,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       emit((state as CallActive).copyWith(isMinimized: event.isMinimized));
     } else if (state is CallConnecting) {
       emit((state as CallConnecting).copyWith(isMinimized: event.isMinimized));
+    }
+  }
+
+  void _onSetSystemPipMode(
+      SetSystemPipModeEvent event, Emitter<CallWebRtcState> emit) {
+    if (state is CallActive) {
+      emit((state as CallActive).copyWith(isSystemPip: event.isSystemPip));
+    } else if (state is CallConnecting) {
+      emit((state as CallConnecting).copyWith(isSystemPip: event.isSystemPip));
     }
   }
 

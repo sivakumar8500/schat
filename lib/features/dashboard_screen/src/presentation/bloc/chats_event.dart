@@ -95,3 +95,14 @@ class MessageDeleted extends ChatsEvent {
     required this.messageId,
   });
 }
+
+class UpdateDisappearingTimer extends ChatsEvent {
+  final String conversationId;
+  final int? seconds;
+
+  const UpdateDisappearingTimer({
+    required this.conversationId,
+    this.seconds,
+  });
+}
+

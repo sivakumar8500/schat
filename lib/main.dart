@@ -23,6 +23,7 @@ import 'package:schat/core/notifications/in_app_notification_service.dart';
 
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
+import 'package:schat/features/call_screen/src/presentation/widgets/pip_call_view.dart';
 
 import 'injection.dart';
 
@@ -178,6 +179,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               scaffoldBackgroundColor: context.colors.scaffoldBackground,
               useMaterial3: true,
               fontFamily: CommonFonts.primaryFont,
+              inputDecorationTheme: InputDecorationTheme(
+                hintStyle: TextStyle(
+                  fontFamily: CommonFonts.primaryFont,
+                  fontSize: 18,
+                  color: context.colors.textHint,
+                ),
+                labelStyle: TextStyle(
+                  fontFamily: CommonFonts.primaryFont,
+                  fontSize: 18,
+                  color: context.colors.textSecondary,
+                ),
+              ),
             ),
             darkTheme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
@@ -188,21 +201,47 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               scaffoldBackgroundColor: context.colors.scaffoldBackground,
               useMaterial3: true,
               fontFamily: CommonFonts.primaryFont,
+              inputDecorationTheme: InputDecorationTheme(
+                hintStyle: TextStyle(
+                  fontFamily: CommonFonts.primaryFont,
+                  fontSize: 18,
+                  color: context.colors.textHint,
+                ),
+                labelStyle: TextStyle(
+                  fontFamily: CommonFonts.primaryFont,
+                  fontSize: 18,
+                  color: context.colors.textSecondary,
+                ),
+              ),
             ),
             builder: (context, child) {
-              return MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  textScaler: TextScaler.linear(
-                    getIt<ThemeController>().textScaleFactor,
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    child!,
-                    const InternetConnectionPopup(),
-                    const MinimizedCallOverlay(),
-                  ],
-                ),
+              return BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
+                builder: (context, callState) {
+                  final isSystemPip = (callState is CallActive && callState.isSystemPip) ||
+                      (callState is CallConnecting && callState.isSystemPip);
+
+                  if (isSystemPip) {
+                    return Material(
+                      color: Colors.black,
+                      child: PipCallView(state: callState),
+                    );
+                  }
+
+                  return MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: TextScaler.linear(
+                        getIt<ThemeController>().textScaleFactor,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        child!,
+                        const InternetConnectionPopup(),
+                        const MinimizedCallOverlay(),
+                      ],
+                    ),
+                  );
+                },
               );
             },
             home: const SplashPage(),

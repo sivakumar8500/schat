@@ -57,20 +57,20 @@ class CommonFontStyles {
       );
 
   static TextStyle bodyLarge(BuildContext context) => TextStyle(
-        fontSize: 14,
+        fontSize: 18,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle bodyMedium(BuildContext context) => TextStyle(
-        fontSize: 12,
+        fontSize: 16.5,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
         height: 1.4,
       );
 
   static TextStyle bodySmall(BuildContext context) => TextStyle(
-        fontSize: 10,
+        fontSize: 14,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );
@@ -79,11 +79,11 @@ class CommonFontStyles {
         fontSize: 16,
         fontWeight: FontWeight.bold,
         fontFamily: CommonFonts.primaryFont,
-        color: Colors.white,
+        color: context.colors.pureWhite,
       );
 
   static TextStyle caption(BuildContext context) => TextStyle(
-        fontSize: 10,
+        fontSize: 14,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );

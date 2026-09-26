@@ -44,13 +44,16 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
       child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
         builder: (context, state) {
           bool isMinimized = false;
+          bool isSystemPip = false;
           if (state is CallActive) {
             isMinimized = state.isMinimized;
+            isSystemPip = state.isSystemPip;
           } else if (state is CallConnecting) {
             isMinimized = state.isMinimized;
+            isSystemPip = state.isSystemPip;
           }
 
-          if (!isMinimized) {
+          if (!isMinimized || isSystemPip) {
             return const SizedBox.shrink();
           }
 

@@ -348,10 +348,10 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
               _searchQuery = value;
             });
           },
-          style: TextStyle(color: context.colors.textPrimary),
+          style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
           decoration: InputDecoration(
             hintText: 'Search blocked contacts...',
-            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 14),
+            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 16),
             prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00873C), size: 20),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(

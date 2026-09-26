@@ -92,10 +92,10 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
             children: [
               TextField(
                 controller: nameController,
-                style: TextStyle(color: context.colors.textPrimary),
+                style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Contact Name',
-                  labelStyle: TextStyle(color: context.colors.textSecondary),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
                   prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00873C)),
                   filled: true,
                   fillColor: context.colors.scaffoldBackground,
@@ -109,10 +109,10 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
               TextField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
-                style: TextStyle(color: context.colors.textPrimary),
+                style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Phone Number',
-                  labelStyle: TextStyle(color: context.colors.textSecondary),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
                   prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00873C)),
                   filled: true,
                   fillColor: context.colors.scaffoldBackground,
@@ -172,10 +172,10 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
             children: [
               TextField(
                 controller: nameController,
-                style: TextStyle(color: context.colors.textPrimary),
+                style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Contact Name',
-                  labelStyle: TextStyle(color: context.colors.textSecondary),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
                   prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00873C)),
                   filled: true,
                   fillColor: context.colors.scaffoldBackground,
@@ -676,10 +676,10 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
         ),
         child: TextField(
           controller: _searchController,
-          style: TextStyle(color: context.colors.textPrimary),
+          style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
           decoration: InputDecoration(
             hintText: 'Search emergency contacts...',
-            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 14),
+            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 16),
             prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF00873C), size: 20),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(

@@ -70,6 +70,12 @@ class _DashboardPageState extends State<DashboardPage> {
     
     // Setup and sync push notifications & call tokens since we are authenticated
     _setupNotifications();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        getIt<PushNotificationService>().handlePendingNotification();
+      }
+    });
   }
 
   Future<void> _setupNotifications() async {
@@ -87,6 +93,7 @@ class _DashboardPageState extends State<DashboardPage> {
     await pushService.initialize();
     await pushService.registerToken();
     await callService.registerDevice();
+    pushService.handlePendingNotification();
   }
 
   Future<void> _loadMutedChats() async {

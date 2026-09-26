@@ -726,12 +726,14 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       return 'Custom daily';
     }
     if (seconds == 1800) return '30 minutes';
+    if (seconds == 86400) return '24 hours';
     if (seconds == 604800) return '7 days';
     if (seconds == 2592000) return '30 days';
+    if (seconds == 7776000) return '90 days';
     if (seconds < 60) return '$seconds seconds';
     if (seconds < 3600) {
       return '${(seconds / 60).round()} minutes';
-    } else if (seconds < 86400) {
+    } else if (seconds <= 86400) {
       return '${(seconds / 3600).round()} hours';
     } else {
       return '${(seconds / 86400).round()} days';
@@ -800,9 +802,10 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                 ),
                 CommonSpaces.h24,
                 _buildDisappearingOption(context, 'Off', 0),
-                _buildCustomDailyTimeOption(context),
+                _buildDisappearingOption(context, '24 hours', 86400),
                 _buildDisappearingOption(context, '7 days', 604800),
                 _buildDisappearingOption(context, '30 days', 2592000),
+                _buildCustomDailyTimeOption(context),
                 CommonSpaces.h20,
               ],
             ),

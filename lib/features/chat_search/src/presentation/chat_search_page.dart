@@ -140,14 +140,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                       autofocus: true,
                       style: TextStyle(
                         color: context.colors.textPrimary,
-                        fontSize: 15,
+                        fontSize: 18,
                         fontWeight: FontWeight.w500,
                       ),
                       decoration: InputDecoration(
                         hintText: 'Search chats, contacts, messages...',
                         hintStyle: TextStyle(
                           color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
-                          fontSize: 14.5,
+                          fontSize: 18,
                         ),
                         border: InputBorder.none,
                         isDense: true,

@@ -12,6 +12,7 @@ import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/features/permissions_screen/permissions_screen.dart';
 import 'package:schat/utils/permission_helper.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
@@ -430,12 +431,21 @@ class _ProfilePageState extends State<ProfilePage> {
       maxLines: maxLines,
       maxLength: maxLength,
       autofocus: autofocus,
-      style: context.titleSmall.copyWith(color: Colors.white),
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        fontFamily: CommonFonts.primaryFont,
+        color: Colors.white,
+      ),
       decoration: InputDecoration(
         hintText: hint,
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.1),
-        hintStyle: context.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.4)),
+        hintStyle: TextStyle(
+          fontSize: 16,
+          fontFamily: CommonFonts.primaryFont,
+          color: Colors.white.withValues(alpha: 0.4),
+        ),
         prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: Colors.white.withValues(alpha: 0.5)) : null,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

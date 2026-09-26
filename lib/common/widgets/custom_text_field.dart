@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_sizes.dart';
 
 class CustomTextField extends StatelessWidget {
@@ -39,8 +40,20 @@ class CustomTextField extends StatelessWidget {
         keyboardType: keyboardType,
         obscureText: obscureText,
         onChanged: onChanged,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+          fontFamily: CommonFonts.primaryFont,
+          color: context.colors.textPrimary,
+        ),
         decoration: InputDecoration(
           hintText: hintText,
+          hintStyle: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.normal,
+            fontFamily: CommonFonts.primaryFont,
+            color: context.colors.textSecondary,
+          ),
           prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: context.colors.textSecondary) : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(CommonSizes.r16),

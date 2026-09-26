@@ -441,155 +441,179 @@ class StatusPageContent extends StatelessWidget {
                         Container(
                           decoration: BoxDecoration(
                             color: isDark ? context.colors.cardBackground : Colors.white,
-                            borderRadius: BorderRadius.circular(18),
+                            borderRadius: BorderRadius.circular(16),
                             border: Border.all(
                               color: context.colors.border.withValues(alpha: 0.35),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-                                blurRadius: 8,
+                                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                                blurRadius: 6,
                                 offset: const Offset(0, 2),
                               ),
                             ],
                           ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            leading: GestureDetector(
-                              onTap: () => _viewMyStatus(context, myStatuses, myStatusBytes, myStatusPath, myStatusText),
-                              child: Stack(
-                                clipBehavior: Clip.none,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => _viewMyStatus(context, myStatuses, myStatusBytes, myStatusPath, myStatusText),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              child: Row(
                                 children: [
-                                  Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: const Color(0xFFE8F5E9),
-                                      border: hasMyStatus
-                                          ? Border.all(color: const Color(0xFF00873C), width: 2.5)
-                                          : null,
-                                    ),
-                                    child: ClipOval(
-                                      child: myStatuses.isNotEmpty
-                                          ? (myStatuses.last.imagePath != null && myStatuses.last.imagePath!.isNotEmpty
-                                              ? Image.network(
-                                                  myStatuses.last.imagePath!,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (_, _, _) => const Icon(
-                                                    Icons.person,
-                                                    color: Color(0xFF48A476),
-                                                    size: 30,
-                                                  ),
-                                                )
-                                              : Container(
-                                                  color: myStatuses.last.parsedBackgroundColor,
-                                                  child: Center(
-                                                    child: Text(
-                                                      myStatuses.last.text != null && myStatuses.last.text!.isNotEmpty
-                                                          ? myStatuses.last.text![0].toUpperCase()
-                                                          : 'T',
-                                                      style: TextStyle(
-                                                        fontSize: 22,
-                                                        fontWeight: FontWeight.bold,
-                                                        color: context.colors.textLight,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ))
-                                          : hasMyStatus && myStatusBytes != null
-                                              ? Image.memory(myStatusBytes, fit: BoxFit.cover)
-                                              : hasMyStatus && myStatusPath != null && !kIsWeb
-                                                  ? Image.asset(
-                                                      myStatusPath,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, _, _) => const Icon(
-                                                        Icons.person,
-                                                        color: Color(0xFF48A476),
-                                                        size: 30,
-                                                      ),
-                                                    )
-                                                  : hasMyStatus && myStatusText != null
-                                                      ? Container(
-                                                          color: const Color(0xFF00873C),
-                                                          child: Center(
-                                                            child: Text(
-                                                              'T',
-                                                              style: TextStyle(
-                                                                fontSize: 22,
-                                                                fontWeight: FontWeight.bold,
-                                                                color: context.colors.textLight,
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        )
-                                                      : const Icon(
+                                  GestureDetector(
+                                    onTap: () => _viewMyStatus(context, myStatuses, myStatusBytes, myStatusPath, myStatusText),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Container(
+                                          width: 46,
+                                          height: 46,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: const Color(0xFFE8F5E9),
+                                            border: hasMyStatus
+                                                ? Border.all(color: const Color(0xFF00873C), width: 2.2)
+                                                : null,
+                                          ),
+                                          child: ClipOval(
+                                            child: myStatuses.isNotEmpty
+                                                ? (myStatuses.last.imagePath != null && myStatuses.last.imagePath!.isNotEmpty
+                                                    ? Image.network(
+                                                        myStatuses.last.imagePath!,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (_, _, _) => const Icon(
                                                           Icons.person,
                                                           color: Color(0xFF48A476),
-                                                          size: 30,
+                                                          size: 26,
                                                         ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: -2,
-                                    bottom: -2,
-                                    child: GestureDetector(
-                                      onTap: () => _showUploadOptions(context),
-                                      child: Container(
-                                        width: 22,
-                                        height: 22,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF00873C),
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: Colors.white,
-                                            width: 2,
+                                                      )
+                                                    : Container(
+                                                        color: myStatuses.last.parsedBackgroundColor,
+                                                        child: Center(
+                                                          child: Text(
+                                                            myStatuses.last.text != null && myStatuses.last.text!.isNotEmpty
+                                                                ? myStatuses.last.text![0].toUpperCase()
+                                                                : 'T',
+                                                            style: TextStyle(
+                                                              fontSize: 19,
+                                                              fontWeight: FontWeight.bold,
+                                                              color: context.colors.textLight,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ))
+                                                : hasMyStatus && myStatusBytes != null
+                                                    ? Image.memory(myStatusBytes, fit: BoxFit.cover)
+                                                    : hasMyStatus && myStatusPath != null && !kIsWeb
+                                                        ? Image.asset(
+                                                            myStatusPath,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (_, _, _) => const Icon(
+                                                              Icons.person,
+                                                              color: Color(0xFF48A476),
+                                                              size: 26,
+                                                            ),
+                                                          )
+                                                        : hasMyStatus && myStatusText != null
+                                                            ? Container(
+                                                                color: const Color(0xFF00873C),
+                                                                child: Center(
+                                                                  child: Text(
+                                                                    'T',
+                                                                    style: TextStyle(
+                                                                      fontSize: 19,
+                                                                      fontWeight: FontWeight.bold,
+                                                                      color: context.colors.textLight,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              )
+                                                            : const Icon(
+                                                                Icons.person,
+                                                                color: Color(0xFF48A476),
+                                                                size: 26,
+                                                              ),
                                           ),
                                         ),
-                                        child: const Icon(
-                                          Icons.add,
-                                          size: 13,
-                                          color: Colors.white,
+                                        Positioned(
+                                          right: -2,
+                                          bottom: -2,
+                                          child: GestureDetector(
+                                            onTap: () => _showUploadOptions(context),
+                                            child: Container(
+                                              width: 19,
+                                              height: 19,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF00873C),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 1.8,
+                                                ),
+                                              ),
+                                              child: const Icon(
+                                                Icons.add,
+                                                size: 11,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
                                         ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  // Vertical Line between logo and text
+                                  Container(
+                                    width: 1,
+                                    height: 30,
+                                    color: context.colors.border.withValues(alpha: isDark ? 0.35 : 0.5),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          hasMyStatus ? 'My Status' : 'Add to my status',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14.5,
+                                            color: context.colors.textPrimary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          myStatusSubtitle,
+                                          style: TextStyle(
+                                            color: context.colors.textSecondary,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8F5E9),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(
+                                        Icons.camera_alt_outlined,
+                                        color: Color(0xFF00873C),
+                                        size: 19,
                                       ),
+                                      onPressed: () => _showUploadOptions(context),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            title: Text(
-                              hasMyStatus ? 'My Status' : 'Add to my status',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: context.colors.textPrimary,
-                              ),
-                            ),
-                            subtitle: Text(
-                              myStatusSubtitle,
-                              style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                            trailing: Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE8F5E9),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(
-                                  Icons.camera_alt_outlined,
-                                  color: Color(0xFF00873C),
-                                  size: 20,
-                                ),
-                                onPressed: () => _showUploadOptions(context),
-                              ),
-                            ),
-                            onTap: () => _viewMyStatus(context, myStatuses, myStatusBytes, myStatusPath, myStatusText),
                           ),
                         ),
                       ],
@@ -604,7 +628,7 @@ class StatusPageContent extends StatelessWidget {
                   if (unviewedRecent.isNotEmpty) ...[
                     const SliverToBoxAdapter(
                       child: Padding(
-                        padding: EdgeInsets.only(left: 20, top: 16, bottom: 6),
+                        padding: EdgeInsets.only(left: 20, top: 14, bottom: 6),
                         child: Text(
                           'Recent Updates',
                           style: TextStyle(
@@ -616,12 +640,10 @@ class StatusPageContent extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          return _buildStatusTile(context, unviewedRecent, index);
-                        }, childCount: unviewedRecent.length),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildStatusListCard(context, unviewedRecent),
                       ),
                     ),
                   ],
@@ -630,7 +652,7 @@ class StatusPageContent extends StatelessWidget {
                   if (viewedRecent.isNotEmpty) ...[
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.only(left: 20, top: 16, bottom: 6),
+                        padding: EdgeInsets.only(left: 20, top: 14, bottom: 6),
                         child: Text(
                           'Viewed Updates',
                           style: TextStyle(
@@ -642,12 +664,10 @@ class StatusPageContent extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          return _buildStatusTile(context, viewedRecent, index);
-                        }, childCount: viewedRecent.length),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildStatusListCard(context, viewedRecent),
                       ),
                     ),
                   ],
@@ -656,7 +676,7 @@ class StatusPageContent extends StatelessWidget {
                   if (mutedStatuses.isNotEmpty) ...[
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.only(left: 20, top: 16, bottom: 6),
+                        padding: EdgeInsets.only(left: 20, top: 14, bottom: 6),
                         child: Text(
                           'Muted Updates',
                           style: TextStyle(
@@ -668,12 +688,10 @@ class StatusPageContent extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverList(
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          return _buildStatusTile(context, mutedStatuses, index, muted: true);
-                        }, childCount: mutedStatuses.length),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _buildStatusListCard(context, mutedStatuses, muted: true),
                       ),
                     ),
                   ],
@@ -697,83 +715,145 @@ class StatusPageContent extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusTile(BuildContext context, List<StatusContactModel> list, int index, {bool muted = false}) {
-    final contact = list[index];
-    final allViewed = contact.allViewed;
+  Widget _buildStatusListCard(BuildContext context, List<StatusContactModel> list, {bool muted = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isDark ? context.colors.cardBackground : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: context.colors.border.withValues(alpha: 0.35),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 8,
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+            blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: GestureDetector(
-          onTap: () => _viewStatus(context, list, index),
-          child: _buildStatusRing(context, contact.profileColor, allViewed, contact.statusCount, contact.name[0]),
-        ),
-        title: Text(
-          contact.name,
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: context.colors.textPrimary),
-        ),
-        subtitle: Text(
-          _formatTime(contact.statuses.last.timestamp),
-          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
-        ),
-        trailing: PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, color: context.colors.textHint, size: 20),
-          color: context.colors.cardBackground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          itemBuilder: (_) => [
-            PopupMenuItem(value: 'view', child: Text('View Status', style: TextStyle(color: context.colors.textPrimary))),
-            PopupMenuItem(
-              value: muted ? 'unmute' : 'mute',
-              child: Text(muted ? 'Unmute' : 'Mute', style: TextStyle(color: context.colors.textPrimary)),
-            ),
-          ],
-          onSelected: (v) async {
-            if (v == 'view') {
-              _viewStatus(context, list, index);
-            } else if (v == 'mute') {
-              context.read<StatusBloc>().add(MuteContactEvent(contactId: contact.contactId, mute: true));
-            } else if (v == 'unmute') {
-              context.read<StatusBloc>().add(MuteContactEvent(contactId: contact.contactId, mute: false));
-            }
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          itemCount: list.length,
+          separatorBuilder: (context, index) => Divider(
+            height: 1,
+            thickness: 0.8,
+            indent: 14,
+            endIndent: 14,
+            color: context.colors.border.withValues(alpha: isDark ? 0.25 : 0.35),
+          ),
+          itemBuilder: (context, index) {
+            return _buildStatusTile(context, list, index, muted: muted);
           },
         ),
-        onTap: () => _viewStatus(context, list, index),
+      ),
+    );
+  }
+
+  Widget _buildStatusTile(BuildContext context, List<StatusContactModel> list, int index, {bool muted = false}) {
+    final contact = list[index];
+    final allViewed = contact.allViewed;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      onTap: () => _viewStatus(context, list, index),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => _viewStatus(context, list, index),
+              child: _buildStatusRing(
+                context,
+                contact.profileColor,
+                allViewed,
+                contact.statusCount,
+                contact.name.isNotEmpty ? contact.name[0].toUpperCase() : '?',
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Vertical Line between logo and text
+            Container(
+              width: 1,
+              height: 30,
+              color: context.colors.border.withValues(alpha: isDark ? 0.35 : 0.5),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    contact.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.5,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatTime(contact.statuses.last.timestamp),
+                    style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, color: context.colors.textHint, size: 20),
+              color: context.colors.cardBackground,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'view', child: Text('View Status', style: TextStyle(color: context.colors.textPrimary))),
+                PopupMenuItem(
+                  value: muted ? 'unmute' : 'mute',
+                  child: Text(muted ? 'Unmute' : 'Mute', style: TextStyle(color: context.colors.textPrimary)),
+                ),
+              ],
+              onSelected: (v) async {
+                if (v == 'view') {
+                  _viewStatus(context, list, index);
+                } else if (v == 'mute') {
+                  context.read<StatusBloc>().add(MuteContactEvent(contactId: contact.contactId, mute: true));
+                } else if (v == 'unmute') {
+                  context.read<StatusBloc>().add(MuteContactEvent(contactId: contact.contactId, mute: false));
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildStatusRing(BuildContext context, Color color, bool viewed, int count, String initial) {
     return SizedBox(
-      width: 56,
-      height: 56,
+      width: 46,
+      height: 46,
       child: CustomPaint(
         painter: _StatusRingPainter(color: viewed ? Colors.grey : color, segmentCount: count, viewed: viewed),
         child: Center(
           child: Container(
-            width: 48,
-            height: 48,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(shape: BoxShape.circle, color: color.withValues(alpha: 0.15)),
             child: Center(
               child: Text(
                 initial,
                 style: context.titleMedium.copyWith(
-                  fontSize: 20,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                   color: color,
                 ),
               ),
@@ -798,11 +878,11 @@ class _StatusRingPainter extends CustomPainter {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round;
 
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width / 2) - 2;
+    final radius = (size.width / 2) - 1.5;
     final gapAngle = segmentCount > 1 ? 0.15 : 0.0;
     final segmentAngle = (2 * pi - gapAngle * segmentCount) / segmentCount;
     const startOffset = -pi / 2;

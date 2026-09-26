@@ -497,6 +497,25 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       debugPrint('Error loading cached messages or theme: $e');
     }
 
+    int? disappearingTimer = event.initialDisappearingTimer;
+    try {
+      final timerBox = await Hive.openBox('disappearing_timers_box');
+      if (disappearingTimer != null) {
+        if (disappearingTimer == 0) {
+          await timerBox.delete(event.conversationId);
+        } else {
+          await timerBox.put(event.conversationId, disappearingTimer);
+        }
+      } else {
+        final dynamic cachedTimer = timerBox.get(event.conversationId);
+        if (cachedTimer is int) {
+          disappearingTimer = cachedTimer;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading cached disappearing timer: $e');
+    }
+
     if (cachedMessages.isNotEmpty) {
       final filteredCached = _filterExpiredMessages(cachedMessages);
       emit(ChatLoaded(
@@ -508,7 +527,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         customBgColor: savedColor,
         customWallpaperUrl: savedWallpaper,
         themeColor: savedThemeColor,
-        disappearingTimer: event.initialDisappearingTimer,
+        disappearingTimer: disappearingTimer,
       ));
     } else {
       emit(const ChatLoading());
@@ -595,7 +614,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           customBgColor: savedColor,
           customWallpaperUrl: savedWallpaper,
           themeColor: savedThemeColor,
-          disappearingTimer: event.initialDisappearingTimer,
+          disappearingTimer: disappearingTimer,
           activeScreenPermission: activeScreenPermission,
         ));
       }
@@ -820,9 +839,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onSetDisappearingTimer(SetDisappearingTimerEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded && _conversationId != null) {
-      _chatRepository.setDisappearingTimer(conversationId: _conversationId!, seconds: event.seconds);
+      final convId = _conversationId!;
+      final seconds = event.seconds;
+      Hive.openBox('disappearing_timers_box').then((timerBox) {
+        if (seconds == null || seconds == 0) {
+          timerBox.delete(convId);
+        } else {
+          timerBox.put(convId, seconds);
+        }
+      }).catchError((_) {});
+
+      _chatRepository.setDisappearingTimer(conversationId: convId, seconds: seconds);
       emit(currentState.copyWith(
-        disappearingTimer: event.seconds,
+        disappearingTimer: seconds,
+        clearDisappearingTimer: seconds == null || seconds == 0,
       ));
     }
   }
@@ -830,8 +860,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onReceiveDisappearingTimerUpdated(ReceiveDisappearingTimerUpdatedEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final seconds = event.seconds;
+      if (_conversationId != null) {
+        final convId = _conversationId!;
+        Hive.openBox('disappearing_timers_box').then((timerBox) {
+          if (seconds == null || seconds == 0) {
+            timerBox.delete(convId);
+          } else {
+            timerBox.put(convId, seconds);
+          }
+        }).catchError((_) {});
+      }
+
       emit(currentState.copyWith(
-        disappearingTimer: event.seconds,
+        disappearingTimer: seconds,
+        clearDisappearingTimer: seconds == null || seconds == 0,
       ));
     }
   }

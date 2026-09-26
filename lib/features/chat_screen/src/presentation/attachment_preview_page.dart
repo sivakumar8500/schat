@@ -45,6 +45,10 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.type == 'image' && widget.bytes != null) {
+      _currentBytes = widget.bytes;
+      _originalBytes = widget.bytes;
+    }
     _initImageBytes();
     if (widget.type == 'video' && widget.path != null) {
       if (kIsWeb) {
@@ -53,7 +57,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
         _videoPlayerController = VideoPlayerController.file(File(widget.path!));
       }
       _videoPlayerController!.initialize().then((_) {
-        setState(() {});
+        if (mounted) setState(() {});
         _videoPlayerController!.play();
         _isVideoPlaying = true;
       });
@@ -63,8 +67,12 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   Future<void> _initImageBytes() async {
     if (widget.type == 'image') {
       if (widget.bytes != null) {
-        _currentBytes = widget.bytes;
-        _originalBytes = widget.bytes;
+        if (mounted) {
+          setState(() {
+            _currentBytes = widget.bytes;
+            _originalBytes = widget.bytes;
+          });
+        }
       } else if (widget.path != null && !kIsWeb) {
         try {
           final fileBytes = await File(widget.path!).readAsBytes();
@@ -88,13 +96,34 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     super.dispose();
   }
 
-  void _openCrop() {
-    if (_currentBytes == null) return;
+  Future<Uint8List?> _resolveImageBytes() async {
+    if (_currentBytes != null) return _currentBytes;
+    if (widget.bytes != null) return widget.bytes;
+    if (widget.path != null && !kIsWeb) {
+      try {
+        final bytes = await File(widget.path!).readAsBytes();
+        if (mounted) {
+          setState(() {
+            _currentBytes = bytes;
+            _originalBytes ??= bytes;
+          });
+        }
+        return bytes;
+      } catch (e) {
+        debugPrint('Error reading file bytes: $e');
+      }
+    }
+    return null;
+  }
+
+  Future<void> _openCrop() async {
+    final bytesToCrop = await _resolveImageBytes();
+    if (bytesToCrop == null || !mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (ctx) => ImageEditorCropView(
-          imageBytes: _currentBytes!,
+          imageBytes: bytesToCrop,
           onCropped: (croppedBytes) {
             Navigator.pop(ctx);
             setState(() {
@@ -108,13 +137,14 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     );
   }
 
-  void _openFilters() {
-    if (_currentBytes == null) return;
+  Future<void> _openFilters() async {
+    final bytesToFilter = await _resolveImageBytes();
+    if (bytesToFilter == null || !mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (ctx) => ImageEditorFilterView(
-          imageBytes: _currentBytes!,
+          imageBytes: bytesToFilter,
           onApplied: (filteredBytes) {
             Navigator.pop(ctx);
             setState(() {
@@ -128,13 +158,14 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     );
   }
 
-  void _openDoodle() {
-    if (_currentBytes == null) return;
+  Future<void> _openDoodle() async {
+    final bytesToDoodle = await _resolveImageBytes();
+    if (bytesToDoodle == null || !mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (ctx) => ImageEditorDoodleView(
-          imageBytes: _currentBytes!,
+          imageBytes: bytesToDoodle,
           onApplied: (doodledBytes) {
             Navigator.pop(ctx);
             setState(() {
@@ -180,7 +211,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          if (isImage && _currentBytes != null) ...[
+          if (isImage && (_currentBytes != null || widget.bytes != null || widget.path != null)) ...[
             // Crop & Rotate
             IconButton(
               icon: const Icon(Icons.crop_rotate, color: Colors.white),

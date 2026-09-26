@@ -522,24 +522,79 @@ class ChatRepositoryImpl implements ChatRepository {
     );
   }
 
+  List<ScheduledMessageModel> _parseScheduledMessagesList(dynamic data, {String? conversationId}) {
+    List<dynamic> rawList = [];
+    if (data is List) {
+      rawList = data;
+    } else if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      if (map['data'] is List) {
+        rawList = map['data'] as List;
+      } else if (map['scheduled_messages'] is List) {
+        rawList = map['scheduled_messages'] as List;
+      } else if (map['scheduledMessages'] is List) {
+        rawList = map['scheduledMessages'] as List;
+      } else if (map['messages'] is List) {
+        rawList = map['messages'] as List;
+      } else if (map['items'] is List) {
+        rawList = map['items'] as List;
+      } else if (map['results'] is List) {
+        rawList = map['results'] as List;
+      } else if (map['data'] is Map && (map['data'] as Map)['items'] is List) {
+        rawList = (map['data'] as Map)['items'] as List;
+      } else if (map['data'] is Map && (map['data'] as Map)['messages'] is List) {
+        rawList = (map['data'] as Map)['messages'] as List;
+      }
+    }
+
+    final parsed = rawList
+        .whereType<Map>()
+        .map((item) => ScheduledMessageModel.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+
+    return parsed;
+  }
+
   @override
   Future<List<ScheduledMessageModel>> getScheduledMessages({String? conversationId}) async {
-    final result = await _apiService.get<List<ScheduledMessageModel>>(
-      CommonEndpoints.getScheduledMessages(conversationId: conversationId),
-      mapper: (data) {
-        if (data is List) {
-          return data
-              .map((item) => ScheduledMessageModel.fromJson(item as Map<String, dynamic>))
-              .toList();
-        }
-        return [];
-      },
-    );
+    try {
+      final result = await _apiService.get<List<ScheduledMessageModel>>(
+        CommonEndpoints.getScheduledMessages(conversationId: conversationId),
+        mapper: (data) => _parseScheduledMessagesList(data, conversationId: conversationId),
+      );
 
-    return result.when(
-      success: (list) => list,
-      failure: (error, _) => throw Exception(error),
-    );
+      final list = result.when(
+        success: (items) => items,
+        failure: (error, statusCode) => <ScheduledMessageModel>[],
+      );
+
+      if (list.isNotEmpty) {
+        return list;
+      }
+
+      // Fallback: If conversation_id query was unsupported or returned empty, fetch base scheduled messages
+      if (conversationId != null && conversationId.isNotEmpty) {
+        final fallbackResult = await _apiService.get<List<ScheduledMessageModel>>(
+          CommonEndpoints.scheduleMessage,
+          mapper: (data) => _parseScheduledMessagesList(data, conversationId: conversationId),
+        );
+
+        final fallbackList = fallbackResult.when(
+          success: (items) => items,
+          failure: (error, statusCode) => <ScheduledMessageModel>[],
+        );
+
+        if (fallbackList.isNotEmpty) {
+          final filtered = fallbackList.where((m) => m.conversationId == conversationId || m.conversationId.isEmpty).toList();
+          return filtered.isNotEmpty ? filtered : fallbackList;
+        }
+      }
+
+      return list;
+    } catch (e) {
+      debugPrint('Error in getScheduledMessages: $e');
+      return [];
+    }
   }
 
   @override

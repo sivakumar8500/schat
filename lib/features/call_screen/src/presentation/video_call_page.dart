@@ -1,5 +1,7 @@
 // mason make page --name video_call
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -337,6 +339,11 @@ class _VideoCallPageState extends State<VideoCallPage>
                           child: _buildFrostedButton(
                             icon: CommonIcons.minimize,
                             onTap: () {
+                              try {
+                                if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS)) {
+                                  const MethodChannel('com.sdpi.schat/pip').invokeMethod('enterPip');
+                                }
+                              } catch (_) {}
                               context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
                               Navigator.of(context).pop();
                             },

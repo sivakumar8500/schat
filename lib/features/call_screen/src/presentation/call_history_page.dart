@@ -460,10 +460,10 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
         child: TextField(
           controller: _searchController,
           autofocus: true,
-          style: TextStyle(color: context.colors.textPrimary),
+          style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
           decoration: InputDecoration(
             hintText: 'Search call history...',
-            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 14),
+            hintStyle: TextStyle(color: context.colors.textHint, fontSize: 16),
             prefixIcon: Icon(Icons.search, color: context.colors.primary, size: 20),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
