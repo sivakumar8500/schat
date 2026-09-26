@@ -130,6 +130,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     _isDismissed = true;
     FlutterCallkitIncoming.endAllCalls();
     bloc.add(AnswerCallEvent(widget.incomingEvent));
+    final isGroup = widget.incomingEvent['is_group'] == true || widget.incomingEvent['isGroup'] == true;
+    final groupName = (widget.incomingEvent['group_name'] ?? widget.incomingEvent['groupName'])?.toString();
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
@@ -137,21 +140,25 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
           child: widget.isVideo
               ? VideoCallPage(
                   conversationId: widget.conversationId,
-                  contactName: widget.callerName,
+                  contactName: isGroup && (groupName?.isNotEmpty ?? false) ? groupName! : widget.callerName,
                   contactColor: widget.callerColor,
                   recipientId: widget.recipientId,
                   isOutgoing: false,
                   profilePictureUrl: widget.profilePictureUrl,
                   myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                  isGroup: isGroup,
+                  groupName: groupName,
                 )
               : AudioCallPage(
                   conversationId: widget.conversationId,
-                  contactName: widget.callerName,
+                  contactName: isGroup && (groupName?.isNotEmpty ?? false) ? groupName! : widget.callerName,
                   contactColor: widget.callerColor,
                   recipientId: widget.recipientId,
                   isOutgoing: false,
                   profilePictureUrl: widget.profilePictureUrl,
                   myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                  isGroup: isGroup,
+                  groupName: groupName,
                 ),
         ),
       ),
@@ -175,10 +182,11 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
   Widget build(BuildContext context) {
     return BlocListener<CallWebRtcBloc, CallWebRtcState>(
       listenWhen: (previous, current) {
-        // Dismiss if call ended / errored while we are still ringing
+        // Dismiss if call ended / errored / rejected / idle while we are still ringing
         return current is CallEnded ||
             current is CallError ||
-            current is CallIdle;
+            current is CallIdle ||
+            current is CallRejected;
       },
       listener: (context, state) {
         _onCallerHungUp(context);
@@ -235,7 +243,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
                     ),
                     CommonSpaces.w8,
                     Text(
-                      widget.isVideo ? 'Incoming Video Call' : 'Incoming Audio Call',
+                      (widget.incomingEvent['is_group'] == true || widget.incomingEvent['isGroup'] == true)
+                          ? (widget.isVideo ? 'Incoming Group Video Call' : 'Incoming Group Audio Call')
+                          : (widget.isVideo ? 'Incoming Video Call' : 'Incoming Audio Call'),
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 14,
@@ -247,9 +257,12 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
               ),
               CommonSpaces.h24,
 
-              // Caller name
+              // Caller name / Group name
               Text(
-                widget.callerName,
+                ((widget.incomingEvent['is_group'] == true || widget.incomingEvent['isGroup'] == true) &&
+                        (widget.incomingEvent['group_name'] ?? widget.incomingEvent['groupName']) != null)
+                    ? (widget.incomingEvent['group_name'] ?? widget.incomingEvent['groupName']).toString()
+                    : widget.callerName,
                 style: context.h2.copyWith(
                   fontSize: 34,
                   color: Colors.white,
@@ -259,7 +272,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
               ),
               CommonSpaces.h8,
               Text(
-                'is calling you...',
+                (widget.incomingEvent['is_group'] == true || widget.incomingEvent['isGroup'] == true)
+                    ? '${widget.callerName} is calling the group...'
+                    : 'is calling you...',
                 style: context.titleMedium.copyWith(
                   color: Colors.white60,
                   fontWeight: FontWeight.w400,

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
@@ -306,6 +307,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     Widget content;
 
     if (widget.isMyStatus) {
+      avatarUrl = getIt<StorageService>().getProfilePic();
       final myStatusesList = widget.myStatuses ?? [];
       if (myStatusesList.isNotEmpty) {
         total = myStatusesList.length;
@@ -590,6 +592,40 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     );
   }
 
+  String _formatViewedTime(String? viewedAt) {
+    if (viewedAt == null || viewedAt.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(viewedAt).toLocal();
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+
+      final String hour = (dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour))
+          .toString()
+          .padLeft(2, '0');
+      final String minute = dt.minute.toString().padLeft(2, '0');
+      final String period = dt.hour >= 12 ? 'PM' : 'AM';
+      final String timeStr = '$hour:$minute $period';
+
+      if (diff.inSeconds < 60 && diff.inSeconds >= 0) {
+        return 'Just now';
+      } else if (diff.inMinutes < 60 && diff.inMinutes > 0) {
+        return '${diff.inMinutes}m ago';
+      } else if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+        return 'Today, $timeStr';
+      } else if (dt.year == now.year && dt.month == now.month && dt.day == now.day - 1) {
+        return 'Yesterday, $timeStr';
+      } else {
+        final List<String> monthNames = [
+          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        return '${monthNames[dt.month - 1]} ${dt.day}, $timeStr';
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+
   void _showViewersSheet(List<StatusViewerModel> viewers, int totalViews) {
     showModalBottomSheet(
       context: context,
@@ -638,14 +674,32 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                   itemBuilder: (_, i) {
                     final v = viewers[i];
                     final vName = v.displayName ?? v.username ?? 'Contact';
+                    final timeStr = _formatViewedTime(v.viewedAt);
+                    final hasPic = v.profilePictureUrl != null && v.profilePictureUrl!.isNotEmpty;
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: CircleAvatar(
                         backgroundColor: Colors.purple.shade300,
-                        child: Text(vName[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        backgroundImage: hasPic ? NetworkImage(v.profilePictureUrl!) : null,
+                        child: !hasPic
+                            ? Text(
+                                vName.isNotEmpty ? vName[0].toUpperCase() : '?',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              )
+                            : null,
                       ),
                       title: Text(vName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                       subtitle: v.username != null ? Text('@${v.username}', style: const TextStyle(color: Colors.white54, fontSize: 12)) : null,
+                      trailing: timeStr.isNotEmpty
+                          ? Text(
+                              timeStr,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            )
+                          : null,
                     );
                   },
                 ),

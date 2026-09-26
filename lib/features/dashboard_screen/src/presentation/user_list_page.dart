@@ -9,6 +9,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_s
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -25,6 +26,7 @@ class UserListPage extends StatefulWidget {
   final bool isPicker;
   final int maxSelection;
   final List<String>? excludeUserIds;
+  final String? title;
 
   const UserListPage({
     super.key,
@@ -33,6 +35,7 @@ class UserListPage extends StatefulWidget {
     this.isPicker = false,
     this.maxSelection = 10,
     this.excludeUserIds,
+    this.title,
   });
 
   @override
@@ -236,6 +239,8 @@ class _UserListPageState extends State<UserListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.colors.isDark;
+
     return MultiBlocProvider(
       providers: [
         BlocProvider.value(
@@ -297,44 +302,56 @@ class _UserListPageState extends State<UserListPage> {
         child: DefaultTabController(
           length: widget.showOnlySynced ? 1 : 2,
           child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: SafeArea(
-              child: Column(
-                children: [
-                  _buildHeader(context),
-                  _buildSearchBar(),
-                  if (!widget.showOnlySynced) _buildTabBar(context),
-                  Expanded(
-                    child: BlocBuilder<ContactsBloc, ContactsState>(
-                      builder: (context, state) {
-                        if (widget.showOnlySynced) {
-                          return RefreshIndicator(
-                            onRefresh: () async {
-                              _triggerSync();
-                              await Future.delayed(const Duration(seconds: 1));
-                            },
-                            color: const Color(0xFF00873C),
-                            child: _buildSchatUsersTab(context, state),
-                          );
-                        }
-                        return RefreshIndicator(
-                          onRefresh: () async {
-                            _triggerSync();
-                            await Future.delayed(const Duration(seconds: 1));
-                          },
-                          color: const Color(0xFF00873C),
-                          child: TabBarView(
-                            children: [
-                              _buildSchatUsersTab(context, state),
-                              _buildAllContactsTab(context, state),
-                            ],
-                          ),
-                        );
-                      },
+            backgroundColor: widget.isPicker ? context.colors.scaffoldBackground : Colors.transparent,
+            body: Stack(
+              children: [
+                if (widget.isPicker)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: HomeBackgroundWavePainter(isDark: isDark),
+                      ),
                     ),
                   ),
-                ],
-              ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      _buildHeader(context),
+                      _buildSearchBar(),
+                      if (!widget.showOnlySynced) _buildTabBar(context),
+                      Expanded(
+                        child: BlocBuilder<ContactsBloc, ContactsState>(
+                          builder: (context, state) {
+                            if (widget.showOnlySynced) {
+                              return RefreshIndicator(
+                                onRefresh: () async {
+                                  _triggerSync();
+                                  await Future.delayed(const Duration(seconds: 1));
+                                },
+                                color: const Color(0xFF00873C),
+                                child: _buildSchatUsersTab(context, state),
+                              );
+                            }
+                            return RefreshIndicator(
+                              onRefresh: () async {
+                                _triggerSync();
+                                await Future.delayed(const Duration(seconds: 1));
+                              },
+                              color: const Color(0xFF00873C),
+                              child: TabBarView(
+                                children: [
+                                  _buildSchatUsersTab(context, state),
+                                  _buildAllContactsTab(context, state),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -368,9 +385,10 @@ class _UserListPageState extends State<UserListPage> {
           ],
           Expanded(
             child: Text(
-              widget.isPicker
-                  ? 'Select Contacts'
-                  : (widget.showOnlySynced ? 'Select User' : 'Contacts'),
+              widget.title ??
+                  (widget.isPicker
+                      ? 'Select Contacts'
+                      : (widget.showOnlySynced ? 'Select User' : 'Contacts')),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: context.h2.copyWith(
@@ -381,7 +399,7 @@ class _UserListPageState extends State<UserListPage> {
             ),
           ),
           const SizedBox(width: 8),
-          if (widget.isPicker)
+          if (widget.isPicker && widget.maxSelection > 1)
             ElevatedButton(
               onPressed: _selectedUsers.isEmpty
                   ? null
@@ -399,7 +417,7 @@ class _UserListPageState extends State<UserListPage> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             )
-          else
+          else if (!widget.isPicker)
             // Sync Button
             Container(
               width: 40,
@@ -543,10 +561,16 @@ class _UserListPageState extends State<UserListPage> {
         return _buildEmptyState(context, isSchatOnly: true);
       }
 
-      return ListView.builder(
+      return ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.only(top: 4, bottom: 80),
         itemCount: syncedUsers.length,
+        separatorBuilder: (context, index) => Divider(
+          height: 1,
+          indent: 76,
+          endIndent: 16,
+          color: context.colors.border.withValues(alpha: 0.15),
+        ),
         itemBuilder: (context, index) => _buildSyncedUserTile(context, syncedUsers[index]),
       );
     }
@@ -586,10 +610,16 @@ class _UserListPageState extends State<UserListPage> {
         return _buildEmptyState(context, isSchatOnly: false);
       }
 
-      return ListView.builder(
+      return ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.only(top: 4, bottom: 80),
         itemCount: inviteContacts.length,
+        separatorBuilder: (context, index) => Divider(
+          height: 1,
+          indent: 76,
+          endIndent: 16,
+          color: context.colors.border.withValues(alpha: 0.15),
+        ),
         itemBuilder: (context, index) => _buildInviteContactTile(context, inviteContacts[index]),
       );
     }
@@ -723,107 +753,158 @@ class _UserListPageState extends State<UserListPage> {
   Widget _buildSyncedUserTile(BuildContext context, UserModel user) {
     final name = user.displayName;
     final isSelected = _selectedUsers.any((u) => u.id == user.id);
-    final isDark = context.colors.isDark;
+    final isBlockMode = widget.title == 'Block Contact';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? const Color(0xFF00873C).withValues(alpha: 0.12)
-            : (isDark ? context.colors.cardBackground : Colors.white),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isSelected
-              ? const Color(0xFF00873C)
-              : context.colors.border.withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        onTap: () {
-          if (widget.isPicker) {
-            setState(() {
-              if (isSelected) {
-                _selectedUsers.removeWhere((u) => u.id == user.id);
-              } else {
-                if (_selectedUsers.length < widget.maxSelection) {
-                  _selectedUsers.add(user);
-                }
+    return InkWell(
+      onTap: () {
+        if (isBlockMode || (widget.isPicker && widget.maxSelection == 1)) {
+          Navigator.pop(context, [user]);
+          return;
+        }
+        if (widget.isPicker) {
+          setState(() {
+            if (isSelected) {
+              _selectedUsers.removeWhere((u) => u.id == user.id);
+            } else {
+              if (_selectedUsers.length < widget.maxSelection) {
+                _selectedUsers.add(user);
               }
-            });
-            return;
-          }
-          context.read<ChatsBloc>().add(CreateChat(
-            participantId: user.id,
-            contactName: name,
-            profilePictureUrl: user.profilePictureUrl,
-          ));
-        },
-        leading: Stack(
+            }
+          });
+          return;
+        }
+        context.read<ChatsBloc>().add(CreateChat(
+          participantId: user.id,
+          contactName: name,
+          profilePictureUrl: user.profilePictureUrl,
+        ));
+      },
+      child: Container(
+        color: isSelected
+            ? const Color(0xFF00873C).withValues(alpha: 0.1)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
           children: [
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: const Color(0xFFE8F5E9),
-              backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
-                  ? CachedNetworkImageProvider(user.profilePictureUrl!)
-                  : null,
-              child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
-                  ? Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Color(0xFF00873C),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
+            // Profile Avatar
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundColor: isBlockMode ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9),
+                  backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                      ? CachedNetworkImageProvider(user.profilePictureUrl!)
+                      : null,
+                  child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
+                      ? Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: isBlockMode ? const Color(0xFFE53935) : const Color(0xFF00873C),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        )
+                      : null,
+                ),
+                if (user.isOnline && !isBlockMode)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 13,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00873C),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
                       ),
-                    )
-                  : null,
-            ),
-            if (user.isOnline)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00873C),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2,
                     ),
                   ),
-                ),
+              ],
+            ),
+            // Vertical Divider beside profile
+            Container(
+              width: 1,
+              height: 38,
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              color: context.colors.border.withValues(alpha: context.colors.isDark ? 0.35 : 0.5),
+            ),
+            // User Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: context.colors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isBlockMode && user.phoneNumber.isNotEmpty
+                        ? user.phoneNumber
+                        : (user.about ?? 'Hey there! I am using Schat.'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ),
-          ],
-        ),
-        title: Text(
-          name,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-            color: context.colors.textPrimary,
-          ),
-        ),
-        subtitle: Text(
-          user.about ?? 'Hey there! I am using Schat.',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: context.colors.textSecondary,
-            fontSize: 13,
-          ),
-        ),
-        trailing: widget.isPicker
-            ? Checkbox(
+            ),
+            // Trailing Action
+            if (isBlockMode)
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, [user]),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFEBEE),
+                  foregroundColor: const Color(0xFFE53935),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: Color(0xFFE53935), width: 1),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Block',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              )
+            else if (widget.isPicker && widget.maxSelection == 1)
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, [user]),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE8F5E9),
+                  foregroundColor: const Color(0xFF00873C),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: Color(0xFF00873C), width: 1),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Select',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              )
+            else if (widget.isPicker)
+              Checkbox(
                 value: isSelected,
                 activeColor: const Color(0xFF00873C),
                 shape: const CircleBorder(),
@@ -839,19 +920,22 @@ class _UserListPageState extends State<UserListPage> {
                   });
                 },
               )
-            : Container(
-                width: 36,
-                height: 36,
+            else
+              Container(
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
                   Icons.chat_bubble_outline_rounded,
                   color: Color(0xFF00873C),
-                  size: 18,
+                  size: 19,
                 ),
               ),
+          ],
+        ),
       ),
     );
   }
@@ -859,69 +943,77 @@ class _UserListPageState extends State<UserListPage> {
   Widget _buildInviteContactTile(BuildContext context, Contact contact) {
     final name = contact.displayName;
     final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
-    final isDark = context.colors.isDark;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: isDark ? context.colors.cardBackground : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: context.colors.border.withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        onTap: () => _showInviteBottomSheet(name, phone),
-        leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: context.colors.textHint.withValues(alpha: 0.1),
-          child: Text(
-            name.isNotEmpty ? name[0].toUpperCase() : '?',
-            style: TextStyle(
-              color: context.colors.textSecondary,
-              fontWeight: FontWeight.bold,
-              fontSize: 17,
+    return InkWell(
+      onTap: () => _showInviteBottomSheet(name, phone),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: context.colors.textHint.withValues(alpha: 0.1),
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
             ),
-          ),
-        ),
-        title: Text(
-          name,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-            color: context.colors.textPrimary,
-          ),
-        ),
-        subtitle: Text(
-          phone,
-          style: TextStyle(
-            color: context.colors.textSecondary,
-            fontSize: 13,
-          ),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F5E9),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Text(
-            'INVITE',
-            style: TextStyle(
-              color: Color(0xFF00873C),
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+            // Vertical Divider beside profile
+            Container(
+              width: 1,
+              height: 38,
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              color: context.colors.border.withValues(alpha: 0.25),
             ),
-          ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: context.colors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (phone.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      phone,
+                      style: TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Text(
+                'INVITE',
+                style: TextStyle(
+                  color: Color(0xFF00873C),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

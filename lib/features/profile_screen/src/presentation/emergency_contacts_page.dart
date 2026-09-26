@@ -73,32 +73,69 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
     }
   }
 
-  void _showAddContactDialog(BuildContext context) {
+  void _showAddContactBottomSheet(BuildContext context) {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
+    final cubit = context.read<EmergencyContactsCubit>();
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          backgroundColor: context.colors.cardBackground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: Text(
-            'Add Emergency Contact',
-            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold, color: context.colors.textPrimary),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetCtx) {
+        return Container(
+          padding: EdgeInsets.only(
+            top: 20,
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.of(bottomSheetCtx).viewInsets.bottom + 24,
           ),
-          content: Column(
+          decoration: BoxDecoration(
+            color: context.colors.cardBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: context.colors.textHint.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              CommonSpaces.h16,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Add Emergency Contact',
+                    style: context.titleLarge.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, color: context.colors.textHint, size: 22),
+                    onPressed: () => Navigator.pop(bottomSheetCtx),
+                  ),
+                ],
+              ),
+              CommonSpaces.h16,
               TextField(
                 controller: nameController,
+                autofocus: true,
                 style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Contact Name',
-                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 15),
                   prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00873C)),
                   filled: true,
-                  fillColor: context.colors.scaffoldBackground,
+                  fillColor: context.colors.lightBackground,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
@@ -112,105 +149,146 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
                 style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Phone Number',
-                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 15),
                   prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF00873C)),
                   filled: true,
-                  fillColor: context.colors.scaffoldBackground,
+                  fillColor: context.colors.lightBackground,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
                   ),
                 ),
               ),
+              CommonSpaces.h24,
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    final phone = phoneController.text.trim();
+                    if (name.isEmpty || phone.isEmpty) {
+                      context.showErrorNotification('Name and Phone are required');
+                      return;
+                    }
+                    Navigator.pop(bottomSheetCtx);
+                    cubit.addContact(name, phone);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00873C),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Add Contact',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: Text('Cancel', style: TextStyle(color: context.colors.textHint)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                final phone = phoneController.text.trim();
-                if (name.isEmpty || phone.isEmpty) {
-                  context.showErrorNotification('Name and Phone are required');
-                  return;
-                }
-                Navigator.pop(dialogCtx);
-                context.read<EmergencyContactsCubit>().addContact(name, phone);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00873C),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
-              child: const Text('Add Contact', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
         );
       },
     );
   }
 
-  void _showEditContactDialog(BuildContext context, String id, String initialName) {
+  void _showEditContactBottomSheet(BuildContext context, String id, String initialName) {
     final nameController = TextEditingController(text: initialName);
+    final cubit = context.read<EmergencyContactsCubit>();
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (dialogCtx) {
-        return AlertDialog(
-          backgroundColor: context.colors.cardBackground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: Text(
-            'Edit Contact',
-            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold, color: context.colors.textPrimary),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetCtx) {
+        return Container(
+          padding: EdgeInsets.only(
+            top: 20,
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.of(bottomSheetCtx).viewInsets.bottom + 24,
           ),
-          content: Column(
+          decoration: BoxDecoration(
+            color: context.colors.cardBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: context.colors.textHint.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              CommonSpaces.h16,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Edit Contact',
+                    style: context.titleLarge.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, color: context.colors.textHint, size: 22),
+                    onPressed: () => Navigator.pop(bottomSheetCtx),
+                  ),
+                ],
+              ),
+              CommonSpaces.h16,
               TextField(
                 controller: nameController,
+                autofocus: true,
                 style: TextStyle(color: context.colors.textPrimary, fontSize: 16),
                 decoration: InputDecoration(
                   labelText: 'Contact Name',
-                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 16),
+                  labelStyle: TextStyle(color: context.colors.textSecondary, fontSize: 15),
                   prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF00873C)),
                   filled: true,
-                  fillColor: context.colors.scaffoldBackground,
+                  fillColor: context.colors.lightBackground,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
                   ),
                 ),
               ),
+              CommonSpaces.h24,
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) {
+                      context.showErrorNotification('Name is required');
+                      return;
+                    }
+                    Navigator.pop(bottomSheetCtx);
+                    cubit.updateContact(id, name);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00873C),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Save Changes',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: Text('Cancel', style: TextStyle(color: context.colors.textHint)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                if (name.isEmpty) {
-                  context.showErrorNotification('Name is required');
-                  return;
-                }
-                Navigator.pop(dialogCtx);
-                context.read<EmergencyContactsCubit>().updateContact(id, name);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00873C),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
-              child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
         );
       },
     );
@@ -458,7 +536,7 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
                                                     size: 17,
                                                   ),
                                                   tooltip: 'Edit',
-                                                  onPressed: () => _showEditContactDialog(
+                                                  onPressed: () => _showEditContactBottomSheet(
                                                       context, contact.id, contact.contactName),
                                                 ),
                                               ),
@@ -609,17 +687,6 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddContactDialog(context),
-        backgroundColor: const Color(0xFF00873C),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.add_rounded, size: 22),
-        label: const Text(
-          'Add Contact',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
     );
   }
 
@@ -644,11 +711,32 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
             ),
           ),
           CommonSpaces.w12,
-          Text(
-            'Emergency Contacts',
-            style: context.h2.copyWith(
-              fontWeight: FontWeight.bold,
-              color: context.colors.textPrimary,
+          Expanded(
+            child: Text(
+              'Emergency Contacts',
+              style: context.h2.copyWith(
+                fontWeight: FontWeight.bold,
+                color: context.colors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFE8F5E9),
+              border: Border.all(
+                color: const Color(0xFF00873C).withValues(alpha: 0.3),
+              ),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 20),
+              tooltip: 'Add Emergency Contact',
+              onPressed: () => _showAddContactBottomSheet(context),
             ),
           ),
         ],
@@ -793,7 +881,7 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
             ),
             CommonSpaces.h24,
             ElevatedButton.icon(
-              onPressed: () => _showAddContactDialog(context),
+              onPressed: () => _showAddContactBottomSheet(context),
               icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('Add Contact Now'),
               style: ElevatedButton.styleFrom(

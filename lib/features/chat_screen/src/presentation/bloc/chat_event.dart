@@ -207,7 +207,14 @@ class UpdateGroupInfoEvent extends ChatEvent {
   final String? name;
   final String? description;
   final String? iconUrl;
-  const UpdateGroupInfoEvent({required this.groupId, this.name, this.description, this.iconUrl});
+  final bool? onlyAdminsSendMessages;
+  const UpdateGroupInfoEvent({
+    required this.groupId,
+    this.name,
+    this.description,
+    this.iconUrl,
+    this.onlyAdminsSendMessages,
+  });
 }
 
 class AddGroupParticipantsEvent extends ChatEvent {

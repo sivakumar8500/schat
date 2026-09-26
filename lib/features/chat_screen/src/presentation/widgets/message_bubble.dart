@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -76,6 +77,8 @@ class MessageBubble extends StatefulWidget {
   final String? address;
   final String? locationTitle;
   final int? expiry;
+  final String? senderName;
+  final String? senderProfilePictureUrl;
 
   const MessageBubble({
     super.key,
@@ -121,7 +124,12 @@ class MessageBubble extends StatefulWidget {
     this.address,
     this.locationTitle,
     this.expiry,
+    this.senderName,
+    this.senderProfilePictureUrl,
+    this.onMentionTap,
   });
+
+  final void Function(String mention)? onMentionTap;
 
   @override
   State<MessageBubble> createState() => _MessageBubbleState();
@@ -131,6 +139,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   String get messageId => widget.messageId;
   String get conversationId => widget.conversationId;
   String get message => widget.message;
+  String? get senderProfilePictureUrl => widget.senderProfilePictureUrl;
   String get time => widget.time;
   bool get isMe => widget.isMe;
   bool get isRead => widget.isRead;
@@ -170,6 +179,30 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get address => widget.address;
   String? get locationTitle => widget.locationTitle;
   int? get expiry => widget.expiry;
+  String? get senderName => widget.senderName;
+
+  Color _getSenderColor(String name) {
+    const palette = [
+      Color(0xFF1EBE71), // WhatsApp Green
+      Color(0xFF1D84B5), // Cerulean Blue
+      Color(0xFFE542A3), // Pink
+      Color(0xFFE57D22), // Orange
+      Color(0xFF8C52FF), // Purple
+      Color(0xFF00A389), // Teal
+      Color(0xFFD9383A), // Red
+      Color(0xFF7C4DFF), // Deep Violet
+      Color(0xFF028090), // Ocean Blue
+      Color(0xFFF45B69), // Crimson
+      Color(0xFFE65100), // Amber
+      Color(0xFF2E7D32), // Forest Green
+    ];
+    if (name.isEmpty) return palette[0];
+    int hash = 0;
+    for (int i = 0; i < name.length; i++) {
+      hash = name.codeUnitAt(i) + ((hash << 5) - hash);
+    }
+    return palette[hash.abs() % palette.length];
+  }
 
   bool get _isMediaMessage {
     if (type == 'image' || type == 'video' || type == 'file') return true;
@@ -283,13 +316,29 @@ class _MessageBubbleState extends State<MessageBubble> {
             ],
             if (!isMe) ...[
               CircleAvatar(
-                radius: 12,
-                backgroundColor: context.colors.textHint,
-                child: Icon(
-                  CommonIcons.person,
-                  size: 16,
-                  color: context.colors.textLight,
-                ),
+                radius: 14,
+                backgroundColor: isGroup && senderName != null && senderName!.trim().isNotEmpty
+                    ? _getSenderColor(senderName!.trim()).withValues(alpha: 0.15)
+                    : context.colors.textHint,
+                backgroundImage: (senderProfilePictureUrl != null && senderProfilePictureUrl!.trim().isNotEmpty)
+                    ? CachedNetworkImageProvider(senderProfilePictureUrl!.trim())
+                    : null,
+                child: (senderProfilePictureUrl != null && senderProfilePictureUrl!.trim().isNotEmpty)
+                    ? null
+                    : (isGroup && senderName != null && senderName!.trim().isNotEmpty
+                        ? Text(
+                            senderName!.trim()[0].toUpperCase(),
+                            style: TextStyle(
+                              color: _getSenderColor(senderName!.trim()),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          )
+                        : Icon(
+                            CommonIcons.person,
+                            size: 16,
+                            color: context.colors.textLight,
+                          )),
               ),
               CommonSpaces.w8,
             ],
@@ -338,6 +387,24 @@ class _MessageBubbleState extends State<MessageBubble> {
                   child: Column(
                     crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                     children: [
+                      if (isGroup && !isMe && senderName != null && senderName!.trim().isNotEmpty && !isDeleted)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            left: isMedia ? 4.0 : 0.0,
+                            right: isMedia ? 4.0 : 0.0,
+                            bottom: 6.0,
+                          ),
+                          child: Text(
+                            senderName!.trim(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.bodyMedium.copyWith(
+                              color: _getSenderColor(senderName!.trim()),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
                       if (isReply && replyMessageBody != null && !isDeleted)
                         GestureDetector(
                           onTap: onReplyTap,
@@ -352,7 +419,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 left: BorderSide(
                                   color: isMe
                                       ? context.colors.primary
-                                      : context.colors.primary,
+                                      : (isGroup && replyMessageSenderName != null
+                                          ? _getSenderColor(replyMessageSenderName!)
+                                          : context.colors.primary),
                                   width: 4,
                                 ),
                               ),
@@ -372,7 +441,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                                     fontSize: 12,
                                     color: isMe
                                         ? context.colors.textPrimary
-                                        : context.colors.primary,
+                                        : (isGroup && replyMessageSenderName != null
+                                            ? _getSenderColor(replyMessageSenderName!)
+                                            : context.colors.primary),
                                   ),
                                 ),
                                 CommonSpaces.h4,
@@ -433,6 +504,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildMediaActionBar(BuildContext context) {
+    if (isGroup) {
+      return const SizedBox.shrink();
+    }
     const accentGreen = Color(0xFF00D084);
     final textColor = isMe ? context.colors.pureWhite : context.colors.textPrimary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -589,10 +663,10 @@ class _MessageBubbleState extends State<MessageBubble> {
     return Padding(
       padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.spaceBetween : MainAxisAlignment.end,
+        mainAxisAlignment: (isMe && !isGroup) ? MainAxisAlignment.spaceBetween : MainAxisAlignment.end,
         children: [
-          // Left: Show share details > (ONLY FOR SENDER)
-          if (isMe)
+          // Left: Show share details > (ONLY FOR SENDER AND NOT IN GROUP)
+          if (isMe && !isGroup)
             Flexible(
               child: InkWell(
                 borderRadius: BorderRadius.circular(6),
@@ -632,7 +706,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
             ),
 
-          if (isMe) const SizedBox(width: 6),
+          if (isMe && !isGroup) const SizedBox(width: 6),
 
           // Right: Timestamp and checkmark status
           Row(
@@ -1344,7 +1418,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           try {
             final serverUri = Uri.parse(CommonEndpoints.baseUrl);
             final host = serverUri.host;
-            if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+            if (host.isNotEmpty && !host.contains('amazonaws.com')) {
               s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
             } else {
               s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
@@ -1667,12 +1741,10 @@ class _MessageBubbleState extends State<MessageBubble> {
             children: [
               CircleAvatar(
                 radius: 18,
-                backgroundColor: isMe
-                    ? context.colors.pureWhite.withValues(alpha: 0.3)
-                    : context.colors.primary.withValues(alpha: 0.15),
+                backgroundColor: context.colors.primary.withValues(alpha: 0.15),
                 child: Icon(
                   isSchatUser ? Icons.chat_rounded : CommonIcons.person,
-                  color: isMe ? context.colors.pureWhite : context.colors.primary,
+                  color: context.colors.primary,
                   size: 20,
                 ),
               ),
@@ -1685,7 +1757,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     Text(
                       displayName,
                       style: context.bodyMedium.copyWith(
-                        color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                        color: context.colors.textPrimary,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
@@ -1698,8 +1770,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                         displayPhone,
                         style: context.bodySmall.copyWith(
                           color: isSchatUser 
-                              ? (isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary)
-                              : (isMe ? context.colors.pureWhite.withValues(alpha: 0.4) : context.colors.textHint), // blur/muted color!
+                              ? context.colors.textSecondary
+                              : context.colors.textHint, // blur/muted color!
                           fontSize: 11,
                         ),
                         maxLines: 1,
@@ -1742,23 +1814,23 @@ class _MessageBubbleState extends State<MessageBubble> {
       final duration = callMeta?.duration ?? 0;
       
       result = Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isMe
-              ? context.colors.pureWhite.withValues(alpha: 0.15)
+              ? context.colors.textPrimary.withValues(alpha: 0.05)
               : context.colors.lightBackground,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: isErrorState 
                     ? context.colors.error.withValues(alpha: 0.1) 
-                    : (isMe ? context.colors.pureWhite.withValues(alpha: 0.2) : context.colors.primary.withValues(alpha: 0.1)),
+                    : context.colors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -1767,30 +1839,33 @@ class _MessageBubbleState extends State<MessageBubble> {
                     : (isErrorState ? CommonIcons.phoneMissed : CommonIcons.phone),
                 color: isErrorState 
                     ? context.colors.error 
-                    : (isMe ? context.colors.pureWhite : context.colors.primary),
-                size: 20,
+                    : context.colors.primary,
+                size: 16,
               ),
             ),
-            CommonSpaces.w12,
+            CommonSpaces.w8,
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   isVideo ? 'Video Call' : 'Voice Call',
-                  style: context.bodyMedium.copyWith(
-                    color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
-                    fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: context.colors.textPrimary,
                   ),
                 ),
+                CommonSpaces.h2,
                 Text(
                   isMissed 
                       ? 'Missed' 
                       : (isDeclined ? 'Declined' : (duration > 0 ? _formatCallDuration(duration) : 'Completed')),
-                  style: context.bodySmall.copyWith(
+                  style: TextStyle(
+                    fontSize: 11,
                     color: isErrorState 
                         ? context.colors.error 
-                        : (isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary),
+                        : context.colors.textSecondary,
                   ),
                 ),
               ],
@@ -1843,7 +1918,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 style: context.bodyMedium.copyWith(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
-                  color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                  color: context.colors.textPrimary,
                 ),
               ),
               CommonSpaces.h2,
@@ -1851,7 +1926,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 'Playback & viewing locked by sender',
                 style: context.bodySmall.copyWith(
                   fontSize: 11,
-                  color: isMe ? context.colors.pureWhite.withValues(alpha: 0.7) : context.colors.textSecondary,
+                  color: context.colors.textSecondary,
                 ),
               ),
             ],
@@ -2095,7 +2170,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
         final host = serverUri.host;
-        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
           s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
@@ -2160,7 +2235,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
         final host = serverUri.host;
-        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
           s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
@@ -2392,7 +2467,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     overflow: TextOverflow.ellipsis,
                     style: context.bodyMedium.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: isMe ? context.colors.pureWhite : context.colors.textPrimary,
+                      color: context.colors.textPrimary,
                       fontSize: 13,
                     ),
                   ),
@@ -2400,9 +2475,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   Text(
                     sizeLabel,
                     style: context.bodySmall.copyWith(
-                      color: isMe 
-                          ? context.colors.pureWhite.withValues(alpha: 0.7)
-                          : context.colors.textSecondary,
+                      color: context.colors.textSecondary,
                       fontSize: 11,
                     ),
                   ),
@@ -2531,12 +2604,13 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
 
-    final RegExp urlRegex = RegExp(
-      r'(https?://[^\s<>"{}|\^`]+|www\.[^\s<>"{}|\^`]+)',
+    // Combined regex to match @mentions and URLs
+    final RegExp combinedRegex = RegExp(
+      r'(@[a-zA-Z0-9_\.\-]+|https?://[^\s<>"{}|\^`]+|www\.[^\s<>"{}|\^`]+)',
       caseSensitive: false,
     );
 
-    final matches = urlRegex.allMatches(text);
+    final matches = combinedRegex.allMatches(text);
     final String? firstUrl = LinkMetadataService.extractFirstUrl(text);
 
     Widget contentWidget;
@@ -2557,46 +2631,71 @@ class _MessageBubbleState extends State<MessageBubble> {
           ));
         }
 
-        final rawUrl = text.substring(match.start, match.end);
-        final cleanUrl = rawUrl.replaceAll(RegExp(r'[.,)>\];]+$'), '');
-        final trailingPunctuation = rawUrl.substring(cleanUrl.length);
-        final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
+        final rawToken = text.substring(match.start, match.end);
 
-        spans.add(TextSpan(
-          text: cleanUrl,
-          style: context.bodyMedium.copyWith(
-            color: linkColor,
-            decoration: TextDecoration.underline,
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () async {
-              var openUrl = cleanUrl;
-              if (openUrl.toLowerCase().startsWith('www.')) {
-                openUrl = 'https://$openUrl';
-              }
-              final uri = Uri.tryParse(openUrl);
-              if (uri != null) {
-                try {
-                  final can = await canLaunchUrl(uri);
-                  if (can) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  } else {
+        if (rawToken.startsWith('@')) {
+          // @name Mention token -> Render in blue and handle click to show user details
+          final cleanMention = rawToken.replaceAll(RegExp(r'[.,)>\];:!?]+$'), '');
+          final trailingPunctuation = rawToken.substring(cleanMention.length);
+          const mentionColor = Color(0xFF1E88E5); // Blue color for @name
+
+          spans.add(TextSpan(
+            text: cleanMention,
+            style: baseStyle.copyWith(
+              color: mentionColor,
+              fontWeight: FontWeight.w600,
+            ),
+            recognizer: TapGestureRecognizer()
+              ..onTap = () {
+                widget.onMentionTap?.call(cleanMention);
+              },
+          ));
+
+          if (trailingPunctuation.isNotEmpty) {
+            spans.add(TextSpan(text: trailingPunctuation));
+          }
+        } else {
+          // URL token
+          final cleanUrl = rawToken.replaceAll(RegExp(r'[.,)>\];]+$'), '');
+          final trailingPunctuation = rawToken.substring(cleanUrl.length);
+          final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
+
+          spans.add(TextSpan(
+            text: cleanUrl,
+            style: context.bodyMedium.copyWith(
+              color: linkColor,
+              decoration: TextDecoration.underline,
+            ),
+            recognizer: TapGestureRecognizer()
+              ..onTap = () async {
+                var openUrl = cleanUrl;
+                if (openUrl.toLowerCase().startsWith('www.')) {
+                  openUrl = 'https://$openUrl';
+                }
+                final uri = Uri.tryParse(openUrl);
+                if (uri != null) {
+                  try {
+                    final can = await canLaunchUrl(uri);
+                    if (can) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    } else {
+                      if (context.mounted) {
+                        context.showErrorNotification('Could not open link');
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Error launching url: $e');
                     if (context.mounted) {
-                      context.showErrorNotification('Could not open link');
+                      context.showErrorNotification('Error opening link');
                     }
                   }
-                } catch (e) {
-                  debugPrint('Error launching url: $e');
-                  if (context.mounted) {
-                    context.showErrorNotification('Error opening link');
-                  }
                 }
-              }
-            },
-        ));
+              },
+          ));
 
-        if (trailingPunctuation.isNotEmpty) {
-          spans.add(TextSpan(text: trailingPunctuation));
+          if (trailingPunctuation.isNotEmpty) {
+            spans.add(TextSpan(text: trailingPunctuation));
+          }
         }
 
         lastEnd = match.end;
@@ -2728,7 +2827,7 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
         final host = serverUri.host;
-        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
           s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
@@ -2908,7 +3007,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
         final host = serverUri.host;
-        if (host == '13.201.205.176' || host == 'localhost' || host == '127.0.0.1') {
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
           s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
         } else {
           s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';

@@ -45,6 +45,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
   List<UserModel> _participants = [];
   bool _isAdmin = false;
   int? _disappearingTimer;
+  bool _onlyAdminsSendMessages = false;
 
   @override
   void initState() {
@@ -62,6 +63,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           _isAdmin = false;
           _groupData = data;
           _disappearingTimer = data['timer_seconds'] ?? data['disappearing_timer'];
+          _onlyAdminsSendMessages = data['only_admins_send_messages'] == true || data['onlyAdminsSendMessages'] == true;
           final participantsData = data['participants'];
           if (participantsData is List) {
             _participants = participantsData.map((p) {
@@ -92,7 +94,6 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     }
   }
 
-  Future<void> _editGroupName() => _showEditGroupBottomSheet();
   Future<void> _editGroupDescription() => _showEditGroupBottomSheet();
   Future<void> _updateGroupIcon() => _showEditGroupBottomSheet();
 
@@ -330,17 +331,22 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                   expandedHeight: 300,
                   pinned: true,
                   flexibleSpace: FlexibleSpaceBar(
-                    title: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _groupData?['name'] ?? widget.groupName,
-                            style: context.titleMedium.copyWith(color: Colors.white, shadows: [
-                              const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2)),
-                            ]),
-                          ),
-                        ),
-                      ],
+                    titlePadding: const EdgeInsetsDirectional.only(
+                      start: 64,
+                      bottom: 16,
+                      end: 56,
+                    ),
+                    title: Text(
+                      _groupData?['name'] ?? widget.groupName,
+                      style: context.titleMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        shadows: const [
+                          Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     background: GestureDetector(
                       onTap: _isAdmin ? _updateGroupIcon : null,
@@ -436,11 +442,6 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                 activeThumbColor: context.colors.primary,
                               ),
                             ),
-                            _buildSettingsTile(
-                              icon: Icons.music_note_rounded,
-                              title: 'Custom notifications',
-                              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-                            ),
                           ],
                         ),
                       ),
@@ -452,8 +453,27 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                             _buildSettingsTile(
                               icon: Icons.timer_outlined,
                               title: 'Disappearing messages',
-                              trailing: Text(_getDisappearingText(_disappearingTimer), style: context.bodyMedium.copyWith(color: context.colors.textHint)),
-                              onTap: _isAdmin ? () => _showDisappearingMessagesBottomSheet(context) : null,
+                              trailing: Text(
+                                _getDisappearingText(state is ChatLoaded ? (state.disappearingTimer ?? _disappearingTimer) : _disappearingTimer),
+                                style: context.bodyMedium.copyWith(color: context.colors.textHint),
+                              ),
+                              onTap: () => _showDisappearingMessagesBottomSheet(
+                                context,
+                                state is ChatLoaded ? (state.disappearingTimer ?? _disappearingTimer) : _disappearingTimer,
+                              ),
+                            ),
+                            Divider(height: 1, color: context.colors.border.withValues(alpha: 0.2)),
+                            _buildSettingsTile(
+                              icon: Icons.lock_outline_rounded,
+                              title: 'Send messages',
+                              trailing: Text(
+                                _onlyAdminsSendMessages ? 'Only admins' : 'All members',
+                                style: context.bodyMedium.copyWith(
+                                  color: _onlyAdminsSendMessages ? const Color(0xFFE53935) : context.colors.textHint,
+                                  fontWeight: _onlyAdminsSendMessages ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                              ),
+                              onTap: () => _showSendMessagesPermissionBottomSheet(context),
                             ),
                           ],
                         ),
@@ -480,6 +500,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                 ),
                                 title: Text('Add participants', style: context.bodyLarge.copyWith(color: context.colors.textPrimary)),
                                 onTap: () async {
+                                  final chatBloc = context.read<ChatBloc>();
                                   final List<UserModel>? selectedUsers = await showModalBottomSheet<List<UserModel>>(
                                     context: context,
                                     isScrollControlled: true,
@@ -502,8 +523,9 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                     ),
                                   );
                                   
-                                  if (selectedUsers != null && selectedUsers.isNotEmpty && mounted) {
-                                    context.read<ChatBloc>().add(AddGroupParticipantsEvent(
+                                  if (!mounted) return;
+                                  if (selectedUsers != null && selectedUsers.isNotEmpty) {
+                                    chatBloc.add(AddGroupParticipantsEvent(
                                       groupId: widget.conversationId,
                                       userIds: selectedUsers.map((u) => u.id).toList(),
                                     ));
@@ -658,11 +680,12 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                         innerCardColor,
                         Column(
                           children: [
-                            ListTile(
-                              leading: const Icon(Icons.logout_rounded, color: Colors.red),
-                              title: const Text('Exit group', style: TextStyle(color: Colors.red)),
-                              onTap: () => _exitGroup(),
-                            ),
+                            if (!_isAdmin)
+                              ListTile(
+                                leading: const Icon(Icons.logout_rounded, color: Colors.red),
+                                title: const Text('Exit group', style: TextStyle(color: Colors.red)),
+                                onTap: () => _exitGroup(),
+                              ),
                             if (_isAdmin)
                               ListTile(
                                 leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
@@ -759,7 +782,8 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     return 'Daily at $displayHour$displayMinute $period';
   }
 
-  void _showDisappearingMessagesBottomSheet(BuildContext context) {
+  void _showDisappearingMessagesBottomSheet(BuildContext context, [int? currentTimer]) {
+    final activeTimer = currentTimer ?? _disappearingTimer;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -801,11 +825,11 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                   style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
                 ),
                 CommonSpaces.h24,
-                _buildDisappearingOption(context, 'Off', 0),
-                _buildDisappearingOption(context, '24 hours', 86400),
-                _buildDisappearingOption(context, '7 days', 604800),
-                _buildDisappearingOption(context, '30 days', 2592000),
-                _buildCustomDailyTimeOption(context),
+                _buildDisappearingOption(context, 'Off', 0, activeTimer),
+                _buildDisappearingOption(context, '24 hours', 86400, activeTimer),
+                _buildDisappearingOption(context, '7 days', 604800, activeTimer),
+                _buildDisappearingOption(context, '30 days', 2592000, activeTimer),
+                _buildCustomDailyTimeOption(context, activeTimer),
                 CommonSpaces.h20,
               ],
             ),
@@ -815,9 +839,10 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     );
   }
 
-  Widget _buildCustomDailyTimeOption(BuildContext context) {
-    final bool isCustom = _disappearingTimer != null && _disappearingTimer! < 0;
-    final customText = isCustom ? _getDisappearingText(_disappearingTimer) : null;
+  Widget _buildCustomDailyTimeOption(BuildContext context, [int? currentTimer]) {
+    final activeTimer = currentTimer ?? _disappearingTimer;
+    final bool isCustom = activeTimer != null && activeTimer < 0;
+    final customText = isCustom ? _getDisappearingText(activeTimer) : null;
     final presets = [
       {'label': '2 AM', 'h': 2, 'm': 0},
       {'label': '7 AM', 'h': 7, 'm': 0},
@@ -867,7 +892,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               final picked = await showTimePicker(
                 context: context,
                 initialTime: isCustom
-                    ? (_decodeDailyCutoffTime(_disappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                    ? (_decodeDailyCutoffTime(activeTimer) ?? const TimeOfDay(hour: 14, minute: 0))
                     : const TimeOfDay(hour: 14, minute: 0),
               );
               if (picked != null) {
@@ -884,7 +909,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
               children: [
                 ...presets.map((p) {
                   final encoded = _encodeDailyCutoffTime(p['h'] as int, p['m'] as int);
-                  final isSelected = _disappearingTimer == encoded;
+                  final isSelected = activeTimer == encoded;
                   return InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () => applyCustomTime(encoded),
@@ -914,7 +939,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                     final picked = await showTimePicker(
                       context: context,
                       initialTime: isCustom
-                          ? (_decodeDailyCutoffTime(_disappearingTimer) ?? const TimeOfDay(hour: 14, minute: 0))
+                          ? (_decodeDailyCutoffTime(activeTimer) ?? const TimeOfDay(hour: 14, minute: 0))
                           : const TimeOfDay(hour: 14, minute: 0),
                     );
                     if (picked != null) {
@@ -954,8 +979,9 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
     );
   }
 
-  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds) {
-    final bool isSelected = (_disappearingTimer == seconds) || (_disappearingTimer == null && seconds == 0);
+  Widget _buildDisappearingOption(BuildContext context, String label, int? seconds, [int? currentTimer]) {
+    final activeTimer = currentTimer ?? _disappearingTimer;
+    final bool isSelected = (activeTimer == seconds) || (activeTimer == null && seconds == 0);
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: context.bodyLarge),
@@ -971,6 +997,138 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
         });
         context.showInfoNotification('Disappearing messages set to $label');
       },
+    );
+  }
+
+  void _showSendMessagesPermissionBottomSheet(BuildContext context) {
+    if (!_isAdmin) {
+      context.showInfoNotification('Only group admins can change who can send messages');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setSheetState) {
+            return Material(
+              color: context.colors.scaffoldBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: context.colors.textHint.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Icon(Icons.lock_outline_rounded, color: context.colors.primary, size: 24),
+                        CommonSpaces.w12,
+                        Text(
+                          'Send messages',
+                          style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    CommonSpaces.h16,
+                    Text(
+                      'Choose who can send messages to this group.',
+                      style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                    ),
+                    CommonSpaces.h24,
+                    _buildSendMessagesOption(
+                      sheetContext: sheetContext,
+                      title: 'All members',
+                      subtitle: 'All participants can send messages',
+                      isSelected: !_onlyAdminsSendMessages,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        context.read<ChatBloc>().add(UpdateGroupInfoEvent(
+                          groupId: widget.conversationId,
+                          onlyAdminsSendMessages: false,
+                        ));
+                        setState(() {
+                          _onlyAdminsSendMessages = false;
+                        });
+                        context.showInfoNotification('All members can now send messages');
+                      },
+                    ),
+                    _buildSendMessagesOption(
+                      sheetContext: sheetContext,
+                      title: 'Only admins',
+                      subtitle: 'Only group admins can send messages',
+                      isSelected: _onlyAdminsSendMessages,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        context.read<ChatBloc>().add(UpdateGroupInfoEvent(
+                          groupId: widget.conversationId,
+                          onlyAdminsSendMessages: true,
+                        ));
+                        setState(() {
+                          _onlyAdminsSendMessages = true;
+                        });
+                        context.showInfoNotification('Only admins can now send messages');
+                      },
+                    ),
+                    CommonSpaces.h20,
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSendMessagesOption({
+    required BuildContext sheetContext,
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final colors = context.colors;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? colors.primary.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: isSelected ? Border.all(color: colors.primary.withValues(alpha: 0.3)) : null,
+      ),
+      child: ListTile(
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? colors.primary : colors.textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: colors.textSecondary,
+          ),
+        ),
+        trailing: isSelected
+            ? Icon(Icons.check_circle_rounded, color: colors.primary)
+            : Icon(Icons.circle_outlined, color: colors.textHint),
+        onTap: onTap,
+      ),
     );
   }
 }

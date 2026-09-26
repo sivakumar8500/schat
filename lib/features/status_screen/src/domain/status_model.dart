@@ -99,17 +99,42 @@ abstract class StatusViewerModel with _$StatusViewerModel {
     required String viewerId,
     String? username,
     String? displayName,
-    @JsonKey(name: 'viewedAt') int? viewedAt,
+    String? profilePictureUrl,
+    @JsonKey(name: 'viewedAt') String? viewedAt,
   }) = _StatusViewerModel;
 
   factory StatusViewerModel.fromJson(Map<String, dynamic> json) {
     final map = Map<String, dynamic>.from(json);
     final vId = (map['viewerId'] ?? map['id'] ?? map['userId'] ?? map['user_id'])?.toString() ?? '';
+    final rawViewedAt = map['viewedAt'] ?? map['viewed_at'] ?? map['timestamp'] ?? map['created_at'];
+    String? viewedAtStr;
+    if (rawViewedAt is int) {
+      if (rawViewedAt > 10000000000) {
+        viewedAtStr = DateTime.fromMillisecondsSinceEpoch(rawViewedAt).toIso8601String();
+      } else {
+        viewedAtStr = DateTime.fromMillisecondsSinceEpoch(rawViewedAt * 1000).toIso8601String();
+      }
+    } else if (rawViewedAt is double) {
+      viewedAtStr = DateTime.fromMillisecondsSinceEpoch((rawViewedAt * 1000).toInt()).toIso8601String();
+    } else if (rawViewedAt != null) {
+      final parsedInt = int.tryParse(rawViewedAt.toString());
+      if (parsedInt != null && parsedInt > 1000000) {
+        if (parsedInt > 10000000000) {
+          viewedAtStr = DateTime.fromMillisecondsSinceEpoch(parsedInt).toIso8601String();
+        } else {
+          viewedAtStr = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toIso8601String();
+        }
+      } else {
+        viewedAtStr = rawViewedAt.toString();
+      }
+    }
+
     return StatusViewerModel(
       viewerId: vId,
       username: map['username']?.toString(),
       displayName: map['displayName']?.toString(),
-      viewedAt: map['viewedAt'] is num ? (map['viewedAt'] as num).toInt() : null,
+      profilePictureUrl: (map['profilePictureUrl'] ?? map['profile_picture_url'] ?? map['avatar'])?.toString(),
+      viewedAt: viewedAtStr,
     );
   }
 }

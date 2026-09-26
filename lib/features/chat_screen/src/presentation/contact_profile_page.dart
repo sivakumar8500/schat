@@ -21,7 +21,10 @@ import 'package:schat/features/chat_screen/src/presentation/full_screen_image_pa
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:hive/hive.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/core/network/api_result.dart';
+import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'dart:convert';
 
 class ContactProfilePage extends StatefulWidget {
@@ -225,14 +228,18 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
               // Media Section
               _buildMediaSection(context),
-              const Divider(height: 32),
 
-              // Settings Section
-              _buildSettingsSection(context, isMuted, isLocked, disappearingTimer),
-              const Divider(height: 32),
+              // Settings Section (only in 1-on-1 direct chat)
+              if (!widget.isFromGroup) ...[
+                const Divider(height: 32),
+                _buildSettingsSection(context, isMuted, isLocked, disappearingTimer),
+              ],
 
-              // Destructive Section
-              _buildDestructiveSection(context),
+              // Destructive Section (Block, Report, Delete Chat - only in 1-on-1 direct chat)
+              if (!widget.isFromGroup) ...[
+                const Divider(height: 32),
+                _buildDestructiveSection(context),
+              ],
               CommonSpaces.h40,
             ],
           ),
@@ -319,34 +326,12 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             CommonSpaces.w32,
             _buildRoundActionButton(icon: Icons.videocam, label: 'Video', onTap: _startVideoCall),
             CommonSpaces.w32,
-            _buildRoundActionButton(icon: Icons.message, label: 'Message', onTap: () => Navigator.pop(context)),
-            if (_recipientUser?.phoneNumber.isNotEmpty == true) ...[
-              CommonSpaces.w32,
-              _buildRoundActionButton(
-                icon: Icons.call,
-                label: 'Call',
-                onTap: () => _callPhone(_recipientUser!.phoneNumber),
-              ),
-            ],
+            _buildRoundActionButton(icon: Icons.message, label: 'Message', onTap: _openDirectMessage),
           ],
         ),
         CommonSpaces.h24,
       ],
     );
-  }
-
-  /// Dials a phone number using the device's dialer.
-  void _callPhone(String rawPhone) {
-    // Strip country code / non-digits, keep last 10 digits.
-    final digitsOnly = rawPhone.replaceAll(RegExp(r'[^\d]'), '');
-    final phone = digitsOnly.length > 10
-        ? digitsOnly.substring(digitsOnly.length - 10)
-        : digitsOnly;
-    if (phone.isEmpty) return;
-    final uri = Uri(scheme: 'tel', path: phone);
-    canLaunchUrl(uri).then((can) {
-      if (can) launchUrl(uri);
-    });
   }
 
   /// Builds the user info section with phone, username, about, and subscription.
@@ -373,11 +358,6 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             icon: Icons.phone_outlined,
             label: 'Phone',
             value: phone,
-            trailing: IconButton(
-              icon: Icon(Icons.call, color: context.colors.primary),
-              tooltip: 'Call $phone',
-              onPressed: () => _callPhone(phone),
-            ),
           ),
         if (username.isNotEmpty)
           _buildInfoTile(
@@ -1125,21 +1105,76 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     );
   }
 
+  Future<String> _resolveDirectConversationId() async {
+    final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';
+    if (widget.isFromGroup || targetRecipientId.isNotEmpty) {
+      if (targetRecipientId.isNotEmpty) {
+        try {
+          final result = await getIt<DashboardRepository>().startDirectChat(targetRecipientId);
+          if (result is Success<ChatModel>) {
+            return result.data.id;
+          }
+        } catch (e) {
+          debugPrint('ContactProfilePage: Error resolving direct conversationId: $e');
+        }
+      }
+    }
+    return widget.conversationId;
+  }
+
+  void _openDirectMessage() async {
+    final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';
+    if (widget.isFromGroup && targetRecipientId.isNotEmpty) {
+      try {
+        final result = await getIt<DashboardRepository>().startDirectChat(targetRecipientId);
+        if (result is Success<ChatModel> && mounted) {
+          final chat = result.data;
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatPage(
+                conversationId: chat.id,
+                contactName: widget.contactName,
+                contactColor: widget.contactColor,
+                isOnline: widget.isOnline,
+                recipientId: targetRecipientId,
+                profilePictureUrl: widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl,
+                initialThemeColor: chat.themeColor,
+                initialDisappearingTimer: chat.disappearingTimer,
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        debugPrint('ContactProfilePage: Error opening direct chat: $e');
+      }
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
   void _startAudioCall() async {
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
     if (!mounted || !hasPermission) return;
+    final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';
+    final directConversationId = await _resolveDirectConversationId();
+    if (!mounted) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
           value: getIt<CallWebRtcBloc>(),
           child: AudioCallPage(
-            conversationId: widget.conversationId,
+            conversationId: directConversationId,
             contactName: widget.contactName,
             contactColor: widget.contactColor,
-            recipientId: widget.recipientId ?? '',
+            recipientId: targetRecipientId,
             isOutgoing: true,
-            profilePictureUrl: widget.profilePictureUrl,
+            isGroup: false,
+            extraParticipants: const [],
+            profilePictureUrl: widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl,
             myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
           ),
         ),
@@ -1150,18 +1185,24 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   void _startVideoCall() async {
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
     if (!mounted || !hasPermission) return;
+    final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';
+    final directConversationId = await _resolveDirectConversationId();
+    if (!mounted) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
           value: getIt<CallWebRtcBloc>(),
           child: VideoCallPage(
-            conversationId: widget.conversationId,
+            conversationId: directConversationId,
             contactName: widget.contactName,
             contactColor: widget.contactColor,
-            recipientId: widget.recipientId ?? '',
+            recipientId: targetRecipientId,
             isOutgoing: true,
-            profilePictureUrl: widget.profilePictureUrl,
+            isGroup: false,
+            extraParticipants: const [],
+            profilePictureUrl: widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl,
             myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
           ),
         ),

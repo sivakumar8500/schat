@@ -90,6 +90,10 @@ class MessageModel {
   // Disappearing messages
   final int? expiry;
 
+  // Group & sender info
+  final String? senderName;
+  final String? senderProfilePictureUrl;
+
   const MessageModel({
     required this.id,
     required this.conversationId,
@@ -130,6 +134,8 @@ class MessageModel {
     this.duration,
     this.deletedFor = const [],
     this.expiry,
+    this.senderName,
+    this.senderProfilePictureUrl,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -282,6 +288,20 @@ class MessageModel {
       locationTitle = json['title']?.toString();
     }
 
+    String? parsedSenderName = (json['senderName'] ?? json['sender_name'] ?? json['sender_username'] ?? json['senderUsername'])?.toString();
+    String? parsedSenderProfilePic = (json['senderProfilePictureUrl'] ?? json['sender_profile_picture_url'] ?? json['senderProfilePic'] ?? json['sender_profile_pic'] ?? json['profile_picture_url'] ?? json['profilePictureUrl'])?.toString();
+    if (parsedSenderName == null || parsedSenderName.isEmpty || parsedSenderProfilePic == null || parsedSenderProfilePic.isEmpty) {
+      final senderObj = json['sender'] ?? json['sender_details'] ?? json['user'] ?? json['sender_user'];
+      if (senderObj is Map) {
+        if (parsedSenderName == null || parsedSenderName.isEmpty) {
+          parsedSenderName = (senderObj['name'] ?? senderObj['username'] ?? senderObj['display_name'] ?? senderObj['contactName'] ?? senderObj['first_name'] ?? senderObj['phone_number'] ?? senderObj['phoneNumber'])?.toString();
+        }
+        if (parsedSenderProfilePic == null || parsedSenderProfilePic.isEmpty) {
+          parsedSenderProfilePic = (senderObj['profile_picture_url'] ?? senderObj['profilePictureUrl'] ?? senderObj['avatar'] ?? senderObj['image_url'])?.toString();
+        }
+      }
+    }
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
@@ -327,6 +347,8 @@ class MessageModel {
       callMeta: callMeta,
       duration: duration,
       deletedFor: deletedForList,
+      senderName: parsedSenderName,
+      senderProfilePictureUrl: parsedSenderProfilePic,
       expiry: () {
         final dynamic rawExpiry = json['expiry'] ?? json['expiry_config'] ?? json['expires_at'] ?? json['expire_at'];
         if (rawExpiry is int) return rawExpiry;
@@ -431,6 +453,7 @@ class MessageModel {
     'deletedFor': deletedFor,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
     if (expiry != null) 'expiry': expiry,
+    if (senderName != null) 'senderName': senderName,
   };
 
   MessageModel copyWith({
@@ -469,6 +492,8 @@ class MessageModel {
     double? duration,
     List<String>? deletedFor,
     int? expiry,
+    String? senderName,
+    String? senderProfilePictureUrl,
     double? latitude,
     double? longitude,
     String? address,
@@ -510,6 +535,8 @@ class MessageModel {
       duration: duration ?? this.duration,
       deletedFor: deletedFor ?? this.deletedFor,
       expiry: expiry ?? this.expiry,
+      senderName: senderName ?? this.senderName,
+      senderProfilePictureUrl: senderProfilePictureUrl ?? this.senderProfilePictureUrl,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,

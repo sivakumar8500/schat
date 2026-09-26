@@ -42,6 +42,7 @@ class ChatLoaded extends ChatState {
   final String? groupName;
   final String? groupPictureUrl;
   final int? disappearingTimer;
+  final bool onlyAdminsSendMessages;
 
   // Screen permission (active granted permission for current user & incoming pending requests)
   final ScreenPermissionModel? activeScreenPermission;
@@ -67,6 +68,7 @@ class ChatLoaded extends ChatState {
     this.groupName,
     this.groupPictureUrl,
     this.disappearingTimer,
+    this.onlyAdminsSendMessages = false,
     this.activeScreenPermission,
     this.incomingScreenPermissionRequest,
   });
@@ -95,6 +97,7 @@ class ChatLoaded extends ChatState {
     String? groupPictureUrl,
     int? disappearingTimer,
     bool clearDisappearingTimer = false,
+    bool? onlyAdminsSendMessages,
     ScreenPermissionModel? activeScreenPermission,
     bool clearActiveScreenPermission = false,
     ScreenPermissionModel? incomingScreenPermissionRequest,
@@ -124,6 +127,7 @@ class ChatLoaded extends ChatState {
       disappearingTimer: clearDisappearingTimer
           ? null
           : (disappearingTimer ?? this.disappearingTimer),
+      onlyAdminsSendMessages: onlyAdminsSendMessages ?? this.onlyAdminsSendMessages,
       activeScreenPermission: clearActiveScreenPermission
           ? null
           : (activeScreenPermission ?? this.activeScreenPermission),

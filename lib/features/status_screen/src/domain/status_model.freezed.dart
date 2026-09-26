@@ -330,7 +330,7 @@ as bool,
 /// @nodoc
 mixin _$StatusViewerModel {
 
- String get viewerId; String? get username; String? get displayName;@JsonKey(name: 'viewedAt') int? get viewedAt;
+ String get viewerId; String? get username; String? get displayName; String? get profilePictureUrl;@JsonKey(name: 'viewedAt') String? get viewedAt;
 /// Create a copy of StatusViewerModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -341,16 +341,16 @@ $StatusViewerModelCopyWith<StatusViewerModel> get copyWith => _$StatusViewerMode
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,viewedAt);
+int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,profilePictureUrl,viewedAt);
 
 @override
 String toString() {
-  return 'StatusViewerModel(viewerId: $viewerId, username: $username, displayName: $displayName, viewedAt: $viewedAt)';
+  return 'StatusViewerModel(viewerId: $viewerId, username: $username, displayName: $displayName, profilePictureUrl: $profilePictureUrl, viewedAt: $viewedAt)';
 }
 
 
@@ -361,7 +361,7 @@ abstract mixin class $StatusViewerModelCopyWith<$Res>  {
   factory $StatusViewerModelCopyWith(StatusViewerModel value, $Res Function(StatusViewerModel) _then) = _$StatusViewerModelCopyWithImpl;
 @useResult
 $Res call({
- String viewerId, String? username, String? displayName,@JsonKey(name: 'viewedAt') int? viewedAt
+ String viewerId, String? username, String? displayName, String? profilePictureUrl,@JsonKey(name: 'viewedAt') String? viewedAt
 });
 
 
@@ -378,13 +378,14 @@ class _$StatusViewerModelCopyWithImpl<$Res>
 
 /// Create a copy of StatusViewerModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? viewerId = null,Object? username = freezed,Object? displayName = freezed,Object? viewedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? viewerId = null,Object? username = freezed,Object? displayName = freezed,Object? profilePictureUrl = freezed,Object? viewedAt = freezed,}) {
   return _then(_self.copyWith(
 viewerId: null == viewerId ? _self.viewerId : viewerId // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,displayName: freezed == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
 as String?,viewedAt: freezed == viewedAt ? _self.viewedAt : viewedAt // ignore: cast_nullable_to_non_nullable
-as int?,
+as String?,
   ));
 }
 
@@ -469,10 +470,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String viewerId,  String? username,  String? displayName, @JsonKey(name: 'viewedAt')  int? viewedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String viewerId,  String? username,  String? displayName,  String? profilePictureUrl, @JsonKey(name: 'viewedAt')  String? viewedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _StatusViewerModel() when $default != null:
-return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);case _:
+return $default(_that.viewerId,_that.username,_that.displayName,_that.profilePictureUrl,_that.viewedAt);case _:
   return orElse();
 
 }
@@ -490,10 +491,10 @@ return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String viewerId,  String? username,  String? displayName, @JsonKey(name: 'viewedAt')  int? viewedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String viewerId,  String? username,  String? displayName,  String? profilePictureUrl, @JsonKey(name: 'viewedAt')  String? viewedAt)  $default,) {final _that = this;
 switch (_that) {
 case _StatusViewerModel():
-return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);case _:
+return $default(_that.viewerId,_that.username,_that.displayName,_that.profilePictureUrl,_that.viewedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -510,10 +511,10 @@ return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String viewerId,  String? username,  String? displayName, @JsonKey(name: 'viewedAt')  int? viewedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String viewerId,  String? username,  String? displayName,  String? profilePictureUrl, @JsonKey(name: 'viewedAt')  String? viewedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _StatusViewerModel() when $default != null:
-return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);case _:
+return $default(_that.viewerId,_that.username,_that.displayName,_that.profilePictureUrl,_that.viewedAt);case _:
   return null;
 
 }
@@ -525,13 +526,14 @@ return $default(_that.viewerId,_that.username,_that.displayName,_that.viewedAt);
 
 
 class _StatusViewerModel implements StatusViewerModel {
-  const _StatusViewerModel({required this.viewerId, this.username, this.displayName, @JsonKey(name: 'viewedAt') this.viewedAt});
+  const _StatusViewerModel({required this.viewerId, this.username, this.displayName, this.profilePictureUrl, @JsonKey(name: 'viewedAt') this.viewedAt});
   
 
 @override final  String viewerId;
 @override final  String? username;
 @override final  String? displayName;
-@override@JsonKey(name: 'viewedAt') final  int? viewedAt;
+@override final  String? profilePictureUrl;
+@override@JsonKey(name: 'viewedAt') final  String? viewedAt;
 
 /// Create a copy of StatusViewerModel
 /// with the given fields replaced by the non-null parameter values.
@@ -543,16 +545,16 @@ _$StatusViewerModelCopyWith<_StatusViewerModel> get copyWith => __$StatusViewerM
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _StatusViewerModel&&(identical(other.viewerId, viewerId) || other.viewerId == viewerId)&&(identical(other.username, username) || other.username == username)&&(identical(other.displayName, displayName) || other.displayName == displayName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.viewedAt, viewedAt) || other.viewedAt == viewedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,viewedAt);
+int get hashCode => Object.hash(runtimeType,viewerId,username,displayName,profilePictureUrl,viewedAt);
 
 @override
 String toString() {
-  return 'StatusViewerModel(viewerId: $viewerId, username: $username, displayName: $displayName, viewedAt: $viewedAt)';
+  return 'StatusViewerModel(viewerId: $viewerId, username: $username, displayName: $displayName, profilePictureUrl: $profilePictureUrl, viewedAt: $viewedAt)';
 }
 
 
@@ -563,7 +565,7 @@ abstract mixin class _$StatusViewerModelCopyWith<$Res> implements $StatusViewerM
   factory _$StatusViewerModelCopyWith(_StatusViewerModel value, $Res Function(_StatusViewerModel) _then) = __$StatusViewerModelCopyWithImpl;
 @override @useResult
 $Res call({
- String viewerId, String? username, String? displayName,@JsonKey(name: 'viewedAt') int? viewedAt
+ String viewerId, String? username, String? displayName, String? profilePictureUrl,@JsonKey(name: 'viewedAt') String? viewedAt
 });
 
 
@@ -580,13 +582,14 @@ class __$StatusViewerModelCopyWithImpl<$Res>
 
 /// Create a copy of StatusViewerModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? viewerId = null,Object? username = freezed,Object? displayName = freezed,Object? viewedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? viewerId = null,Object? username = freezed,Object? displayName = freezed,Object? profilePictureUrl = freezed,Object? viewedAt = freezed,}) {
   return _then(_StatusViewerModel(
 viewerId: null == viewerId ? _self.viewerId : viewerId // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
 as String?,displayName: freezed == displayName ? _self.displayName : displayName // ignore: cast_nullable_to_non_nullable
+as String?,profilePictureUrl: freezed == profilePictureUrl ? _self.profilePictureUrl : profilePictureUrl // ignore: cast_nullable_to_non_nullable
 as String?,viewedAt: freezed == viewedAt ? _self.viewedAt : viewedAt // ignore: cast_nullable_to_non_nullable
-as int?,
+as String?,
   ));
 }
 

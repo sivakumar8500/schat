@@ -59,7 +59,7 @@ class SecureAttachmentService {
       if (!kIsWeb && Platform.isAndroid && (host == 'localhost' || host == '127.0.0.1' || host.isEmpty)) {
         host = '10.0.2.2';
       }
-      if (host == '13.201.205.176' || host == '10.0.2.2' || host == 'localhost') {
+      if (host.isNotEmpty && !host.contains('amazonaws.com')) {
         s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
       } else {
         s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';

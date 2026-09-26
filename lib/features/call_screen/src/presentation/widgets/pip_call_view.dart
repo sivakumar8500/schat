@@ -325,7 +325,7 @@ class PipCallView extends StatelessWidget {
       ),
     ),
   );
-}
+  }
 }
 
 class _PipCallTimerText extends StatefulWidget {

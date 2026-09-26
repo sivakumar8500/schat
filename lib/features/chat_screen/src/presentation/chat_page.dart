@@ -155,6 +155,12 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _previewPositionTimer;
 
   bool _isAdmin = false;
+  bool _onlyAdminsSendMessages = false;
+  Map<String, String> _groupParticipantNames = {};
+  Map<String, String?> _groupParticipantProfilePics = {};
+  List<UserModel> _groupParticipants = [];
+  bool _showMentionSuggestions = false;
+  String _mentionQuery = '';
 
   @override
   void initState() {
@@ -669,7 +675,7 @@ class _ChatPageState extends State<ChatPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Replying to Message',
+                  'Replying to ${_resolveSenderName(_replyingToMessage?.senderId ?? '', _replyingToMessage?.senderName)}',
                   style: context.bodySmall.copyWith(
                     fontWeight: FontWeight.bold,
                     color: context.colors.primary,
@@ -807,34 +813,21 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     final isText = msg.mediaType == null || msg.mediaType == 'text';
-    final List<PopupMenuEntry<String>> menuItems = [];
-
-    if (isText) {
-      menuItems.addAll([
-        _menuPopupItem(context, 'Reply', CommonIcons.reply),
-        _menuPopupItem(context, 'Copy', CommonIcons.copy),
-        _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
-        if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
-        _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
-        _menuPopupItem(context, 'Select', CommonIcons.selectAll),
-      ]);
-    } else {
-      menuItems.addAll([
-        _menuPopupItem(context, 'Reply', CommonIcons.reply),
-        _menuPopupItem(context, 'Info', CommonIcons.infoOutline),
-        if (isMe || msg.allowShare) _menuPopupItem(context, 'Forward', CommonIcons.forward),
-        _menuPopupItem(context, msg.isPinned ? 'Unpin' : 'Pin', CommonIcons.pin),
-        _menuPopupItem(context, 'Select', CommonIcons.selectAll),
-      ]);
-    }
 
     final result = await showMenu<String>(
       context: context,
       position: position,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       color: context.colors.scaffoldBackground,
-      elevation: 8,
-      items: menuItems,
+      elevation: 6,
+      items: [
+        _HorizontalActionMenuEntry(
+          msg: msg,
+          isMe: isMe,
+          isText: isText,
+          isRecipientOnline: isRecipientOnline,
+        ),
+      ],
     );
 
     if (result == null || !context.mounted) return;
@@ -874,31 +867,56 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  PopupMenuEntry<String> _menuPopupItem(
-    BuildContext context,
-    String value,
-    IconData icon, {
-    bool isDestructive = false,
-  }) {
-    return PopupMenuItem<String>(
-      value: value,
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+  Widget _buildMemberStatusTile(BuildContext context, UserModel user, String timeStr, Color checkmarkColor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            value,
-            style: context.bodyMedium.copyWith(
-              color: isDestructive ? context.colors.error : context.colors.textPrimary,
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: context.colors.primary.withValues(alpha: 0.15),
+            backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                ? CachedNetworkImageProvider(user.profilePictureUrl!)
+                : null,
+            child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
+                ? Text(
+                    user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      color: context.colors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.displayName,
+                  style: context.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if ((user.username ?? '').isNotEmpty)
+                  Text(
+                    '@${user.username}',
+                    style: context.bodySmall.copyWith(
+                      color: context.colors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
             ),
           ),
-          Icon(
-            icon,
-            size: 14,
-            color: isDestructive ? context.colors.error : context.colors.primary,
+          Text(
+            timeStr,
+            style: context.bodySmall.copyWith(
+              color: context.colors.textSecondary,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -908,11 +926,24 @@ class _ChatPageState extends State<ChatPage> {
   void _showMessageInfo(BuildContext context, MessageModel msg, bool isRecipientOnline) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
         final isDelivered = msg.isRead || msg.isDelivered || widget.isGroup || isRecipientOnline;
-        
+        final myId = (_chatBloc.state is ChatLoaded) ? (_chatBloc.state as ChatLoaded).myId : '';
+        final senderId = msg.senderId.isNotEmpty ? msg.senderId : myId;
+
+        final otherParticipants = widget.isGroup
+            ? _groupParticipants.where((u) => u.id != senderId).toList()
+            : <UserModel>[];
+
+        final readParticipants = msg.isRead ? otherParticipants : <UserModel>[];
+        final deliveredParticipants = isDelivered ? otherParticipants : <UserModel>[];
+
         return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           decoration: BoxDecoration(
             color: context.colors.scaffoldBackground,
@@ -948,13 +979,14 @@ class _ChatPageState extends State<ChatPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      msg.content,
+                      msg.content.isNotEmpty ? msg.content : (msg.attachmentName ?? 'Media message'),
                       style: context.bodyLarge,
                     ),
                   ),
                   CommonSpaces.h20,
                   Divider(color: context.colors.primary.withValues(alpha: 0.3)),
                   CommonSpaces.h20,
+                  // 1. Sent Row
                   Row(
                     children: [
                       Icon(CommonIcons.check, color: context.colors.primary, size: 20),
@@ -974,7 +1006,9 @@ class _ChatPageState extends State<ChatPage> {
                     ],
                   ),
                   CommonSpaces.h16,
+                  // 2. Delivered Row
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
                         isDelivered ? CommonIcons.doneAll : CommonIcons.done,
@@ -986,18 +1020,40 @@ class _ChatPageState extends State<ChatPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Delivered', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
                             Text(
-                              isDelivered ? 'Delivered' : 'Pending delivery',
-                              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                              widget.isGroup
+                                  ? 'Delivered to (${deliveredParticipants.length})'
+                                  : 'Delivered',
+                              style: context.titleSmall.copyWith(fontWeight: FontWeight.bold),
                             ),
+                            if (!widget.isGroup)
+                              Text(
+                                isDelivered ? _formatFullDateTime(msg.createdAt) : 'Pending delivery',
+                                style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                              )
+                            else if (deliveredParticipants.isEmpty)
+                              Text(
+                                isDelivered ? _formatFullDateTime(msg.createdAt) : 'Pending delivery',
+                                style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                              )
+                            else ...[
+                              const SizedBox(height: 6),
+                              ...deliveredParticipants.map((u) => _buildMemberStatusTile(
+                                    context,
+                                    u,
+                                    _formatFullDateTime(msg.createdAt),
+                                    context.colors.primary,
+                                  )),
+                            ],
                           ],
                         ),
                       ),
                     ],
                   ),
                   CommonSpaces.h16,
+                  // 3. Read Row
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
                         CommonIcons.doneAll,
@@ -1009,13 +1065,39 @@ class _ChatPageState extends State<ChatPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Read', style: context.titleSmall.copyWith(fontWeight: FontWeight.bold)),
                             Text(
-                              msg.isRead 
-                                  ? _formatFullDateTime(msg.updatedAt)
-                                  : 'Not read yet',
-                              style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                              widget.isGroup
+                                  ? 'Read by (${readParticipants.length} of ${otherParticipants.length})'
+                                  : 'Read',
+                              style: context.titleSmall.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: msg.isRead ? const Color(0xFF25D366) : context.colors.textPrimary,
+                              ),
                             ),
+                            if (!widget.isGroup)
+                              Text(
+                                msg.isRead 
+                                    ? _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt)
+                                    : 'Not read yet',
+                                style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+                              )
+                            else if (readParticipants.isEmpty)
+                              Text(
+                                'Not read yet',
+                                style: context.bodyMedium.copyWith(
+                                  color: context.colors.textSecondary,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              )
+                            else ...[
+                              const SizedBox(height: 6),
+                              ...readParticipants.map((u) => _buildMemberStatusTile(
+                                    context,
+                                    u,
+                                    _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt),
+                                    const Color(0xFF25D366),
+                                  )),
+                            ],
                           ],
                         ),
                       ),
@@ -1457,24 +1539,105 @@ class _ChatPageState extends State<ChatPage> {
       final data = await repo.getGroupDetails(widget.conversationId);
       final myId = getIt<StorageService>().getUserId() ?? '';
       final participantsData = data['participants'];
+      bool isAdmin = false;
+      final Map<String, String> namesMap = {};
+      final Map<String, String?> picsMap = {};
+      final List<UserModel> participantsList = [];
       if (participantsData is List) {
         for (var p in participantsData) {
           if (p is Map) {
             final userJson = p['user'] ?? p;
-            if (userJson is Map && userJson['_id'] == myId && p['is_admin'] == true) {
-              if (mounted) {
-                setState(() {
-                  _isAdmin = true;
-                });
+            if (userJson is Map) {
+              final user = UserModel.fromJson(Map<String, dynamic>.from(userJson));
+              if (user.id.isNotEmpty) {
+                namesMap[user.id] = user.displayName;
+                if (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty) {
+                  picsMap[user.id] = user.profilePictureUrl;
+                }
+                if (user.id != myId) {
+                  participantsList.add(user);
+                }
               }
-              break;
+              if (user.id == myId && p['is_admin'] == true) {
+                isAdmin = true;
+              }
             }
           }
         }
       }
+      final bool onlyAdmins = data['only_admins_send_messages'] == true || data['onlyAdminsSendMessages'] == true;
+      if (mounted) {
+        setState(() {
+          _isAdmin = isAdmin;
+          _onlyAdminsSendMessages = onlyAdmins;
+          _groupParticipantNames = namesMap;
+          _groupParticipantProfilePics = picsMap;
+          _groupParticipants = participantsList;
+        });
+      }
     } catch (e) {
-      debugPrint('Error checking admin status: $e');
+      debugPrint('Error loading group details: $e');
     }
+  }
+
+  String _resolveSenderName(String senderId, [String? fallbackSenderName]) {
+    final myId = getIt<StorageService>().getUserId() ?? '';
+    if (senderId.isNotEmpty && senderId == myId) {
+      return 'You';
+    }
+    if (fallbackSenderName != null && fallbackSenderName.trim().isNotEmpty) {
+      return fallbackSenderName.trim();
+    }
+    if (_groupParticipantNames.containsKey(senderId) && _groupParticipantNames[senderId]!.trim().isNotEmpty) {
+      return _groupParticipantNames[senderId]!.trim();
+    }
+    try {
+      if (getIt.isRegistered<ContactsBloc>()) {
+        final contactsState = getIt<ContactsBloc>().state;
+        if (contactsState is ContactsLoaded) {
+          final matched = contactsState.syncedContacts.firstWhere(
+            (c) => c.id == senderId,
+            orElse: () => const UserModel(),
+          );
+          if (matched.id.isNotEmpty && matched.displayName.isNotEmpty) {
+            return matched.displayName;
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (!widget.isGroup) {
+      return widget.contactName;
+    }
+    return 'Member';
+  }
+
+  String? _resolveSenderProfilePic(String senderId, [String? fallbackUrl]) {
+    if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
+      return fallbackUrl;
+    }
+    if (_groupParticipantProfilePics.containsKey(senderId) &&
+        _groupParticipantProfilePics[senderId] != null &&
+        _groupParticipantProfilePics[senderId]!.isNotEmpty) {
+      return _groupParticipantProfilePics[senderId];
+    }
+    try {
+      if (getIt.isRegistered<ContactsBloc>()) {
+        final contactsState = getIt<ContactsBloc>().state;
+        if (contactsState is ContactsLoaded) {
+          final matched = contactsState.syncedContacts.firstWhere(
+            (c) => c.id == senderId,
+            orElse: () => const UserModel(),
+          );
+          if (matched.id.isNotEmpty &&
+              matched.profilePictureUrl != null &&
+              matched.profilePictureUrl!.isNotEmpty) {
+            return matched.profilePictureUrl;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   @override
@@ -1814,11 +1977,151 @@ class _ChatPageState extends State<ChatPage> {
       context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: hasText));
     }
 
+    if (widget.isGroup) {
+      final text = value;
+      final selection = _messageController.selection;
+      final cursorIndex = selection.baseOffset;
+      if (cursorIndex > 0 && cursorIndex <= text.length) {
+        final textBeforeCursor = text.substring(0, cursorIndex);
+        final lastAtIndex = textBeforeCursor.lastIndexOf('@');
+        if (lastAtIndex != -1) {
+          final query = textBeforeCursor.substring(lastAtIndex + 1);
+          if (!query.contains(' ') && !query.contains('\n')) {
+            setState(() {
+              _mentionQuery = query.toLowerCase();
+              _showMentionSuggestions = true;
+            });
+          } else {
+            if (_showMentionSuggestions) {
+              setState(() => _showMentionSuggestions = false);
+            }
+          }
+        } else {
+          if (_showMentionSuggestions) {
+            setState(() => _showMentionSuggestions = false);
+          }
+        }
+      } else {
+        if (_showMentionSuggestions) {
+          setState(() => _showMentionSuggestions = false);
+        }
+      }
+    } else {
+      if (_showMentionSuggestions) {
+        setState(() => _showMentionSuggestions = false);
+      }
+    }
+
     if (hasText) {
       _startTypingTimer();
     } else {
       _stopTypingTimer();
     }
+  }
+
+  void _insertMention(UserModel user) {
+    final text = _messageController.text;
+    final selection = _messageController.selection;
+    final cursorIndex = selection.baseOffset;
+    if (cursorIndex >= 0 && cursorIndex <= text.length) {
+      final textBeforeCursor = text.substring(0, cursorIndex);
+      final lastAtIndex = textBeforeCursor.lastIndexOf('@');
+      if (lastAtIndex != -1) {
+        final textAfterCursor = text.substring(cursorIndex);
+        final mentionName = (user.displayName.isNotEmpty ? user.displayName : user.username) ?? 'user';
+        final newText = '${textBeforeCursor.substring(0, lastAtIndex)}@$mentionName $textAfterCursor';
+        final newCursorPosition = lastAtIndex + mentionName.length + 2;
+        _messageController.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newCursorPosition),
+        );
+      }
+    }
+    setState(() {
+      _showMentionSuggestions = false;
+    });
+  }
+
+  void _insertRawMention(String mentionName) {
+    final text = _messageController.text;
+    final selection = _messageController.selection;
+    final cursorIndex = selection.baseOffset;
+    if (cursorIndex >= 0 && cursorIndex <= text.length) {
+      final textBeforeCursor = text.substring(0, cursorIndex);
+      final lastAtIndex = textBeforeCursor.lastIndexOf('@');
+      if (lastAtIndex != -1) {
+        final textAfterCursor = text.substring(cursorIndex);
+        final newText = '${textBeforeCursor.substring(0, lastAtIndex)}@$mentionName $textAfterCursor';
+        final newCursorPosition = lastAtIndex + mentionName.length + 2;
+        _messageController.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newCursorPosition),
+        );
+      }
+    }
+    setState(() {
+      _showMentionSuggestions = false;
+    });
+  }
+
+  void _handleMentionTap(BuildContext context, String rawMention) {
+    final cleanName = rawMention.startsWith('@') ? rawMention.substring(1).trim() : rawMention.trim();
+    if (cleanName.isEmpty) return;
+
+    // Handle @all or @everyone in group chats
+    if (cleanName.toLowerCase() == 'all' || cleanName.toLowerCase() == 'everyone') {
+      if (widget.isGroup) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MultiBlocProvider(
+              providers: [
+                BlocProvider.value(value: _chatBloc),
+                BlocProvider.value(value: _callWebRtcBloc),
+              ],
+              child: GroupInfoPage(
+                conversationId: widget.conversationId,
+                groupName: widget.contactName,
+                groupColor: widget.contactColor,
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    UserModel? targetUser;
+    for (final user in _groupParticipants) {
+      final dName = user.displayName.toLowerCase();
+      final uName = (user.username ?? '').toLowerCase();
+      final query = cleanName.toLowerCase();
+      if (dName == query || uName == query || dName.contains(query) || (uName.isNotEmpty && uName.contains(query))) {
+        targetUser = user;
+        break;
+      }
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: _chatBloc),
+            BlocProvider.value(value: _callWebRtcBloc),
+          ],
+          child: ContactProfilePage(
+            conversationId: widget.conversationId,
+            contactName: targetUser?.displayName ?? cleanName,
+            contactColor: Colors.blueAccent,
+            isOnline: false,
+            recipientId: targetUser?.id,
+            isFromGroup: true,
+            profilePictureUrl: targetUser?.profilePictureUrl,
+          ),
+        ),
+      ),
+    );
   }
 
   void _startTypingTimer() {
@@ -2622,10 +2925,14 @@ class _ChatPageState extends State<ChatPage> {
                                       final parent = messages.firstWhere((m) => m.id == msg.replyMessageId);
                                       replySenderName = (state is ChatLoaded && parent.senderId == state.myId)
                                           ? 'You'
-                                          : widget.contactName;
+                                          : (widget.isGroup
+                                              ? _resolveSenderName(parent.senderId, parent.senderName)
+                                              : widget.contactName);
                                       replyBody = _getReplyMessageBody(parent);
                                     } catch (_) {
-                                      replySenderName = isMe ? widget.contactName : 'You';
+                                      replySenderName = isMe
+                                          ? (widget.isGroup ? 'Group' : widget.contactName)
+                                          : 'You';
                                       replyBody = msg.replyMessageBody;
                                     }
                                   }
@@ -2717,6 +3024,8 @@ class _ChatPageState extends State<ChatPage> {
                                       isDelivered: msg.isDelivered,
                                       isDeleted: msg.isDeleted,
                                       isGroup: widget.isGroup,
+                                      senderName: widget.isGroup && !isMe ? _resolveSenderName(msg.senderId, msg.senderName) : null,
+                                      senderProfilePictureUrl: widget.isGroup && !isMe ? _resolveSenderProfilePic(msg.senderId, msg.senderProfilePictureUrl) : null,
                                       type: msg.mediaType ?? 'text',
                                       latitude: msg.latitude,
                                       longitude: msg.longitude,
@@ -2745,6 +3054,7 @@ class _ChatPageState extends State<ChatPage> {
                                       callMeta: msg.callMeta,
                                       expiry: msg.expiry,
                                       isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
+                                      onMentionTap: (mention) => _handleMentionTap(context, mention),
                                     ),
                                   ),
                                 );
@@ -3301,6 +3611,9 @@ class _ChatPageState extends State<ChatPage> {
                       isOutgoing: !isAlreadyInCall,
                       profilePictureUrl: widget.profilePictureUrl,
                       myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                      isGroup: widget.isGroup,
+                      groupName: widget.isGroup ? widget.contactName : null,
+                      extraParticipants: widget.isGroup ? _groupParticipants : const [],
                     ),
                   ),
                 ),
@@ -3335,6 +3648,9 @@ class _ChatPageState extends State<ChatPage> {
                       isOutgoing: !isAlreadyInCall,
                       profilePictureUrl: widget.profilePictureUrl,
                       myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                      isGroup: widget.isGroup,
+                      groupName: widget.isGroup ? widget.contactName : null,
+                      extraParticipants: widget.isGroup ? _groupParticipants : const [],
                     ),
                   ),
                 ),
@@ -3468,7 +3784,6 @@ class _ChatPageState extends State<ChatPage> {
           itemBuilder: (BuildContext context) {
             final isMuted = state is ChatLoaded && state.isMuted;
             if (widget.isGroup) {
-              final isFav = state is ChatLoaded && state.isFavorite;
               return [
                 _buildMenuItem('search', CommonIcons.search, 'Search'),
                 _buildMenuItem('group_info', CommonIcons.infoOutline, 'Group info'),
@@ -3476,7 +3791,6 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('scheduled', Icons.schedule_rounded, 'Scheduled messages'),
                 if (_isAdmin)
                   _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
-                _buildMenuItem('favourite', isFav ? Icons.star_rounded : Icons.star_outline_rounded, isFav ? 'Remove from favorites' : 'Add to favorites'),
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
                 if (_isAdmin) ...[
                   _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
@@ -3609,10 +3923,61 @@ class _ChatPageState extends State<ChatPage> {
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+    final chatState = context.read<ChatBloc>().state;
+    final bool isOnlyAdminsRestricted = widget.isGroup &&
+        (_onlyAdminsSendMessages || (chatState is ChatLoaded && chatState.onlyAdminsSendMessages)) &&
+        !_isAdmin;
+
+    if (isOnlyAdminsRestricted) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: context.colors.border.withValues(alpha: 0.25),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_rounded,
+              color: context.colors.textSecondary,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Only admins can send messages',
+              style: context.bodyMedium.copyWith(
+                color: context.colors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_showMentionSuggestions && widget.isGroup)
+          _buildMentionOverlay(context),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
             child: Container(
@@ -3717,6 +4082,129 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
         ],
+      ),
+    ),
+    ],
+    );
+  }
+
+  Widget _buildMentionOverlay(BuildContext context) {
+    if (!_showMentionSuggestions || !widget.isGroup || _groupParticipants.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final showAllOption = _mentionQuery.isEmpty || 'all'.contains(_mentionQuery) || 'everyone'.contains(_mentionQuery);
+
+    final filtered = _groupParticipants.where((u) {
+      if (_mentionQuery.isEmpty) return true;
+      final name = u.displayName.toLowerCase();
+      final uname = (u.username ?? '').toLowerCase();
+      final phone = u.phoneNumber ?? '';
+      return name.contains(_mentionQuery) ||
+          uname.contains(_mentionQuery) ||
+          phone.contains(_mentionQuery);
+    }).toList();
+
+    if (!showAllOption && filtered.isEmpty) return const SizedBox.shrink();
+
+    final totalItems = (showAllOption ? 1 : 0) + filtered.length;
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 220),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        itemCount: totalItems,
+        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.withValues(alpha: 0.2)),
+        itemBuilder: (ctx, index) {
+          if (showAllOption && index == 0) {
+            return ListTile(
+              dense: true,
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFF1E88E5).withValues(alpha: 0.15),
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: Color(0xFF1E88E5),
+                  size: 20,
+                ),
+              ),
+              title: Text(
+                '@all',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  fontFamily: CommonFonts.primaryFont,
+                  color: const Color(0xFF1E88E5),
+                ),
+              ),
+              subtitle: Text(
+                'Notify everyone in this group',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: CommonFonts.primaryFont,
+                  color: context.colors.textSecondary,
+                ),
+              ),
+              onTap: () => _insertRawMention('all'),
+            );
+          }
+
+          final userIndex = showAllOption ? index - 1 : index;
+          final user = filtered[userIndex];
+          final hasUsername = (user.username ?? '').isNotEmpty;
+          return ListTile(
+            dense: true,
+            leading: CircleAvatar(
+              radius: 18,
+              backgroundColor: context.colors.primary.withValues(alpha: 0.15),
+              backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                  ? CachedNetworkImageProvider(user.profilePictureUrl!)
+                  : null,
+              child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
+                  ? Text(
+                      user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
+                      style: TextStyle(
+                        color: context.colors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    )
+                  : null,
+            ),
+            title: Text(
+              user.displayName,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                fontFamily: CommonFonts.primaryFont,
+                color: context.colors.textPrimary,
+              ),
+            ),
+            subtitle: hasUsername
+                ? Text(
+                    '@${user.username}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontFamily: CommonFonts.primaryFont,
+                      color: context.colors.textSecondary,
+                    ),
+                  )
+                : null,
+            onTap: () => _insertMention(user),
+          );
+        },
       ),
     );
   }
@@ -4536,11 +5024,24 @@ class _ChatPageState extends State<ChatPage> {
   PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String label) {
     return PopupMenuItem<String>(
       value: value,
+      height: 42,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: context.colors.primary, size: 20),
-          CommonSpaces.w12,
-          Text(label, style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+          Icon(icon, color: context.colors.primary, size: 19),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                color: context.colors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -4571,6 +5072,8 @@ class _ChatPageState extends State<ChatPage> {
 
       if (type == ScheduledMessageType.image) {
         messageTypeStr = 'image';
+      } else if (type == ScheduledMessageType.video) {
+        messageTypeStr = 'video';
       } else if (type == ScheduledMessageType.document) {
         messageTypeStr = 'document';
       } else if (type == ScheduledMessageType.audio) {
@@ -5141,5 +5644,121 @@ class _VideoPreviewThumbnailState extends State<_VideoPreviewThumbnail> {
       return const Center(child: Icon(Icons.play_circle_outline, color: Colors.grey));
     }
     return VideoPlayer(_controller);
+  }
+}
+
+class _HorizontalActionMenuEntry extends PopupMenuEntry<String> {
+  final MessageModel msg;
+  final bool isMe;
+  final bool isText;
+  final bool isRecipientOnline;
+
+  const _HorizontalActionMenuEntry({
+    required this.msg,
+    required this.isMe,
+    required this.isText,
+    required this.isRecipientOnline,
+  });
+
+  @override
+  double get height => 44;
+
+  @override
+  bool represents(String? value) => false;
+
+  @override
+  State<_HorizontalActionMenuEntry> createState() => _HorizontalActionMenuEntryState();
+}
+
+class _HorizontalActionMenuEntryState extends State<_HorizontalActionMenuEntry> {
+  Widget _buildIconButton(
+    BuildContext context, {
+    required String action,
+    required IconData icon,
+    bool isDestructive = false,
+    bool isActive = false,
+  }) {
+    final iconColor = isDestructive
+        ? context.colors.error
+        : (isActive ? context.colors.primary : context.colors.textPrimary);
+
+    return Material(
+      color: Colors.transparent,
+      child: Tooltip(
+        message: action,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.of(context).pop(action),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = widget.msg;
+    final isMe = widget.isMe;
+    final isText = widget.isText;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildIconButton(
+              context,
+              action: 'Reply',
+              icon: CommonIcons.reply,
+            ),
+            if (isText)
+              _buildIconButton(
+                context,
+                action: 'Copy',
+                icon: CommonIcons.copy,
+              ),
+            _buildIconButton(
+              context,
+              action: msg.isPinned ? 'Unpin' : 'Pin',
+              icon: CommonIcons.pin,
+              isActive: msg.isPinned,
+            ),
+            if (isMe || msg.allowShare)
+              _buildIconButton(
+                context,
+                action: 'Forward',
+                icon: CommonIcons.forward,
+              ),
+            _buildIconButton(
+              context,
+              action: 'Info',
+              icon: CommonIcons.infoOutline,
+            ),
+            _buildIconButton(
+              context,
+              action: 'Select',
+              icon: CommonIcons.selectAll,
+            ),
+            if (isMe)
+              _buildIconButton(
+                context,
+                action: 'Delete',
+                icon: CommonIcons.delete,
+                isDestructive: true,
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

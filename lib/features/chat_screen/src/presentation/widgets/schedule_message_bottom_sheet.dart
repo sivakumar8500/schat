@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -11,8 +13,9 @@ import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 
-enum ScheduledMessageType { text, image, document, audio }
+enum ScheduledMessageType { text, image, video, document, audio }
 
 class ScheduleMessageBottomSheet extends StatefulWidget {
   final String contactName;
@@ -170,7 +173,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
   }
 
+  bool _isPickingFile = false;
+
   Future<void> _pickAttachment() async {
+    if (_isPickingFile) return;
+    _isPickingFile = true;
     try {
       if (_selectedType == ScheduledMessageType.image) {
         final picker = ImagePicker();
@@ -182,25 +189,52 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             _errorMessage = null;
           });
         }
-      } else if (_selectedType == ScheduledMessageType.document ||
-          _selectedType == ScheduledMessageType.audio) {
-        final result = await FilePicker.pickFiles(
-          type: _selectedType == ScheduledMessageType.audio
-              ? FileType.audio
-              : FileType.any,
-        );
-        if (result != null && result.files.single.path != null) {
+      } else if (_selectedType == ScheduledMessageType.video) {
+        final picker = ImagePicker();
+        final picked = await picker.pickVideo(source: ImageSource.gallery);
+        if (picked != null) {
           setState(() {
-            _attachedFile = File(result.files.single.path!);
-            _attachedFileName = result.files.single.name;
+            _attachedFile = File(picked.path);
+            _attachedFileName = picked.name;
+            _errorMessage = null;
+          });
+        }
+      } else if (_selectedType == ScheduledMessageType.audio) {
+        FilePickerResult? result;
+        try {
+          result = await FilePicker.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf'],
+          );
+        } catch (_) {
+          result = await FilePicker.pickFiles(type: FileType.audio);
+        }
+        final audioRes = result;
+        if (audioRes != null && audioRes.files.isNotEmpty && audioRes.files.single.path != null) {
+          setState(() {
+            _attachedFile = File(audioRes.files.single.path!);
+            _attachedFileName = audioRes.files.single.name;
+            _errorMessage = null;
+          });
+        }
+      } else if (_selectedType == ScheduledMessageType.document) {
+        final docRes = await FilePicker.pickFiles(type: FileType.any);
+        if (docRes != null && docRes.files.isNotEmpty && docRes.files.single.path != null) {
+          setState(() {
+            _attachedFile = File(docRes.files.single.path!);
+            _attachedFileName = docRes.files.single.name;
             _errorMessage = null;
           });
         }
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to pick attachment: $e';
-      });
+      if (!e.toString().contains('multiple_request')) {
+        setState(() {
+          _errorMessage = 'Failed to pick attachment: $e';
+        });
+      }
+    } finally {
+      _isPickingFile = false;
     }
   }
 
@@ -213,9 +247,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
       if (message.messageType == 'image') {
         _selectedType = ScheduledMessageType.image;
+      } else if (message.messageType == 'video') {
+        _selectedType = ScheduledMessageType.video;
       } else if (message.messageType == 'document') {
         _selectedType = ScheduledMessageType.document;
-      } else if (message.messageType == 'audio') {
+      } else if (message.messageType == 'audio' || message.messageType == 'voice_note') {
         _selectedType = ScheduledMessageType.audio;
       } else {
         _selectedType = ScheduledMessageType.text;
@@ -271,15 +307,47 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       try {
         if (getIt.isRegistered<ChatRepository>()) {
           final repo = getIt<ChatRepository>();
+          String typeStr = 'text';
+          if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
+          if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
+          if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
+          if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
+
+          String? fileKey = _editingMessage!.fileKey;
+          String? fileName = _attachedFileName ?? _editingMessage!.fileName;
+          int fileSize = _editingMessage!.fileSize;
+          String? mimeType = _editingMessage!.mimeType;
+
+          if (_attachedFile != null) {
+            fileName = _attachedFile!.path.split('/').last;
+            fileSize = await _attachedFile!.length();
+            mimeType = _getMimeType(_attachedFile!.path, typeStr);
+            fileKey = await repo.uploadMedia(
+              conversationId: widget.conversationId ?? _editingMessage!.conversationId,
+              filePath: _attachedFile!.path,
+              fileName: fileName,
+              mediaType: _getMediaType(typeStr),
+              mimeType: mimeType,
+              fileSizeBytes: fileSize,
+            );
+          }
+
           final updatePayload = <String, dynamic>{
+            'messageType': typeStr,
+            'message_type': typeStr,
             'content': {
               'text': text,
-              'fileName': _attachedFileName,
-              'fileKey': _editingMessage!.fileKey,
-              'fileSize': _editingMessage!.fileSize,
-              'mimeType': _editingMessage!.mimeType,
+              'fileName': fileName,
+              'file_name': fileName,
+              'fileKey': fileKey,
+              'file_key': fileKey,
+              'fileSize': fileSize,
+              'file_size': fileSize,
+              'mimeType': mimeType,
+              'mime_type': mimeType,
             },
             'scheduledAt': scheduled.toUtc().toIso8601String(),
+            'scheduled_at': scheduled.toUtc().toIso8601String(),
           };
 
           await repo.updateScheduledMessage(_editingMessage!.id, updatePayload);
@@ -326,6 +394,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             final repo = getIt<ChatRepository>();
             String typeStr = 'text';
             if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
+            if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
             if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
             if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
 
@@ -426,25 +495,46 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       if (ext == 'webp') return 'image/webp';
       if (ext == 'gif') return 'image/gif';
       return 'image/jpeg';
-    } else if (messageType == 'audio') {
+    } else if (messageType == 'video') {
+      if (ext == 'mov') return 'video/quicktime';
+      if (ext == 'webm') return 'video/webm';
+      return 'video/mp4';
+    } else if (messageType == 'audio' || messageType == 'voice_note') {
       if (ext == 'mp3') return 'audio/mpeg';
       if (ext == 'm4a') return 'audio/mp4';
       if (ext == 'aac') return 'audio/aac';
       if (ext == 'wav') return 'audio/wav';
-      return 'audio/m4a';
+      if (ext == 'ogg') return 'audio/ogg';
+      if (ext == 'opus') return 'audio/opus';
+      return 'audio/mpeg';
     } else {
       if (ext == 'pdf') return 'application/pdf';
-      if (ext == 'doc' || ext == 'docx') return 'application/msword';
-      if (ext == 'xls' || ext == 'xlsx') return 'application/vnd.ms-excel';
+      if (ext == 'txt') return 'text/plain';
+      if (ext == 'csv') return 'text/csv';
+      if (ext == 'doc') return 'application/msword';
+      if (ext == 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      if (ext == 'xls') return 'application/vnd.ms-excel';
+      if (ext == 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      if (ext == 'ppt') return 'application/vnd.ms-powerpoint';
+      if (ext == 'pptx') return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      if (ext == 'json') return 'application/json';
       if (ext == 'zip') return 'application/zip';
-      return 'application/octet-stream';
+      return 'text/plain';
     }
   }
 
   String _getMediaType(String messageType) {
-    if (messageType == 'image') return 'image';
-    if (messageType == 'audio') return 'audio';
-    return 'document';
+    switch (messageType) {
+      case 'image':
+        return 'CHAT_IMAGE';
+      case 'video':
+        return 'CHAT_VIDEO';
+      case 'audio':
+      case 'voice_note':
+        return 'VOICE_NOTE';
+      default:
+        return 'DOCUMENT';
+    }
   }
 
   Future<void> _confirmCancelScheduledMessage(ScheduledMessageModel msg) async {
@@ -796,11 +886,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             Row(
               children: [
                 _buildTypeChip(ScheduledMessageType.text, 'Text', CommonIcons.textFields),
-                CommonSpaces.w8,
+                CommonSpaces.w6,
                 _buildTypeChip(ScheduledMessageType.image, 'Image', CommonIcons.gallery),
-                CommonSpaces.w8,
+                CommonSpaces.w6,
+                _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
+                CommonSpaces.w6,
                 _buildTypeChip(ScheduledMessageType.document, 'Doc', CommonIcons.document),
-                CommonSpaces.w8,
+                CommonSpaces.w6,
                 _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
               ],
             ),
@@ -842,9 +934,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     Icon(
                       _selectedType == ScheduledMessageType.image
                           ? CommonIcons.gallery
-                          : (_selectedType == ScheduledMessageType.audio
-                              ? CommonIcons.audio
-                              : CommonIcons.document),
+                          : (_selectedType == ScheduledMessageType.video
+                              ? Icons.videocam_rounded
+                              : (_selectedType == ScheduledMessageType.audio
+                                  ? CommonIcons.audio
+                                  : CommonIcons.document)),
                       color: context.colors.primary,
                     ),
                     CommonSpaces.w12,
@@ -1182,6 +1276,385 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     );
   }
 
+  String? _resolveMediaUrl(String? path) {
+    if (path == null || path.trim().isEmpty) return null;
+    String url = path.trim();
+
+    if (url.contains('minio')) {
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty) {
+          url = url.replaceAll('minio', host);
+        }
+      } catch (_) {}
+    }
+
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
+
+    if (!url.startsWith('http://') && !url.startsWith('https://') && !isLocalFile) {
+      String s3BaseUrl;
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
+          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
+        } else {
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+        }
+      } catch (_) {
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+      }
+      final cleanKey = url.startsWith('/') ? url.substring(1) : url;
+      url = '$s3BaseUrl$cleanKey';
+    }
+    return url;
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Widget _buildMediaPreview(BuildContext context, ScheduledMessageModel msg) {
+    final isDark = context.colors.isDark;
+    final effectivePath = msg.fileKey?.isNotEmpty == true
+        ? msg.fileKey
+        : (msg.thumbnail?.isNotEmpty == true ? msg.thumbnail : null);
+    final resolvedUrl = _resolveMediaUrl(effectivePath);
+    final fileName = msg.fileName ?? (msg.fileKey != null ? msg.fileKey!.split('/').last : '');
+    final isLocal = resolvedUrl != null && !kIsWeb && File(resolvedUrl).existsSync();
+
+    // 1. Image Preview
+    if (msg.messageType == 'image') {
+      return GestureDetector(
+        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+            ? () => InAppViewer.show(
+                  context,
+                  url: resolvedUrl,
+                  fileName: fileName.isNotEmpty ? fileName : 'Image',
+                  type: 'image',
+                )
+            : null,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                  child: SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: isLocal
+                        ? Image.file(
+                            File(resolvedUrl),
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, o, s) => _buildMediaFallback(
+                                context, Icons.broken_image_rounded, 'Image Preview Unavailable'),
+                          )
+                        : Image.network(
+                            resolvedUrl,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                ),
+                              );
+                            },
+                            errorBuilder: (ctx, url, err) => _buildMediaFallback(
+                                context, Icons.image_rounded, fileName.isNotEmpty ? fileName : 'Image Attachment'),
+                          ),
+                  ),
+                )
+              else
+                _buildMediaFallback(context, Icons.image_rounded, fileName.isNotEmpty ? fileName : 'Attached Image'),
+              if (fileName.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.photo_outlined, size: 14, color: context.colors.textSecondary),
+                      CommonSpaces.w6,
+                      Expanded(
+                        child: Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                      if (msg.fileSize > 0)
+                        Text(
+                          _formatFileSize(msg.fileSize),
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textHint,
+                            fontSize: 10,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 2. Audio Preview
+    if (msg.messageType == 'audio' || msg.messageType == 'voice_note') {
+      return GestureDetector(
+        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+            ? () => InAppViewer.show(
+                  context,
+                  url: resolvedUrl,
+                  fileName: fileName.isNotEmpty ? fileName : 'Audio',
+                  type: 'audio',
+                )
+            : null,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF9C27B0).withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF9C27B0).withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF9C27B0),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.audiotrack_rounded, color: Colors.white, size: 20),
+              ),
+              CommonSpaces.w12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName.isNotEmpty ? fileName : 'Audio / Voice Note',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    CommonSpaces.h2,
+                    Row(
+                      children: [
+                        const Icon(Icons.play_circle_outline_rounded, size: 14, color: Color(0xFF9C27B0)),
+                        CommonSpaces.w4,
+                        Text(
+                          msg.fileSize > 0 ? _formatFileSize(msg.fileSize) : 'Tap to play audio',
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
+                const Icon(Icons.play_arrow_rounded, color: Color(0xFF9C27B0), size: 22),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 3. Video Preview
+    if (msg.messageType == 'video') {
+      return GestureDetector(
+        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+            ? () => InAppViewer.show(
+                  context,
+                  url: resolvedUrl,
+                  fileName: fileName.isNotEmpty ? fileName : 'Video',
+                  type: 'video',
+                )
+            : null,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 140,
+                width: double.infinity,
+                color: Colors.black.withValues(alpha: 0.8),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.videocam_rounded, color: Colors.white38, size: 48),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.videocam_outlined, size: 14, color: Colors.red),
+                    CommonSpaces.w6,
+                    Expanded(
+                      child: Text(
+                        fileName.isNotEmpty ? fileName : 'Video File',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    if (msg.fileSize > 0)
+                      Text(
+                        _formatFileSize(msg.fileSize),
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textHint,
+                          fontSize: 10,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 4. Document / Generic Attachment Preview
+    if (msg.fileName != null || msg.fileKey != null || msg.messageType == 'document' || msg.messageType == 'file') {
+      return GestureDetector(
+        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+            ? () => InAppViewer.show(
+                  context,
+                  url: resolvedUrl,
+                  fileName: fileName.isNotEmpty ? fileName : 'Document',
+                  type: 'file',
+                )
+            : null,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF9800).withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF9800),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.description_rounded, color: Colors.white, size: 20),
+              ),
+              CommonSpaces.w12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName.isNotEmpty ? fileName : 'Attached Document',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    CommonSpaces.h2,
+                    Text(
+                      msg.fileSize > 0 ? _formatFileSize(msg.fileSize) : 'Document Attachment (Tap to view)',
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
+                const Icon(Icons.open_in_new_rounded, color: Color(0xFFFF9800), size: 18),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildMediaFallback(BuildContext context, IconData icon, String label) {
+    final isDark = context.colors.isDark;
+    return Container(
+      height: 80,
+      width: double.infinity,
+      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: context.colors.textSecondary, size: 24),
+          CommonSpaces.w8,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScheduledItemCard(BuildContext context, ScheduledMessageModel msg) {
     final isDark = context.colors.isDark;
     IconData typeIcon;
@@ -1193,13 +1666,18 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     } else if (msg.messageType == 'document') {
       typeIcon = CommonIcons.document;
       typeColor = const Color(0xFFFF9800);
-    } else if (msg.messageType == 'audio') {
+    } else if (msg.messageType == 'audio' || msg.messageType == 'voice_note') {
       typeIcon = CommonIcons.audio;
       typeColor = const Color(0xFF9C27B0);
+    } else if (msg.messageType == 'video') {
+      typeIcon = Icons.videocam_rounded;
+      typeColor = Colors.red;
     } else {
       typeIcon = CommonIcons.textFields;
       typeColor = context.colors.primary;
     }
+
+    final hasMedia = msg.fileKey != null || msg.fileName != null || msg.messageType != 'text';
 
     return Container(
       decoration: BoxDecoration(
@@ -1220,7 +1698,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Type icon, Status badge, and Action Buttons
+          // Row 1: Type icon and Pending Status badge ONLY (no duplicate action buttons)
           Row(
             children: [
               Container(
@@ -1233,7 +1711,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               ),
               CommonSpaces.w8,
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
@@ -1247,64 +1725,28 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   ),
                 ),
               ),
-              const Spacer(),
-              // Edit button
-              IconButton(
-                icon: Icon(Icons.edit_outlined,
-                    color: context.colors.primary, size: 20),
-                tooltip: 'Edit / Reschedule',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _startEditing(msg),
-              ),
-              CommonSpaces.w12,
-              // Delete/Cancel button
-              IconButton(
-                icon: const Icon(Icons.delete_outline_rounded,
-                    color: Color(0xFFE53935), size: 20),
-                tooltip: 'Cancel scheduled message',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () => _confirmCancelScheduledMessage(msg),
-              ),
             ],
           ),
           CommonSpaces.h10,
 
-          // Message Content
+          // Message Text Content (if present)
           if (msg.text.isNotEmpty) ...[
             Text(
               msg.text,
-              maxLines: 3,
+              maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: context.bodyMedium.copyWith(
                 color: context.colors.textPrimary,
                 fontWeight: FontWeight.w500,
+                fontSize: 15,
               ),
             ),
-            CommonSpaces.h8,
+            CommonSpaces.h10,
           ],
 
-          if (msg.fileName != null && msg.fileName!.isNotEmpty) ...[
-            Row(
-              children: [
-                Icon(Icons.attachment_rounded,
-                    size: 14, color: context.colors.textSecondary),
-                CommonSpaces.w4,
-                Expanded(
-                  child: Text(
-                    msg.fileName!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.bodySmall.copyWith(
-                      color: context.colors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            CommonSpaces.h8,
+          // Rich Media Preview (Image / Audio / Document / Video)
+          if (hasMedia) ...[
+            _buildMediaPreview(context, msg),
           ],
 
           const Divider(height: 14),
@@ -1313,7 +1755,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           Row(
             children: [
               Icon(Icons.access_time_rounded,
-                  size: 14, color: context.colors.primary),
+                  size: 15, color: context.colors.primary),
               CommonSpaces.w6,
               Expanded(
                 child: Text(
@@ -1323,6 +1765,53 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     fontWeight: FontWeight.bold,
                     color: context.colors.primary,
                   ),
+                ),
+              ),
+            ],
+          ),
+          CommonSpaces.h12,
+
+          // Bottom Action Buttons (Single Edit and Single Delete button)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _startEditing(msg),
+                icon: Icon(Icons.edit_outlined, size: 14, color: context.colors.primary),
+                label: Text(
+                  'Edit / Reschedule',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.primary,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.colors.primary,
+                  side: BorderSide(color: context.colors.primary.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              CommonSpaces.w8,
+              OutlinedButton.icon(
+                onPressed: () => _confirmCancelScheduledMessage(msg),
+                icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFE53935)),
+                label: const Text(
+                  'Delete',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFE53935),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFE53935),
+                  side: const BorderSide(color: Color(0xFFFFCDD2)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ],

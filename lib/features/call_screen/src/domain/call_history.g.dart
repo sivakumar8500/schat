@@ -22,6 +22,9 @@ _CallHistoryModel _$CallHistoryModelFromJson(Map<String, dynamic> json) =>
       createdAt: json['created_at'] as String?,
       duration: (json['duration'] as num?)?.toInt() ?? 0,
       count: (json['count'] as num?)?.toInt() ?? 1,
+      isGroup: json['is_group'] as bool? ?? false,
+      groupName: json['group_name'] as String?,
+      groupPictureUrl: json['group_picture_url'] as String?,
     );
 
 Map<String, dynamic> _$CallHistoryModelToJson(_CallHistoryModel instance) =>
@@ -40,4 +43,7 @@ Map<String, dynamic> _$CallHistoryModelToJson(_CallHistoryModel instance) =>
       'created_at': instance.createdAt,
       'duration': instance.duration,
       'count': instance.count,
+      'is_group': instance.isGroup,
+      'group_name': instance.groupName,
+      'group_picture_url': instance.groupPictureUrl,
     };

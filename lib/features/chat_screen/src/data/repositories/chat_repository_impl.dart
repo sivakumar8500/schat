@@ -260,6 +260,7 @@ class ChatRepositoryImpl implements ChatRepository {
     String? description,
     String? iconUrl,
     List<String>? participantIds,
+    bool? onlyAdminsSendMessages,
   }) async {
     final Map<String, dynamic> data = {};
     if (name != null) data['group_name'] = name;
@@ -271,6 +272,10 @@ class ChatRepositoryImpl implements ChatRepository {
     if (participantIds != null) {
       data['participant_ids'] = participantIds;
       data['participantIds'] = participantIds;
+    }
+    if (onlyAdminsSendMessages != null) {
+      data['only_admins_send_messages'] = onlyAdminsSendMessages;
+      data['onlyAdminsSendMessages'] = onlyAdminsSendMessages;
     }
 
     final result = await _apiService.patch(
@@ -540,10 +545,27 @@ class ChatRepositoryImpl implements ChatRepository {
         rawList = map['items'] as List;
       } else if (map['results'] is List) {
         rawList = map['results'] as List;
-      } else if (map['data'] is Map && (map['data'] as Map)['items'] is List) {
-        rawList = (map['data'] as Map)['items'] as List;
-      } else if (map['data'] is Map && (map['data'] as Map)['messages'] is List) {
-        rawList = (map['data'] as Map)['messages'] as List;
+      } else if (map['records'] is List) {
+        rawList = map['records'] as List;
+      } else if (map['data'] is Map) {
+        final inner = Map<String, dynamic>.from(map['data'] as Map);
+        if (inner['items'] is List) {
+          rawList = inner['items'] as List;
+        } else if (inner['messages'] is List) {
+          rawList = inner['messages'] as List;
+        } else if (inner['scheduled_messages'] is List) {
+          rawList = inner['scheduled_messages'] as List;
+        } else if (inner['scheduledMessages'] is List) {
+          rawList = inner['scheduledMessages'] as List;
+        } else if (inner['results'] is List) {
+          rawList = inner['results'] as List;
+        } else if (inner['records'] is List) {
+          rawList = inner['records'] as List;
+        } else if (inner['data'] is List) {
+          rawList = inner['data'] as List;
+        }
+      } else if (map['id'] != null || map['_id'] != null || map['scheduled_message_id'] != null) {
+        rawList = [map];
       }
     }
 
@@ -558,8 +580,9 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<List<ScheduledMessageModel>> getScheduledMessages({String? conversationId}) async {
     try {
+      final endpoint = CommonEndpoints.getScheduledMessages(conversationId: conversationId);
       final result = await _apiService.get<List<ScheduledMessageModel>>(
-        CommonEndpoints.getScheduledMessages(conversationId: conversationId),
+        endpoint,
         mapper: (data) => _parseScheduledMessagesList(data, conversationId: conversationId),
       );
 
@@ -572,8 +595,8 @@ class ChatRepositoryImpl implements ChatRepository {
         return list;
       }
 
-      // Fallback: If conversation_id query was unsupported or returned empty, fetch base scheduled messages
-      if (conversationId != null && conversationId.isNotEmpty) {
+      // Fallback: If conversation_id query returned empty, fetch base scheduled messages
+      if (conversationId != null && conversationId.trim().isNotEmpty) {
         final fallbackResult = await _apiService.get<List<ScheduledMessageModel>>(
           CommonEndpoints.scheduleMessage,
           mapper: (data) => _parseScheduledMessagesList(data, conversationId: conversationId),
@@ -585,7 +608,13 @@ class ChatRepositoryImpl implements ChatRepository {
         );
 
         if (fallbackList.isNotEmpty) {
-          final filtered = fallbackList.where((m) => m.conversationId == conversationId || m.conversationId.isEmpty).toList();
+          final target = conversationId.trim().toLowerCase();
+          final filtered = fallbackList.where((m) {
+            final conv = m.conversationId.trim().toLowerCase();
+            return conv == target ||
+                conv.isEmpty ||
+                conv.replaceAll('-', '') == target.replaceAll('-', '');
+          }).toList();
           return filtered.isNotEmpty ? filtered : fallbackList;
         }
       }

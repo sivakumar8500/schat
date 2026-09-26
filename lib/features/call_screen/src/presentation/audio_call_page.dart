@@ -15,6 +15,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/core/storage/storage_service.dart';
 
 /// 1-to-1 Audio Call Page — wired to WebRTC via CallWebRtcBloc.
 /// mason make page --name audio_call
@@ -26,6 +27,9 @@ class AudioCallPage extends StatefulWidget {
   final bool isOutgoing;
   final String? profilePictureUrl;
   final String? myProfilePictureUrl;
+  final bool isGroup;
+  final String? groupName;
+  final List<UserModel> extraParticipants;
 
   const AudioCallPage({
     super.key,
@@ -36,6 +40,9 @@ class AudioCallPage extends StatefulWidget {
     this.isOutgoing = true,
     this.profilePictureUrl,
     this.myProfilePictureUrl,
+    this.isGroup = false,
+    this.groupName,
+    this.extraParticipants = const [],
   });
 
   @override
@@ -48,6 +55,7 @@ class _AudioCallPageState extends State<AudioCallPage>
   Timer? _timer;
   bool _isNetworkConnected = true;
   StreamSubscription? _connectivitySubscription;
+  bool _isNavigating = false;
 
   // Animations
   late AnimationController _pulseController;
@@ -102,13 +110,16 @@ class _AudioCallPageState extends State<AudioCallPage>
         _startTimer();
       }
 
-      // If outgoing call, initiate WebRTC
-      if (widget.isOutgoing) {
+      // If outgoing call, initiate WebRTC (only if not already connected or connecting)
+      if (widget.isOutgoing && bloc.state is! CallActive && bloc.state is! CallConnecting) {
         bloc.add(InitiateCallEvent(
           conversationId: widget.conversationId,
           isVideo: false,
           contactName: widget.contactName,
           profilePictureUrl: widget.profilePictureUrl,
+          isGroup: widget.isGroup,
+          groupName: widget.groupName,
+          extraParticipants: widget.extraParticipants,
         ));
       }
     });
@@ -174,13 +185,15 @@ class _AudioCallPageState extends State<AudioCallPage>
     _connectivitySubscription?.cancel();
     
     // Notify bloc that page is being closed (minimized if call still active)
-    try {
-      final bloc = getIt<CallWebRtcBloc>();
-      if (bloc.state is CallActive || bloc.state is CallConnecting) {
-        bloc.add(const SetCallMinimizedEvent(true));
+    if (!_isNavigating) {
+      try {
+        final bloc = getIt<CallWebRtcBloc>();
+        if (bloc.state is CallActive || bloc.state is CallConnecting) {
+          bloc.add(const SetCallMinimizedEvent(true));
+        }
+      } catch (e) {
+        debugPrint('Error setting minimized state in dispose: $e');
       }
-    } catch (e) {
-      debugPrint('Error setting minimized state in dispose: $e');
     }
 
     super.dispose();
@@ -222,13 +235,20 @@ class _AudioCallPageState extends State<AudioCallPage>
           _startTimer();
         }
         if (state is CallEnded || state is CallRejected || state is CallError) {
-          Navigator.of(context).maybePop();
+          if (!_isNavigating) {
+            _isNavigating = true;
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          }
         }
         if (state is CallActive) {
           if (state.switchRequestedCallType == 'video') {
              _showSwitchRequestDialog(context, state);
           }
-          if (state.isVideo) {
+          if (state.isVideo && !_isNavigating) {
+             _isNavigating = true;
+             context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
              // Upgraded to video call! Switch UI.
              Navigator.of(context).pushReplacement(
                MaterialPageRoute(
@@ -242,6 +262,9 @@ class _AudioCallPageState extends State<AudioCallPage>
                      isOutgoing: widget.isOutgoing,
                      profilePictureUrl: widget.profilePictureUrl,
                      myProfilePictureUrl: widget.myProfilePictureUrl,
+                     isGroup: widget.isGroup,
+                     groupName: widget.groupName,
+                     extraParticipants: widget.extraParticipants,
                    ),
                  ),
                ),
@@ -261,7 +284,7 @@ class _AudioCallPageState extends State<AudioCallPage>
           return PopScope(
             canPop: true,
             onPopInvokedWithResult: (didPop, result) {
-              if (didPop) {
+              if (didPop && !_isNavigating) {
                 try {
                   final bloc = context.read<CallWebRtcBloc>();
                   if (bloc.state is CallActive || bloc.state is CallConnecting) {
@@ -297,123 +320,135 @@ class _AudioCallPageState extends State<AudioCallPage>
                     // ─── Header ───
                     _buildHeader(context),
                     
-                    const Spacer(),
+                    if (widget.isGroup || (state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) || (state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty))) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _statusLabel(state),
+                        textAlign: TextAlign.center,
+                        style: context.titleMedium.copyWith(
+                          color: state is CallActive
+                              ? const Color(0xFF34C759)
+                              : Colors.white.withValues(alpha: 0.70),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildGroupAudioLayout(context, state, isMuted),
+                    ] else ...[
+                      const Spacer(),
 
-                    // ─── Avatar with ripple rings + Name & Status ───
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 300,
-                          height: 300,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _ring1,
-                                builder: (_, _) => _buildRing(_ring1.value),
-                              ),
-                              AnimatedBuilder(
-                                animation: _ring2,
-                                builder: (_, _) => _buildRing(_ring2.value),
-                              ),
-                              AnimatedBuilder(
-                                animation: _ring3,
-                                builder: (_, _) => _buildRing(_ring3.value),
-                              ),
-                              ScaleTransition(
-                                scale: _pulseAnimation,
-                                child: Container(
-                                  width: 150,
-                                  height: 150,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.white.withValues(alpha: 0.12),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(alpha: 0.25),
-                                      width: 2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.15),
-                                        blurRadius: 20,
+                      // ─── Avatar with ripple rings + Name & Status ───
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 300,
+                            height: 300,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _ring1,
+                                  builder: (_, _) => _buildRing(_ring1.value),
+                                ),
+                                AnimatedBuilder(
+                                  animation: _ring2,
+                                  builder: (_, _) => _buildRing(_ring2.value),
+                                ),
+                                AnimatedBuilder(
+                                  animation: _ring3,
+                                  builder: (_, _) => _buildRing(_ring3.value),
+                                ),
+                                ScaleTransition(
+                                  scale: _pulseAnimation,
+                                  child: Container(
+                                    width: 150,
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.white.withValues(alpha: 0.12),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(alpha: 0.25),
+                                        width: 2,
                                       ),
-                                    ],
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      CommonIcons.phone,
-                                      color: Colors.white,
-                                      size: 56,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              // Active speaking wave bars
-                              if (state is CallActive)
-                                Positioned(
-                                  bottom: 60,
-                                  child: _buildSpeakingIndicator(),
-                                ),
-                            ],
-                          ),
-                        ),
-                        CommonSpaces.h24,
-                        Text(
-                          state is CallActive ? state.contactName : widget.contactName,
-                          textAlign: TextAlign.center,
-                          style: context.h2.copyWith(
-                            fontSize: 32,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        CommonSpaces.h8,
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: Column(
-                            key: ValueKey('${state.runtimeType}_${state is CallActive ? (state).isRemoteMuted : false}'),
-                            children: [
-                              Text(
-                                _statusLabel(state),
-                                textAlign: TextAlign.center,
-                                style: context.titleMedium.copyWith(
-                                  color: state is CallActive
-                                      ? const Color(0xFF34C759)
-                                      : Colors.white.withValues(alpha: 0.70),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (state is CallActive && state.isRemoteMuted)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(CommonIcons.micOff,
-                                          size: 14, color: Colors.redAccent),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Muted',
-                                        style: context.bodySmall.copyWith(
-                                          color: Colors.redAccent,
-                                          fontWeight: FontWeight.bold,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.15),
+                                          blurRadius: 20,
                                         ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        CommonIcons.phone,
+                                        color: Colors.white,
+                                        size: 56,
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                            ],
+                                // Active speaking wave bars
+                                if (state is CallActive)
+                                  Positioned(
+                                    bottom: 60,
+                                    child: _buildSpeakingIndicator(),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                        if (state is CallActive && state.extraParticipants.isNotEmpty)
-                          _buildParticipantsSection(context, state.extraParticipants)
-                        else if (state is CallConnecting && state.extraParticipants.isNotEmpty)
-                          _buildParticipantsSection(context, state.extraParticipants),
-                      ],
-                    ),
-
-                    const Spacer(),
+                          CommonSpaces.h24,
+                          Text(
+                            state is CallActive ? state.contactName : widget.contactName,
+                            textAlign: TextAlign.center,
+                            style: context.h2.copyWith(
+                              fontSize: 32,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          CommonSpaces.h8,
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Column(
+                              key: ValueKey('${state.runtimeType}_${state is CallActive ? (state).isRemoteMuted : false}'),
+                              children: [
+                                Text(
+                                  _statusLabel(state),
+                                  textAlign: TextAlign.center,
+                                  style: context.titleMedium.copyWith(
+                                    color: state is CallActive
+                                        ? const Color(0xFF34C759)
+                                        : Colors.white.withValues(alpha: 0.70),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (state is CallActive && state.isRemoteMuted)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(CommonIcons.micOff,
+                                            size: 14, color: Colors.redAccent),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Muted',
+                                          style: context.bodySmall.copyWith(
+                                            color: Colors.redAccent,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                    ],
 
                     // ─── Dark Pill Control Bar ───
                     _buildControlBar(context, isMuted, isSpeaker),
@@ -429,67 +464,187 @@ class _AudioCallPageState extends State<AudioCallPage>
 );
 }
 
-  Widget _buildParticipantsSection(
-      BuildContext context, List<UserModel> participants) {
+
+
+  Widget _buildGroupAudioLayout(BuildContext context, CallWebRtcState state, bool isMuted) {
+    final List<Widget> connectedCards = [];
+    final List<UserModel> callingParticipants = [];
+
+    // Local user card ("You")
+    final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
+    final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
+        ? widget.myProfilePictureUrl
+        : getIt<StorageService>().getProfilePic();
+    connectedCards.add(_buildAudioUserCard(
+      name: 'You',
+      avatarUrl: myPic,
+      isMuted: isMuted,
+      status: localSpeaking ? 'Speaking' : 'Connected',
+      isSpeaking: localSpeaking,
+    ));
+
+    // Extra participants
+    final extra = state is CallActive
+        ? state.extraParticipants
+        : (state is CallConnecting ? state.extraParticipants : widget.extraParticipants);
+
+    final connectedIds = state is CallActive
+        ? state.connectedParticipantIds
+        : (state is CallConnecting ? state.connectedParticipantIds : const <String>{});
+    final disconnectedIds = state is CallActive
+        ? state.disconnectedParticipantIds
+        : (state is CallConnecting ? state.disconnectedParticipantIds : const <String>{});
+
+    if (extra.isNotEmpty) {
+      for (final user in extra) {
+        final isConnected = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+
+        if (isConnected) {
+          final remoteMuted = state is CallActive ? state.isRemoteMuted : false;
+          final isRemoteSpeaking = !remoteMuted;
+          connectedCards.add(_buildAudioUserCard(
+            name: user.displayName,
+            avatarUrl: user.profilePictureUrl,
+            isMuted: remoteMuted,
+            status: isRemoteSpeaking ? 'Speaking' : 'Connected',
+            isSpeaking: isRemoteSpeaking,
+          ));
+        } else {
+          callingParticipants.add(user);
+        }
+      }
+    } else {
+      // Fallback if extra participants not yet populated
+      if (state is CallActive) {
+        final isRemoteSpeaking = !state.isRemoteMuted;
+        connectedCards.add(_buildAudioUserCard(
+          name: state.contactName,
+          avatarUrl: widget.profilePictureUrl,
+          isMuted: state.isRemoteMuted,
+          status: isRemoteSpeaking ? 'Speaking' : 'Connected',
+          isSpeaking: isRemoteSpeaking,
+        ));
+      }
+    }
+
+    return Expanded(
+      child: Column(
+        children: [
+          // ─── TOP SECTION: Connected / Lifted Users Grid ───
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              child: connectedCards.length == 1
+                  ? Center(
+                      child: SizedBox(
+                        width: 220,
+                        height: 200,
+                        child: connectedCards.first,
+                      ),
+                    )
+                  : GridView.count(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.95,
+                      children: connectedCards,
+                    ),
+            ),
+          ),
+
+          // ─── BOTTOM SECTION: Calling / Ringing / Disconnected Tray ───
+          if (callingParticipants.isNotEmpty)
+            _buildBottomCallingTray(context, callingParticipants, disconnectedIds),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomCallingTray(
+    BuildContext context,
+    List<UserModel> participants,
+    Set<String> disconnectedIds,
+  ) {
     return Container(
-      margin: const EdgeInsets.only(top: 20, left: 24, right: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.18),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              const Icon(Icons.group_rounded, size: 16, color: Color(0xFF34C759)),
+              Icon(
+                CommonIcons.phone,
+                size: 14,
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
               const SizedBox(width: 6),
               Text(
-                'Added to Call (${participants.length})',
+                'Waiting / Disconnected (${participants.length})',
                 style: context.bodySmall.copyWith(
-                  color: Colors.white70,
+                  color: Colors.white.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w600,
+                  fontSize: 12,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: participants.map((user) {
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: participants.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (ctx, index) {
+                final user = participants[index];
+                final isDisconnected = disconnectedIds.contains(user.id);
+
                 return Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.35),
+                    color: isDisconnected
+                        ? Colors.redAccent.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15)),
+                      color: isDisconnected
+                          ? Colors.redAccent.withValues(alpha: 0.35)
+                          : Colors.white.withValues(alpha: 0.20),
+                      width: 1,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircleAvatar(
-                        radius: 13,
+                        radius: 18,
                         backgroundColor: const Color(0xFF00873C),
-                        backgroundImage: (user.profilePictureUrl != null &&
-                                user.profilePictureUrl!.isNotEmpty)
+                        backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
                             ? NetworkImage(user.profilePictureUrl!)
                             : null,
-                        child: (user.profilePictureUrl == null ||
-                                user.profilePictureUrl!.isEmpty)
+                        child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
                             ? Text(
-                                user.displayName.isNotEmpty
-                                    ? user.displayName[0].toUpperCase()
-                                    : '?',
+                                user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 11,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                 ),
                               )
@@ -498,34 +653,251 @@ class _AudioCallPageState extends State<AudioCallPage>
                       const SizedBox(width: 8),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
                             user.displayName,
-                            style: context.bodySmall.copyWith(
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.bold,
                               fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Text(
-                            'Calling...',
-                            style: context.bodySmall.copyWith(
-                              color: const Color(0xFF34C759),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          const SizedBox(height: 2),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!isDisconnected) ...[
+                                const SizedBox(
+                                  width: 9,
+                                  height: 9,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    color: Color(0xFF34C759),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'Calling...',
+                                  style: TextStyle(
+                                    color: Color(0xFF34C759),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ] else ...[
+                                const Text(
+                                  'No answer',
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
+                      if (isDisconnected) ...[
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: () {
+                            context.read<CallWebRtcBloc>().add(ReinviteParticipantCallEvent(user));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Calling ${user.displayName}...'),
+                                duration: const Duration(seconds: 2),
+                                backgroundColor: const Color(0xFF00873C),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00873C),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF00873C).withValues(alpha: 0.4),
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CommonIcons.phone, size: 11, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Call Again',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
-              }).toList(),
+              },
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAudioUserCard({
+    required String name,
+    String? avatarUrl,
+    required bool isMuted,
+    required String status,
+    bool isSpeaking = false,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isSpeaking
+            ? const Color(0xFF1E2922)
+            : Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isSpeaking
+              ? const Color(0xFF34C759)
+              : Colors.white.withValues(alpha: 0.22),
+          width: isSpeaking ? 2.5 : 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isSpeaking
+                ? const Color(0xFF34C759).withValues(alpha: 0.35)
+                : Colors.black.withValues(alpha: 0.25),
+            blurRadius: isSpeaking ? 16 : 10,
+            spreadRadius: isSpeaking ? 1 : 0,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              if (isSpeaking)
+                Container(
+                  width: 74,
+                  height: 74,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF34C759),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              CircleAvatar(
+                radius: 32,
+                backgroundColor: const Color(0xFF00873C),
+                backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                    ? NetworkImage(avatarUrl)
+                    : null,
+                child: (avatarUrl == null || avatarUrl.isEmpty)
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
+              ),
+              if (isMuted)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      CommonIcons.micOff,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSpeaking) ...[
+                _buildMiniEqualizer(),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            status,
+            style: TextStyle(
+              color: isSpeaking
+                  ? const Color(0xFF34C759)
+                  : (status == 'Connected' ? const Color(0xFF34C759) : Colors.white60),
+              fontSize: 11,
+              fontWeight: isSpeaking ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniEqualizer() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 3.0, end: 11.0),
+          duration: Duration(milliseconds: 260 + (i * 80)),
+          builder: (_, h, _) => Container(
+            width: 2.5,
+            height: h,
+            margin: const EdgeInsets.symmetric(horizontal: 1.2),
+            decoration: BoxDecoration(
+              color: const Color(0xFF34C759),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        );
+      }),
     );
   }
 
@@ -668,19 +1040,20 @@ class _AudioCallPageState extends State<AudioCallPage>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Camera (switch to video)
-          _buildPillButton(
-            icon: CommonIcons.videocam,
-            isActive: false,
-            onTap: () {
-               if (context.read<CallWebRtcBloc>().state is CallActive) {
+          // Camera (switch to video) - only the host can request switch to video
+          if (widget.isOutgoing)
+            _buildPillButton(
+              icon: CommonIcons.videocam,
+              isActive: false,
+              onTap: () {
+                if (context.read<CallWebRtcBloc>().state is CallActive) {
                   context.read<CallWebRtcBloc>().add(const RequestCallSwitchEvent('video'));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Requesting to switch to video...')),
                   );
-               }
-            },
-          ),
+                }
+              },
+            ),
           // Speaker — green when active
           _buildPillButton(
             icon: isSpeaker ? CommonIcons.volumeUp : CommonIcons.volumeDown,

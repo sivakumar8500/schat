@@ -1281,7 +1281,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'For more privacy and storage, all new messages will disappear from new chats you start after the selected duration.',
+                    'For more privacy and storage, all messages will disappear across all chats after the selected duration.',
                     style: TextStyle(
                       fontSize: 14,
                       color: isDark ? Colors.white60 : const Color(0xFF6B7280),
@@ -1319,6 +1319,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
 
     void applyCustom(int encoded) {
       Navigator.pop(sheetCtx);
+      setState(() {
+        _defaultDisappearingTimer = encoded;
+      });
       blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: encoded));
       blocContext.showInfoNotification('Default disappearing messages set to ${_getDisappearingTimerText(encoded)}');
     }
@@ -1497,6 +1500,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             : null,
         onTap: () {
           Navigator.pop(sheetCtx);
+          setState(() {
+            _defaultDisappearingTimer = seconds;
+          });
           blocContext.read<ProfileBloc>().add(UpdateDefaultDisappearingTimerEvent(seconds: seconds));
           blocContext.showInfoNotification('Default disappearing messages set to $label');
         },

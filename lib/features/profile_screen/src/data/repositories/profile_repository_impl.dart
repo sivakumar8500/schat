@@ -41,8 +41,12 @@ class ProfileRepositoryImpl implements ProfileRepository {
   @override
   Future<ApiResult<UserModel>> updateProfile(UpdateProfileRequest request) async {
     final Map<String, dynamic> data = request.toJson();
-    // Remove null values to prevent server-side errors on PATCH
-    data.removeWhere((key, value) => value == null && key != 'defaultDisappearingTimer');
+    // Remove null values to prevent server-side errors on PATCH, but preserve default_disappearing_timer
+    data.removeWhere((key, value) => value == null && key != 'default_disappearing_timer' && key != 'defaultDisappearingTimer');
+
+    if (data.containsKey('default_disappearing_timer')) {
+      data['defaultDisappearingTimer'] = data['default_disappearing_timer'];
+    }
 
     final result = await _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,

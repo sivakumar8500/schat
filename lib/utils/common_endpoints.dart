@@ -7,6 +7,7 @@ class CommonEndpoints {
   // Auth
   static const String sendOtp = '/auth/send-otp';
   static const String verifyOtp = '/auth/verify-otp';
+  static const String logout = '/auth/logout';
 
   // Profile
   static const String profileMe = '/users/me';
@@ -37,8 +38,8 @@ class CommonEndpoints {
   static String searchMessagesInChat(String conversationId) => '/messages/search/$conversationId';
   static const String scheduleMessage = '/messages/scheduled';
   static String getScheduledMessages({String? conversationId}) =>
-      conversationId != null
-          ? '/messages/scheduled?conversation_id=$conversationId'
+      (conversationId != null && conversationId.trim().isNotEmpty)
+          ? '/messages/scheduled?conversation_id=${conversationId.trim()}'
           : '/messages/scheduled';
   static String cancelScheduledMessage(String id) => '/messages/scheduled/$id';
   static String updateScheduledMessage(String id) => '/messages/scheduled/$id';

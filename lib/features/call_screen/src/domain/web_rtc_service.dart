@@ -189,12 +189,12 @@ class WebRtcService {
   // REJECT CALL
   // ─────────────────────────────────────────────
 
-  void rejectCall({
+  Future<void> rejectCall({
     required String conversationId,
     String? messageId,
     required ChatSocketRepository repository,
     String reason = 'reject',
-  }) {
+  }) async {
     repository.emit('message', {
       'type': 'call_response',
       'conversation_id': conversationId,
@@ -203,6 +203,7 @@ class WebRtcService {
       'answer': null,
     });
     _callSignalController.add(CallSignalState.rejected);
+    await cleanup();
     debugPrint('WebRTC: call_response ($reason) sent for conv=$conversationId');
   }
 
@@ -356,41 +357,61 @@ class WebRtcService {
   }) async {
     if (_peerConnection == null || _activeConversationId == null) return;
     
-    // Switch media stream
     final isVideo = callType == 'video';
-    final newStream = await _getUserMedia(isVideo: isVideo);
-    
-    // Replace tracks
-    final senders = await _peerConnection!.getSenders();
-    for (var track in newStream.getTracks()) {
-      final senderIndex = senders.indexWhere((s) => s.track?.kind == track.kind);
-      if (senderIndex != -1) {
-        await senders[senderIndex].replaceTrack(track);
+    try {
+      if (isVideo) {
+        if ((_localStream?.getVideoTracks() ?? []).isEmpty) {
+          final videoStream = await navigator.mediaDevices.getUserMedia({
+            'audio': false,
+            'video': {
+              'width': {'ideal': 640},
+              'height': {'ideal': 480},
+              'frameRate': {'ideal': 30},
+              'facingMode': 'user',
+            },
+          });
+          for (var track in videoStream.getVideoTracks()) {
+            _localStream?.addTrack(track);
+            await _peerConnection!.addTrack(track, _localStream!);
+          }
+        } else {
+          for (var track in _localStream!.getVideoTracks()) {
+            track.enabled = true;
+          }
+        }
       } else {
-        await _peerConnection!.addTrack(track, newStream);
+        for (var track in _localStream?.getVideoTracks() ?? []) {
+          track.stop();
+          _localStream?.removeTrack(track);
+          final senders = await _peerConnection?.getSenders() ?? [];
+          for (var sender in senders) {
+            if (sender.track?.kind == 'video') {
+              await _peerConnection?.removeTrack(sender);
+            }
+          }
+        }
       }
+
+      localRenderer.srcObject = _localStream;
+      _localStreamController.add(_localStream);
+
+      // Create new offer
+      final offer = await _peerConnection!.createOffer(_offerConstraints);
+      await _peerConnection!.setLocalDescription(offer);
+
+      // Send request
+      repository.emit('message', {
+        'type': 'call_switch_request',
+        'conversation_id': _activeConversationId,
+        'call_type': callType,
+        'sdp': {
+          'type': offer.type,
+          'sdp': offer.sdp,
+        }
+      });
+    } catch (e) {
+      debugPrint('WebRTC: Error in requestCallSwitch: $e');
     }
-    
-    // Cleanup old stream
-    _localStream?.getTracks().forEach((track) => track.stop());
-    _localStream = newStream;
-    localRenderer.srcObject = _localStream;
-    _localStreamController.add(_localStream);
-
-    // Create new offer
-    final offer = await _peerConnection!.createOffer(_offerConstraints);
-    await _peerConnection!.setLocalDescription(offer);
-
-    // Send request
-    repository.emit('message', {
-      'type': 'call_switch_request',
-      'conversation_id': _activeConversationId,
-      'call_type': callType,
-      'sdp': {
-        'type': offer.type,
-        'sdp': offer.sdp,
-      }
-    });
   }
 
   Future<void> acceptCallSwitch({
@@ -401,50 +422,70 @@ class WebRtcService {
   }) async {
     if (_peerConnection == null || _activeConversationId == null) return;
     
-    // Set remote description if offer is provided
-    if (remoteOfferEvent != null && remoteOfferEvent['sdp'] != null) {
-      final sdpData = remoteOfferEvent['sdp'];
-      final remoteOffer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
-      await _peerConnection!.setRemoteDescription(remoteOffer);
-    }
-    
-    // Get new media stream based on the requested switch
-    final newStream = await _getUserMedia(isVideo: isVideo);
-    
-    // Replace tracks on existing peer connection
-    final senders = await _peerConnection!.getSenders();
-    for (var track in newStream.getTracks()) {
-      final senderIndex = senders.indexWhere((s) => s.track?.kind == track.kind);
-      if (senderIndex != -1) {
-        await senders[senderIndex].replaceTrack(track);
-      } else {
-        await _peerConnection!.addTrack(track, newStream);
+    try {
+      // Set remote description if offer is provided
+      if (remoteOfferEvent != null && remoteOfferEvent['sdp'] != null) {
+        final sdpData = remoteOfferEvent['sdp'];
+        final remoteOffer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
+        await _peerConnection!.setRemoteDescription(remoteOffer);
       }
-    }
-    
-    // Cleanup old stream
-    _localStream?.getTracks().forEach((track) => track.stop());
-    _localStream = newStream;
-    localRenderer.srcObject = _localStream;
-    _localStreamController.add(_localStream);
-    
-    // Create new answer
-    final answer = await _peerConnection!.createAnswer(_offerConstraints);
-    await _peerConnection!.setLocalDescription(answer);
+      
+      if (isVideo) {
+        if ((_localStream?.getVideoTracks() ?? []).isEmpty) {
+          final videoStream = await navigator.mediaDevices.getUserMedia({
+            'audio': false,
+            'video': {
+              'width': {'ideal': 640},
+              'height': {'ideal': 480},
+              'frameRate': {'ideal': 30},
+              'facingMode': 'user',
+            },
+          });
+          for (var track in videoStream.getVideoTracks()) {
+            _localStream?.addTrack(track);
+            await _peerConnection!.addTrack(track, _localStream!);
+          }
+        } else {
+          for (var track in _localStream!.getVideoTracks()) {
+            track.enabled = true;
+          }
+        }
+      } else {
+        for (var track in _localStream?.getVideoTracks() ?? []) {
+          track.stop();
+          _localStream?.removeTrack(track);
+          final senders = await _peerConnection?.getSenders() ?? [];
+          for (var sender in senders) {
+            if (sender.track?.kind == 'video') {
+              await _peerConnection?.removeTrack(sender);
+            }
+          }
+        }
+      }
 
-    final payload = <String, dynamic>{
-      'type': 'call_switch_response',
-      'conversation_id': _activeConversationId,
-      'accepted': true,
-      'call_type': isVideo ? 'video' : 'audio',
-      'sdp': {
-        'type': answer.type,
-        'sdp': answer.sdp,
-      },
-    };
-    if (messageId != null) payload['message_id'] = messageId;
-    
-    repository.emit('message', payload);
+      localRenderer.srcObject = _localStream;
+      _localStreamController.add(_localStream);
+      
+      // Create new answer
+      final answer = await _peerConnection!.createAnswer(_offerConstraints);
+      await _peerConnection!.setLocalDescription(answer);
+
+      final payload = <String, dynamic>{
+        'type': 'call_switch_response',
+        'conversation_id': _activeConversationId,
+        'accepted': true,
+        'call_type': isVideo ? 'video' : 'audio',
+        'sdp': {
+          'type': answer.type,
+          'sdp': answer.sdp,
+        },
+      };
+      if (messageId != null) payload['message_id'] = messageId;
+      
+      repository.emit('message', payload);
+    } catch (e) {
+      debugPrint('WebRTC: Error in acceptCallSwitch: $e');
+    }
   }
 
   void rejectCallSwitch({

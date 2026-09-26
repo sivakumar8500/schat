@@ -76,6 +76,14 @@ class StorageService {
     await _prefs.remove(_hasSyncedContactsKey);
   }
 
+  Future<void> clearUser() async {
+    await _prefs.remove(_userIdKey);
+    await _prefs.remove(_usernameKey);
+    await _prefs.remove(_profilePicKey);
+    await _prefs.remove(_emailKey);
+    await _prefs.remove(_hasSyncedContactsKey);
+  }
+
   bool hasToken() {
     final token = getAccessToken();
     return token != null && token.isNotEmpty;

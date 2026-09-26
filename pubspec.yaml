@@ -88,5 +88,6 @@ flutter:
     - assets/no_data/
     - assets/home_page/
     - assets/audio/
+    - assets/fonts/
     - assets/
 

@@ -156,18 +156,96 @@ class InAppNotificationService {
       return;
     }
 
+    // Determine if the message is a file share / media attachment or call
+    final msgType = (message['message_type'] ??
+            message['messageType'] ??
+            message['type'] ??
+            message['media_type'] ??
+            message['mediaType'] ??
+            data['message_type'] ??
+            data['type'])
+        ?.toString()
+        .toLowerCase();
+
+    final dynamic contentData = message['content'];
+    final String? fileUrl = (message['media_url'] ??
+            message['mediaUrl'] ??
+            message['url'] ??
+            message['fileKey'] ??
+            message['file_key'] ??
+            (contentData is Map
+                ? (contentData['fileKey'] ??
+                    contentData['file_key'] ??
+                    contentData['url'] ??
+                    contentData['media_url'])
+                : null))
+        ?.toString();
+
+    final String? fileName = (message['file_name'] ??
+            message['fileName'] ??
+            message['attachment_name'] ??
+            message['attachmentName'] ??
+            (contentData is Map
+                ? (contentData['fileName'] ??
+                    contentData['file_name'] ??
+                    contentData['name'] ??
+                    contentData['attachmentName'] ??
+                    contentData['attachment_name'])
+                : null))
+        ?.toString();
+
+    final bool isCall = msgType == 'call' ||
+        message['callMeta'] != null ||
+        message['call_meta'] != null ||
+        data['callMeta'] != null ||
+        data['call_meta'] != null;
+
+    final bool isFileShare = (msgType != null &&
+            msgType.isNotEmpty &&
+            msgType != 'text' &&
+            msgType != 'chat' &&
+            msgType != 'system') ||
+        (fileUrl != null && fileUrl.trim().isNotEmpty) ||
+        (fileName != null && fileName.trim().isNotEmpty) ||
+        message['has_attachment'] == true ||
+        message['is_file'] == true ||
+        message['isFileShared'] == true ||
+        message['file_shared'] == true ||
+        message['is_file_shared'] == true;
+
+    // Play message notification tone for all incoming messages
+    try {
+      getIt<CallSoundService>().playMessageTone();
+    } catch (e) {
+      debugPrint('InAppNotificationService: Error playing message tone: $e');
+    }
+
+    // REQUIREMENT: Only show in-app banner notification for call and file share. Suppress regular text messages.
+    if (!isFileShare && !isCall) {
+      debugPrint('InAppNotificationService: Suppressing in-app banner notification for regular text message');
+      return;
+    }
+
     // Extract content preview
-    String previewText = 'New message received';
-    final content = message['content'];
-    if (content is Map) {
-      previewText = content['text']?.toString() ?? 'Media message';
-    } else if (content is String && content.isNotEmpty) {
-      previewText = content;
-    } else {
-      final msgType = (message['message_type'] ?? message['type'])?.toString();
-      if (msgType != null && msgType != 'text') {
-        previewText = '📷 [${msgType.toUpperCase()}]';
+    String previewText = 'Shared a file';
+    if (isCall) {
+      previewText = '📞 Call notification';
+    } else if (fileName != null && fileName.isNotEmpty) {
+      previewText = '📁 $fileName';
+    } else if (msgType != null && msgType.isNotEmpty && msgType != 'text') {
+      if (msgType == 'image') {
+        previewText = '📷 Shared an image';
+      } else if (msgType == 'video') {
+        previewText = '🎥 Shared a video';
+      } else if (msgType == 'document') {
+        previewText = '📄 Shared a document';
+      } else if (msgType == 'audio' || msgType == 'voice') {
+        previewText = '🎵 Shared an audio clip';
+      } else {
+        previewText = '📁 Shared a file ($msgType)';
       }
+    } else if (contentData is Map && contentData['text'] != null && contentData['text'].toString().isNotEmpty) {
+      previewText = '📁 ${contentData['text']}';
     }
 
     // Extract sender name and profile picture
@@ -211,13 +289,6 @@ class InAppNotificationService {
     }
 
     bool isGroup = message['is_group'] == true || message['isGroup'] == true;
-
-    // Play message notification tone
-    try {
-      getIt<CallSoundService>().playMessageTone();
-    } catch (e) {
-      debugPrint('InAppNotificationService: Error playing message tone: $e');
-    }
 
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return;

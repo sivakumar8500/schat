@@ -857,6 +857,7 @@ class _DashboardPageState extends State<DashboardPage> {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'theme',
+                height: 42,
                 child: Row(
                   children: [
                     Icon(
@@ -864,50 +865,64 @@ class _DashboardPageState extends State<DashboardPage> {
                           ? Icons.light_mode_rounded
                           : Icons.dark_mode_rounded,
                       color: context.colors.primary,
-                      size: 20,
+                      size: 19,
                     ),
-                    CommonSpaces.w12,
-                    Text('Theme', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Theme', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                    ),
                   ],
                 ),
               ),
               PopupMenuItem(
                 value: 'create_group',
+                height: 42,
                 child: Row(
                   children: [
-                    Icon(Icons.group_add_rounded, color: context.colors.primary, size: 20),
-                    CommonSpaces.w12,
-                    Text('Create Group', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    Icon(Icons.group_add_rounded, color: context.colors.primary, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Create Group', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                    ),
                   ],
                 ),
               ),
               PopupMenuItem(
                 value: 'hidden_chats',
+                height: 42,
                 child: Row(
                   children: [
-                    Icon(Icons.archive_rounded, color: context.colors.primary, size: 20),
-                    CommonSpaces.w12,
-                    Text('Hidden Chats', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    Icon(Icons.archive_rounded, color: context.colors.primary, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Hidden Chats', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                    ),
                   ],
                 ),
               ),
               PopupMenuItem(
                 value: 'chat_transfer',
+                height: 42,
                 child: Row(
                   children: [
-                    Icon(Icons.swap_horiz_rounded, color: context.colors.primary, size: 20),
-                    CommonSpaces.w12,
-                    Text('Chat Transfer', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    Icon(Icons.swap_horiz_rounded, color: context.colors.primary, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Chat Transfer', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                    ),
                   ],
                 ),
               ),
               PopupMenuItem(
                 value: 'settings',
+                height: 42,
                 child: Row(
                   children: [
-                    Icon(CommonIcons.settings, color: context.colors.primary, size: 20),
-                    CommonSpaces.w12,
-                    Text('Settings', style: context.bodyMedium.copyWith(color: context.colors.textPrimary)),
+                    Icon(CommonIcons.settings, color: context.colors.primary, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Settings', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                    ),
                   ],
                 ),
               ),

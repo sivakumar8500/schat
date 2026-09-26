@@ -22,6 +22,9 @@ abstract class CallHistoryModel with _$CallHistoryModel {
     @JsonKey(name: 'created_at') String? createdAt,
     @JsonKey(name: 'duration') @Default(0) int duration,
     @JsonKey(name: 'count') @Default(1) int count,
+    @JsonKey(name: 'is_group') @Default(false) bool isGroup,
+    @JsonKey(name: 'group_name') String? groupName,
+    @JsonKey(name: 'group_picture_url') String? groupPictureUrl,
   }) = _CallHistoryModel;
 
   bool get isIncoming => direction.toLowerCase() == 'incoming';
@@ -32,21 +35,37 @@ abstract class CallHistoryModel with _$CallHistoryModel {
   bool get isVideoCall => callType.toLowerCase() == 'video';
 
   String get displayName {
+    if ((isGroup || (groupName != null && groupName!.isNotEmpty)) &&
+        groupName != null &&
+        groupName!.isNotEmpty) {
+      return groupName!;
+    }
     if (callerName != null && callerName!.isNotEmpty) {
       return callerName!;
     }
     if (receiverName != null && receiverName!.isNotEmpty) {
       return receiverName!;
     }
+    if (groupName != null && groupName!.isNotEmpty) {
+      return groupName!;
+    }
     return callerId ?? receiverId ?? 'Unknown User';
   }
 
   String? get displayAvatar {
+    if ((isGroup || (groupPictureUrl != null && groupPictureUrl!.isNotEmpty)) &&
+        groupPictureUrl != null &&
+        groupPictureUrl!.isNotEmpty) {
+      return groupPictureUrl;
+    }
     if (callerAvatar != null && callerAvatar!.isNotEmpty) {
       return callerAvatar;
     }
     if (receiverAvatar != null && receiverAvatar!.isNotEmpty) {
       return receiverAvatar;
+    }
+    if (groupPictureUrl != null && groupPictureUrl!.isNotEmpty) {
+      return groupPictureUrl;
     }
     return null;
   }
@@ -61,6 +80,12 @@ Map<String, dynamic> _normalizeCallHistoryJson(Map<String, dynamic> json) {
   normalized['conversation_id'] = (json['conversation_id'] ?? json['conversationId'])?.toString();
   normalized['caller_id'] = (json['caller_id'] ?? json['callerId'] ?? json['from_user_id'] ?? json['sender_id'] ?? json['senderId'])?.toString();
   
+  // Group fields
+  final isGroupVal = json['is_group'] ?? json['isGroup'];
+  normalized['is_group'] = (isGroupVal == true || isGroupVal == 1 || isGroupVal == 'true');
+  normalized['group_name'] = (json['group_name'] ?? json['groupName'])?.toString();
+  normalized['group_picture_url'] = (json['group_picture_url'] ?? json['groupPictureUrl'])?.toString();
+
   // Extract participant name/avatar
   final otherParticipant = json['otherParticipant'] ?? json['other_participant'];
   String? participantName;

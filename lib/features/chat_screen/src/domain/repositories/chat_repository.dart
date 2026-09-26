@@ -36,6 +36,7 @@ abstract class ChatRepository {
     String? description,
     String? iconUrl,
     List<String>? participantIds,
+    bool? onlyAdminsSendMessages,
   });
   Future<void> addGroupParticipants({required String groupId, required List<String> userIds});
   Future<void> removeGroupParticipant({required String groupId, required String userId});

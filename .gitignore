@@ -50,4 +50,7 @@ scratch/
 # Backend nested repo
 schat_backend/
 android/build/
+android/.kotlin/
+.gradle/
+
 

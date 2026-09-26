@@ -402,24 +402,6 @@ class _TonePickerScreenState extends State<TonePickerScreen>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'save_tone_fab',
-        onPressed: _isSaving ? null : _saveSelection,
-        backgroundColor: const Color(0xFF00873C),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: _isSaving
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.check_rounded, size: 20),
-        label: Text(
-          _isSaving ? 'Saving...' : 'Set as $title',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
     );
   }
 
@@ -455,10 +437,38 @@ class _TonePickerScreenState extends State<TonePickerScreen>
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          TextButton.icon(
+          IconButton(
             onPressed: _isSaving ? null : _resetToDefault,
-            icon: Icon(Icons.refresh_rounded, size: 16, color: context.colors.textSecondary),
-            label: Text('Reset', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+            icon: Icon(Icons.refresh_rounded, size: 20, color: context.colors.textSecondary),
+            tooltip: 'Reset to default',
+          ),
+          const SizedBox(width: 4),
+          ElevatedButton(
+            onPressed: _isSaving ? null : _saveSelection,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00873C),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
           ),
         ],
       ),

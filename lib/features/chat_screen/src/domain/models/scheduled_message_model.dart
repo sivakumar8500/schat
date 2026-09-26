@@ -6,6 +6,7 @@ class ScheduledMessageModel {
   final String? parentMessageId;
   final String text;
   final String? fileKey;
+  final String? thumbnail;
   final String? fileName;
   final int fileSize;
   final String? mimeType;
@@ -23,6 +24,7 @@ class ScheduledMessageModel {
     this.parentMessageId,
     required this.text,
     this.fileKey,
+    this.thumbnail,
     this.fileName,
     this.fileSize = 0,
     this.mimeType,
@@ -48,12 +50,18 @@ class ScheduledMessageModel {
     DateTime parseDate(dynamic val) {
       if (val == null) return DateTime.now();
       if (val is DateTime) return val.toLocal();
-      if (val is int) {
+      if (val is num) {
+        final millis = val > 10000000000 ? val.toInt() : (val * 1000).toInt();
         return DateTime.fromMillisecondsSinceEpoch(
-          val > 10000000000 ? val : val * 1000,
+          millis,
           isUtc: true,
         ).toLocal();
       } else if (val is String) {
+        final numVal = num.tryParse(val);
+        if (numVal != null) {
+          final millis = numVal > 10000000000 ? numVal.toInt() : (numVal * 1000).toInt();
+          return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true).toLocal();
+        }
         return DateTime.tryParse(val)?.toLocal() ?? DateTime.now();
       }
       return DateTime.now();
@@ -77,6 +85,10 @@ class ScheduledMessageModel {
               json['conversation_id'] ??
               json['chat_id'] ??
               json['chatId'] ??
+              json['groupId'] ??
+              json['group_id'] ??
+              json['recipientId'] ??
+              json['recipient_id'] ??
               '')
           .toString(),
       senderId: (json['senderId'] ??
@@ -97,22 +109,42 @@ class ScheduledMessageModel {
           json['message']?.toString() ??
           json['body']?.toString() ??
           '',
-      fileKey: content['fileKey']?.toString() ??
-          content['file_key']?.toString() ??
-          json['fileKey']?.toString() ??
-          json['file_key']?.toString(),
-      fileName: content['fileName']?.toString() ??
-          content['file_name']?.toString() ??
-          json['fileName']?.toString() ??
-          json['file_name']?.toString(),
+      fileKey: (content['fileKey'] ??
+              content['file_key'] ??
+              content['url'] ??
+              content['mediaUrl'] ??
+              content['media_url'] ??
+              content['path'] ??
+              content['filePath'] ??
+              content['file_path'] ??
+              json['fileKey'] ??
+              json['file_key'] ??
+              json['url'] ??
+              json['path'])
+          ?.toString(),
+      thumbnail: (content['thumbnail'] ??
+              content['thumb_url'] ??
+              content['thumbUrl'] ??
+              json['thumbnail'])
+          ?.toString(),
+      fileName: (content['fileName'] ??
+              content['file_name'] ??
+              content['name'] ??
+              json['fileName'] ??
+              json['file_name'] ??
+              json['name'])
+          ?.toString(),
       fileSize: parseSize(content['fileSize'] ??
           content['file_size'] ??
+          content['size'] ??
           json['fileSize'] ??
-          json['file_size']),
-      mimeType: content['mimeType']?.toString() ??
-          content['mime_type']?.toString() ??
-          json['mimeType']?.toString() ??
-          json['mime_type']?.toString(),
+          json['file_size'] ??
+          json['size']),
+      mimeType: (content['mimeType'] ??
+              content['mime_type'] ??
+              json['mimeType'] ??
+              json['mime_type'])
+          ?.toString(),
       scheduledAt: parseDate(json['scheduledAt'] ??
           json['scheduled_at'] ??
           json['scheduled_time'] ??

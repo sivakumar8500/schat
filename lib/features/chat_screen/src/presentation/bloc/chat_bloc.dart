@@ -886,6 +886,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         name: event.name,
         description: event.description,
         iconUrl: event.iconUrl,
+        onlyAdminsSendMessages: event.onlyAdminsSendMessages,
       );
       add(const ShowNotificationEvent(message: 'Group updated successfully'));
     } catch (e) {
@@ -1526,9 +1527,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final data = event.data;
     final newName = (data['group_name'] ?? data['groupName'])?.toString();
     final newPictureUrl = (data['group_picture_url'] ?? data['groupPictureUrl'] ?? data['group_image_url'] ?? data['groupImageUrl'])?.toString();
+    final onlyAdmins = data['only_admins_send_messages'] ?? data['onlyAdminsSendMessages'];
+    final bool? onlyAdminsBool = onlyAdmins is bool ? onlyAdmins : null;
     emit(currentState.copyWith(
       groupName: newName ?? currentState.groupName,
       groupPictureUrl: newPictureUrl ?? currentState.groupPictureUrl,
+      onlyAdminsSendMessages: onlyAdminsBool ?? currentState.onlyAdminsSendMessages,
     ));
     if (newName != null) {
       add(ShowNotificationEvent(message: 'Group name updated to "$newName"'));

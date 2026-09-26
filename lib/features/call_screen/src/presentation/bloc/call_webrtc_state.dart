@@ -18,7 +18,11 @@ class CallConnecting extends CallWebRtcState {
   final String? profilePictureUrl;
   final bool isSpeakerOn;
   final bool isFrontCamera;
+  final bool isGroup;
+  final String? groupName;
   final List<UserModel> extraParticipants;
+  final Set<String> connectedParticipantIds;
+  final Set<String> disconnectedParticipantIds;
 
   const CallConnecting({
     required this.conversationId,
@@ -30,7 +34,11 @@ class CallConnecting extends CallWebRtcState {
     this.profilePictureUrl,
     bool? isSpeakerOn,
     this.isFrontCamera = true,
+    this.isGroup = false,
+    this.groupName,
     this.extraParticipants = const [],
+    this.connectedParticipantIds = const {},
+    this.disconnectedParticipantIds = const {},
   }) : isSpeakerOn = isSpeakerOn ?? isVideo;
 
   CallConnecting copyWith({
@@ -41,7 +49,11 @@ class CallConnecting extends CallWebRtcState {
     String? profilePictureUrl,
     bool? isSpeakerOn,
     bool? isFrontCamera,
+    bool? isGroup,
+    String? groupName,
     List<UserModel>? extraParticipants,
+    Set<String>? connectedParticipantIds,
+    Set<String>? disconnectedParticipantIds,
   }) {
     return CallConnecting(
       conversationId: conversationId,
@@ -53,7 +65,11 @@ class CallConnecting extends CallWebRtcState {
       profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isFrontCamera: isFrontCamera ?? this.isFrontCamera,
+      isGroup: isGroup ?? this.isGroup,
+      groupName: groupName ?? this.groupName,
       extraParticipants: extraParticipants ?? this.extraParticipants,
+      connectedParticipantIds: connectedParticipantIds ?? this.connectedParticipantIds,
+      disconnectedParticipantIds: disconnectedParticipantIds ?? this.disconnectedParticipantIds,
     );
   }
 }
@@ -67,7 +83,11 @@ class CallRinging extends CallWebRtcState {
   final String? profilePictureUrl;
   final bool isSpeakerOn;
   final bool isFrontCamera;
+  final bool isGroup;
+  final String? groupName;
   final List<UserModel> extraParticipants;
+  final Set<String> connectedParticipantIds;
+  final Set<String> disconnectedParticipantIds;
 
   const CallRinging({
     required this.incomingEvent,
@@ -77,13 +97,21 @@ class CallRinging extends CallWebRtcState {
     this.profilePictureUrl,
     bool? isSpeakerOn,
     this.isFrontCamera = true,
+    this.isGroup = false,
+    this.groupName,
     this.extraParticipants = const [],
+    this.connectedParticipantIds = const {},
+    this.disconnectedParticipantIds = const {},
   }) : isSpeakerOn = isSpeakerOn ?? isVideo;
   
   CallRinging copyWith({
     bool? isSpeakerOn,
     bool? isFrontCamera,
+    bool? isGroup,
+    String? groupName,
     List<UserModel>? extraParticipants,
+    Set<String>? connectedParticipantIds,
+    Set<String>? disconnectedParticipantIds,
   }) {
     return CallRinging(
       incomingEvent: incomingEvent,
@@ -93,7 +121,11 @@ class CallRinging extends CallWebRtcState {
       profilePictureUrl: profilePictureUrl,
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isFrontCamera: isFrontCamera ?? this.isFrontCamera,
+      isGroup: isGroup ?? this.isGroup,
+      groupName: groupName ?? this.groupName,
       extraParticipants: extraParticipants ?? this.extraParticipants,
+      connectedParticipantIds: connectedParticipantIds ?? this.connectedParticipantIds,
+      disconnectedParticipantIds: disconnectedParticipantIds ?? this.disconnectedParticipantIds,
     );
   }
 }
@@ -111,11 +143,15 @@ class CallActive extends CallWebRtcState {
   final bool isFrontCamera;
   final bool isMinimized;
   final bool isSystemPip;
+  final bool isGroup;
+  final String? groupName;
   final String? profilePictureUrl;
   final DateTime? startedAt;
   final String? switchRequestedCallType;
   final Map<String, dynamic>? switchRequestedEvent;
   final List<UserModel> extraParticipants;
+  final Set<String> connectedParticipantIds;
+  final Set<String> disconnectedParticipantIds;
 
   const CallActive({
     required this.conversationId,
@@ -130,11 +166,15 @@ class CallActive extends CallWebRtcState {
     this.isSpeakerOn = false,
     this.isMinimized = false,
     this.isSystemPip = false,
+    this.isGroup = false,
+    this.groupName,
     this.profilePictureUrl,
     this.startedAt,
     this.switchRequestedCallType,
     this.switchRequestedEvent,
     this.extraParticipants = const [],
+    this.connectedParticipantIds = const {},
+    this.disconnectedParticipantIds = const {},
   });
 
   CallActive copyWith({
@@ -147,10 +187,14 @@ class CallActive extends CallWebRtcState {
     bool? isMinimized,
     bool? isSystemPip,
     bool? isVideo,
+    bool? isGroup,
+    String? groupName,
     String? switchRequestedCallType,
     Map<String, dynamic>? switchRequestedEvent,
     bool clearSwitchRequest = false,
     List<UserModel>? extraParticipants,
+    Set<String>? connectedParticipantIds,
+    Set<String>? disconnectedParticipantIds,
   }) {
     return CallActive(
       conversationId: conversationId,
@@ -165,11 +209,15 @@ class CallActive extends CallWebRtcState {
       isSpeakerOn: isSpeakerOn ?? this.isSpeakerOn,
       isMinimized: isMinimized ?? this.isMinimized,
       isSystemPip: isSystemPip ?? this.isSystemPip,
+      isGroup: isGroup ?? this.isGroup,
+      groupName: groupName ?? this.groupName,
       profilePictureUrl: profilePictureUrl,
       startedAt: startedAt,
       switchRequestedCallType: clearSwitchRequest ? null : (switchRequestedCallType ?? this.switchRequestedCallType),
       switchRequestedEvent: clearSwitchRequest ? null : (switchRequestedEvent ?? this.switchRequestedEvent),
       extraParticipants: extraParticipants ?? this.extraParticipants,
+      connectedParticipantIds: connectedParticipantIds ?? this.connectedParticipantIds,
+      disconnectedParticipantIds: disconnectedParticipantIds ?? this.disconnectedParticipantIds,
     );
   }
 
@@ -191,6 +239,8 @@ class CallActive extends CallWebRtcState {
         switchRequestedCallType,
         switchRequestedEvent,
         extraParticipants,
+        connectedParticipantIds,
+        disconnectedParticipantIds,
       ];
 }
 

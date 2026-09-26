@@ -121,6 +121,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
       context,
       MaterialPageRoute(
         builder: (context) => const UserListPage(
+          title: 'Block Contact',
           isPicker: true,
           maxSelection: 1,
           showOnlySynced: true,
@@ -240,17 +241,6 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addBlockedUser,
-        backgroundColor: const Color(0xFF00873C),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.person_add_rounded, size: 22),
-        label: const Text(
-          'Block Contact',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
       ),
     );
   }

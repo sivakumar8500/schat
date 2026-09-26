@@ -12,11 +12,15 @@ import 'package:schat/features/call_screen/src/domain/repositories/call_history_
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_state.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/features/call_screen/src/domain/models/ongoing_group_call.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 
 enum CallFilter { all, missed, audio, video, incoming, outgoing }
 
@@ -92,7 +96,110 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     });
   }
 
+  void _onCallItemTapped(CallHistoryModel call) {
+    if (_selectedIds.isNotEmpty) {
+      _toggleSelection(call.id);
+    } else if (call.isGroup || (call.groupName != null && call.groupName!.isNotEmpty)) {
+      _showGroupParticipantPicker(call);
+    } else {
+      _startCall(call, isVideo: call.isVideoCall);
+    }
+  }
+
+  void _showGroupParticipantPicker(CallHistoryModel call) {
+    final convoId = call.conversationId ?? '';
+    if (convoId.isEmpty) {
+      _startCall(call, isVideo: call.isVideoCall);
+      return;
+    }
+
+    final myId = (getIt<StorageService>().getUserId() ?? '').trim();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return _GroupCallParticipantPickerSheet(
+          conversationId: convoId,
+          groupName: call.displayName,
+          groupPictureUrl: call.displayAvatar,
+          myId: myId,
+          onStartCall: (selectedParticipants, isVideo) {
+            _startGroupCall(
+              conversationId: convoId,
+              groupName: call.displayName,
+              groupPictureUrl: call.displayAvatar,
+              selectedParticipants: selectedParticipants,
+              isVideo: isVideo,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _startGroupCall({
+    required String conversationId,
+    required String groupName,
+    required String? groupPictureUrl,
+    required List<UserModel> selectedParticipants,
+    required bool isVideo,
+  }) async {
+    final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: isVideo);
+    if (!mounted || !hasPermission) return;
+
+    if (isVideo) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: getIt<CallWebRtcBloc>(),
+            child: VideoCallPage(
+              conversationId: conversationId,
+              contactName: groupName,
+              contactColor: const Color(0xFF00873C),
+              recipientId: '',
+              isOutgoing: true,
+              profilePictureUrl: groupPictureUrl,
+              myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+              isGroup: true,
+              groupName: groupName,
+              extraParticipants: selectedParticipants,
+            ),
+          ),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: getIt<CallWebRtcBloc>(),
+            child: AudioCallPage(
+              conversationId: conversationId,
+              contactName: groupName,
+              contactColor: const Color(0xFF00873C),
+              recipientId: '',
+              isOutgoing: true,
+              profilePictureUrl: groupPictureUrl,
+              myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+              isGroup: true,
+              groupName: groupName,
+              extraParticipants: selectedParticipants,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
   void _startCall(CallHistoryModel call, {required bool isVideo}) async {
+    if (call.isGroup || (call.groupName != null && call.groupName!.isNotEmpty)) {
+      _showGroupParticipantPicker(call);
+      return;
+    }
+
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: isVideo);
     if (!mounted || !hasPermission) return;
 
@@ -163,75 +270,92 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-            BlocBuilder<CallHistoryCubit, CallHistoryState>(
-              builder: (context, state) {
-                final currentCalls = state.maybeWhen(
-                  loaded: (calls) => calls,
-                  orElse: () => <CallHistoryModel>[],
-                );
-                return _buildHeader(isSelectionMode, currentCalls);
-              },
-            ),
-            if (!_isSearching) _buildFilterPills(),
-            if (_isSearching) _buildSearchBar(),
-            Expanded(
-              child: BlocBuilder<CallHistoryCubit, CallHistoryState>(
-                builder: (context, state) {
-                  return state.when(
-                    initial: () => const Center(child: CircularProgressIndicator()),
-                    loading: () => Center(
-                      child: CircularProgressIndicator(
-                        color: context.colors.primary,
-                      ),
-                    ),
-                    error: (message) => _buildErrorState(context, message),
-                    loaded: (calls) {
-                      final filteredCalls = calls.where((call) {
-                        if (_searchQuery.isNotEmpty) {
-                          if (!call.displayName.toLowerCase().contains(_searchQuery)) {
-                            return false;
-                          }
-                        }
-                        switch (_currentFilter) {
-                          case CallFilter.all:
-                            return true;
-                          case CallFilter.audio:
-                            return !call.isVideoCall;
-                          case CallFilter.video:
-                            return call.isVideoCall;
-                          case CallFilter.missed:
-                            return call.isMissed;
-                          case CallFilter.incoming:
-                            return call.isIncoming;
-                          case CallFilter.outgoing:
-                            return !call.isIncoming;
-                        }
-                      }).toList();
-
-                      if (filteredCalls.isEmpty) {
-                        return _buildEmptyState(context);
+        BlocBuilder<CallHistoryCubit, CallHistoryState>(
+          builder: (context, state) {
+            final currentCalls = state.maybeWhen(
+              loaded: (calls) => calls,
+              orElse: () => <CallHistoryModel>[],
+            );
+            return _buildHeader(isSelectionMode, currentCalls);
+          },
+        ),
+        if (!_isSearching) _buildFilterPills(),
+        if (_isSearching) _buildSearchBar(),
+        BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
+          builder: (context, _) {
+            final ongoingCalls = getIt<CallWebRtcBloc>()
+                .ongoingGroupCalls
+                .values
+                .where((c) => c.connectedParticipantIds.isNotEmpty)
+                .toList();
+            if (ongoingCalls.isEmpty) return const SizedBox.shrink();
+            return _buildOngoingCallsSection(ongoingCalls);
+          },
+        ),
+        Expanded(
+          child: BlocBuilder<CallHistoryCubit, CallHistoryState>(
+            builder: (context, state) {
+              return state.when(
+                initial: () => const Center(child: CircularProgressIndicator()),
+                loading: () => Center(
+                  child: CircularProgressIndicator(
+                    color: context.colors.primary,
+                  ),
+                ),
+                error: (message) => _buildErrorState(context, message),
+                loaded: (calls) {
+                  final filteredCalls = calls.where((call) {
+                    if (_searchQuery.isNotEmpty) {
+                      if (!call.displayName.toLowerCase().contains(_searchQuery)) {
+                        return false;
                       }
-                      return RefreshIndicator(
-                        onRefresh: () => context.read<CallHistoryCubit>().fetchCallHistory(),
-                        color: context.colors.primary,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.only(top: 8, bottom: 80, left: 16, right: 16),
-                          itemCount: filteredCalls.length,
-                          itemBuilder: (context, index) {
-                            final call = filteredCalls[index];
-                            final isSelected = _selectedIds.contains(call.id);
+                    }
+                    switch (_currentFilter) {
+                      case CallFilter.all:
+                        return true;
+                      case CallFilter.audio:
+                        return !call.isVideoCall;
+                      case CallFilter.video:
+                        return call.isVideoCall;
+                      case CallFilter.missed:
+                        return call.isMissed;
+                      case CallFilter.incoming:
+                        return call.isIncoming;
+                      case CallFilter.outgoing:
+                        return !call.isIncoming;
+                    }
+                  }).toList();
 
-                            return _buildCallCard(call, isSelected, isSelectionMode);
-                          },
-                        ),
-                      );
-                    },
+                  if (filteredCalls.isEmpty) {
+                    return _buildEmptyState(context);
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () => context.read<CallHistoryCubit>().fetchCallHistory(),
+                    color: context.colors.primary,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.only(top: 4, bottom: 80),
+                      itemCount: filteredCalls.length,
+                      separatorBuilder: (context, index) => Divider(
+                        height: 1,
+                        indent: 72,
+                        endIndent: 16,
+                        color: context.colors.border.withValues(alpha: 0.15),
+                      ),
+                      itemBuilder: (context, index) {
+                        final call = filteredCalls[index];
+                        final isSelected = _selectedIds.contains(call.id);
+
+                        return _buildCallListItem(call, isSelected, isSelectionMode);
+                      },
+                    ),
                   );
                 },
-              ),
-            ),
-          ],
-        );
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildHeader(bool isSelectionMode, List<CallHistoryModel> currentCalls) {
@@ -482,180 +606,183 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     );
   }
 
-  Widget _buildCallCard(CallHistoryModel call, bool isSelected, bool isSelectionMode) {
-    final isDark = context.colors.isDark;
+  Widget _buildCallListItem(CallHistoryModel call, bool isSelected, bool isSelectionMode) {
+    final isGroup = call.isGroup || (call.groupName != null && call.groupName!.isNotEmpty);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
+    return InkWell(
+      onTap: () => _onCallItemTapped(call),
+      onLongPress: () {
+        if (!isSelectionMode) {
+          _toggleSelection(call.id);
+        }
+      },
+      child: Container(
         color: isSelected
-            ? context.colors.primary.withValues(alpha: 0.12)
-            : (isDark ? context.colors.cardBackground : Colors.white),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isSelected
-              ? context.colors.primary
-              : context.colors.border.withValues(alpha: 0.35),
-          width: isSelected ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          if (isSelectionMode) {
-            _toggleSelection(call.id);
-          } else {
-            _startCall(call, isVideo: call.isVideoCall);
-          }
-        },
-        onLongPress: () {
-          if (!isSelectionMode) {
-            _toggleSelection(call.id);
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              // Avatar with Selection Badge
-              Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: const Color(0xFFE8F5E9),
-                    backgroundImage: call.displayAvatar != null && call.displayAvatar!.isNotEmpty
-                        ? NetworkImage(call.displayAvatar!)
-                        : null,
-                    child: (call.displayAvatar == null || call.displayAvatar!.isEmpty)
-                        ? Text(
-                            call.displayName.isNotEmpty
-                                ? call.displayName.substring(0, 1).toUpperCase()
-                                : '?',
-                            style: const TextStyle(
+            ? context.colors.primary.withValues(alpha: 0.1)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // Avatar with Selection Badge
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundColor: const Color(0xFFE8F5E9),
+                  backgroundImage: call.displayAvatar != null && call.displayAvatar!.isNotEmpty
+                      ? NetworkImage(call.displayAvatar!)
+                      : null,
+                  child: (call.displayAvatar == null || call.displayAvatar!.isEmpty)
+                      ? (isGroup
+                          ? const Icon(
+                              Icons.groups_rounded,
                               color: Color(0xFF00873C),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                            ),
-                          )
-                        : null,
-                  ),
-                  if (isSelected)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: context.colors.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white,
-                            width: 2,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.check,
-                          size: 12,
+                              size: 26,
+                            )
+                          : Text(
+                              call.displayName.isNotEmpty
+                                  ? call.displayName.substring(0, 1).toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: Color(0xFF00873C),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ))
+                      : null,
+                ),
+                if (isSelected)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: context.colors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
                           color: Colors.white,
+                          width: 2,
                         ),
                       ),
+                      child: const Icon(
+                        Icons.check,
+                        size: 12,
+                        color: Colors.white,
+                      ),
                     ),
-                ],
-              ),
-              const SizedBox(width: 14),
-              // Caller Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      call.count > 1
-                          ? '${call.displayName} (${call.count})'
-                          : call.displayName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
+                  ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            // Caller / Group Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    call.count > 1
+                        ? '${call.displayName} (${call.count})'
+                        : call.displayName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: call.isMissed
+                          ? const Color(0xFFE53935)
+                          : context.colors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        call.isMissed
+                            ? Icons.call_missed_rounded
+                            : (call.isIncoming
+                                ? Icons.call_received_rounded
+                                : Icons.call_made_rounded),
+                        size: 15,
                         color: call.isMissed
                             ? const Color(0xFFE53935)
-                            : context.colors.textPrimary,
+                            : (call.isIncoming
+                                ? const Color(0xFF00873C)
+                                : const Color(0xFF12B76A)),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          call.isMissed
-                              ? Icons.call_missed_rounded
-                              : (call.isIncoming
-                                  ? Icons.call_received_rounded
-                                  : Icons.call_made_rounded),
-                          size: 15,
-                          color: call.isMissed
-                              ? const Color(0xFFE53935)
-                              : (call.isIncoming
-                                  ? const Color(0xFF00873C)
-                                  : const Color(0xFF12B76A)),
+                      const SizedBox(width: 5),
+                      Text(
+                        _formatTime(call.createdAt),
+                        style: TextStyle(
+                          color: context.colors.textSecondary,
+                          fontSize: 13,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _formatTime(call.createdAt),
-                          style: TextStyle(
-                            color: context.colors.textSecondary,
-                            fontSize: 13,
+                      ),
+                      if (isGroup) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00873C).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        ),
-                        if (call.isVideoCall) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: context.colors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'Video',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: context.colors.primary,
-                              ),
+                          child: const Text(
+                            'Group',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF00873C),
                             ),
                           ),
-                        ],
+                        ),
                       ],
-                    ),
-                  ],
-                ),
-              ),
-              // Call Action Button
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    call.isVideoCall ? Icons.videocam_rounded : Icons.phone_rounded,
-                    color: const Color(0xFF00873C),
-                    size: 20,
+                      if (call.isVideoCall) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: context.colors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Video',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: context.colors.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  onPressed: () => _startCall(call, isVideo: call.isVideoCall),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            // Action Button / Selection Checkbox
+            if (isSelectionMode)
+              Checkbox(
+                value: isSelected,
+                activeColor: context.colors.primary,
+                onChanged: (_) => _toggleSelection(call.id),
+              )
+            else
+              IconButton(
+                icon: Icon(
+                  call.isVideoCall ? Icons.videocam_rounded : Icons.phone_rounded,
+                  color: const Color(0xFF00873C),
+                  size: 22,
+                ),
+                onPressed: () {
+                  if (isGroup) {
+                    _showGroupParticipantPicker(call);
+                  } else {
+                    _startCall(call, isVideo: call.isVideoCall);
+                  }
+                },
+              ),
+          ],
         ),
       ),
     );
@@ -809,6 +936,587 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     } catch (e) {
       return dateStr;
     }
+  }
+
+  Widget _buildOngoingCallsSection(List<OngoingGroupCall> ongoingCalls) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: ongoingCalls.map((call) => _buildOngoingCallCard(call)).toList(),
+      ),
+    );
+  }
+
+  Widget _buildOngoingCallCard(OngoingGroupCall ongoingCall) {
+    final activeCount = ongoingCall.connectedParticipantIds.isNotEmpty
+        ? ongoingCall.connectedParticipantIds.length
+        : (ongoingCall.participants.isNotEmpty ? ongoingCall.participants.length : 1);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00873C).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF00873C).withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF00E676),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0xFF00E676),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              CommonSpaces.w6,
+              Text(
+                'LIVE GROUP CALL',
+                style: context.bodySmall.copyWith(
+                  color: const Color(0xFF00E676),
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                  fontSize: 10,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  getIt<CallWebRtcBloc>().dismissOngoingGroupCall(ongoingCall.conversationId);
+                  setState(() {});
+                },
+                child: Icon(
+                  Icons.close,
+                  size: 18,
+                  color: context.colors.textSecondary.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+          CommonSpaces.h8,
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF00873C).withValues(alpha: 0.25),
+                  border: Border.all(
+                    color: const Color(0xFF00873C),
+                    width: 1.5,
+                  ),
+                ),
+                child: Center(
+                  child: ongoingCall.profilePictureUrl != null && ongoingCall.profilePictureUrl!.isNotEmpty
+                      ? ClipOval(
+                          child: Image.network(
+                            ongoingCall.profilePictureUrl!,
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const Icon(
+                              Icons.group,
+                              color: Color(0xFF00E676),
+                              size: 22,
+                            ),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.group,
+                          color: Color(0xFF00E676),
+                          size: 22,
+                        ),
+                ),
+              ),
+              CommonSpaces.w12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ongoingCall.groupName,
+                      style: context.titleMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    CommonSpaces.h2,
+                    Row(
+                      children: [
+                        Icon(
+                          ongoingCall.isVideo ? Icons.videocam : Icons.phone_in_talk,
+                          size: 13,
+                          color: const Color(0xFF00E676),
+                        ),
+                        CommonSpaces.w4,
+                        Text(
+                          '$activeCount active • ${ongoingCall.isVideo ? "Video" : "Audio"}',
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              CommonSpaces.w8,
+              ElevatedButton.icon(
+                onPressed: () => _rejoinGroupCall(ongoingCall),
+                icon: Icon(
+                  ongoingCall.isVideo ? Icons.videocam : Icons.call,
+                  size: 16,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'Join',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00873C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _rejoinGroupCall(OngoingGroupCall call) async {
+    final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: call.isVideo);
+    if (!mounted || !hasPermission) return;
+
+    if (call.isVideo) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: getIt<CallWebRtcBloc>(),
+            child: VideoCallPage(
+              conversationId: call.conversationId,
+              contactName: call.groupName,
+              contactColor: const Color(0xFF00873C),
+              recipientId: '',
+              isOutgoing: true,
+              isGroup: true,
+              groupName: call.groupName,
+              profilePictureUrl: call.profilePictureUrl,
+              extraParticipants: call.participants,
+            ),
+          ),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: getIt<CallWebRtcBloc>(),
+            child: AudioCallPage(
+              conversationId: call.conversationId,
+              contactName: call.groupName,
+              contactColor: const Color(0xFF00873C),
+              recipientId: '',
+              isOutgoing: true,
+              isGroup: true,
+              groupName: call.groupName,
+              profilePictureUrl: call.profilePictureUrl,
+              extraParticipants: call.participants,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+}
+
+class _GroupCallParticipantPickerSheet extends StatefulWidget {
+  final String conversationId;
+  final String groupName;
+  final String? groupPictureUrl;
+  final String myId;
+  final void Function(List<UserModel> selectedParticipants, bool isVideo) onStartCall;
+
+  const _GroupCallParticipantPickerSheet({
+    required this.conversationId,
+    required this.groupName,
+    this.groupPictureUrl,
+    required this.myId,
+    required this.onStartCall,
+  });
+
+  @override
+  State<_GroupCallParticipantPickerSheet> createState() => _GroupCallParticipantPickerSheetState();
+}
+
+class _GroupCallParticipantPickerSheetState extends State<_GroupCallParticipantPickerSheet> {
+  bool _isLoading = true;
+  String? _errorMessage;
+  List<UserModel> _participants = [];
+  final Set<String> _selectedUserIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadParticipants();
+  }
+
+  Future<void> _loadParticipants() async {
+    try {
+      final repo = getIt<ChatRepository>();
+      final data = await repo.getGroupDetails(widget.conversationId);
+      final participantsData = data['participants'];
+      final List<UserModel> list = [];
+      if (participantsData is List) {
+        for (var p in participantsData) {
+          if (p is Map) {
+            final userJson = p['user'] ?? p;
+            if (userJson is Map) {
+              final user = UserModel.fromJson(Map<String, dynamic>.from(userJson));
+              if (user.id.isNotEmpty && user.id != widget.myId) {
+                list.add(user);
+              }
+            }
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _participants = list;
+          _selectedUserIds.addAll(list.map((u) => u.id));
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load group participants: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _toggleAll() {
+    setState(() {
+      if (_selectedUserIds.length == _participants.length) {
+        _selectedUserIds.clear();
+      } else {
+        _selectedUserIds.clear();
+        _selectedUserIds.addAll(_participants.map((u) => u.id));
+      }
+    });
+  }
+
+  void _toggleUser(String id) {
+    setState(() {
+      if (_selectedUserIds.contains(id)) {
+        _selectedUserIds.remove(id);
+      } else {
+        _selectedUserIds.add(id);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allSelected = _participants.isNotEmpty && _selectedUserIds.length == _participants.length;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.cardBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag Handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: context.colors.border.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: const Color(0xFFE8F5E9),
+                  backgroundImage: widget.groupPictureUrl != null && widget.groupPictureUrl!.isNotEmpty
+                      ? NetworkImage(widget.groupPictureUrl!)
+                      : null,
+                  child: widget.groupPictureUrl == null || widget.groupPictureUrl!.isEmpty
+                      ? const Icon(Icons.groups_rounded, color: Color(0xFF00873C), size: 20)
+                      : null,
+                ),
+                CommonSpaces.w12,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.groupName,
+                        style: context.titleMedium.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: context.colors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _isLoading
+                            ? 'Loading members...'
+                            : '${_selectedUserIds.length} of ${_participants.length} selected',
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_participants.isNotEmpty)
+                  TextButton(
+                    onPressed: _toggleAll,
+                    child: Text(
+                      allSelected ? 'Deselect All' : 'Select All',
+                      style: const TextStyle(
+                        color: Color(0xFF00873C),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Body
+          Flexible(
+            child: _isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: Center(
+                      child: CircularProgressIndicator(color: Color(0xFF00873C)),
+                    ),
+                  )
+                : _errorMessage != null
+                    ? Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _errorMessage!,
+                              style: TextStyle(color: context.colors.error, fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                            CommonSpaces.h12,
+                            ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _isLoading = true;
+                                  _errorMessage = null;
+                                });
+                                _loadParticipants();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF00873C),
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _participants.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Center(
+                              child: Text(
+                                'No other participants in this group.',
+                                style: TextStyle(color: context.colors.textSecondary),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: _participants.length,
+                            separatorBuilder: (context, index) => Divider(
+                              height: 1,
+                              indent: 68,
+                              endIndent: 16,
+                              color: context.colors.border.withValues(alpha: 0.15),
+                            ),
+                            itemBuilder: (context, index) {
+                              final user = _participants[index];
+                              final isChecked = _selectedUserIds.contains(user.id);
+                              return CheckboxListTile(
+                                value: isChecked,
+                                activeColor: const Color(0xFF00873C),
+                                checkboxShape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                                secondary: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xFFE8F5E9),
+                                  backgroundImage: user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty
+                                      ? NetworkImage(user.profilePictureUrl!)
+                                      : null,
+                                  child: user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty
+                                      ? Text(
+                                          user.displayName.isNotEmpty
+                                              ? user.displayName.substring(0, 1).toUpperCase()
+                                              : '?',
+                                          style: const TextStyle(
+                                            color: Color(0xFF00873C),
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(
+                                  user.displayName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                    color: context.colors.textPrimary,
+                                  ),
+                                ),
+                                subtitle: user.phoneNumber.isNotEmpty
+                                    ? Text(
+                                        user.phoneNumber,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: context.colors.textSecondary,
+                                        ),
+                                      )
+                                    : null,
+                                onChanged: (_) => _toggleUser(user.id),
+                              );
+                            },
+                          ),
+          ),
+          // Action Buttons
+          SafeArea(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: context.colors.cardBackground,
+                border: Border(
+                  top: BorderSide(
+                    color: context.colors.border.withValues(alpha: 0.2),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _selectedUserIds.isEmpty
+                          ? null
+                          : () {
+                              Navigator.pop(context);
+                              final selected = _participants
+                                  .where((u) => _selectedUserIds.contains(u.id))
+                                  .toList();
+                              widget.onStartCall(selected, false);
+                            },
+                      icon: const Icon(Icons.phone_rounded, size: 20),
+                      label: const Text('Voice Call'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF00873C),
+                        side: BorderSide(
+                          color: _selectedUserIds.isEmpty
+                              ? Colors.grey.withValues(alpha: 0.3)
+                              : const Color(0xFF00873C),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  ),
+                  CommonSpaces.w12,
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _selectedUserIds.isEmpty
+                          ? null
+                          : () {
+                              Navigator.pop(context);
+                              final selected = _participants
+                                  .where((u) => _selectedUserIds.contains(u.id))
+                                  .toList();
+                              widget.onStartCall(selected, true);
+                            },
+                      icon: const Icon(Icons.videocam_rounded, size: 20),
+                      label: const Text('Video Call'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00873C),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
+                        disabledForegroundColor: Colors.grey,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

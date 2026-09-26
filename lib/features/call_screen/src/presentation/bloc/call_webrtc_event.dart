@@ -10,11 +10,18 @@ class InitiateCallEvent extends CallWebRtcEvent {
   final bool isVideo;
   final String contactName;
   final String? profilePictureUrl;
+  final bool isGroup;
+  final String? groupName;
+  final List<UserModel> extraParticipants;
+
   const InitiateCallEvent({
     required this.conversationId,
     required this.isVideo,
     this.contactName = '',
     this.profilePictureUrl,
+    this.isGroup = false,
+    this.groupName,
+    this.extraParticipants = const [],
   });
 }
 
@@ -48,6 +55,24 @@ class HandleIncomingCallEvent extends CallWebRtcEvent {
 class HandleCallAnsweredEvent extends CallWebRtcEvent {
   final Map<String, dynamic> event;
   const HandleCallAnsweredEvent(this.event);
+}
+
+/// Socket pushed call_participant_joined in group call
+class HandleCallParticipantJoinedEvent extends CallWebRtcEvent {
+  final Map<String, dynamic> event;
+  const HandleCallParticipantJoinedEvent(this.event);
+}
+
+/// Socket pushed call_participant_left in group call
+class HandleCallParticipantLeftEvent extends CallWebRtcEvent {
+  final Map<String, dynamic> event;
+  const HandleCallParticipantLeftEvent(this.event);
+}
+
+/// Remote user is busy on another call
+class HandleCallBusyEvent extends CallWebRtcEvent {
+  final String contactName;
+  const HandleCallBusyEvent(this.contactName);
 }
 
 /// Socket pushed ice_candidate_received — both sides
@@ -135,4 +160,16 @@ class HandleCallSwitchRespondedEvent extends CallWebRtcEvent {
 class AddParticipantsCallEvent extends CallWebRtcEvent {
   final List<UserModel> users;
   const AddParticipantsCallEvent(this.users);
+}
+
+/// Event to re-invite / recall a disconnected or timed out participant in group call
+class ReinviteParticipantCallEvent extends CallWebRtcEvent {
+  final UserModel user;
+  const ReinviteParticipantCallEvent(this.user);
+}
+
+/// Dispatched when a participant's 60-second connection timer expires
+class HandleParticipantTimeoutEvent extends CallWebRtcEvent {
+  final String userId;
+  const HandleParticipantTimeoutEvent(this.userId);
 }

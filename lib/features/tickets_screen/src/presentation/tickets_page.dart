@@ -335,45 +335,28 @@ class _TicketsPageState extends State<TicketsPage> {
             ),
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => _showRaiseTicketBottomSheet(context),
-          backgroundColor: primaryColor,
-          elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          icon: Icon(Icons.add_rounded, color: isDark ? Colors.black : Colors.white),
-          label: Text(
-            'Raise Ticket',
-            style: TextStyle(
-              color: isDark ? Colors.black : Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
       ),
     );
   }
 
   Widget _buildHeader(Color primaryColor) {
-    final isDark = context.colors.isDark;
-
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 20, 10),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: context.colors.textPrimary,
-              size: 20,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: context.colors.lightBackground,
+              border: Border.all(
+                color: context.colors.border.withValues(alpha: 0.3),
+              ),
             ),
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-            style: IconButton.styleFrom(
-              backgroundColor: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFEFF4F1),
-              shape: const CircleBorder(),
+            child: IconButton(
+              icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
+              onPressed: () => Navigator.pop(context),
             ),
           ),
           const SizedBox(width: 14),
@@ -393,6 +376,23 @@ class _TicketsPageState extends State<TicketsPage> {
             onPressed: () {
               context.read<TicketsBloc>().add(const LoadTicketsEvent());
             },
+          ),
+          const SizedBox(width: 6),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFE8F5E9),
+              border: Border.all(
+                color: const Color(0xFF00873C).withValues(alpha: 0.3),
+              ),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.add_rounded, color: Color(0xFF00873C), size: 22),
+              tooltip: 'Raise Ticket',
+              onPressed: () => _showRaiseTicketBottomSheet(context),
+            ),
           ),
         ],
       ),
@@ -443,6 +443,19 @@ class _TicketsPageState extends State<TicketsPage> {
                 fontSize: 14,
                 height: 1.45,
                 color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () => _showRaiseTicketBottomSheet(context),
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: const Text('Raise Ticket Now'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00873C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                elevation: 2,
               ),
             ),
           ],

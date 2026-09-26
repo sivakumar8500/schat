@@ -144,17 +144,17 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     UpdateDefaultDisappearingTimerEvent event,
     Emitter<ProfileState> emit,
   ) async {
-    final currentState = state;
-    if (currentState is ProfileLoaded) {
-      emit(const ProfileLoading());
-      final request = UpdateProfileRequest(
-        defaultDisappearingTimer: event.seconds,
-      );
-      final result = await _profileRepository.updateProfile(request);
-      result.when(
-        success: (user) => emit(ProfileSuccess(user: user)),
-        failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
-      );
-    }
+    final request = UpdateProfileRequest(
+      defaultDisappearingTimer: event.seconds,
+    );
+    final result = await _profileRepository.updateProfile(request);
+    result.when(
+      success: (user) => emit(ProfileLoaded(
+        username: user.displayName,
+        imagePath: user.profilePictureUrl,
+        user: user,
+      )),
+      failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+    );
   }
 }
