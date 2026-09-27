@@ -125,15 +125,6 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
               ),
             ],
           ),
-          floatingActionButton: FloatingActionButton.extended(
-            heroTag: 'chat_access_fab',
-            onPressed: () => SendViewRequestSheet.show(context),
-            backgroundColor: const Color(0xFF00873C),
-            foregroundColor: Colors.white,
-            elevation: 4,
-            icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-            label: const Text('Request Access', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
         );
       },
     );
@@ -141,12 +132,12 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.lightBackground,
@@ -155,16 +146,18 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Expanded(
             child: Text(
               'Chat Access & Monitoring',
-              style: context.h2.copyWith(
-                fontWeight: FontWeight.bold,
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
                 color: context.colors.textPrimary,
               ),
               maxLines: 1,
@@ -172,19 +165,36 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
             ),
           ),
           Container(
-            width: 38,
-            height: 38,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFFE8F5E9),
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428)
+                  : const Color(0xFFE8F5E9),
             ),
             child: IconButton(
               padding: EdgeInsets.zero,
-              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 20),
+              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 19),
               tooltip: 'Refresh',
               onPressed: () {
                 context.read<ChatTransferBloc>().add(const LoadChatTransferData());
               },
+            ),
+          ),
+          CommonSpaces.w8,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFF00873C),
+            ),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 18),
+              tooltip: 'Request Access',
+              onPressed: () => SendViewRequestSheet.show(context),
             ),
           ),
         ],
@@ -292,7 +302,7 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 100),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       itemCount: activeList.length,
       itemBuilder: (context, index) {
         final req = activeList[index];
@@ -329,7 +339,7 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 100),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       itemCount: viewers.length,
       itemBuilder: (context, index) {
         final req = viewers[index];
@@ -356,7 +366,7 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 100),
+      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
       children: [
         if (incoming.isNotEmpty) ...[
           const Padding(
