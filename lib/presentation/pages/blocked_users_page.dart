@@ -247,15 +247,15 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: context.colors.lightBackground,
@@ -264,19 +264,21 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
                   ),
                 ),
                 child: IconButton(
+                  padding: EdgeInsets.zero,
                   icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
-              CommonSpaces.w12,
+              CommonSpaces.w10,
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Blocked Contacts',
-                    style: context.h2.copyWith(
-                      fontWeight: FontWeight.bold,
+                    style: TextStyle(
+                      fontSize: 16.5,
+                      fontWeight: FontWeight.w700,
                       color: context.colors.textPrimary,
                     ),
                   ),
@@ -285,7 +287,8 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
                       '${_blockedList.length} ${_blockedList.length == 1 ? 'contact' : 'contacts'}',
                       style: TextStyle(
                         color: context.colors.textSecondary,
-                        fontSize: 12,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                 ],
@@ -293,17 +296,20 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
             ],
           ),
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFFE8F5E9),
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428)
+                  : const Color(0xFFE8F5E9),
               border: Border.all(
                 color: const Color(0xFF00873C).withValues(alpha: 0.3),
               ),
             ),
             child: IconButton(
-              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 20),
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 19),
               tooltip: 'Add Blocked Contact',
               onPressed: _addBlockedUser,
             ),
