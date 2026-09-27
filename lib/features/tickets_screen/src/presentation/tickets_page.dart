@@ -341,12 +341,12 @@ class _TicketsPageState extends State<TicketsPage> {
 
   Widget _buildHeader(Color primaryColor) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.lightBackground,
@@ -355,41 +355,47 @@ class _TicketsPageState extends State<TicketsPage> {
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(width: 14),
-          Text(
-            'Support Tickets',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: context.colors.textPrimary,
-              letterSpacing: -0.4,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Support Tickets',
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
+                color: context.colors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
           IconButton(
-            icon: Icon(Icons.refresh_rounded, color: context.colors.textPrimary, size: 22),
+            icon: Icon(Icons.refresh_rounded, color: context.colors.textPrimary, size: 20),
             tooltip: 'Refresh',
             onPressed: () {
               context.read<TicketsBloc>().add(const LoadTicketsEvent());
             },
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFFE8F5E9),
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428)
+                  : const Color(0xFFE8F5E9),
               border: Border.all(
                 color: const Color(0xFF00873C).withValues(alpha: 0.3),
               ),
             ),
             child: IconButton(
-              icon: const Icon(Icons.add_rounded, color: Color(0xFF00873C), size: 22),
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.add_rounded, color: Color(0xFF00873C), size: 20),
               tooltip: 'Raise Ticket',
               onPressed: () => _showRaiseTicketBottomSheet(context),
             ),

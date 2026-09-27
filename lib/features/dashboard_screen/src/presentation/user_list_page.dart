@@ -391,9 +391,9 @@ class _UserListPageState extends State<UserListPage> {
                       : (widget.showOnlySynced ? 'Select User' : 'Contacts')),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.h2.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
                 color: context.colors.textPrimary,
               ),
             ),

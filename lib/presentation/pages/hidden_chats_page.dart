@@ -157,33 +157,32 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
     final isDark = context.colors.isDark;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: context.colors.textPrimary,
-              size: 20,
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: context.colors.lightBackground,
+              border: Border.all(
+                color: context.colors.border.withValues(alpha: 0.3),
+              ),
             ),
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-            style: IconButton.styleFrom(
-              backgroundColor: isDark
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : const Color(0xFFEFF4F1),
-              shape: const CircleBorder(),
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
+              onPressed: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           Text(
             'Hidden Chats',
             style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
               color: context.colors.textPrimary,
-              letterSpacing: -0.4,
             ),
           ),
           if (!_isLoading && _hiddenChats.isNotEmpty) ...[
