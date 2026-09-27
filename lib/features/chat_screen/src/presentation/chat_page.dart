@@ -3885,7 +3885,7 @@ class _ChatPageState extends State<ChatPage> {
     if (widget.isReadOnly) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
@@ -3904,18 +3904,24 @@ class _ChatPageState extends State<ChatPage> {
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.lock_outline_rounded,
               color: context.colors.primary,
-              size: 20,
+              size: 18,
             ),
             const SizedBox(width: 8),
-            Text(
-              'This conversation is in read-only mode',
-              style: context.bodyMedium.copyWith(
-                color: context.colors.textSecondary,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                'This conversation is in read-only mode',
+                style: context.bodyMedium.copyWith(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

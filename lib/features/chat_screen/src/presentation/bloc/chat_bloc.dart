@@ -540,7 +540,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (messages.length < 50) {
         _hasReachedMax = true;
       }
-      final pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
+      List<MessageModel> pinnedMessages = [];
+      try {
+        pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
+      } catch (e) {
+        debugPrint('Warning: Could not fetch pinned messages: $e');
+      }
       
       // Save fresh messages to cache
       _saveToCache(event.conversationId, messages);
