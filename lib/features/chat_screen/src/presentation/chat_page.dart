@@ -3026,7 +3026,7 @@ class _ChatPageState extends State<ChatPage> {
                                       isGroup: widget.isGroup,
                                       senderName: widget.isGroup && !isMe ? _resolveSenderName(msg.senderId, msg.senderName) : null,
                                       senderProfilePictureUrl: widget.isGroup && !isMe ? _resolveSenderProfilePic(msg.senderId, msg.senderProfilePictureUrl) : null,
-                                      type: msg.mediaType ?? 'text',
+                                      type: (msg.messageType == 'system' || msg.messageType == 'group_event' || msg.messageType == 'notification') ? msg.messageType : (msg.mediaType ?? 'text'),
                                       latitude: msg.latitude,
                                       longitude: msg.longitude,
                                       address: msg.address,

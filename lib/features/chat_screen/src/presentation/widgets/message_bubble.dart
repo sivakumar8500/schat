@@ -248,34 +248,56 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (isSystemMessage) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         child: Row(
           children: [
-            const Expanded(child: Divider(indent: 16, endIndent: 8)),
+            Expanded(
+              child: Divider(
+                color: context.colors.border.withValues(alpha: 0.35),
+                thickness: 0.8,
+                endIndent: 10,
+              ),
+            ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
+                maxWidth: MediaQuery.of(context).size.width * 0.72,
               ),
               decoration: BoxDecoration(
-                color: context.colors.lightBackground,
-                borderRadius: BorderRadius.circular(12.0),
+                color: context.colors.isDark
+                    ? const Color(0xFF1E2428).withValues(alpha: 0.95)
+                    : const Color(0xFFF0F4F8).withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(14.0),
                 border: Border.all(
-                  color: context.colors.border,
-                  width: 0.5,
+                  color: context.colors.border.withValues(alpha: 0.35),
+                  width: 0.6,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
               child: Text(
                 _formatSystemMessage(message),
                 textAlign: TextAlign.center,
-                style: context.bodySmall.copyWith(
+                style: TextStyle(
                   color: context.colors.textSecondary,
                   fontWeight: FontWeight.w500,
-                  fontSize: 12,
+                  fontSize: 12.5,
+                  height: 1.3,
                 ),
               ),
             ),
-            const Expanded(child: Divider(indent: 8, endIndent: 16)),
+            Expanded(
+              child: Divider(
+                color: context.colors.border.withValues(alpha: 0.35),
+                thickness: 0.8,
+                indent: 10,
+              ),
+            ),
           ],
         ),
       );
@@ -2761,6 +2783,14 @@ class _MessageBubbleState extends State<MessageBubble> {
       'changed the theme',
       'changed chat theme',
       'disappearing',
+      'only admins to send messages',
+      'all members to send messages',
+      'changed this group\'s settings',
+      'group\'s settings',
+      'now an admin',
+      'no longer an admin',
+      'is now an admin',
+      'messages and calls are end-to-end encrypted',
     ];
 
     return patterns.any((pattern) => lowerMsg.contains(pattern));
