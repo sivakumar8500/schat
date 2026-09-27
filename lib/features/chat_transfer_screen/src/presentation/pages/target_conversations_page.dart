@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
@@ -175,12 +176,12 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
 
   Widget _buildHeader(BuildContext context, String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.lightBackground,
@@ -189,35 +190,39 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '$title’s Chats',
-                  style: context.h2.copyWith(
-                    fontWeight: FontWeight.bold,
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
                     color: context.colors.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 2),
                 Row(
                   children: [
                     Container(
-                      width: 7,
-                      height: 7,
+                      width: 6,
+                      height: 6,
                       decoration: const BoxDecoration(
                         color: Color(0xFF00873C),
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 4),
                     const Text(
                       'Live Monitored Access',
                       style: TextStyle(
@@ -232,15 +237,17 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
             ),
           ),
           Container(
-            width: 38,
-            height: 38,
-            decoration: const BoxDecoration(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Color(0xFFE8F5E9),
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428)
+                  : const Color(0xFFE8F5E9),
             ),
             child: IconButton(
               padding: EdgeInsets.zero,
-              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 20),
+              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 19),
               tooltip: 'Refresh',
               onPressed: () {
                 context.read<ChatTransferBloc>().add(
@@ -272,6 +279,8 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
         ? chat.recipient.profilePictureUrl
         : chat.recipient.profilePictureUrl;
 
+    final initial = chatName.isNotEmpty ? chatName[0].toUpperCase() : '?';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -290,24 +299,56 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        leading: CircleAvatar(
-          radius: 24,
-          backgroundColor: const Color(0xFFE8F5E9),
-          backgroundImage: profilePic != null && profilePic.isNotEmpty
-              ? NetworkImage(profilePic)
-              : null,
-          child: profilePic == null || profilePic.isEmpty
-              ? (chat.isGroup
-                  ? const Icon(Icons.group_rounded, color: Color(0xFF00873C), size: 22)
-                  : Text(
-                      chatName.isNotEmpty ? chatName[0].toUpperCase() : '?',
-                      style: const TextStyle(
-                        color: Color(0xFF00873C),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 17,
-                      ),
-                    ))
-              : null,
+        leading: Container(
+          width: 48,
+          height: 48,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0xFFE8F5E9),
+          ),
+          child: ClipOval(
+            child: (profilePic != null && profilePic.isNotEmpty)
+                ? CachedNetworkImage(
+                    imageUrl: profilePic,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Center(
+                      child: chat.isGroup
+                          ? const Icon(Icons.group_rounded, color: Color(0xFF00873C), size: 22)
+                          : Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Color(0xFF00873C),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 17,
+                              ),
+                            ),
+                    ),
+                    errorWidget: (context, url, error) => Center(
+                      child: chat.isGroup
+                          ? const Icon(Icons.group_rounded, color: Color(0xFF00873C), size: 22)
+                          : Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Color(0xFF00873C),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 17,
+                              ),
+                            ),
+                    ),
+                  )
+                : Center(
+                    child: chat.isGroup
+                        ? const Icon(Icons.group_rounded, color: Color(0xFF00873C), size: 22)
+                        : Text(
+                            initial,
+                            style: const TextStyle(
+                              color: Color(0xFF00873C),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
+                          ),
+                  ),
+          ),
         ),
         title: Text(
           chatName,
