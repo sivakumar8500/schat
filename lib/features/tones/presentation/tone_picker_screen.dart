@@ -411,8 +411,8 @@ class _TonePickerScreenState extends State<TonePickerScreen>
       child: Row(
         children: [
           Container(
-            width: 38,
-            height: 38,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.lightBackground,
@@ -426,12 +426,12 @@ class _TonePickerScreenState extends State<TonePickerScreen>
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w10,
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               title,
               style: TextStyle(
-                fontSize: 16.5,
+                fontSize: 16,
                 fontWeight: FontWeight.w700,
                 color: context.colors.textPrimary,
               ),
@@ -440,11 +440,13 @@ class _TonePickerScreenState extends State<TonePickerScreen>
             ),
           ),
           IconButton(
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(),
             onPressed: _isSaving ? null : _resetToDefault,
             icon: Icon(Icons.refresh_rounded, size: 20, color: context.colors.textSecondary),
             tooltip: 'Reset to default',
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
           ElevatedButton(
             onPressed: _isSaving ? null : _saveSelection,
             style: ElevatedButton.styleFrom(
@@ -452,16 +454,16 @@ class _TonePickerScreenState extends State<TonePickerScreen>
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: _isSaving
                 ? const SizedBox(
-                    width: 16,
-                    height: 16,
+                    width: 14,
+                    height: 14,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
                       color: Colors.white,
@@ -469,7 +471,7 @@ class _TonePickerScreenState extends State<TonePickerScreen>
                   )
                 : const Text(
                     'Save',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                   ),
           ),
         ],
