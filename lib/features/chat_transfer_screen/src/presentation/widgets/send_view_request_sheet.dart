@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/core/storage/storage_service.dart';
@@ -58,31 +59,47 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
   }
 
   Future<void> _loadContacts() async {
-    setState(() => _isLoading = true);
     try {
       final repo = getIt<ContactsRepository>();
       final myId = getIt<StorageService>().getUserId() ?? '';
       
-      var contacts = await repo.getCachedContacts();
-      if (contacts.isEmpty) {
-        final result = await repo.fetchSyncedContacts();
-        result.when(
-          success: (data) => contacts = data,
-          failure: (_, _) {},
-        );
-      }
-
-      final validContacts = contacts
+      // Load cached contacts immediately so UI is responsive
+      final cachedContacts = await repo.getCachedContacts();
+      final validCached = cachedContacts
           .where((u) => u.id.isNotEmpty && u.id != myId)
           .toList();
 
-      if (mounted) {
+      if (mounted && validCached.isNotEmpty) {
         setState(() {
-          _allContacts = validContacts;
-          _filteredContacts = validContacts;
+          _allContacts = validCached;
+          _filteredContacts = validCached;
           _isLoading = false;
         });
+      } else if (mounted) {
+        setState(() => _isLoading = true);
       }
+
+      // Fetch fresh contacts from backend to get freshly resolved S3 profile picture URLs
+      final result = await repo.fetchSyncedContacts();
+      result.when(
+        success: (data) {
+          final validContacts = data
+              .where((u) => u.id.isNotEmpty && u.id != myId)
+              .toList();
+          if (mounted) {
+            setState(() {
+              _allContacts = validContacts;
+              _onSearchChanged();
+              _isLoading = false;
+            });
+          }
+        },
+        failure: (_, _) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
+        },
+      );
     } catch (e) {
       debugPrint('Error loading contacts in SendViewRequestSheet: $e');
       if (mounted) {
@@ -484,26 +501,52 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
         child: Row(
           children: [
             // Avatar
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: isSelected
-                  ? context.colors.primary
-                  : context.colors.primary.withValues(alpha: 0.15),
-              backgroundImage: user.profilePictureUrl != null &&
-                      user.profilePictureUrl!.isNotEmpty
-                  ? NetworkImage(user.profilePictureUrl!)
-                  : null,
-              child: user.profilePictureUrl == null ||
-                      user.profilePictureUrl!.isEmpty
-                  ? Text(
-                      initials,
-                      style: TextStyle(
-                        color: isSelected ? Colors.white : context.colors.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected
+                    ? context.colors.primary
+                    : const Color(0xFFE8F5E9),
+              ),
+              child: ClipOval(
+                child: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
+                    ? CachedNetworkImage(
+                        imageUrl: user.profilePictureUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Center(
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : const Color(0xFF00873C),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Center(
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : const Color(0xFF00873C),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          initials,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : const Color(0xFF00873C),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                       ),
-                    )
-                  : null,
+              ),
             ),
             CommonSpaces.w12,
 

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:schat/features/chat_transfer_screen/src/domain/models/chat_view_request_model.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -41,6 +42,8 @@ class ChatViewRequestCard extends StatelessWidget {
         ? otherUser!.phoneNumber
         : '@${otherUser?.username ?? ""}';
 
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -60,22 +63,47 @@ class ChatViewRequestCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: context.colors.primary.withValues(alpha: 0.2),
-                  backgroundImage: otherUser?.profilePictureUrl != null &&
-                          otherUser!.profilePictureUrl!.isNotEmpty
-                      ? NetworkImage(otherUser.profilePictureUrl!)
-                      : null,
-                  child: otherUser?.profilePictureUrl == null ||
-                          otherUser!.profilePictureUrl!.isEmpty
-                      ? Text(
-                          displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-                          style: CommonFontStyles.titleMedium(context).copyWith(
-                            color: context.colors.primary,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE8F5E9),
+                  ),
+                  child: ClipOval(
+                    child: (otherUser?.profilePictureUrl != null && otherUser!.profilePictureUrl!.isNotEmpty)
+                        ? CachedNetworkImage(
+                            imageUrl: otherUser.profilePictureUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Center(
+                              child: Text(
+                                initial,
+                                style: CommonFontStyles.titleMedium(context).copyWith(
+                                  color: const Color(0xFF00873C),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Center(
+                              child: Text(
+                                initial,
+                                style: CommonFontStyles.titleMedium(context).copyWith(
+                                  color: const Color(0xFF00873C),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              initial,
+                              style: CommonFontStyles.titleMedium(context).copyWith(
+                                color: const Color(0xFF00873C),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        )
-                      : null,
+                  ),
                 ),
                 CommonSpaces.w12,
                 Expanded(

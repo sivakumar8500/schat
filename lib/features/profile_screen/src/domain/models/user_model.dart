@@ -44,8 +44,17 @@ abstract class UserModel with _$UserModel {
 Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   final normalizedJson = Map<String, dynamic>.from(json);
   normalizedJson['_id'] = (json['id'] ?? json['_id'] ?? json['user_id'])?.toString() ?? '';
-  if (!normalizedJson.containsKey('profile_picture_url') || normalizedJson['profile_picture_url'] == null || (normalizedJson['profile_picture_url'] as String).isEmpty) {
-    normalizedJson['profile_picture_url'] = json['profilePictureUrl'] ?? json['avatar'] ?? json['profile_pic'] ?? json['caller_profile_picture_url'];
+  final pic = json['profile_picture_url'] ??
+      json['profilePictureUrl'] ??
+      json['profile_picture'] ??
+      json['profilePicture'] ??
+      json['avatar_url'] ??
+      json['avatarUrl'] ??
+      json['avatar'] ??
+      json['profile_pic'] ??
+      json['caller_profile_picture_url'];
+  if (pic != null && pic.toString().isNotEmpty) {
+    normalizedJson['profile_picture_url'] = pic.toString();
   }
   if (json.containsKey('defaultDisappearingTimer') && !json.containsKey('default_disappearing_timer')) {
     normalizedJson['default_disappearing_timer'] = json['defaultDisappearingTimer'];

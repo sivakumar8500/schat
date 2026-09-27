@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:schat/features/chat_transfer_screen/src/domain/models/chat_view_request_model.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -41,27 +42,54 @@ class ChatViewRequestDialog extends StatelessWidget {
             ? request.sender!.username
             : (request.sender?.phoneNumber.isNotEmpty == true ? request.sender!.phoneNumber : 'Someone'));
 
+    final initial = senderName.isNotEmpty ? senderName[0].toUpperCase() : '?';
+
     return AlertDialog(
       backgroundColor: context.colors.scaffoldBackground,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: context.colors.primary.withValues(alpha: 0.2),
-            backgroundImage: request.sender?.profilePictureUrl != null &&
-                    request.sender!.profilePictureUrl!.isNotEmpty
-                ? NetworkImage(request.sender!.profilePictureUrl!)
-                : null,
-            child: request.sender?.profilePictureUrl == null ||
-                    request.sender!.profilePictureUrl!.isEmpty
-                ? Text(
-                    senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
-                    style: CommonFontStyles.titleSmall(context).copyWith(
-                      color: context.colors.primary,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFFE8F5E9),
+            ),
+            child: ClipOval(
+              child: (request.sender?.profilePictureUrl != null && request.sender!.profilePictureUrl!.isNotEmpty)
+                  ? CachedNetworkImage(
+                      imageUrl: request.sender!.profilePictureUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Center(
+                        child: Text(
+                          initial,
+                          style: CommonFontStyles.titleSmall(context).copyWith(
+                            color: const Color(0xFF00873C),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Center(
+                        child: Text(
+                          initial,
+                          style: CommonFontStyles.titleSmall(context).copyWith(
+                            color: const Color(0xFF00873C),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Text(
+                        initial,
+                        style: CommonFontStyles.titleSmall(context).copyWith(
+                          color: const Color(0xFF00873C),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  )
-                : null,
+            ),
           ),
           CommonSpaces.w12,
           Expanded(
