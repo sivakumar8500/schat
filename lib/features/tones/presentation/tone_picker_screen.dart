@@ -421,16 +421,18 @@ class _TonePickerScreenState extends State<TonePickerScreen>
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Expanded(
             child: Text(
               title,
-              style: context.h2.copyWith(
-                fontWeight: FontWeight.bold,
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
                 color: context.colors.textPrimary,
               ),
               maxLines: 1,

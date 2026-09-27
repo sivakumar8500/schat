@@ -303,15 +303,17 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Text(
             'New Chat',
-            style: context.h2.copyWith(
-              fontWeight: FontWeight.bold,
+            style: TextStyle(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
               color: context.colors.textPrimary,
             ),
           ),

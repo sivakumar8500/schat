@@ -692,12 +692,12 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.lightBackground,
@@ -706,16 +706,18 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Expanded(
             child: Text(
               'Emergency Contacts',
-              style: context.h2.copyWith(
-                fontWeight: FontWeight.bold,
+              style: TextStyle(
+                fontSize: 16.5,
+                fontWeight: FontWeight.w700,
                 color: context.colors.textPrimary,
               ),
               maxLines: 1,
@@ -724,17 +726,20 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
           ),
           const SizedBox(width: 8),
           Container(
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFFE8F5E9),
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428)
+                  : const Color(0xFFE8F5E9),
               border: Border.all(
                 color: const Color(0xFF00873C).withValues(alpha: 0.3),
               ),
             ),
             child: IconButton(
-              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 20),
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.person_add_rounded, color: Color(0xFF00873C), size: 19),
               tooltip: 'Add Emergency Contact',
               onPressed: () => _showAddContactBottomSheet(context),
             ),

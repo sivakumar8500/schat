@@ -639,15 +639,17 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
               ),
             ),
             child: IconButton(
+              padding: EdgeInsets.zero,
               icon: Icon(Icons.arrow_back_rounded, color: context.colors.textPrimary, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          const SizedBox(width: 14),
+          CommonSpaces.w10,
           Text(
             'Settings',
-            style: context.h2.copyWith(
-              fontWeight: FontWeight.bold,
+            style: TextStyle(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
               color: context.colors.textPrimary,
             ),
           ),
