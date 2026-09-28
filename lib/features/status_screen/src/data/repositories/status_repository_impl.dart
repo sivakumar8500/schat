@@ -183,6 +183,7 @@ class StatusRepositoryImpl implements StatusRepository {
               data: {'sha256_checksum': null},
               mapper: (data) => Map<String, dynamic>.from(data as Map),
             );
+            debugPrint('========\nmediaid: $mediaId\n========');
             finalMediaId = mediaId;
           } else {
             throw Exception('Upload failed with status code: ${uploadResponse.statusCode}');

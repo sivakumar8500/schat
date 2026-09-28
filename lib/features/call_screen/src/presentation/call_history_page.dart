@@ -89,11 +89,80 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     });
   }
 
-  void _deleteSelected(List<CallHistoryModel> currentCalls) {
-    setState(() {
-      currentCalls.removeWhere((call) => _selectedIds.contains(call.id));
-      _selectedIds.clear();
-    });
+  Future<void> _deleteSelected(List<CallHistoryModel> currentCalls) async {
+    if (_selectedIds.isEmpty) return;
+
+    final count = _selectedIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Call${count > 1 ? 's' : ''}?',
+          style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to remove $count selected call ${count > 1 ? 'records' : 'record'} from your history?',
+          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final idsToDelete = Set<String>.from(_selectedIds);
+      _clearSelection();
+      await context.read<CallHistoryCubit>().deleteMultipleCalls(idsToDelete);
+    }
+  }
+
+  Future<bool> _confirmDeleteSingleCall(CallHistoryModel call) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Call Log?',
+          style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Remove call history with ${call.displayName}?',
+          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   void _onCallItemTapped(CallHistoryModel call) {
@@ -360,6 +429,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
 
   Widget _buildHeader(bool isSelectionMode, List<CallHistoryModel> currentCalls) {
     if (isSelectionMode) {
+      final allSelected = currentCalls.isNotEmpty && _selectedIds.length == currentCalls.length;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
@@ -384,7 +454,24 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
             ),
             const Spacer(),
             IconButton(
+              icon: Icon(
+                allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+                color: context.colors.textPrimary,
+              ),
+              tooltip: allSelected ? 'Deselect all' : 'Select all',
+              onPressed: () {
+                setState(() {
+                  if (allSelected) {
+                    _selectedIds.clear();
+                  } else {
+                    _selectedIds.addAll(currentCalls.map((c) => c.id));
+                  }
+                });
+              },
+            ),
+            IconButton(
               icon: Icon(CommonIcons.delete, color: context.colors.error),
+              tooltip: 'Delete selected',
               onPressed: () => _deleteSelected(currentCalls),
             ),
           ],
@@ -464,6 +551,84 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                     _buildPopupItem(CallFilter.outgoing, 'Outgoing Calls', Icons.call_made_rounded),
                     _buildPopupItem(CallFilter.audio, 'Audio Calls', Icons.phone_outlined),
                     _buildPopupItem(CallFilter.video, 'Video Calls', Icons.videocam_outlined),
+                  ],
+                ),
+              ),
+              CommonSpaces.w8,
+              // More Actions Button (Select Multiple / Clear All)
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.lightBackground,
+                  border: Border.all(
+                    color: context.colors.border.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert_rounded, color: context.colors.textPrimary, size: 20),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  color: context.colors.cardBackground,
+                  onSelected: (val) async {
+                    if (val == 'select_multiple') {
+                      if (currentCalls.isNotEmpty) {
+                        _toggleSelection(currentCalls.first.id);
+                      }
+                    } else if (val == 'clear_all') {
+                      if (currentCalls.isEmpty) return;
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: context.colors.cardBackground,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          title: const Text('Clear Call Log?'),
+                          content: const Text('Do you want to clear your entire call history? This cannot be undone.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: context.colors.error,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Clear All'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && mounted) {
+                        final allIds = currentCalls.map((c) => c.id).toSet();
+                        context.read<CallHistoryCubit>().deleteMultipleCalls(allIds);
+                      }
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem(
+                      value: 'select_multiple',
+                      child: Row(
+                        children: [
+                          Icon(Icons.checklist_rounded, size: 18, color: context.colors.textPrimary),
+                          const SizedBox(width: 10),
+                          Text('Select Multiple', style: TextStyle(color: context.colors.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'clear_all',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_sweep_outlined, size: 18, color: context.colors.error),
+                          const SizedBox(width: 10),
+                          Text('Clear Call Log', style: TextStyle(color: context.colors.error)),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -609,7 +774,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
   Widget _buildCallListItem(CallHistoryModel call, bool isSelected, bool isSelectionMode) {
     final isGroup = call.isGroup || (call.groupName != null && call.groupName!.isNotEmpty);
 
-    return InkWell(
+    final Widget itemContent = InkWell(
       onTap: () => _onCallItemTapped(call),
       onLongPress: () {
         if (!isSelectionMode) {
@@ -681,19 +846,54 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    call.count > 1
-                        ? '${call.displayName} (${call.count})'
-                        : call.displayName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                      color: call.isMissed
-                          ? const Color(0xFFE53935)
-                          : context.colors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          call.count > 1
+                              ? '${call.displayName} (${call.count})'
+                              : call.displayName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                            color: call.isMissed
+                                ? const Color(0xFFE53935)
+                                : context.colors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isGroup) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text(
+                            '|',
+                            style: TextStyle(
+                              color: context.colors.textSecondary.withValues(alpha: 0.4),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w300,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00873C).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Group',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF00873C),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Row(
@@ -719,48 +919,12 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                           fontSize: 13,
                         ),
                       ),
-                      if (isGroup) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00873C).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Group',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF00873C),
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (call.isVideoCall) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: context.colors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Video',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: context.colors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ],
               ),
             ),
-            // Action Button / Selection Checkbox
+            // Action Buttons / Selection Checkbox
             if (isSelectionMode)
               Checkbox(
                 value: isSelected,
@@ -768,23 +932,108 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                 onChanged: (_) => _toggleSelection(call.id),
               )
             else
-              IconButton(
-                icon: Icon(
-                  call.isVideoCall ? Icons.videocam_rounded : Icons.phone_rounded,
-                  color: const Color(0xFF00873C),
-                  size: 22,
-                ),
-                onPressed: () {
-                  if (isGroup) {
-                    _showGroupParticipantPicker(call);
-                  } else {
-                    _startCall(call, isVideo: call.isVideoCall);
-                  }
-                },
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      call.isVideoCall ? Icons.videocam_rounded : Icons.phone_rounded,
+                      color: const Color(0xFF00873C),
+                      size: 22,
+                    ),
+                    onPressed: () {
+                      if (isGroup) {
+                        _showGroupParticipantPicker(call);
+                      } else {
+                        _startCall(call, isVideo: call.isVideoCall);
+                      }
+                    },
+                  ),
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert_rounded, size: 18, color: context.colors.textSecondary),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    color: context.colors.cardBackground,
+                    itemBuilder: (ctx) => [
+                      PopupMenuItem(
+                        value: 'call',
+                        child: Row(
+                          children: [
+                            Icon(call.isVideoCall ? Icons.videocam_outlined : Icons.phone_outlined, size: 18, color: context.colors.textPrimary),
+                            const SizedBox(width: 10),
+                            Text(call.isVideoCall ? 'Video Call' : 'Voice Call', style: TextStyle(color: context.colors.textPrimary)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'select',
+                        child: Row(
+                          children: [
+                            Icon(Icons.checklist_rounded, size: 18, color: context.colors.textPrimary),
+                            const SizedBox(width: 10),
+                            Text('Select', style: TextStyle(color: context.colors.textPrimary)),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline_rounded, size: 18, color: context.colors.error),
+                            const SizedBox(width: 10),
+                            Text('Delete', style: TextStyle(color: context.colors.error)),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onSelected: (action) async {
+                      if (action == 'call') {
+                        if (isGroup) {
+                          _showGroupParticipantPicker(call);
+                        } else {
+                          _startCall(call, isVideo: call.isVideoCall);
+                        }
+                      } else if (action == 'select') {
+                        _toggleSelection(call.id);
+                      } else if (action == 'delete') {
+                        final confirmed = await _confirmDeleteSingleCall(call);
+                        if (confirmed && mounted) {
+                          context.read<CallHistoryCubit>().deleteCall(call.id);
+                        }
+                      }
+                    },
+                  ),
+                ],
               ),
           ],
         ),
       ),
+    );
+
+    if (isSelectionMode) {
+      return itemContent;
+    }
+
+    return Dismissible(
+      key: ValueKey(call.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        color: context.colors.error,
+        child: const Icon(
+          Icons.delete_outline_rounded,
+          color: Colors.white,
+          size: 24,
+        ),
+      ),
+      confirmDismiss: (direction) async {
+        return await _confirmDeleteSingleCall(call);
+      },
+      onDismissed: (direction) {
+        context.read<CallHistoryCubit>().deleteCall(call.id);
+      },
+      child: itemContent,
     );
   }
 

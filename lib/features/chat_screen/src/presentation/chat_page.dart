@@ -15,6 +15,7 @@ import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -36,6 +37,8 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
@@ -78,6 +81,9 @@ class ChatPage extends StatefulWidget {
   final String? initialSharedFileType;
   final int? initialDisappearingTimer;
   final bool isReadOnly;
+  final bool isBlocked;
+  final bool isBlockedByMe;
+  final bool isBlockedByOther;
 
   const ChatPage({
     super.key,
@@ -96,6 +102,9 @@ class ChatPage extends StatefulWidget {
     this.initialSharedFileType,
     this.initialDisappearingTimer,
     this.isReadOnly = false,
+    this.isBlocked = false,
+    this.isBlockedByMe = false,
+    this.isBlockedByOther = false,
   });
 
   @override
@@ -131,8 +140,8 @@ class _ChatPageState extends State<ChatPage> {
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
-  bool _attachmentAllowShare = true;
-  bool _attachmentAllowDownload = true;
+  bool _attachmentAllowShare = false;
+  bool _attachmentAllowDownload = false;
   bool _attachmentAllowView = true;
   Offset? _tapPosition;
 
@@ -162,9 +171,18 @@ class _ChatPageState extends State<ChatPage> {
   bool _showMentionSuggestions = false;
   String _mentionQuery = '';
 
+  late String _effectiveContactName;
+  late String? _effectiveProfilePic;
+  late bool _effectiveIsGroup;
+
   @override
   void initState() {
     super.initState();
+    _effectiveContactName = widget.contactName;
+    _effectiveProfilePic = widget.profilePictureUrl;
+    _effectiveIsGroup = widget.isGroup;
+    _resolveConversationDetails();
+
     if (widget.isGroup) {
       _checkIfAdmin();
     }
@@ -186,6 +204,10 @@ class _ChatPageState extends State<ChatPage> {
       initialIsOnline: widget.isOnline,
       initialThemeColor: widget.initialThemeColor,
       initialCustomWallpaperUrl: widget.initialCustomWallpaperUrl,
+      initialDisappearingTimer: widget.initialDisappearingTimer,
+      initialIsBlocked: widget.isBlocked,
+      initialIsBlockedByMe: widget.isBlockedByMe,
+      initialIsBlockedByOther: widget.isBlockedByOther,
     ));
 
     // Pre-populate with shared text if provided
@@ -241,6 +263,64 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+  Future<void> _resolveConversationDetails() async {
+    try {
+      // 1. Try to match from local ChatsBloc state
+      try {
+        final chatsBloc = getIt<ChatsBloc>();
+        final state = chatsBloc.state;
+        if (state is ChatsLoaded) {
+          final matched = state.chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+          if (matched != null) {
+            final resolvedName = matched.isGroup
+                ? (matched.groupName ?? 'Group')
+                : matched.recipient.displayName;
+            if (mounted &&
+                resolvedName.isNotEmpty &&
+                (resolvedName != _effectiveContactName ||
+                    _effectiveContactName == 'sChat' ||
+                    _effectiveContactName == 'Chat' ||
+                    _effectiveContactName == 'New Message')) {
+              setState(() {
+                _effectiveContactName = resolvedName;
+                _effectiveIsGroup = matched.isGroup;
+                _effectiveProfilePic = matched.recipient.profilePictureUrl ?? _effectiveProfilePic;
+              });
+              return;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Fetch from backend if name is missing/generic or to guarantee up-to-date group info
+      if (_effectiveContactName.isEmpty ||
+          _effectiveContactName == 'sChat' ||
+          _effectiveContactName == 'Chat' ||
+          _effectiveContactName == 'New Message') {
+        final result = await getIt<DashboardRepository>().getChats();
+        result.when(
+          success: (chats) {
+            final matched = chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+            if (matched != null && mounted) {
+              final resolvedName = matched.isGroup
+                  ? (matched.groupName ?? 'Group')
+                  : matched.recipient.displayName;
+              if (resolvedName.isNotEmpty) {
+                setState(() {
+                  _effectiveContactName = resolvedName;
+                  _effectiveIsGroup = matched.isGroup;
+                  _effectiveProfilePic = matched.recipient.profilePictureUrl ?? _effectiveProfilePic;
+                });
+              }
+            }
+          },
+          failure: (error, code) {},
+        );
+      }
+    } catch (e) {
+      debugPrint('Error resolving conversation details in ChatPage: $e');
+    }
+  }
 
   Future<List<UserModel>> _getForwardContacts() async {
     try {
@@ -1420,10 +1500,10 @@ class _ChatPageState extends State<ChatPage> {
                                               return;
                                             } catch (e) {
                                               debugPrint('Forward API failed fallback to socket: $e');
-                                              final errStr = e.toString();
-                                              if (errStr.contains('Sharing is disabled') || errStr.contains('403')) {
+                                              final errStr = e.toString().toLowerCase();
+                                              if (errStr.contains('sharing') || errStr.contains('disabled') || errStr.contains('turned off') || errStr.contains('403') || errStr.contains('forbidden')) {
                                                 if (context.mounted) {
-                                                  context.showErrorNotification('Sharing is disabled for this file.');
+                                                  context.showErrorNotification('Sharing has been turned off for this file by the owner.');
                                                 }
                                                 return; // Do NOT fall back to socket, abort forwarding
                                               }
@@ -1793,8 +1873,8 @@ class _ChatPageState extends State<ChatPage> {
       _recordedPath = null;
       _recordedName = null;
       _recordedDurationSecs = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
     });
 
@@ -1932,8 +2012,8 @@ class _ChatPageState extends State<ChatPage> {
         _recordedPath = null;
         _recordedName = null;
         _recordedDurationSecs = 0;
-        _attachmentAllowShare = true;
-        _attachmentAllowDownload = true;
+        _attachmentAllowShare = false;
+        _attachmentAllowDownload = false;
         _attachmentAllowView = true;
       });
     }
@@ -2172,6 +2252,14 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _sendMessage(BuildContext context) async {
+    final chatState = _chatBloc.state;
+    if (chatState is ChatLoaded && chatState.isBlocked) {
+      context.showErrorNotification(chatState.isBlockedByMe
+          ? 'You blocked this contact. Unblock to send messages.'
+          : 'Cannot send messages to this contact.');
+      return;
+    }
+
     final text = _messageController.text.trim();
 
     if (_selectedAttachmentType != null) {
@@ -2250,8 +2338,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
       _messageController.clear();
       _isTyping = false;
@@ -2603,8 +2691,8 @@ class _ChatPageState extends State<ChatPage> {
                     _selectedAttachmentName = null;
                     _selectedAttachmentType = null;
                     _selectedAttachmentSize = 0;
-                    _attachmentAllowShare = true;
-                    _attachmentAllowDownload = true;
+                    _attachmentAllowShare = false;
+                    _attachmentAllowDownload = false;
                     _attachmentAllowView = true;
                     _isTyping = _messageController.text.trim().isNotEmpty;
                   });
@@ -3392,9 +3480,17 @@ class _ChatPageState extends State<ChatPage> {
       );
     }
 
-    final isOnline = state is ChatLoaded ? state.isRecipientOnline : widget.isOnline;
-    final isTyping = state is ChatLoaded && state.isRecipientTyping;
-    final lastSeen = state is ChatLoaded ? state.lastSeen : null;
+    final isBlocked = state is ChatLoaded && state.isBlocked;
+    final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked;
+    final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked;
+    final lastSeen = isBlocked ? null : (state is ChatLoaded ? state.lastSeen : null);
+    final effectivePicUrl = isBlocked ? null : (_effectiveProfilePic ?? widget.profilePictureUrl);
+    final isGroup = _effectiveIsGroup || widget.isGroup;
+    final displayTitle = _effectiveContactName.isNotEmpty && _effectiveContactName != 'sChat' && _effectiveContactName != 'Chat' && _effectiveContactName != 'New Message'
+        ? _effectiveContactName
+        : (widget.contactName.isNotEmpty && widget.contactName != 'sChat' && widget.contactName != 'Chat' && widget.contactName != 'New Message'
+            ? widget.contactName
+            : (isGroup ? 'Group Chat' : 'User'));
 
     return AppBar(
       backgroundColor: context.colors.scaffoldBackground,
@@ -3403,7 +3499,7 @@ class _ChatPageState extends State<ChatPage> {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: () {
-          if (widget.isGroup) {
+          if (isGroup) {
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -3411,7 +3507,7 @@ class _ChatPageState extends State<ChatPage> {
                   value: _chatBloc,
                   child: GroupInfoPage(
                     conversationId: widget.conversationId,
-                    groupName: widget.contactName,
+                    groupName: displayTitle,
                     groupColor: widget.contactColor,
                   ),
                 ),
@@ -3425,11 +3521,11 @@ class _ChatPageState extends State<ChatPage> {
                   value: _chatBloc,
                   child: ContactProfilePage(
                     conversationId: widget.conversationId,
-                    contactName: widget.contactName,
+                    contactName: displayTitle,
                     contactColor: widget.contactColor,
                     isOnline: isOnline,
                     recipientId: widget.recipientId,
-                    profilePictureUrl: widget.profilePictureUrl,
+                    profilePictureUrl: effectivePicUrl,
                   ),
                 ),
               ),
@@ -3440,13 +3536,13 @@ class _ChatPageState extends State<ChatPage> {
           children: [
             GestureDetector(
               onTap: () {
-                if (widget.profilePictureUrl != null &&
-                    widget.profilePictureUrl!.isNotEmpty) {
+                if (effectivePicUrl != null &&
+                    effectivePicUrl.isNotEmpty) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => FullScreenImagePage(
-                        imageUrl: widget.profilePictureUrl!,
+                        imageUrl: effectivePicUrl,
                       ),
                     ),
                   );
@@ -3462,15 +3558,15 @@ class _ChatPageState extends State<ChatPage> {
                       shape: BoxShape.circle,
                     ),
                     child: ClipOval(
-                      child: (widget.profilePictureUrl != null &&
-                              widget.profilePictureUrl!.isNotEmpty)
+                      child: (effectivePicUrl != null &&
+                              effectivePicUrl.isNotEmpty)
                           ? CachedNetworkImage(
-                              imageUrl: widget.profilePictureUrl!,
+                              imageUrl: effectivePicUrl,
                               fit: BoxFit.cover,
                               placeholder: (context, url) => Center(
                                 child: Text(
-                                  widget.contactName.isNotEmpty
-                                      ? widget.contactName.substring(0, 1)
+                                  displayTitle.isNotEmpty
+                                      ? displayTitle.substring(0, 1)
                                       : '?',
                                   style: context.titleMedium.copyWith(
                                     color: widget.contactColor,
@@ -3479,8 +3575,8 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                               errorWidget: (context, url, error) => Center(
                                 child: Text(
-                                  widget.contactName.isNotEmpty
-                                      ? widget.contactName.substring(0, 1)
+                                  displayTitle.isNotEmpty
+                                      ? displayTitle.substring(0, 1)
                                       : '?',
                                   style: context.titleMedium.copyWith(
                                     color: widget.contactColor,
@@ -3490,8 +3586,8 @@ class _ChatPageState extends State<ChatPage> {
                             )
                           : Center(
                               child: Text(
-                                widget.contactName.isNotEmpty
-                                    ? widget.contactName.substring(0, 1)
+                                displayTitle.isNotEmpty
+                                    ? displayTitle.substring(0, 1)
                                     : '?',
                                 style: context.titleMedium.copyWith(
                                   color: widget.contactColor,
@@ -3526,27 +3622,30 @@ class _ChatPageState extends State<ChatPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    widget.contactName,
+                    displayTitle,
                     style: context.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    isTyping
-                        ? 'Typing...'
-                        : (widget.isGroup
-                            ? 'Group Chat'
-                            : (isOnline
-                                ? 'Online'
-                                : _formatLastSeenStatus(lastSeen))),
-                    style: context.bodyMedium.copyWith(
-                      color: (isTyping || (!widget.isGroup && isOnline))
-                          ? context.colors.success
-                          : context.colors.textHint,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+                  if (!isGroup && isBlocked)
+                    const SizedBox.shrink()
+                  else
+                    Text(
+                      isTyping
+                          ? 'Typing...'
+                          : (isGroup
+                              ? 'Group Chat'
+                              : (isOnline
+                                  ? 'Online'
+                                  : _formatLastSeenStatus(lastSeen))),
+                      style: context.bodyMedium.copyWith(
+                        color: (isTyping || (!isGroup && isOnline))
+                            ? context.colors.success
+                            : context.colors.textHint,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -3587,6 +3686,12 @@ class _ChatPageState extends State<ChatPage> {
           IconButton(
             icon: Icon(CommonIcons.videocam),
             onPressed: () async {
+              if (state is ChatLoaded && state.isBlocked) {
+                context.showErrorNotification(state.isBlockedByMe
+                    ? 'You blocked this contact. Unblock to make calls.'
+                    : 'Cannot call this contact.');
+                return;
+              }
               final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
               if (!hasPermission) {
                 if (mounted) {
@@ -3609,7 +3714,7 @@ class _ChatPageState extends State<ChatPage> {
                       contactColor: widget.contactColor,
                       recipientId: widget.recipientId,
                       isOutgoing: !isAlreadyInCall,
-                      profilePictureUrl: widget.profilePictureUrl,
+                      profilePictureUrl: effectivePicUrl,
                       myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                       isGroup: widget.isGroup,
                       groupName: widget.isGroup ? widget.contactName : null,
@@ -3624,6 +3729,12 @@ class _ChatPageState extends State<ChatPage> {
           IconButton(
             icon: Icon(CommonIcons.phone),
             onPressed: () async {
+              if (state is ChatLoaded && state.isBlocked) {
+                context.showErrorNotification(state.isBlockedByMe
+                    ? 'You blocked this contact. Unblock to make calls.'
+                    : 'Cannot call this contact.');
+                return;
+              }
               final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
               if (!hasPermission) {
                 if (mounted) {
@@ -3646,7 +3757,7 @@ class _ChatPageState extends State<ChatPage> {
                       contactColor: widget.contactColor,
                       recipientId: widget.recipientId,
                       isOutgoing: !isAlreadyInCall,
-                      profilePictureUrl: widget.profilePictureUrl,
+                      profilePictureUrl: effectivePicUrl,
                       myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
                       isGroup: widget.isGroup,
                       groupName: widget.isGroup ? widget.contactName : null,
@@ -3881,7 +3992,122 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<void> _unblockContact(BuildContext context) async {
+    if (widget.recipientId.isEmpty) return;
+    try {
+      final result = await getIt<ProfileRepository>().unblockUser(widget.recipientId);
+      await result.when(
+        success: (_) async {
+          final box = await Hive.openBox('blocked_users_box');
+          final String? jsonString = box.get('blocked_list');
+          if (jsonString != null) {
+            final List<dynamic> blockedList = jsonDecode(jsonString);
+            blockedList.removeWhere((e) => e['id'] == widget.recipientId);
+            await box.put('blocked_list', jsonEncode(blockedList));
+          }
+          _chatBloc.add(const UpdateBlockStatusEvent(
+            isBlocked: false,
+            isBlockedByMe: false,
+            isBlockedByOther: false,
+          ));
+          if (context.mounted) {
+            context.showSuccessNotification('${widget.contactName} unblocked');
+          }
+        },
+        failure: (error, _) {
+          if (context.mounted) {
+            context.showErrorNotification('Failed to unblock: $error');
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Error unblocking contact: $e');
+    }
+  }
+
   Widget _buildInputBar(BuildContext context) {
+    final chatState = context.read<ChatBloc>().state;
+    if (chatState is ChatLoaded && chatState.isBlocked) {
+      final isBlockedByMe = chatState.isBlockedByMe;
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.colors.isDark ? const Color(0xFF2D2D2D) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: context.colors.border.withValues(alpha: 0.25),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: isBlockedByMe
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.block_rounded,
+                    color: Colors.redAccent,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You blocked this contact.',
+                      style: context.bodyMedium.copyWith(
+                        color: context.colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _unblockContact(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Unblock',
+                      style: TextStyle(
+                        color: context.colors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.block_rounded,
+                    color: context.colors.textSecondary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'You cannot message or call this contact',
+                      style: context.bodyMedium.copyWith(
+                        color: context.colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+      );
+    }
     if (widget.isReadOnly) {
       return Container(
         width: double.infinity,
@@ -3929,7 +4155,6 @@ class _ChatPageState extends State<ChatPage> {
       );
     }
 
-    final chatState = context.read<ChatBloc>().state;
     final bool isOnlyAdminsRestricted = widget.isGroup &&
         (_onlyAdminsSendMessages || (chatState is ChatLoaded && chatState.onlyAdminsSendMessages)) &&
         !_isAdmin;
@@ -4448,8 +4673,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentType = 'contact';
       _selectedAttachmentBytes = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
       _isTyping = true;
     });
@@ -4525,9 +4750,9 @@ class _ChatPageState extends State<ChatPage> {
           _selectedAttachmentName = name;
           _selectedAttachmentType = 'image';
           _selectedAttachmentSize = sendBytes.length;
-          _attachmentAllowShare = true;
-          _attachmentAllowDownload = true;
-          _attachmentAllowView = true;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _messageController.text = caption;
         });
         _uploadAndSendAttachment(context);
@@ -4685,9 +4910,9 @@ class _ChatPageState extends State<ChatPage> {
           _selectedAttachmentName = name;
           _selectedAttachmentType = 'video';
           _selectedAttachmentSize = size;
-          _attachmentAllowShare = true;
-          _attachmentAllowDownload = true;
-          _attachmentAllowView = true;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _messageController.text = caption;
         });
         _uploadAndSendAttachment(context);
@@ -4778,6 +5003,7 @@ class _ChatPageState extends State<ChatPage> {
         }
       }
 
+      if (!mounted) return;
       final previewResult = await Navigator.push(
         context,
         MaterialPageRoute(
@@ -4802,9 +5028,9 @@ class _ChatPageState extends State<ChatPage> {
           _selectedAttachmentName = file.name;
           _selectedAttachmentType = fileType;
           _selectedAttachmentSize = sendBytes?.length ?? file.size;
-          _attachmentAllowShare = true;
-          _attachmentAllowDownload = true;
-          _attachmentAllowView = true;
+          _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? false;
+          _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? false;
+          _attachmentAllowView = (previewResult['allowView'] as bool?) ?? true;
           _messageController.text = caption;
         });
         _uploadAndSendAttachment(context);
@@ -4832,8 +5058,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentType = 'location';
             _selectedAttachmentBytes = null;
             _selectedAttachmentSize = 0;
-            _attachmentAllowShare = true;
-            _attachmentAllowDownload = true;
+            _attachmentAllowShare = false;
+            _attachmentAllowDownload = false;
             _attachmentAllowView = true;
           });
           if (mounted) _uploadAndSendAttachment(context);

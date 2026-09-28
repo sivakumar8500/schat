@@ -94,6 +94,10 @@ class MessageModel {
   final String? senderName;
   final String? senderProfilePictureUrl;
 
+  // Contextual role for Parent-to-Child monitoring ("send" | "receive" | "view")
+  final String? userView;
+  bool get isGuardianView => userView == 'view';
+
   const MessageModel({
     required this.id,
     required this.conversationId,
@@ -136,6 +140,7 @@ class MessageModel {
     this.expiry,
     this.senderName,
     this.senderProfilePictureUrl,
+    this.userView,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -373,6 +378,7 @@ class MessageModel {
         }
         return null;
       }(),
+      userView: (json['userView'] ?? json['user_view'])?.toString(),
     );
   }
 
@@ -451,6 +457,7 @@ class MessageModel {
       'isFileShared': isFileShared,
     },
     'deletedFor': deletedFor,
+    if (userView != null) 'userView': userView,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
     if (expiry != null) 'expiry': expiry,
     if (senderName != null) 'senderName': senderName,
@@ -498,6 +505,7 @@ class MessageModel {
     double? longitude,
     String? address,
     String? locationTitle,
+    String? userView,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -541,6 +549,7 @@ class MessageModel {
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,
       locationTitle: locationTitle ?? this.locationTitle,
+      userView: userView ?? this.userView,
     );
   }
 }

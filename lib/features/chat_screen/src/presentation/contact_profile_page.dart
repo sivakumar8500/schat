@@ -73,7 +73,14 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       final result = await getIt<ProfileRepository>().getUserById(widget.recipientId!);
       result.when(
         success: (user) {
-          if (mounted) setState(() => _recipientUser = user);
+          if (mounted) {
+            setState(() {
+              _recipientUser = user;
+              if (user.isBlocked) {
+                _isBlocked = true;
+              }
+            });
+          }
         },
         failure: (_, _) {},
       );
@@ -88,9 +95,11 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       final String? jsonString = box.get('blocked_list');
       if (jsonString != null) {
         final List<dynamic> blockedList = jsonDecode(jsonString);
-        setState(() {
-          _isBlocked = blockedList.any((e) => e['id'] == widget.recipientId);
-        });
+        if (mounted) {
+          setState(() {
+            _isBlocked = blockedList.any((e) => e['id'] == widget.recipientId) || (_recipientUser?.isBlocked ?? false);
+          });
+        }
       }
     } catch (_) {}
   }
@@ -117,6 +126,18 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
               'colorValue': widget.contactColor.toARGB32(),
             });
             await box.put('blocked_list', jsonEncode(blockedList));
+          }
+          if (mounted) {
+            setState(() {
+              _isBlocked = true;
+            });
+            try {
+              context.read<ChatBloc>().add(const UpdateBlockStatusEvent(
+                isBlocked: true,
+                isBlockedByMe: true,
+                isBlockedByOther: false,
+              ));
+            } catch (_) {}
           }
           return true;
         },
@@ -146,10 +167,17 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             blockedList.removeWhere((e) => e['id'] == widget.recipientId);
             await box.put('blocked_list', jsonEncode(blockedList));
           }
-          setState(() {
-            _isBlocked = false;
-          });
           if (mounted) {
+            setState(() {
+              _isBlocked = false;
+            });
+            try {
+              context.read<ChatBloc>().add(const UpdateBlockStatusEvent(
+                isBlocked: false,
+                isBlockedByMe: false,
+                isBlockedByOther: false,
+              ));
+            } catch (_) {}
             context.showSuccessNotification('${widget.contactName} unblocked');
           }
           return true;
@@ -268,36 +296,38 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   Widget _buildHeaderSection() {
-    final isOnline = _recipientUser?.isOnline ?? widget.isOnline;
-    final lastSeenStr = _recipientUser?.lastSeen;
+    final bool isUserBlocked = _isBlocked || (_recipientUser?.isBlocked ?? false);
+    final isOnline = isUserBlocked ? false : (_recipientUser?.isOnline ?? widget.isOnline);
+    final lastSeenStr = isUserBlocked ? null : _recipientUser?.lastSeen;
+    final String? effectivePicUrl = isUserBlocked ? null : (widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl);
 
     return Column(
       children: [
         CommonSpaces.h24,
         GestureDetector(
           onTap: () {
-            if (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty) {
+            if (effectivePicUrl != null && effectivePicUrl.isNotEmpty) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => FullScreenImagePage(
-                    imageUrl: widget.profilePictureUrl!,
+                    imageUrl: effectivePicUrl,
                   ),
                 ),
               );
             }
           },
           child: Hero(
-            tag: widget.profilePictureUrl ?? 'profile',
+            tag: effectivePicUrl ?? 'profile',
             child: CircleAvatar(
               radius: 60,
               backgroundColor: widget.contactColor.withValues(alpha: 0.1),
-              backgroundImage: (widget.profilePictureUrl != null && widget.profilePictureUrl!.isNotEmpty)
-                  ? NetworkImage(widget.profilePictureUrl!)
+              backgroundImage: (effectivePicUrl != null && effectivePicUrl.isNotEmpty)
+                  ? NetworkImage(effectivePicUrl)
                   : null,
-              child: (widget.profilePictureUrl == null || widget.profilePictureUrl!.isEmpty)
+              child: (effectivePicUrl == null || effectivePicUrl.isEmpty)
                   ? Text(
-                      widget.contactName.substring(0, 1),
+                      widget.contactName.isNotEmpty ? widget.contactName.substring(0, 1) : '?',
                       style: context.h1.copyWith(fontSize: 48, color: widget.contactColor),
                     )
                   : null,
@@ -1141,6 +1171,9 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                 profilePictureUrl: widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl,
                 initialThemeColor: chat.themeColor,
                 initialDisappearingTimer: chat.disappearingTimer,
+                isBlocked: _isBlocked || (_recipientUser?.isBlocked ?? false) || chat.recipient.isBlocked,
+                isBlockedByMe: _isBlocked || (_recipientUser?.isBlockedByMe ?? false) || chat.recipient.isBlockedByMe,
+                isBlockedByOther: _recipientUser?.isBlockedByOther ?? chat.recipient.isBlockedByOther,
               ),
             ),
           );
@@ -1155,6 +1188,11 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   void _startAudioCall() async {
+    final bool isUserBlocked = _isBlocked || (_recipientUser?.isBlocked ?? false);
+    if (isUserBlocked) {
+      context.showErrorNotification('Cannot make calls to this contact.');
+      return;
+    }
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: false);
     if (!mounted || !hasPermission) return;
     final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';
@@ -1183,6 +1221,11 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   void _startVideoCall() async {
+    final bool isUserBlocked = _isBlocked || (_recipientUser?.isBlocked ?? false);
+    if (isUserBlocked) {
+      context.showErrorNotification('Cannot make calls to this contact.');
+      return;
+    }
     final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: true);
     if (!mounted || !hasPermission) return;
     final targetRecipientId = widget.recipientId ?? _recipientUser?.id ?? '';

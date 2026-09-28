@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -73,7 +73,7 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Permission permanently denied. Please enable it in Settings.'),
+            content: const Text('Permission permanently denied. Please enable it in Settings.'),
             backgroundColor: context.colors.error,
             action: SnackBarAction(
               label: 'Settings',
@@ -104,131 +104,215 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.colors.isDark;
+
     return Scaffold(
-      backgroundColor: context.colors.pureBlack,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p24, vertical: CommonSizes.p16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CommonSpaces.h32,
-              // Top Icon & Title
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(CommonSizes.p12),
-                    decoration: BoxDecoration(
-                      color: context.colors.primary.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.shield_outlined,
-                      color: context.colors.primary,
-                      size: CommonSizes.iconLarge,
-                    ),
-                  ),
-                  CommonSpaces.w16,
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Access Permissions',
-                          style: context.h2.copyWith(
-                            color: context.colors.pureWhite,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          'Enable features for secure chat & calls',
-                          style: context.bodySmall.copyWith(
-                            color: context.colors.textSecondary.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+      backgroundColor: context.colors.scaffoldBackground,
+      body: Stack(
+        children: [
+          // Wave background matching Home Screen
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
               ),
-              CommonSpaces.h40,
-              Text(
-                'sChat requires these permissions to protect and route your calls, sync contacts, and enable camera capture.',
-                style: context.bodyLarge.copyWith(
-                  color: context.colors.pureWhite.withValues(alpha: 0.8),
-                  height: 1.4,
-                  fontSize: 15,
-                ),
-              ),
-              CommonSpaces.h32,
-
-              // Permissions List
-              Expanded(
-                child: ListView(
-                  children: [
-                    _buildPermissionItem(
-                      title: 'Notifications',
-                      description: 'Required for incoming call and message alerts.',
-                      icon: Icons.notifications_none_rounded,
-                      isGranted: _notificationGranted,
-                      onTap: () => _requestPermission(Permission.notification),
-                    ),
-                    CommonSpaces.h16,
-                    _buildPermissionItem(
-                      title: 'Contacts',
-                      description: 'Required to sync friends already on sChat.',
-                      icon: Icons.people_outline_rounded,
-                      isGranted: _contactsGranted,
-                      onTap: () => _requestPermission(Permission.contacts),
-                    ),
-                    CommonSpaces.h16,
-                    _buildPermissionItem(
-                      title: 'Camera',
-                      description: 'Required for video calls and taking photos.',
-                      icon: Icons.camera_alt_outlined,
-                      isGranted: _cameraGranted,
-                      onTap: () => _requestPermission(Permission.camera),
-                    ),
-                    CommonSpaces.h16,
-                    _buildPermissionItem(
-                      title: 'Microphone (Audio)',
-                      description: 'Required for audio calls and voice messages.',
-                      icon: Icons.mic_none_rounded,
-                      isGranted: _microphoneGranted,
-                      onTap: () => _requestPermission(Permission.microphone),
-                    ),
-                  ],
-                ),
-              ),
-
-              CommonSpaces.h16,
-              // Continue button
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _onContinue,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: context.colors.primary,
-                    foregroundColor: context.colors.pureWhite,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(CommonSizes.r24),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    'Continue',
-                    style: context.buttonText.copyWith(
-                      color: context.colors.pureWhite,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              CommonSpaces.h16,
-            ],
+            ),
           ),
-        ),
+
+          // Main Content
+          SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    children: [
+                      CommonSpaces.h16,
+                      // Header Section
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00873C).withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF00873C).withValues(alpha: 0.35),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF00873C).withValues(alpha: 0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.shield_outlined,
+                              color: Color(0xFF00873C),
+                              size: 28,
+                            ),
+                          ),
+                          CommonSpaces.w16,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Access Permissions',
+                                  style: context.h2.copyWith(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                    color: context.colors.textPrimary,
+                                  ),
+                                ),
+                                CommonSpaces.h4,
+                                Text(
+                                  'Enable features for secure chat & calls',
+                                  style: context.bodySmall.copyWith(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      CommonSpaces.h24,
+
+                      // Informative banner card
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: context.colors.lightBackground.withValues(alpha: isDark ? 0.7 : 0.9),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: context.colors.border.withValues(alpha: 0.25),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              size: 16,
+                              color: context.colors.primary,
+                            ),
+                            CommonSpaces.w8,
+                            Expanded(
+                              child: Text(
+                                'sChat requires these permissions to protect and route your calls, sync contacts, and enable media capture.',
+                                style: context.bodyMedium.copyWith(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CommonSpaces.h16,
+
+                      // Permissions List
+                      _buildPermissionItem(
+                        title: 'Notifications',
+                        description: 'Required for incoming call and message alerts.',
+                        icon: Icons.notifications_none_rounded,
+                        isGranted: _notificationGranted,
+                        onTap: () => _requestPermission(Permission.notification),
+                      ),
+                      CommonSpaces.h10,
+                      _buildPermissionItem(
+                        title: 'Contacts',
+                        description: 'Required to sync friends already on sChat.',
+                        icon: Icons.people_outline_rounded,
+                        isGranted: _contactsGranted,
+                        onTap: () => _requestPermission(Permission.contacts),
+                      ),
+                      CommonSpaces.h10,
+                      _buildPermissionItem(
+                        title: 'Camera',
+                        description: 'Required for video calls and taking photos.',
+                        icon: Icons.camera_alt_outlined,
+                        isGranted: _cameraGranted,
+                        onTap: () => _requestPermission(Permission.camera),
+                      ),
+                      CommonSpaces.h10,
+                      _buildPermissionItem(
+                        title: 'Microphone (Audio)',
+                        description: 'Required for audio calls and voice messages.',
+                        icon: Icons.mic_none_rounded,
+                        isGranted: _microphoneGranted,
+                        onTap: () => _requestPermission(Permission.microphone),
+                      ),
+                      CommonSpaces.h16,
+                    ],
+                  ),
+                ),
+
+                // Bottom Action Bar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: context.colors.scaffoldBackground.withValues(alpha: 0.95),
+                    border: Border(
+                      top: BorderSide(
+                        color: context.colors.border.withValues(alpha: 0.15),
+                        width: 1,
+                      ),
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _onContinue,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: context.colors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 2,
+                          shadowColor: context.colors.primary.withValues(alpha: 0.4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(CommonSizes.r24),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Continue',
+                              style: context.buttonText.copyWith(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            CommonSpaces.w8,
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -240,94 +324,123 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
     required bool isGranted,
     required VoidCallback onTap,
   }) {
+    final isDark = context.colors.isDark;
+
     return Container(
-      padding: const EdgeInsets.all(CommonSizes.p16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: context.colors.pureWhite.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(CommonSizes.r16),
+        color: context.colors.lightBackground.withValues(alpha: isDark ? 0.75 : 0.95),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isGranted 
-            ? context.colors.primary.withValues(alpha: 0.3)
-            : context.colors.pureWhite.withValues(alpha: 0.1),
-          width: 1,
+          color: isGranted
+              ? const Color(0xFF00873C).withValues(alpha: 0.35)
+              : context.colors.border.withValues(alpha: 0.2),
+          width: isGranted ? 1.2 : 0.8,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(CommonSizes.p10),
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: isGranted
-                ? context.colors.primary.withValues(alpha: 0.1)
-                : context.colors.pureWhite.withValues(alpha: 0.05),
+                  ? const Color(0xFF00873C).withValues(alpha: 0.12)
+                  : context.colors.textSecondary.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
             child: Icon(
               icon,
-              color: isGranted ? context.colors.primary : context.colors.textSecondary,
-              size: CommonSizes.iconMedium,
+              color: isGranted ? const Color(0xFF00873C) : context.colors.textSecondary,
+              size: 19,
             ),
           ),
-          CommonSpaces.w16,
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   title,
                   style: context.titleSmall.copyWith(
-                    color: context.colors.pureWhite,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: context.colors.textPrimary,
                   ),
                 ),
-                CommonSpaces.h4,
+                CommonSpaces.h2,
                 Text(
                   description,
                   style: context.bodyMedium.copyWith(
-                    color: context.colors.textSecondary.withValues(alpha: 0.6),
-                    fontSize: 12,
+                    color: context.colors.textSecondary.withValues(alpha: 0.8),
+                    fontSize: 11.5,
+                    height: 1.25,
                   ),
                 ),
               ],
             ),
           ),
-          CommonSpaces.w16,
+          CommonSpaces.w8,
           if (isGranted)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.check_circle_rounded,
-                  color: context.colors.primary,
-                  size: 20,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF00873C).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF00873C).withValues(alpha: 0.3),
+                  width: 1,
                 ),
-                CommonSpaces.w4,
-                Text(
-                  'Allowed',
-                  style: TextStyle(
-                    color: context.colors.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: Color(0xFF00873C),
+                    size: 13,
                   ),
-                ),
-              ],
+                  SizedBox(width: 3),
+                  Text(
+                    'Allowed',
+                    style: TextStyle(
+                      color: Color(0xFF00873C),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
             )
           else
             ElevatedButton(
               onPressed: onTap,
               style: ElevatedButton.styleFrom(
-                backgroundColor: context.colors.pureWhite.withValues(alpha: 0.1),
-                foregroundColor: context.colors.pureWhite,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                backgroundColor: context.colors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(CommonSizes.r12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 elevation: 0,
               ),
               child: const Text(
                 'Grant',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
         ],

@@ -303,30 +303,71 @@ class PushNotificationService {
     }
 
     final convId = (data['conversationId'] ?? data['conversation_id'])?.toString();
-    final senderName = (data['sender_name'] ?? data['senderName'] ?? data['name'] ?? data['username'] ?? data['title'] ?? 'sChat').toString();
+    String senderName = (data['sender_name'] ??
+            data['senderName'] ??
+            data['contact_name'] ??
+            data['contactName'] ??
+            data['group_name'] ??
+            data['groupName'] ??
+            data['name'] ??
+            data['username'] ??
+            data['title'] ??
+            '')
+        .toString()
+        .trim();
     final senderId = (data['sender_id'] ?? data['senderId'] ?? '').toString();
+    final isGroup = data['is_group'] == true ||
+        data['isGroup'] == true ||
+        data['is_group'] == 'true' ||
+        data['isGroup'] == 'true';
+    final profilePic = (data['profile_picture_url'] ??
+            data['profilePictureUrl'] ??
+            data['profile_picture'] ??
+            data['sender_profile_pic'] ??
+            data['senderProfilePic'] ??
+            data['avatar'])
+        ?.toString();
 
     if (convId != null && convId.isNotEmpty) {
-      _navigateToConversation(convId, senderName, senderId);
+      _navigateToConversation(
+        convId,
+        senderName,
+        senderId,
+        isGroup: isGroup,
+        profilePic: profilePic,
+      );
     }
   }
 
-  void _navigateToConversation(String convId, String contactName, String recipientId) {
+  void _navigateToConversation(
+    String convId,
+    String contactName,
+    String recipientId, {
+    bool isGroup = false,
+    String? profilePic,
+  }) {
     final navState = navigatorKey.currentState;
     if (navState == null) {
       debugPrint('PushNotificationService: NavigatorState is null cannot navigate to conversation $convId');
       return;
     }
 
-    debugPrint('PushNotificationService: Navigating to ChatPage convId=$convId contact=$contactName recipient=$recipientId');
+    String resolvedName = contactName.trim();
+    if (resolvedName == 'sChat' || resolvedName == 'New Message') {
+      resolvedName = '';
+    }
+
+    debugPrint('PushNotificationService: Navigating to ChatPage convId=$convId contact=$resolvedName recipient=$recipientId isGroup=$isGroup');
     navState.push(
       MaterialPageRoute(
         builder: (_) => ChatPage(
           conversationId: convId,
-          contactName: contactName.isNotEmpty ? contactName : 'sChat',
+          contactName: resolvedName.isNotEmpty ? resolvedName : 'Chat',
           contactColor: const Color(0xFF00873C),
           isOnline: true,
           recipientId: recipientId,
+          profilePictureUrl: profilePic,
+          isGroup: isGroup,
         ),
       ),
     );
@@ -346,9 +387,13 @@ class PushNotificationService {
       title = (message.data['title'] ??
               message.data['sender_name'] ??
               message.data['senderName'] ??
+              message.data['contact_name'] ??
+              message.data['contactName'] ??
+              message.data['group_name'] ??
+              message.data['groupName'] ??
               message.data['name'] ??
               message.data['username'] ??
-              'sChat')
+              'New Message')
           .toString();
     }
 
@@ -401,12 +446,25 @@ class PushNotificationService {
     final int notificationId =
         message.messageId?.hashCode ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
+    final payloadMap = Map<String, dynamic>.from(message.data);
+    if (!payloadMap.containsKey('title') || payloadMap['title'] == null) {
+      payloadMap['title'] = title;
+    }
+    if (!payloadMap.containsKey('sender_name') || payloadMap['sender_name'] == null) {
+      payloadMap['sender_name'] = title;
+      payloadMap['senderName'] = title;
+    }
+    if (!payloadMap.containsKey('contact_name') || payloadMap['contact_name'] == null) {
+      payloadMap['contact_name'] = title;
+      payloadMap['contactName'] = title;
+    }
+
     await _localNotifications.show(
       id: notificationId,
       title: title,
       body: body,
       notificationDetails: platformChannelSpecifics,
-      payload: jsonEncode(message.data),
+      payload: jsonEncode(payloadMap),
     );
   }
 }

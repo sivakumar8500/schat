@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$UserModel {
 
-@JsonKey(name: 'phone_number') String get phoneNumber; String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'is_active') bool get isActive;@JsonKey(name: 'is_online') bool get isOnline;@JsonKey(name: 'last_seen') String? get lastSeen;@JsonKey(name: 'is_subscribed') bool get isSubscribed;@JsonKey(name: 'subscription_type') String? get subscriptionType;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt;@JsonKey(name: 'default_disappearing_timer') int? get defaultDisappearingTimer;@JsonKey(name: 'contactName') String? get contactName;
+@JsonKey(name: 'phone_number') String get phoneNumber; String? get username;@JsonKey(name: 'first_name') String? get firstName;@JsonKey(name: 'last_name') String? get lastName;@JsonKey(name: 'profile_picture_url') String? get profilePictureUrl; String? get about;@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'is_active') bool get isActive;@JsonKey(name: 'is_online') bool get isOnline;@JsonKey(name: 'last_seen') String? get lastSeen;@JsonKey(name: 'is_subscribed') bool get isSubscribed;@JsonKey(name: 'subscription_type') String? get subscriptionType;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt;@JsonKey(name: 'default_disappearing_timer') int? get defaultDisappearingTimer;@JsonKey(name: 'contactName') String? get contactName;@JsonKey(name: 'is_blocked') bool get isBlocked;@JsonKey(name: 'is_blocked_by_me') bool get isBlockedByMe;@JsonKey(name: 'is_blocked_by_other') bool get isBlockedByOther;
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $UserModelCopyWith<UserModel> get copyWith => _$UserModelCopyWithImpl<UserModel>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserModel&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.id, id) || other.id == id)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer)&&(identical(other.contactName, contactName) || other.contactName == contactName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is UserModel&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.id, id) || other.id == id)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.isBlocked, isBlocked) || other.isBlocked == isBlocked)&&(identical(other.isBlockedByMe, isBlockedByMe) || other.isBlockedByMe == isBlockedByMe)&&(identical(other.isBlockedByOther, isBlockedByOther) || other.isBlockedByOther == isBlockedByOther));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,phoneNumber,username,firstName,lastName,profilePictureUrl,about,id,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt,defaultDisappearingTimer,contactName);
+int get hashCode => Object.hashAll([runtimeType,phoneNumber,username,firstName,lastName,profilePictureUrl,about,id,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt,defaultDisappearingTimer,contactName,isBlocked,isBlockedByMe,isBlockedByOther]);
 
 @override
 String toString() {
-  return 'UserModel(phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, id: $id, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt, defaultDisappearingTimer: $defaultDisappearingTimer, contactName: $contactName)';
+  return 'UserModel(phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, id: $id, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt, defaultDisappearingTimer: $defaultDisappearingTimer, contactName: $contactName, isBlocked: $isBlocked, isBlockedByMe: $isBlockedByMe, isBlockedByOther: $isBlockedByOther)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $UserModelCopyWith<$Res>  {
   factory $UserModelCopyWith(UserModel value, $Res Function(UserModel) _then) = _$UserModelCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: 'phone_number') String phoneNumber, String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_active') bool isActive,@JsonKey(name: 'is_online') bool isOnline,@JsonKey(name: 'last_seen') String? lastSeen,@JsonKey(name: 'is_subscribed') bool isSubscribed,@JsonKey(name: 'subscription_type') String? subscriptionType,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,@JsonKey(name: 'contactName') String? contactName
+@JsonKey(name: 'phone_number') String phoneNumber, String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_active') bool isActive,@JsonKey(name: 'is_online') bool isOnline,@JsonKey(name: 'last_seen') String? lastSeen,@JsonKey(name: 'is_subscribed') bool isSubscribed,@JsonKey(name: 'subscription_type') String? subscriptionType,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,@JsonKey(name: 'contactName') String? contactName,@JsonKey(name: 'is_blocked') bool isBlocked,@JsonKey(name: 'is_blocked_by_me') bool isBlockedByMe,@JsonKey(name: 'is_blocked_by_other') bool isBlockedByOther
 });
 
 
@@ -65,7 +65,7 @@ class _$UserModelCopyWithImpl<$Res>
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? id = null,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,Object? defaultDisappearingTimer = freezed,Object? contactName = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? id = null,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,Object? defaultDisappearingTimer = freezed,Object? contactName = freezed,Object? isBlocked = null,Object? isBlockedByMe = null,Object? isBlockedByOther = null,}) {
   return _then(_self.copyWith(
 phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
@@ -83,7 +83,10 @@ as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore:
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,defaultDisappearingTimer: freezed == defaultDisappearingTimer ? _self.defaultDisappearingTimer : defaultDisappearingTimer // ignore: cast_nullable_to_non_nullable
 as int?,contactName: freezed == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,isBlocked: null == isBlocked ? _self.isBlocked : isBlocked // ignore: cast_nullable_to_non_nullable
+as bool,isBlockedByMe: null == isBlockedByMe ? _self.isBlockedByMe : isBlockedByMe // ignore: cast_nullable_to_non_nullable
+as bool,isBlockedByOther: null == isBlockedByOther ? _self.isBlockedByOther : isBlockedByOther // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 
@@ -168,10 +171,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName, @JsonKey(name: 'is_blocked')  bool isBlocked, @JsonKey(name: 'is_blocked_by_me')  bool isBlockedByMe, @JsonKey(name: 'is_blocked_by_other')  bool isBlockedByOther)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _UserModel() when $default != null:
-return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName);case _:
+return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName,_that.isBlocked,_that.isBlockedByMe,_that.isBlockedByOther);case _:
   return orElse();
 
 }
@@ -189,10 +192,10 @@ return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName, @JsonKey(name: 'is_blocked')  bool isBlocked, @JsonKey(name: 'is_blocked_by_me')  bool isBlockedByMe, @JsonKey(name: 'is_blocked_by_other')  bool isBlockedByOther)  $default,) {final _that = this;
 switch (_that) {
 case _UserModel():
-return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName);case _:
+return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName,_that.isBlocked,_that.isBlockedByMe,_that.isBlockedByOther);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -209,10 +212,10 @@ return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'phone_number')  String phoneNumber,  String? username, @JsonKey(name: 'first_name')  String? firstName, @JsonKey(name: 'last_name')  String? lastName, @JsonKey(name: 'profile_picture_url')  String? profilePictureUrl,  String? about, @JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'is_active')  bool isActive, @JsonKey(name: 'is_online')  bool isOnline, @JsonKey(name: 'last_seen')  String? lastSeen, @JsonKey(name: 'is_subscribed')  bool isSubscribed, @JsonKey(name: 'subscription_type')  String? subscriptionType, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'default_disappearing_timer')  int? defaultDisappearingTimer, @JsonKey(name: 'contactName')  String? contactName, @JsonKey(name: 'is_blocked')  bool isBlocked, @JsonKey(name: 'is_blocked_by_me')  bool isBlockedByMe, @JsonKey(name: 'is_blocked_by_other')  bool isBlockedByOther)?  $default,) {final _that = this;
 switch (_that) {
 case _UserModel() when $default != null:
-return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName);case _:
+return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,_that.profilePictureUrl,_that.about,_that.id,_that.isActive,_that.isOnline,_that.lastSeen,_that.isSubscribed,_that.subscriptionType,_that.createdAt,_that.updatedAt,_that.defaultDisappearingTimer,_that.contactName,_that.isBlocked,_that.isBlockedByMe,_that.isBlockedByOther);case _:
   return null;
 
 }
@@ -224,7 +227,7 @@ return $default(_that.phoneNumber,_that.username,_that.firstName,_that.lastName,
 @JsonSerializable()
 
 class _UserModel extends UserModel {
-  const _UserModel({@JsonKey(name: 'phone_number') this.phoneNumber = '', this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about, @JsonKey(name: '_id', includeIfNull: false) this.id = '', @JsonKey(name: 'is_active') this.isActive = false, @JsonKey(name: 'is_online') this.isOnline = false, @JsonKey(name: 'last_seen') this.lastSeen, @JsonKey(name: 'is_subscribed') this.isSubscribed = false, @JsonKey(name: 'subscription_type') this.subscriptionType, @JsonKey(name: 'created_at') this.createdAt = '', @JsonKey(name: 'updated_at') this.updatedAt = '', @JsonKey(name: 'default_disappearing_timer') this.defaultDisappearingTimer, @JsonKey(name: 'contactName') this.contactName}): super._();
+  const _UserModel({@JsonKey(name: 'phone_number') this.phoneNumber = '', this.username, @JsonKey(name: 'first_name') this.firstName, @JsonKey(name: 'last_name') this.lastName, @JsonKey(name: 'profile_picture_url') this.profilePictureUrl, this.about, @JsonKey(name: '_id', includeIfNull: false) this.id = '', @JsonKey(name: 'is_active') this.isActive = false, @JsonKey(name: 'is_online') this.isOnline = false, @JsonKey(name: 'last_seen') this.lastSeen, @JsonKey(name: 'is_subscribed') this.isSubscribed = false, @JsonKey(name: 'subscription_type') this.subscriptionType, @JsonKey(name: 'created_at') this.createdAt = '', @JsonKey(name: 'updated_at') this.updatedAt = '', @JsonKey(name: 'default_disappearing_timer') this.defaultDisappearingTimer, @JsonKey(name: 'contactName') this.contactName, @JsonKey(name: 'is_blocked') this.isBlocked = false, @JsonKey(name: 'is_blocked_by_me') this.isBlockedByMe = false, @JsonKey(name: 'is_blocked_by_other') this.isBlockedByOther = false}): super._();
   factory _UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(json);
 
 @override@JsonKey(name: 'phone_number') final  String phoneNumber;
@@ -243,6 +246,9 @@ class _UserModel extends UserModel {
 @override@JsonKey(name: 'updated_at') final  String updatedAt;
 @override@JsonKey(name: 'default_disappearing_timer') final  int? defaultDisappearingTimer;
 @override@JsonKey(name: 'contactName') final  String? contactName;
+@override@JsonKey(name: 'is_blocked') final  bool isBlocked;
+@override@JsonKey(name: 'is_blocked_by_me') final  bool isBlockedByMe;
+@override@JsonKey(name: 'is_blocked_by_other') final  bool isBlockedByOther;
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
@@ -257,16 +263,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserModel&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.id, id) || other.id == id)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer)&&(identical(other.contactName, contactName) || other.contactName == contactName));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _UserModel&&(identical(other.phoneNumber, phoneNumber) || other.phoneNumber == phoneNumber)&&(identical(other.username, username) || other.username == username)&&(identical(other.firstName, firstName) || other.firstName == firstName)&&(identical(other.lastName, lastName) || other.lastName == lastName)&&(identical(other.profilePictureUrl, profilePictureUrl) || other.profilePictureUrl == profilePictureUrl)&&(identical(other.about, about) || other.about == about)&&(identical(other.id, id) || other.id == id)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.isOnline, isOnline) || other.isOnline == isOnline)&&(identical(other.lastSeen, lastSeen) || other.lastSeen == lastSeen)&&(identical(other.isSubscribed, isSubscribed) || other.isSubscribed == isSubscribed)&&(identical(other.subscriptionType, subscriptionType) || other.subscriptionType == subscriptionType)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.defaultDisappearingTimer, defaultDisappearingTimer) || other.defaultDisappearingTimer == defaultDisappearingTimer)&&(identical(other.contactName, contactName) || other.contactName == contactName)&&(identical(other.isBlocked, isBlocked) || other.isBlocked == isBlocked)&&(identical(other.isBlockedByMe, isBlockedByMe) || other.isBlockedByMe == isBlockedByMe)&&(identical(other.isBlockedByOther, isBlockedByOther) || other.isBlockedByOther == isBlockedByOther));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,phoneNumber,username,firstName,lastName,profilePictureUrl,about,id,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt,defaultDisappearingTimer,contactName);
+int get hashCode => Object.hashAll([runtimeType,phoneNumber,username,firstName,lastName,profilePictureUrl,about,id,isActive,isOnline,lastSeen,isSubscribed,subscriptionType,createdAt,updatedAt,defaultDisappearingTimer,contactName,isBlocked,isBlockedByMe,isBlockedByOther]);
 
 @override
 String toString() {
-  return 'UserModel(phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, id: $id, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt, defaultDisappearingTimer: $defaultDisappearingTimer, contactName: $contactName)';
+  return 'UserModel(phoneNumber: $phoneNumber, username: $username, firstName: $firstName, lastName: $lastName, profilePictureUrl: $profilePictureUrl, about: $about, id: $id, isActive: $isActive, isOnline: $isOnline, lastSeen: $lastSeen, isSubscribed: $isSubscribed, subscriptionType: $subscriptionType, createdAt: $createdAt, updatedAt: $updatedAt, defaultDisappearingTimer: $defaultDisappearingTimer, contactName: $contactName, isBlocked: $isBlocked, isBlockedByMe: $isBlockedByMe, isBlockedByOther: $isBlockedByOther)';
 }
 
 
@@ -277,7 +283,7 @@ abstract mixin class _$UserModelCopyWith<$Res> implements $UserModelCopyWith<$Re
   factory _$UserModelCopyWith(_UserModel value, $Res Function(_UserModel) _then) = __$UserModelCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: 'phone_number') String phoneNumber, String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_active') bool isActive,@JsonKey(name: 'is_online') bool isOnline,@JsonKey(name: 'last_seen') String? lastSeen,@JsonKey(name: 'is_subscribed') bool isSubscribed,@JsonKey(name: 'subscription_type') String? subscriptionType,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,@JsonKey(name: 'contactName') String? contactName
+@JsonKey(name: 'phone_number') String phoneNumber, String? username,@JsonKey(name: 'first_name') String? firstName,@JsonKey(name: 'last_name') String? lastName,@JsonKey(name: 'profile_picture_url') String? profilePictureUrl, String? about,@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'is_active') bool isActive,@JsonKey(name: 'is_online') bool isOnline,@JsonKey(name: 'last_seen') String? lastSeen,@JsonKey(name: 'is_subscribed') bool isSubscribed,@JsonKey(name: 'subscription_type') String? subscriptionType,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,@JsonKey(name: 'contactName') String? contactName,@JsonKey(name: 'is_blocked') bool isBlocked,@JsonKey(name: 'is_blocked_by_me') bool isBlockedByMe,@JsonKey(name: 'is_blocked_by_other') bool isBlockedByOther
 });
 
 
@@ -294,7 +300,7 @@ class __$UserModelCopyWithImpl<$Res>
 
 /// Create a copy of UserModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? id = null,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,Object? defaultDisappearingTimer = freezed,Object? contactName = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? phoneNumber = null,Object? username = freezed,Object? firstName = freezed,Object? lastName = freezed,Object? profilePictureUrl = freezed,Object? about = freezed,Object? id = null,Object? isActive = null,Object? isOnline = null,Object? lastSeen = freezed,Object? isSubscribed = null,Object? subscriptionType = freezed,Object? createdAt = null,Object? updatedAt = null,Object? defaultDisappearingTimer = freezed,Object? contactName = freezed,Object? isBlocked = null,Object? isBlockedByMe = null,Object? isBlockedByOther = null,}) {
   return _then(_UserModel(
 phoneNumber: null == phoneNumber ? _self.phoneNumber : phoneNumber // ignore: cast_nullable_to_non_nullable
 as String,username: freezed == username ? _self.username : username // ignore: cast_nullable_to_non_nullable
@@ -312,7 +318,10 @@ as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore:
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,defaultDisappearingTimer: freezed == defaultDisappearingTimer ? _self.defaultDisappearingTimer : defaultDisappearingTimer // ignore: cast_nullable_to_non_nullable
 as int?,contactName: freezed == contactName ? _self.contactName : contactName // ignore: cast_nullable_to_non_nullable
-as String?,
+as String?,isBlocked: null == isBlocked ? _self.isBlocked : isBlocked // ignore: cast_nullable_to_non_nullable
+as bool,isBlockedByMe: null == isBlockedByMe ? _self.isBlockedByMe : isBlockedByMe // ignore: cast_nullable_to_non_nullable
+as bool,isBlockedByOther: null == isBlockedByOther ? _self.isBlockedByOther : isBlockedByOther // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

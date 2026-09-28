@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
@@ -41,6 +42,8 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   int _currentContactIndex = 0;
   int _currentStatusIndex = 0;
   bool _isHolding = false;
+  bool _isMediaLoading = false;
+  String? _currentMediaUrl;
   final Set<String> _viewedStatusIds = {};
 
   void _markStatusViewed(String? statusId) {
@@ -53,7 +56,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _showStatusOptionsMenu(String? statusId) {
-    _progressController.stop();
+    if (!_isMediaLoading) _progressController.stop();
 
     showModalBottomSheet(
       context: context,
@@ -102,12 +105,12 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         ),
       ),
     ).then((_) {
-      if (mounted) _progressController.forward();
+      if (mounted && !_isMediaLoading) _progressController.forward();
     });
   }
 
   Future<void> _confirmAndDeleteStatus(String statusId) async {
-    _progressController.stop();
+    if (!_isMediaLoading) _progressController.stop();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -141,7 +144,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     );
 
     if (confirm != true || !mounted) {
-      if (mounted) _progressController.forward();
+      if (mounted && !_isMediaLoading) _progressController.forward();
       return;
     }
 
@@ -171,7 +174,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     } catch (e) {
       if (mounted) {
         context.showErrorNotification('Failed to delete status: $e');
-        _progressController.forward();
+        if (!_isMediaLoading) _progressController.forward();
       }
     }
   }
@@ -193,7 +196,48 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _startProgress() {
-    _progressController.forward(from: 0.0);
+    _progressController.stop();
+    _progressController.value = 0.0;
+
+    String? mediaUrl;
+    if (widget.isMyStatus) {
+      final list = widget.myStatuses ?? [];
+      if (list.isNotEmpty) {
+        final item = list[_currentStatusIndex.clamp(0, list.length - 1)];
+        if (item.imagePath != null && item.imagePath!.isNotEmpty) {
+          mediaUrl = item.imagePath;
+        }
+      }
+    } else if (widget.contacts.isNotEmpty) {
+      final contact = widget.contacts[_currentContactIndex];
+      if (contact.statuses.isNotEmpty) {
+        final status = contact.statuses[_currentStatusIndex.clamp(0, contact.statuses.length - 1)];
+        if (status.imagePath != null && status.imagePath!.isNotEmpty) {
+          mediaUrl = status.imagePath;
+        }
+      }
+    }
+
+    _currentMediaUrl = mediaUrl;
+
+    if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync()) {
+      // Network media is loading; wait for _onMediaLoaded
+      _isMediaLoading = true;
+    } else {
+      // Text or local media; start immediately
+      _isMediaLoading = false;
+      _progressController.forward(from: 0.0);
+    }
+  }
+
+  void _onMediaLoaded(String url) {
+    if (!mounted) return;
+    if (_currentMediaUrl == url && _isMediaLoading) {
+      setState(() {
+        _isMediaLoading = false;
+      });
+      _progressController.forward(from: 0.0);
+    }
   }
 
   void _nextStatus() {
@@ -391,7 +435,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
     return GestureDetector(
       onTapDown: (_) {
-        _progressController.stop();
+        if (!_isMediaLoading) _progressController.stop();
       },
       onTapUp: (d) {
         final x = d.globalPosition.dx;
@@ -406,17 +450,17 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         setState(() {
           _isHolding = true;
         });
-        _progressController.stop();
+        if (!_isMediaLoading) _progressController.stop();
       },
       onLongPressEnd: (_) {
         setState(() {
           _isHolding = false;
         });
-        _progressController.forward();
+        if (!_isMediaLoading) _progressController.forward();
       },
       onVerticalDragEnd: (details) {
         if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
-          _progressController.stop();
+          if (!_isMediaLoading) _progressController.stop();
           if (widget.isMyStatus) {
             _showViewersSheet(viewers, viewCount);
           } else if (contact != null) {
@@ -453,6 +497,9 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     final isLocalFile = File(imageUrl).existsSync();
     Widget imageWidget;
     if (isLocalFile) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onMediaLoaded(imageUrl);
+      });
       imageWidget = Image.file(
         File(imageUrl),
         fit: BoxFit.contain,
@@ -470,14 +517,22 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         },
       );
     } else {
-      imageWidget = Image.network(
-        imageUrl,
+      imageWidget = CachedNetworkImage(
+        imageUrl: imageUrl,
         fit: BoxFit.contain,
-        loadingBuilder: (ctx, child, progress) {
-          if (progress == null) return child;
-          return const Center(child: CircularProgressIndicator(color: Colors.white70));
+        imageBuilder: (context, imageProvider) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _onMediaLoaded(imageUrl);
+          });
+          return Image(image: imageProvider, fit: BoxFit.contain);
         },
-        errorBuilder: (context, error, stackTrace) {
+        placeholder: (ctx, url) => const Center(
+          child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+        ),
+        errorWidget: (context, url, error) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _onMediaLoaded(imageUrl);
+          });
           return const Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -708,7 +763,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         ),
       ),
     ).then((_) {
-      if (mounted) _progressController.forward();
+      if (mounted && !_isMediaLoading) _progressController.forward();
     });
   }
 
@@ -1031,7 +1086,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         );
       },
     ).then((_) {
-      if (mounted) _progressController.forward();
+      if (mounted && !_isMediaLoading) _progressController.forward();
     });
   }
 

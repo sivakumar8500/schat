@@ -34,6 +34,8 @@ class CommonEndpoints {
   static const String getChats = '/chats/';
   static const String createGroup = '/groups/';
   static const String getMessages = '/messages/';
+  static const String searchGlobal = '/search';
+  static const String searchFilters = '/search/filters';
   static const String searchMessages = '/messages/search';
   static String searchMessagesInChat(String conversationId) => '/messages/search/$conversationId';
   static const String scheduleMessage = '/messages/scheduled';
@@ -91,6 +93,9 @@ class CommonEndpoints {
   static String mediaPermissions(String mediaId) => '/media/$mediaId/permissions';
   static String mediaAccessTree(String mediaId) => '/media/$mediaId/access-tree';
   static String shareMedia(String mediaId) => '/media/$mediaId/share';
+  static String mediaOwnerOverride(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId/override';
+  static String mediaRevokeGrant(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId';
+  static String mediaRevokeAll(String mediaId) => '/media/$mediaId/revoke-all';
 
   // User Lookup
   static const String lookupUser = '/users/lookup';

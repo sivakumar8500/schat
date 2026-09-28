@@ -46,17 +46,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
   MediaPermissionsModel? _permissions;
   Future<MediaAccessTreeModel?>? _accessTreeFuture;
   bool _isLoading = true;
+  bool _isActionProcessing = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  void _loadData() {
     _accessTreeFuture = getIt<ChatRepository>()
         .getMediaAccessTree(widget.mediaId)
         .then<MediaAccessTreeModel?>((v) => v)
         .catchError((_) => null);
 
-    if (widget.initialData != null) {
+    if (widget.initialData != null && _permissions == null) {
       _permissions = widget.initialData;
       _isLoading = false;
     } else {
@@ -90,6 +95,283 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     }
   }
 
+  Future<void> _revokeAllShares() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Revoke All Shares?',
+                style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'This will immediately disable viewing, downloading, and sharing for all recipients who received or forwarded this file.',
+          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revoke All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isActionProcessing = true);
+    try {
+      final repo = getIt<ChatRepository>();
+      await repo.revokeAllMediaShares(widget.mediaId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All shares and downstream access revoked successfully'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        setState(() {
+          _isActionProcessing = false;
+          _loadData();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to revoke shares: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _revokeSingleGrant(String grantId, String userName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Revoke Access for $userName?',
+          style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'This will revoke access for $userName and any downstream users they shared this file with.',
+          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Revoke'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isActionProcessing = true);
+    try {
+      final repo = getIt<ChatRepository>();
+      await repo.revokeMediaShareGrant(mediaId: widget.mediaId, grantId: grantId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Access revoked for $userName and downstream shares'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        setState(() {
+          _isActionProcessing = false;
+          _loadData();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to revoke access: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showEditPermissionsModal(AccessTreeNode node) async {
+    bool canView = node.effectivePermissions.canView;
+    bool canDownload = node.effectivePermissions.canDownload;
+    bool canShare = node.effectivePermissions.canShare;
+
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: modalCtx.colors.primary.withValues(alpha: 0.15),
+                        child: Text(
+                          node.grantee.initials,
+                          style: TextStyle(fontWeight: FontWeight.bold, color: modalCtx.colors.primary),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Permissions for ${node.grantee.displayName}',
+                              style: modalCtx.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              'Manage granular access overrides',
+                              style: modalCtx.bodySmall.copyWith(color: modalCtx.colors.textSecondary, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  SwitchListTile(
+                    title: const Text('Can View', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Allows opening & viewing the media', style: TextStyle(fontSize: 12)),
+                    value: canView,
+                    activeThumbColor: modalCtx.colors.primary,
+                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                    onChanged: (val) {
+                      setModalState(() {
+                        canView = val;
+                        if (!val) {
+                          canDownload = false;
+                          canShare = false;
+                        }
+                      });
+                    },
+                  ),
+                  SwitchListTile(
+                    title: const Text('Can Download', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Allows saving to local device gallery', style: TextStyle(fontSize: 12)),
+                    value: canDownload,
+                    activeThumbColor: modalCtx.colors.primary,
+                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                    onChanged: canView
+                        ? (val) {
+                            setModalState(() => canDownload = val);
+                          }
+                        : null,
+                  ),
+                  SwitchListTile(
+                    title: const Text('Can Forward / Share', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Allows forwarding to other contacts', style: TextStyle(fontSize: 12)),
+                    value: canShare,
+                    activeThumbColor: modalCtx.colors.primary,
+                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                    onChanged: canView
+                        ? (val) {
+                            setModalState(() => canShare = val);
+                          }
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: modalCtx.colors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(modalCtx, true),
+                    child: const Text('Apply Changes', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (updated == true) {
+      setState(() => _isActionProcessing = true);
+      try {
+        final repo = getIt<ChatRepository>();
+        await repo.setMediaOwnerOverride(
+          mediaId: widget.mediaId,
+          grantId: node.grantId,
+          canView: canView,
+          canDownload: canDownload,
+          canShare: canShare,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Permissions updated for ${node.grantee.displayName}'),
+              backgroundColor: const Color(0xFF00873C),
+            ),
+          );
+          setState(() {
+            _isActionProcessing = false;
+            _loadData();
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isActionProcessing = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to update permissions: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
@@ -114,7 +396,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -137,27 +419,16 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF00FF87), Color(0xFF60EFFF)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00FF87).withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  color: context.colors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.shield_rounded,
-                  color: Colors.black,
-                  size: 26,
+                  color: context.colors.primary,
+                  size: 24,
                 ),
               ),
               const SizedBox(width: 14),
@@ -185,7 +456,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                       )
                     else
                       Text(
-                        'Media Access & Lineage',
+                        'Media Access & Lineage Tracking',
                         style: context.bodySmall.copyWith(
                           color: context.colors.textSecondary,
                           fontSize: 12,
@@ -194,6 +465,21 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   ],
                 ),
               ),
+              if (_isActionProcessing)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primary),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: 'Refresh Lineage',
+                  color: context.colors.textSecondary,
+                  onPressed: () {
+                    _loadData();
+                  },
+                ),
               IconButton(
                 icon: Icon(Icons.close, color: context.colors.textSecondary),
                 onPressed: () => Navigator.pop(context),
@@ -215,11 +501,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
 
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 48),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
         child: Center(
           child: CircularProgressIndicator(
-            color: Color(0xFF00FF87),
+            color: context.colors.primary,
           ),
         ),
       );
@@ -264,8 +550,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     if (model == null) return const SizedBox.shrink();
 
     final isDark = context.colors.isDark;
-    final cardBg = isDark ? const Color(0xFF1C2420) : const Color(0xFFF6F8F7);
-    final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE5E9E7);
+    final cardBg = isDark ? context.colors.cardBackground : const Color(0xFFF7F9F8);
+    final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE8ECE9);
     final permissions = model.permissions;
 
     return Column(
@@ -285,13 +571,13 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: model.isOwner
-                      ? const Color(0xFF00FF87).withValues(alpha: 0.15)
-                      : Colors.blueAccent.withValues(alpha: 0.15),
+                      ? context.colors.primary.withValues(alpha: 0.12)
+                      : Colors.blueAccent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: model.isOwner
-                        ? const Color(0xFF00FF87).withValues(alpha: 0.4)
-                        : Colors.blueAccent.withValues(alpha: 0.4),
+                        ? context.colors.primary.withValues(alpha: 0.3)
+                        : Colors.blueAccent.withValues(alpha: 0.3),
                   ),
                 ),
                 child: Row(
@@ -300,14 +586,14 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                     Icon(
                       model.isOwner ? Icons.verified_user_rounded : Icons.person_outline_rounded,
                       size: 14,
-                      color: model.isOwner ? const Color(0xFF00FF87) : Colors.blueAccent,
+                      color: model.isOwner ? context.colors.primary : Colors.blueAccent,
                     ),
                     CommonSpaces.w4,
                     Text(
                       model.isOwner ? 'Owner' : 'Recipient',
                       style: context.bodySmall.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: model.isOwner ? const Color(0xFF00FF87) : Colors.blueAccent,
+                        color: model.isOwner ? context.colors.primary : Colors.blueAccent,
                       ),
                     ),
                   ],
@@ -397,18 +683,62 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         ),
         CommonSpaces.h14,
 
+        // Owner Controls Section (Kill switch / Global Revocation)
+        if (model.isOwner) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.gavel_rounded, color: Colors.redAccent, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Owner Share Controls',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.redAccent),
+                      ),
+                      Text(
+                        'Turn off all sharing & revoke downstream access instantly',
+                        style: TextStyle(fontSize: 11, color: isDark ? Colors.white70 : Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _isActionProcessing ? null : _revokeAllShares,
+                  child: const Text('Revoke All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          CommonSpaces.h14,
+        ],
+
         // Full Shared List / Access Lineage Section
-        _buildSharedLineageSection(context, cardBg, borderColor, isDark),
+        _buildSharedLineageSection(context, cardBg, borderColor, isDark, model.isOwner),
         CommonSpaces.h16,
 
         // Done Button
         SizedBox(
           width: double.infinity,
-          height: 46,
+          height: 48,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: context.colors.primary,
-              foregroundColor: Colors.black,
+              foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -419,7 +749,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               'Done',
               style: context.titleSmall.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.black,
+                color: Colors.white,
               ),
             ),
           ),
@@ -436,9 +766,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     required Color cardBg,
     required Color borderColor,
   }) {
-    final isDark = context.colors.isDark;
-    final activeColor = allowed ? const Color(0xFF00FF87) : Colors.redAccent;
-    final badgeBg = activeColor.withValues(alpha: 0.12);
+    final activeColor = allowed ? context.colors.primary : context.colors.error;
+    final badgeBg = activeColor.withValues(alpha: 0.10);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
@@ -447,7 +776,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: allowed
-              ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.3) : const Color(0xFF00873C).withValues(alpha: 0.3))
+              ? context.colors.primary.withValues(alpha: 0.25)
               : borderColor,
           width: allowed ? 1.2 : 1.0,
         ),
@@ -502,8 +831,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     Color cardBg,
     Color borderColor,
     bool isDark,
+    bool isOwner,
   ) {
-    const accentGreen = Color(0xFF00FF87);
+    final brandGreen = context.colors.primary;
 
     return FutureBuilder<MediaAccessTreeModel?>(
       future: _accessTreeFuture,
@@ -539,15 +869,15 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: accentGreen.withValues(alpha: 0.15),
+                        color: brandGreen.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
                         '$totalGrants ${totalGrants == 1 ? 'Share' : 'Shares'}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: accentGreen,
+                          color: brandGreen,
                         ),
                       ),
                     ),
@@ -555,15 +885,15 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               ),
               const SizedBox(height: 12),
               if (isWaiting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Center(
                     child: SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: accentGreen,
+                        color: brandGreen,
                       ),
                     ),
                   ),
@@ -594,7 +924,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                             context: context,
                             node: node,
                             isDark: isDark,
-                            accentGreen: accentGreen,
+                            brandGreen: brandGreen,
+                            isOwner: isOwner,
                             level: 0,
                           ))
                       .toList(),
@@ -610,7 +941,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     required BuildContext context,
     required AccessTreeNode node,
     required bool isDark,
-    required Color accentGreen,
+    required Color brandGreen,
+    required bool isOwner,
     required int level,
   }) {
     final isActive = node.status.toLowerCase() == 'active';
@@ -641,10 +973,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   ),
                 CircleAvatar(
                   radius: 13,
-                  backgroundColor: accentGreen.withValues(alpha: 0.2),
+                  backgroundColor: brandGreen.withValues(alpha: 0.15),
                   child: Text(
                     node.grantee.initials,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green),
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: brandGreen),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -678,7 +1010,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: (isActive ? accentGreen : Colors.redAccent).withValues(alpha: 0.15),
+                    color: (isActive ? brandGreen : Colors.redAccent).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -686,21 +1018,57 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                     style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.bold,
-                      color: isActive ? accentGreen : Colors.redAccent,
+                      color: isActive ? brandGreen : Colors.redAccent,
                     ),
                   ),
                 ),
+                if (isOwner) ...[
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
+                    padding: EdgeInsets.zero,
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.tune_rounded, size: 16),
+                            SizedBox(width: 8),
+                            Text('Edit Permissions', style: TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                      if (isActive)
+                        const PopupMenuItem(
+                          value: 'revoke',
+                          child: Row(
+                            children: [
+                              Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                              SizedBox(width: 8),
+                              Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                            ],
+                          ),
+                        ),
+                    ],
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        _showEditPermissionsModal(node);
+                      } else if (val == 'revoke') {
+                        _revokeSingleGrant(node.grantId, node.grantee.displayName);
+                      }
+                    },
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 6),
             // Permission Badges
             Row(
               children: [
-                _buildPermissionChip('View', perms.canView, isDark),
+                _buildPermissionChip(context, 'View', perms.canView, isDark),
                 const SizedBox(width: 4),
-                _buildPermissionChip('Download', perms.canDownload, isDark),
+                _buildPermissionChip(context, 'Download', perms.canDownload, isDark),
                 const SizedBox(width: 4),
-                _buildPermissionChip('Share', perms.canShare, isDark),
+                _buildPermissionChip(context, 'Share', perms.canShare, isDark),
               ],
             ),
             if (node.downstreamShares.isNotEmpty) ...[
@@ -710,7 +1078,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   context: context,
                   node: child,
                   isDark: isDark,
-                  accentGreen: accentGreen,
+                  brandGreen: brandGreen,
+                  isOwner: isOwner,
                   level: level + 1,
                 ),
               ),
@@ -721,15 +1090,14 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     );
   }
 
-  Widget _buildPermissionChip(String label, bool allowed, bool isDark) {
-    const accentGreen = Color(0xFF00FF87);
-    final color = allowed ? accentGreen : Colors.redAccent;
+  Widget _buildPermissionChip(BuildContext context, String label, bool allowed, bool isDark) {
+    final color = allowed ? context.colors.primary : context.colors.error;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.6),
+        border: Border.all(color: color.withValues(alpha: 0.25), width: 0.6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

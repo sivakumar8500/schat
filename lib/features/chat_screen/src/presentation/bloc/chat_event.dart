@@ -13,6 +13,9 @@ class LoadMessagesEvent extends ChatEvent {
   final ThemeColorModel? initialThemeColor;
   final String? initialCustomWallpaperUrl;
   final int? initialDisappearingTimer;
+  final bool? initialIsBlocked;
+  final bool? initialIsBlockedByMe;
+  final bool? initialIsBlockedByOther;
   const LoadMessagesEvent({
     required this.conversationId,
     this.recipientId,
@@ -20,6 +23,20 @@ class LoadMessagesEvent extends ChatEvent {
     this.initialThemeColor,
     this.initialCustomWallpaperUrl,
     this.initialDisappearingTimer,
+    this.initialIsBlocked,
+    this.initialIsBlockedByMe,
+    this.initialIsBlockedByOther,
+  });
+}
+
+class UpdateBlockStatusEvent extends ChatEvent {
+  final bool isBlocked;
+  final bool isBlockedByMe;
+  final bool isBlockedByOther;
+  const UpdateBlockStatusEvent({
+    required this.isBlocked,
+    required this.isBlockedByMe,
+    required this.isBlockedByOther,
   });
 }
 
@@ -51,8 +68,8 @@ class SendMessageEvent extends ChatEvent {
     this.attachmentBytes,
     this.replyMessageId,
     this.replyMessageBody,
-    this.allowShare = true,
-    this.allowDownload = true,
+    this.allowShare = false,
+    this.allowDownload = false,
     this.allowView = true,
     this.fileSize,
     this.messageId,
@@ -189,6 +206,26 @@ class UpdateAttachmentPermissionsEvent extends ChatEvent {
     required this.allowShare,
     required this.allowDownload,
     required this.allowView,
+  });
+}
+
+class ReceiveMediaPermissionsUpdatedEvent extends ChatEvent {
+  final String mediaId;
+  final String? fileKey;
+  final String? fileName;
+  final bool allowShare;
+  final bool allowDownload;
+  final bool allowView;
+  final bool isRevoked;
+
+  const ReceiveMediaPermissionsUpdatedEvent({
+    required this.mediaId,
+    this.fileKey,
+    this.fileName,
+    required this.allowShare,
+    required this.allowDownload,
+    required this.allowView,
+    this.isRevoked = false,
   });
 }
 

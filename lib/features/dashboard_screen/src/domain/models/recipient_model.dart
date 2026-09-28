@@ -22,6 +22,9 @@ abstract class RecipientModel with _$RecipientModel {
     @JsonKey(name: 'created_at') @Default('') String createdAt,
     @JsonKey(name: 'updated_at') @Default('') String updatedAt,
     @JsonKey(name: 'contactName') String? contactName,
+    @JsonKey(name: 'is_blocked') @Default(false) bool isBlocked,
+    @JsonKey(name: 'is_blocked_by_me') @Default(false) bool isBlockedByMe,
+    @JsonKey(name: 'is_blocked_by_other') @Default(false) bool isBlockedByOther,
   }) = _RecipientModel;
 
   String get displayName {
@@ -43,5 +46,8 @@ abstract class RecipientModel with _$RecipientModel {
 Map<String, dynamic> _normalizeRecipientJson(Map<String, dynamic> json) {
   final normalizedJson = Map<String, dynamic>.from(json);
   normalizedJson['_id'] = (json['id'] ?? json['_id'])?.toString() ?? '';
+  normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
+  normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
+  normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;
   return normalizedJson;
 }

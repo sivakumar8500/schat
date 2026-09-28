@@ -47,4 +47,23 @@ class CallHistoryRepositoryImpl implements CallHistoryRepository {
       return <CallHistoryModel>[];
     }
   }
+
+  @override
+  Future<bool> deleteCall(String callId) async {
+    try {
+      final endpoint = CommonEndpoints.deleteMessage(callId);
+      final result = await _apiService.delete(endpoint, mapper: (data) => data);
+      final isSuccess = result.when(
+        success: (_) => true,
+        failure: (err, code) {
+          debugPrint('deleteCall error: $err (code: $code)');
+          return false;
+        },
+      );
+      return isSuccess;
+    } catch (e) {
+      debugPrint('Exception in deleteCall: $e');
+      return false;
+    }
+  }
 }

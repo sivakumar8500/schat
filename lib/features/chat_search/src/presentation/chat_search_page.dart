@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -5,10 +6,15 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/recipient_model.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
+import 'package:schat/features/chat_search/src/domain/models/global_search_model.dart';
+import 'package:schat/core/network/api_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
-import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/injection.dart';
 
 class ChatSearchPage extends StatefulWidget {
@@ -22,6 +28,10 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedFilter = 'All';
+
+  Timer? _debounceTimer;
+  bool _isSearchingServer = false;
+  GlobalSearchResponse? _serverSearchResponse;
 
   final List<Map<String, dynamic>> _filters = [
     {'key': 'All', 'label': 'All', 'icon': Icons.all_inclusive_rounded},
@@ -37,15 +47,86 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() {
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query != _searchQuery) {
       setState(() {
-        _searchQuery = _searchController.text.trim().toLowerCase();
+        _searchQuery = query;
       });
+      _debounceServerSearch(query);
+    }
+  }
+
+  void _debounceServerSearch(String query) {
+    _debounceTimer?.cancel();
+    if (query.isEmpty) {
+      setState(() {
+        _isSearchingServer = false;
+        _serverSearchResponse = null;
+      });
+      return;
+    }
+
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _executeServerSearch(query);
     });
+  }
+
+  Future<void> _executeServerSearch(String query) async {
+    if (!mounted || query.isEmpty) return;
+
+    setState(() {
+      _isSearchingServer = true;
+    });
+
+    try {
+      final apiService = getIt<ApiService>();
+      final filterParam = _selectedFilter == 'All' ? 'all' : _selectedFilter.toLowerCase();
+      final result = await apiService.call<GlobalSearchResponse>(
+        path: CommonEndpoints.searchGlobal,
+        method: 'GET',
+        queryParameters: {
+          'q': query,
+          'filter': filterParam,
+          'limit': 40,
+        },
+        mapper: (data) => GlobalSearchResponse.fromJson(data as Map<String, dynamic>),
+      );
+
+      if (!mounted) return;
+
+      result.when(
+        success: (response) {
+          if (mounted && _searchQuery == query) {
+            setState(() {
+              _serverSearchResponse = response;
+              _isSearchingServer = false;
+            });
+          }
+        },
+        failure: (msg, _) {
+          if (mounted) {
+            setState(() {
+              _isSearchingServer = false;
+            });
+          }
+        },
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isSearchingServer = false;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -56,43 +137,76 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildSearchHeader(isDark),
-            _buildFilterChips(isDark),
-            const SizedBox(height: 4),
-            Expanded(
-              child: BlocBuilder<ChatsBloc, ChatsState>(
-                builder: (context, state) {
-                  return state.maybeWhen(
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                    loaded: (chatList) {
-                      final filteredChats = _filterChats(chatList);
-
-                      if (filteredChats.isEmpty) {
-                        return _buildEmptyState(isDark);
-                      }
-
-                      return _buildChatList(filteredChats, isDark);
-                    },
-                    error: (msg) => Center(
-                      child: Text(
-                        'Error: $msg',
-                        style: TextStyle(color: context.colors.textSecondary),
-                      ),
-                    ),
-                    orElse: () => const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                },
+      body: Stack(
+        children: [
+          // Background wave pattern matching Home Screen
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HomeBackgroundWavePainter(isDark: isDark),
               ),
             ),
-          ],
-        ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                _buildSearchHeader(isDark),
+                if (_searchQuery.isEmpty) _buildFilterChips(isDark),
+                const SizedBox(height: 4),
+                Expanded(
+                  child: BlocBuilder<ChatsBloc, ChatsState>(
+                    builder: (context, state) {
+                      return state.maybeWhen(
+                        loading: () => Center(
+                          child: CircularProgressIndicator(color: context.colors.primary),
+                        ),
+                        loaded: (chatList) {
+                          // When query is entered, render query-based search results
+                          if (_searchQuery.isNotEmpty) {
+                            return _buildQueryResultList(chatList, isDark);
+                          }
+
+                          final filteredChats = _filterChats(chatList);
+                          if (filteredChats.isEmpty) {
+                            return _buildEmptyState(isDark);
+                          }
+
+                          // Render Grid View for Photos, Videos, and Audio
+                          if (_selectedFilter == 'Photos' ||
+                              _selectedFilter == 'Videos' ||
+                              _selectedFilter == 'Audio') {
+                            return _buildMediaGrid(filteredChats, isDark, _selectedFilter);
+                          }
+
+                          // Render dedicated Links view
+                          if (_selectedFilter == 'Links') {
+                            return _buildLinksList(filteredChats, isDark);
+                          }
+
+                          // Render dedicated Documents view
+                          if (_selectedFilter == 'Documents') {
+                            return _buildDocumentsList(filteredChats, isDark);
+                          }
+
+                          return _buildChatList(filteredChats, isDark);
+                        },
+                        error: (msg) => Center(
+                          child: Text(
+                            'Error: $msg',
+                            style: TextStyle(color: context.colors.textSecondary),
+                          ),
+                        ),
+                        orElse: () => Center(
+                          child: CircularProgressIndicator(color: context.colors.primary),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -108,9 +222,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         children: [
           IconButton(
             icon: Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: isDark ? Colors.white70 : const Color(0xFF374151),
-              size: 20,
+              Icons.arrow_back,
+              color: isDark ? Colors.white : const Color(0xFF111827),
+              size: 24,
             ),
             onPressed: () => Navigator.pop(context),
           ),
@@ -125,7 +239,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   width: 0.8,
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.only(left: 14, right: 6),
               child: Row(
                 children: [
                   Icon(
@@ -140,14 +254,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                       autofocus: true,
                       style: TextStyle(
                         color: context.colors.textPrimary,
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
                       decoration: InputDecoration(
                         hintText: 'Search chats, contacts, messages...',
                         hintStyle: TextStyle(
                           color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
-                          fontSize: 18,
+                          fontSize: 16,
                         ),
                         border: InputBorder.none,
                         isDense: true,
@@ -161,7 +275,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                         _searchController.clear();
                       },
                       child: Padding(
-                        padding: const EdgeInsets.all(4.0),
+                        padding: const EdgeInsets.all(6.0),
                         child: Icon(
                           Icons.cancel_rounded,
                           color: isDark ? Colors.white38 : const Color(0xFF9CA3AF),
@@ -198,6 +312,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               setState(() {
                 _selectedFilter = filter['key'] as String;
               });
+              if (_searchQuery.isNotEmpty) {
+                _executeServerSearch(_searchQuery);
+              }
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
@@ -244,6 +361,415 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     );
   }
 
+  // ==========================================
+  // QUERY-BASED SEARCH RESULTS VIEW (MATCHING SCREENSHOT)
+  // ==========================================
+  Widget _buildQueryResultList(List<ChatModel> chatList, bool isDark) {
+    final query = _searchQuery.toLowerCase();
+    final myId = getIt<StorageService>().getUserId() ?? '';
+
+    // Merge server search results or local filtered items
+    final serverMessages = _serverSearchResponse?.messages ?? [];
+
+    // Local matched chat last messages
+    final localMatches = chatList.where((chat) {
+      final name = (chat.isGroup ? (chat.groupName ?? '') : chat.recipient.displayName).toLowerCase();
+      final phone = chat.recipient.phoneNumber.toLowerCase();
+      final lastMsg = (chat.lastMessage?.content ?? '').toLowerCase();
+      final mediaUrl = (chat.lastMessage?.mediaUrl ?? '').toLowerCase();
+      return name.contains(query) || phone.contains(query) || lastMsg.contains(query) || mediaUrl.contains(query);
+    }).toList();
+
+    // If server has returned messages, show server results + local chats
+    if (serverMessages.isNotEmpty) {
+      return ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: serverMessages.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 20),
+        itemBuilder: (context, index) {
+          final msg = serverMessages[index];
+          final chat = chatList.firstWhere(
+            (c) => c.id == msg.conversationId,
+            orElse: () => ChatModel(
+              id: msg.conversationId,
+              isGroup: msg.isGroup,
+              groupName: msg.conversationName,
+              recipient: RecipientModel(
+                id: msg.senderId,
+                contactName: msg.conversationName,
+                profilePictureUrl: msg.conversationPictureUrl,
+              ),
+            ),
+          );
+
+          return _buildQueryMessageItem(
+            chat: chat,
+            conversationTitle: msg.conversationName.isNotEmpty ? msg.conversationName : (chat.isGroup ? (chat.groupName ?? 'Group') : chat.recipient.displayName),
+            senderName: msg.senderName,
+            senderId: msg.senderId,
+            myId: myId,
+            isGroup: msg.isGroup || chat.isGroup,
+            contentText: msg.contentText,
+            mediaType: msg.messageType,
+            mediaUrl: _resolveMediaUrl(msg.mediaUrl),
+            fileName: msg.fileName,
+            fileSize: msg.fileSize,
+            timestamp: msg.createdAt > 0 ? msg.createdAt : chat.updatedAt,
+            query: _searchQuery,
+            isDark: isDark,
+          );
+        },
+      );
+    }
+
+    if (localMatches.isEmpty && !_isSearchingServer) {
+      return _buildEmptyState(isDark);
+    }
+
+    // Render local matches instantly while server loads
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: localMatches.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 20),
+      itemBuilder: (context, index) {
+        final chat = localMatches[index];
+        final name = chat.isGroup
+            ? (chat.groupName ?? 'Group')
+            : chat.recipient.displayName;
+
+        final rawContent = chat.lastMessage?.content ?? chat.groupDescription ?? '';
+        final mediaType = (chat.lastMessage?.mediaType ?? '').toLowerCase();
+        final rawUrl = chat.lastMessage?.mediaUrl ?? '';
+        final resolvedUrl = _resolveMediaUrl(rawUrl);
+
+        return _buildQueryMessageItem(
+          chat: chat,
+          conversationTitle: name,
+          senderName: chat.recipient.displayName,
+          senderId: chat.lastMessage?.senderId ?? '',
+          myId: myId,
+          isGroup: chat.isGroup,
+          contentText: rawContent,
+          mediaType: mediaType,
+          mediaUrl: resolvedUrl,
+          fileName: rawContent.endsWith('.pdf') || mediaType == 'pdf' || mediaType == 'document' ? rawContent : null,
+          fileSize: null,
+          timestamp: chat.lastMessage?.createdAt ?? chat.updatedAt,
+          query: _searchQuery,
+          isDark: isDark,
+        );
+      },
+    );
+  }
+
+  Widget _buildQueryMessageItem({
+    required ChatModel chat,
+    required String conversationTitle,
+    required String? senderName,
+    required String senderId,
+    required String myId,
+    required bool isGroup,
+    required String contentText,
+    required String mediaType,
+    required String? mediaUrl,
+    required String? fileName,
+    required String? fileSize,
+    required dynamic timestamp,
+    required String query,
+    required bool isDark,
+  }) {
+    final bool isMe = senderId.isNotEmpty && senderId == myId;
+    final String timeStr = _formatMessageTime(timestamp);
+
+    // Prefix construction
+    String prefix = '';
+    if (isMe) {
+      prefix = 'You: ';
+    } else if (isGroup && senderName != null && senderName.isNotEmpty) {
+      prefix = '~ $senderName: ';
+    }
+
+    final isPdfOrDoc = mediaType == 'pdf' ||
+        mediaType == 'document' ||
+        mediaType == 'file' ||
+        contentText.toLowerCase().endsWith('.pdf') ||
+        (fileName != null && fileName.toLowerCase().endsWith('.pdf'));
+
+    final isMedia = (mediaType == 'image' || mediaType == 'photo' || mediaType == 'video') &&
+        mediaUrl != null &&
+        mediaUrl.isNotEmpty;
+
+    return InkWell(
+      onTap: () => _openChat(chat, conversationTitle),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Row: Chat Name + Timestamp
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    conversationTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : const Color(0xFF111827),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+
+            // Content Row
+            if (isPdfOrDoc)
+              _buildDocumentQueryCard(
+                fileName: fileName ?? contentText,
+                fileSize: fileSize ?? '193 kB',
+                query: query,
+                isDark: isDark,
+              )
+            else if (isMedia)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _buildHighlightedText(
+                      text: '$prefix$contentText',
+                      query: query,
+                      baseStyle: TextStyle(
+                        color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                        fontSize: 14,
+                        height: 1.35,
+                      ),
+                      highlightStyle: TextStyle(
+                        color: isDark ? Colors.white : Colors.black,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                        height: 1.35,
+                      ),
+                      maxLines: 4,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: mediaUrl,
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        width: 64,
+                        height: 64,
+                        color: isDark ? Colors.white10 : Colors.black12,
+                        child: const Icon(Icons.photo_outlined, size: 22, color: Colors.white38),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        width: 64,
+                        height: 64,
+                        color: isDark ? Colors.white10 : Colors.black12,
+                        child: const Icon(Icons.photo_outlined, size: 22, color: Colors.white38),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              _buildHighlightedText(
+                text: '$prefix$contentText',
+                query: query,
+                baseStyle: TextStyle(
+                  color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+                highlightStyle: TextStyle(
+                  color: isDark ? Colors.white : Colors.black,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+                maxLines: 4,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentQueryCard({
+    required String fileName,
+    required String fileSize,
+    required String query,
+    required bool isDark,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1B2028) : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE53935),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text(
+              'PDF',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHighlightedText(
+                  text: fileName,
+                  query: query,
+                  baseStyle: TextStyle(
+                    color: isDark ? Colors.white : Colors.black87,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  highlightStyle: TextStyle(
+                    color: isDark ? Colors.white : Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                  maxLines: 1,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  fileSize.isNotEmpty ? '$fileSize · PDF' : '193 kB · PDF',
+                  style: TextStyle(
+                    color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHighlightedText({
+    required String text,
+    required String query,
+    required TextStyle baseStyle,
+    required TextStyle highlightStyle,
+    int maxLines = 3,
+  }) {
+    if (query.isEmpty) {
+      return Text(text, style: baseStyle, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    }
+
+    final matches = RegExp(RegExp.escape(query), caseSensitive: false).allMatches(text);
+    if (matches.isEmpty) {
+      return Text(text, style: baseStyle, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    }
+
+    final List<TextSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(text: text.substring(lastEnd, match.start), style: baseStyle));
+      }
+      spans.add(TextSpan(text: text.substring(match.start, match.end), style: highlightStyle));
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(text: text.substring(lastEnd), style: baseStyle));
+    }
+
+    return RichText(
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(children: spans),
+    );
+  }
+
+  String _formatMessageTime(dynamic timestamp) {
+    if (timestamp == null) return '';
+    DateTime? dt;
+    if (timestamp is int) {
+      if (timestamp <= 0) return '';
+      dt = DateTime.fromMillisecondsSinceEpoch(
+        timestamp > 10000000000 ? timestamp : timestamp * 1000,
+      ).toLocal();
+    } else if (timestamp is String) {
+      if (timestamp.isEmpty) return '';
+      final parsedInt = int.tryParse(timestamp);
+      if (parsedInt != null) {
+        dt = DateTime.fromMillisecondsSinceEpoch(
+          timestamp.length <= 10 ? parsedInt * 1000 : parsedInt,
+        ).toLocal();
+      } else {
+        try {
+          dt = DateTime.parse(timestamp).toLocal();
+        } catch (_) {}
+      }
+    }
+
+    if (dt == null) return '';
+
+    final now = DateTime.now();
+    final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+    final yesterday = now.subtract(const Duration(days: 1));
+    final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
+
+    if (isToday) {
+      int hour = dt.hour;
+      final ampm = hour >= 12 ? 'pm' : 'am';
+      hour = hour % 12;
+      if (hour == 0) hour = 12;
+      final min = dt.minute.toString().padLeft(2, '0');
+      return '$hour:$min $ampm';
+    } else if (isYesterday) {
+      return 'Yesterday';
+    } else {
+      final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${dt.day} ${months[dt.month - 1]}';
+    }
+  }
+
   static final RegExp _urlRegex = RegExp(
     r'(https?://[^\s]+|www\.[^\s]+|[a-zA-Z0-9.-]+\.(?:com|org|net|in|io|co|ai|dev|app|edu|gov|tech|xyz|me|info|biz|online|site|store|live|cloud|link)\b(?:/[^\s]*)?)',
     caseSensitive: false,
@@ -267,21 +793,26 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         if (type != 'video') return false;
       }
       if (_selectedFilter == 'Links') {
-        final content = chat.lastMessage?.content ?? '';
-        final mediaUrl = chat.lastMessage?.mediaUrl ?? '';
         final mediaType = (chat.lastMessage?.mediaType ?? '').toLowerCase();
+        if (mediaType == 'image' ||
+            mediaType == 'photo' ||
+            mediaType == 'video' ||
+            mediaType == 'audio' ||
+            mediaType == 'voice' ||
+            mediaType == 'file' ||
+            mediaType == 'document' ||
+            mediaType == 'pdf') {
+          return false;
+        }
 
+        final content = chat.lastMessage?.content ?? '';
         final hasUrlInContent = _urlRegex.hasMatch(content) ||
             content.toLowerCase().contains('http://') ||
             content.toLowerCase().contains('https://') ||
-            content.toLowerCase().contains('www.') ||
-            content.toLowerCase().contains('.in') ||
-            content.toLowerCase().contains('.com');
-        final hasMediaUrl = mediaUrl.isNotEmpty &&
-            (mediaUrl.toLowerCase().contains('http') || mediaUrl.toLowerCase().contains('www.'));
+            content.toLowerCase().contains('www.');
         final isLinkType = mediaType == 'link' || mediaType == 'url';
 
-        if (!hasUrlInContent && !hasMediaUrl && !isLinkType) return false;
+        if (!hasUrlInContent && !isLinkType) return false;
       }
       if (_selectedFilter == 'Audio') {
         final type = (chat.lastMessage?.mediaType ?? '').toLowerCase();
@@ -289,22 +820,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       }
       if (_selectedFilter == 'Documents') {
         final type = (chat.lastMessage?.mediaType ?? '').toLowerCase();
-        if (type != 'file' && type != 'document' && type != 'pdf') return false;
-      }
-
-      // 2. Filter by search query
-      if (_searchQuery.isNotEmpty) {
-        final name = (chat.isGroup ? (chat.groupName ?? '') : chat.recipient.displayName).toLowerCase();
-        final phone = chat.recipient.phoneNumber.toLowerCase();
-        final lastMsg = (chat.lastMessage?.content ?? '').toLowerCase();
-        final mediaUrl = (chat.lastMessage?.mediaUrl ?? '').toLowerCase();
-
-        final matchesName = name.contains(_searchQuery);
-        final matchesPhone = phone.contains(_searchQuery);
-        final matchesMsg = lastMsg.contains(_searchQuery);
-        final matchesUrl = mediaUrl.contains(_searchQuery);
-
-        return matchesName || matchesPhone || matchesMsg || matchesUrl;
+        if (type != 'file' && type != 'document' && type != 'pdf' && type != 'doc' && type != 'docx' && type != 'zip') return false;
       }
 
       return true;
@@ -332,7 +848,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           CommonSpaces.h16,
           Text(
             _searchQuery.isNotEmpty
-                ? 'No chats matching "$_searchQuery"'
+                ? 'No chats or messages matching "$_searchQuery"'
                 : 'No ${_selectedFilter.toLowerCase()} conversations found',
             style: TextStyle(
               color: context.colors.textPrimary,
@@ -342,7 +858,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           ),
           CommonSpaces.h8,
           Text(
-            'Try searching with a different name or keyword',
+            'Try searching with a different name, message, or keyword',
             style: TextStyle(
               color: isDark ? Colors.white38 : const Color(0xFF6B7280),
               fontSize: 13.5,
@@ -401,27 +917,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     required bool isDark,
   }) {
     return InkWell(
-      onTap: () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ChatPage(
-              conversationId: chat.id,
-              contactName: name,
-              contactColor: context.colors.primary,
-              isOnline: chat.recipient.isOnline,
-              profilePictureUrl: chat.recipient.profilePictureUrl,
-              recipientId: chat.recipient.id,
-              isGroup: chat.isGroup,
-              initialThemeColor: chat.themeColor,
-              initialDisappearingTimer: chat.disappearingTimer,
-            ),
-          ),
-        );
-        if (mounted) {
-          context.read<ChatsBloc>().add(const FetchChats());
-        }
-      },
+      onTap: () => _openChat(chat, name),
       child: Container(
         color: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -489,11 +985,32 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     );
   }
 
+  void _openChat(ChatModel chat, String name) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatPage(
+          conversationId: chat.id,
+          contactName: name,
+          contactColor: context.colors.primary,
+          isOnline: chat.recipient.isOnline,
+          profilePictureUrl: chat.recipient.profilePictureUrl,
+          recipientId: chat.recipient.id,
+          isGroup: chat.isGroup,
+          initialThemeColor: chat.themeColor,
+          initialDisappearingTimer: chat.disappearingTimer,
+        ),
+      ),
+    );
+    if (mounted) {
+      context.read<ChatsBloc>().add(const FetchChats());
+    }
+  }
+
   Widget _buildAvatar(ChatModel chat, bool isDark) {
     final isGroup = chat.isGroup;
     final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
-    final avatarTextColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF027A48);
 
     if (isGroup) {
       final groupPic = chat.recipient.profilePictureUrl;
@@ -571,62 +1088,61 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       );
     }
 
-    final imageUrl = chat.recipient.profilePictureUrl;
-    final name = chat.recipient.displayName;
-    final isOnline = chat.recipient.isOnline;
-
-    Widget buildInitialFallback() {
-      return Center(
-        child: Text(
-          name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-          style: TextStyle(
-            color: avatarTextColor,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
+    final avatarUrl = chat.recipient.profilePictureUrl;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: avatarBg,
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: avatarUrl,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Center(
+              child: Text(
+                chat.recipient.displayName.isNotEmpty ? chat.recipient.displayName[0].toUpperCase() : '?',
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+            errorWidget: (context, url, error) => Center(
+              child: Text(
+                chat.recipient.displayName.isNotEmpty ? chat.recipient.displayName[0].toUpperCase() : '?',
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+            ),
           ),
         ),
       );
     }
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: avatarBg,
-            shape: BoxShape.circle,
-          ),
-          child: ClipOval(
-            child: (imageUrl != null && imageUrl.isNotEmpty)
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => buildInitialFallback(),
-                    errorWidget: (context, url, error) => buildInitialFallback(),
-                  )
-                : buildInitialFallback(),
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: avatarBg,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          chat.recipient.displayName.isNotEmpty ? chat.recipient.displayName[0].toUpperCase() : '?',
+          style: TextStyle(
+            color: primaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
         ),
-        if (isOnline)
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 14,
-              height: 14,
-              decoration: BoxDecoration(
-                color: const Color(0xFF12B76A),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: context.colors.scaffoldBackground,
-                  width: 2.5,
-                ),
-              ),
-            ),
-          ),
-      ],
+      ),
     );
   }
 
@@ -634,35 +1150,22 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     return Container(
       width: 22,
       height: 22,
-      decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+      ),
       child: Center(
-        child: Text(emoji, style: const TextStyle(fontSize: 11)),
+        child: Text(
+          emoji,
+          style: const TextStyle(fontSize: 11),
+        ),
       ),
     );
   }
 
   Widget _buildChatStatus(ChatModel chat, bool isDark) {
     final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
-    String timeStr = '--:--';
-    try {
-      if (timestamp.isNotEmpty) {
-        DateTime time;
-        final parsedInt = int.tryParse(timestamp);
-        if (parsedInt != null) {
-          if (timestamp.length <= 10) {
-            time = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
-          } else {
-            time = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
-          }
-        } else {
-          time = DateTime.parse(timestamp).toLocal();
-        }
-        timeStr = "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
-      }
-    } catch (e) {
-      debugPrint('Error parsing timestamp: $e');
-    }
-
+    final timeStr = _formatMessageTime(timestamp);
     final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
 
     return Column(
@@ -693,14 +1196,517 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-          )
-        else
-          const Icon(
-            Icons.done_all_rounded,
-            color: Color(0xFF12B76A),
-            size: 18,
           ),
       ],
+    );
+  }
+
+  String _resolveMediaUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    String url = path;
+    if (url.contains('minio')) {
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty) {
+          url = url.replaceAll('minio', host);
+        }
+      } catch (_) {}
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      String s3BaseUrl;
+      try {
+        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+        final host = serverUri.host;
+        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
+          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
+        } else {
+          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+        }
+      } catch (_) {
+        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+      }
+      url = '$s3BaseUrl$url';
+    }
+    return url;
+  }
+
+  Widget _buildMediaGrid(List<ChatModel> visibleChats, bool isDark, String filterType) {
+    final double childAspectRatio = filterType == 'Audio' ? 1.15 : 0.82;
+    return GridView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 40),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: childAspectRatio,
+      ),
+      itemCount: visibleChats.length,
+      itemBuilder: (context, index) {
+        final chat = visibleChats[index];
+        final name = chat.isGroup
+            ? (chat.groupName ?? 'Group')
+            : chat.recipient.displayName;
+
+        if (filterType == 'Photos') {
+          return _buildPhotoGridTile(chat, name, isDark);
+        } else if (filterType == 'Videos') {
+          return _buildVideoGridTile(chat, name, isDark);
+        } else {
+          return _buildAudioGridTile(chat, name, isDark);
+        }
+      },
+    );
+  }
+
+  Widget _buildPhotoGridTile(ChatModel chat, String name, bool isDark) {
+    final rawUrl = chat.lastMessage?.mediaUrl ?? '';
+    final resolvedUrl = _resolveMediaUrl(rawUrl);
+    final cardBg = isDark ? const Color(0xFF1B2420) : Colors.white;
+    final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final timeStr = _formatMessageTime(timestamp);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openChat(chat, name),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: resolvedUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: resolvedUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFE5E7EB),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: isDark ? const Color(0xFF16201B) : const Color(0xFFE5E7EB),
+                          child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+                        ),
+                      )
+                    : Container(
+                        color: isDark ? const Color(0xFF16201B) : const Color(0xFFE5E7EB),
+                        child: const Icon(Icons.photo_outlined, color: Colors.grey, size: 36),
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoGridTile(ChatModel chat, String name, bool isDark) {
+    final rawUrl = chat.lastMessage?.mediaUrl ?? '';
+    final resolvedUrl = _resolveMediaUrl(rawUrl);
+    final cardBg = isDark ? const Color(0xFF1B2420) : Colors.white;
+    final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final timeStr = _formatMessageTime(timestamp);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openChat(chat, name),
+        child: Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    resolvedUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: resolvedUrl,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFE5E7EB),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              color: isDark ? const Color(0xFF16201B) : const Color(0xFFE5E7EB),
+                              child: const Icon(Icons.videocam_outlined, color: Colors.grey, size: 36),
+                            ),
+                          )
+                        : Container(
+                            color: isDark ? const Color(0xFF16201B) : const Color(0xFFE5E7EB),
+                            child: const Icon(Icons.videocam_outlined, color: Colors.grey, size: 36),
+                          ),
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      timeStr,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isDark ? Colors.white54 : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAudioGridTile(ChatModel chat, String name, bool isDark) {
+    final cardBg = isDark ? const Color(0xFF1B2420) : Colors.white;
+    final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final timeStr = _formatMessageTime(timestamp);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openChat(chat, name),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: borderColor, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.audiotrack_rounded,
+                      color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                      size: 20,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    timeStr,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white54 : Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                chat.lastMessage?.content ?? 'Voice Note',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLinksList(List<ChatModel> visibleChats, bool isDark) {
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+      itemCount: visibleChats.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final chat = visibleChats[index];
+        final name = chat.isGroup
+            ? (chat.groupName ?? 'Group')
+            : chat.recipient.displayName;
+
+        return _buildLinkCard(chat, name, isDark);
+      },
+    );
+  }
+
+  Widget _buildLinkCard(ChatModel chat, String name, bool isDark) {
+    final rawContent = chat.lastMessage?.content ?? '';
+    final cardBg = isDark ? const Color(0xFF1B2420) : Colors.white;
+    final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final timeStr = _formatMessageTime(timestamp);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openChat(chat, name),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.link_rounded,
+                  color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        Text(
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white54 : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      rawContent,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentsList(List<ChatModel> visibleChats, bool isDark) {
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+      itemCount: visibleChats.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final chat = visibleChats[index];
+        final name = chat.isGroup
+            ? (chat.groupName ?? 'Group')
+            : chat.recipient.displayName;
+
+        return _buildDocumentCard(chat, name, isDark);
+      },
+    );
+  }
+
+  Widget _buildDocumentCard(ChatModel chat, String name, bool isDark) {
+    final rawContent = chat.lastMessage?.content ?? 'Document';
+    final cardBg = isDark ? const Color(0xFF1B2420) : Colors.white;
+    final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
+    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final timeStr = _formatMessageTime(timestamp);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openChat(chat, name),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE53935),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'PDF',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      rawContent,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$name · $timeStr',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.white54 : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

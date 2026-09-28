@@ -30,7 +30,8 @@ class OtpVerifyPage extends StatefulWidget {
   State<OtpVerifyPage> createState() => _OtpVerifyPageState();
 }
 
-class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
+class _OtpVerifyPageState extends State<OtpVerifyPage>
+    with CodeAutoFill, WidgetsBindingObserver {
   final List<TextEditingController> _controllers = List.generate(
     6,
     (index) => TextEditingController(),
@@ -39,36 +40,80 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   Timer? _countdownTimer;
   int _secondsRemaining = 120;
+  bool _isAutoVerifying = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startCountdown();
     _setupFocusNodes();
     _initSmsListener();
   }
 
   void _initSmsListener() async {
-    if (widget.autoFill) {
-      listenForCode();
+    try {
+      if (widget.autoFill) {
+        listenForCode();
+      }
+      if (kDebugMode) {
+        final signature = await SmsAutoFill().getAppSignature;
+        debugPrint("OTP AutoFill Signature: $signature");
+      }
+    } catch (e) {
+      debugPrint("OTP AutoFill init error: $e");
     }
-    if (kDebugMode) {
-      final signature = await SmsAutoFill().getAppSignature;
-      debugPrint("OTP AutoFill Signature: $signature");
+    _checkClipboardForOtp();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkClipboardForOtp();
+    }
+  }
+
+  Future<void> _checkClipboardForOtp() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (data?.text != null && mounted) {
+        final text = data!.text!.trim();
+        final match = RegExp(r'\b\d{6}\b').firstMatch(text);
+        if (match != null) {
+          final otp = match.group(0)!;
+          final isAllEmpty = _controllers.every((c) => c.text.isEmpty);
+          if (isAllEmpty) {
+            _fillAndVerifyOtp(otp);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Clipboard OTP check error: $e");
     }
   }
 
   @override
   void codeUpdated() {
-    if (code != null && code!.length == 6) {
-      debugPrint("OTP Auto-filled: $code");
-      for (int i = 0; i < 6; i++) {
-        _controllers[i].text = code![i];
+    if (code != null && code!.isNotEmpty) {
+      final match = RegExp(r'\d{6}').firstMatch(code!);
+      final otp = match != null ? match.group(0) : code!.replaceAll(RegExp(r'\D'), '');
+      if (otp != null && otp.length == 6) {
+        debugPrint("OTP Auto-filled from SMS: $otp");
+        _fillAndVerifyOtp(otp);
       }
-      setState(() {});
-      // Auto-submit when code is received via auto-fill
-      _verifyOtp(context);
     }
+  }
+
+  void _fillAndVerifyOtp(String otp) {
+    if (!mounted || otp.length != 6) return;
+    for (int i = 0; i < 6; i++) {
+      _controllers[i].text = otp[i];
+    }
+    for (var node in _focusNodes) {
+      node.unfocus();
+    }
+    setState(() {});
+    _verifyOtp(context);
   }
 
   void _setupFocusNodes() {
@@ -108,6 +153,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     cancel();
     _countdownTimer?.cancel();
     for (var controller in _controllers) {
@@ -120,13 +166,14 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
   }
 
   void _verifyOtp(BuildContext context) {
+    if (_isAutoVerifying) return;
     String otp = _controllers.map((c) => c.text).join();
     
     if (otp.length < 6) {
-      // Button should be disabled anyway, but keeping as safeguard
       return;
     }
 
+    _isAutoVerifying = true;
     final deviceId = getIt<StorageService>().getOrGenerateDeviceId();
     context.read<AuthBloc>().add(
       VerifyOtpEvent(otpCode: otp, deviceId: deviceId),
@@ -143,25 +190,15 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
       return;
     }
 
-    if (value.length == 2 && _controllers[index].text.length == 1) {
-      final oldText = _controllers[index].text;
-      final newChar = value.replaceFirst(oldText, '');
-      if (newChar.length == 1 && RegExp(r'^\d$').hasMatch(newChar)) {
-        _controllers[index].text = newChar;
-        if (index < 5) {
-          _focusNodes[index + 1].requestFocus();
-        } else {
-          _focusNodes[index].unfocus();
-        }
-        setState(() {});
-        return;
-      }
-    }
-
     final cleanValue = value.replaceAll(RegExp(r'\D'), '');
     if (cleanValue.isEmpty) {
       _controllers[index].text = '';
       setState(() {});
+      return;
+    }
+
+    if (cleanValue.length >= 6) {
+      _fillAndVerifyOtp(cleanValue.substring(0, 6));
       return;
     }
 
@@ -177,18 +214,27 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
       } else {
         _focusNodes[5].unfocus();
       }
-    } else {
-      _controllers[index].text = cleanValue;
-      if (index < 5) {
-        _focusNodes[index + 1].requestFocus();
-      } else {
-        _focusNodes[index].unfocus();
+      setState(() {});
+      if (_isOtpComplete) {
+        _verifyOtp(context);
       }
+      return;
+    }
+
+    _controllers[index].text = cleanValue;
+    if (index < 5) {
+      _focusNodes[index + 1].requestFocus();
+    } else {
+      _focusNodes[index].unfocus();
     }
     setState(() {});
+    if (_isOtpComplete) {
+      _verifyOtp(context);
+    }
   }
 
   void _clearOtpFields() {
+    _isAutoVerifying = false;
     for (var controller in _controllers) {
       controller.clear();
     }
@@ -415,15 +461,21 @@ class _OtpVerifyPageState extends State<OtpVerifyPage> with CodeAutoFill {
                                   ),
                                 )
                               : InkWell(
-                                  onTap: () {
-                                    context.read<AuthBloc>().add(
-                                      SendOtpEvent(
-                                        phoneNumber:
-                                            widget.mobileNumber,
-                                      ),
-                                    );
-                                    _startCountdown();
-                                    listenForCode();
+                                  onTap: () async {
+                                    String? signature;
+                                    try {
+                                      signature = await SmsAutoFill().getAppSignature;
+                                    } catch (_) {}
+                                    if (context.mounted) {
+                                      context.read<AuthBloc>().add(
+                                        SendOtpEvent(
+                                          phoneNumber: widget.mobileNumber,
+                                          appSignature: signature,
+                                        ),
+                                      );
+                                      _startCountdown();
+                                      listenForCode();
+                                    }
                                   },
                                   child: Text(
                                     'Resend Code',

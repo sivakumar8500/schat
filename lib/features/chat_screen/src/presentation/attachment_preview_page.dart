@@ -18,6 +18,9 @@ class AttachmentPreviewPage extends StatefulWidget {
   final String type; // 'image', 'video', 'document', 'audio'
   final int size;
   final String contactName;
+  final bool initialAllowView;
+  final bool initialAllowDownload;
+  final bool initialAllowShare;
 
   const AttachmentPreviewPage({
     super.key,
@@ -27,6 +30,9 @@ class AttachmentPreviewPage extends StatefulWidget {
     required this.type,
     required this.size,
     required this.contactName,
+    this.initialAllowView = true,
+    this.initialAllowDownload = false,
+    this.initialAllowShare = false,
   });
 
   @override
@@ -41,10 +47,16 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   Uint8List? _currentBytes;
   Uint8List? _originalBytes;
   bool _hasEdits = false;
+  late bool _allowView;
+  late bool _allowDownload;
+  late bool _allowShare;
 
   @override
   void initState() {
     super.initState();
+    _allowView = widget.initialAllowView;
+    _allowDownload = widget.initialAllowDownload;
+    _allowShare = widget.initialAllowShare;
     if (widget.type == 'image' && widget.bytes != null) {
       _currentBytes = widget.bytes;
       _originalBytes = widget.bytes;
@@ -194,6 +206,9 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       'caption': _captionController.text.trim(),
       'bytes': _currentBytes ?? widget.bytes,
       'path': widget.path,
+      'allowView': _allowView,
+      'allowDownload': _allowDownload,
+      'allowShare': _allowShare,
     });
   }
 
@@ -371,6 +386,33 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Permission Controls (Initial: View only)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildPermissionToggle(
+                  icon: _allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                  label: 'View',
+                  isActive: _allowView,
+                  onTap: () => setState(() => _allowView = !_allowView),
+                ),
+                _buildPermissionToggle(
+                  icon: _allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
+                  label: 'Download',
+                  isActive: _allowDownload,
+                  onTap: () => setState(() => _allowDownload = !_allowDownload),
+                ),
+                _buildPermissionToggle(
+                  icon: _allowShare ? CommonIcons.share : CommonIcons.shareOff,
+                  label: 'Share',
+                  isActive: _allowShare,
+                  onTap: () => setState(() => _allowShare = !_allowShare),
+                ),
+              ],
+            ),
+          ),
           Row(
             children: [
               Expanded(
@@ -415,6 +457,48 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
             style: context.bodySmall.copyWith(color: context.colors.textSecondary),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionToggle({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive
+              ? context.colors.primary.withValues(alpha: 0.15)
+              : context.colors.border.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isActive ? context.colors.primary : context.colors.border.withValues(alpha: 0.4),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? context.colors.primary : context.colors.textSecondary,
+            ),
+            CommonSpaces.w6,
+            Text(
+              label,
+              style: context.bodySmall.copyWith(
+                color: isActive ? context.colors.primary : context.colors.textSecondary,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -23,6 +23,9 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'updated_at') @Default('') String updatedAt,
     @JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,
     @JsonKey(name: 'contactName') String? contactName,
+    @JsonKey(name: 'is_blocked') @Default(false) bool isBlocked,
+    @JsonKey(name: 'is_blocked_by_me') @Default(false) bool isBlockedByMe,
+    @JsonKey(name: 'is_blocked_by_other') @Default(false) bool isBlockedByOther,
   }) = _UserModel;
 
   String get displayName {
@@ -59,5 +62,8 @@ Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   if (json.containsKey('defaultDisappearingTimer') && !json.containsKey('default_disappearing_timer')) {
     normalizedJson['default_disappearing_timer'] = json['defaultDisappearingTimer'];
   }
+  normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
+  normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
+  normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;
   return normalizedJson;
 }

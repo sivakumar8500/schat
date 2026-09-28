@@ -24,6 +24,9 @@ _UserModel _$UserModelFromJson(Map<String, dynamic> json) => _UserModel(
   defaultDisappearingTimer: (json['default_disappearing_timer'] as num?)
       ?.toInt(),
   contactName: json['contactName'] as String?,
+  isBlocked: json['is_blocked'] as bool? ?? false,
+  isBlockedByMe: json['is_blocked_by_me'] as bool? ?? false,
+  isBlockedByOther: json['is_blocked_by_other'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$UserModelToJson(_UserModel instance) =>
@@ -44,4 +47,7 @@ Map<String, dynamic> _$UserModelToJson(_UserModel instance) =>
       'updated_at': instance.updatedAt,
       'default_disappearing_timer': instance.defaultDisappearingTimer,
       'contactName': instance.contactName,
+      'is_blocked': instance.isBlocked,
+      'is_blocked_by_me': instance.isBlockedByMe,
+      'is_blocked_by_other': instance.isBlockedByOther,
     };

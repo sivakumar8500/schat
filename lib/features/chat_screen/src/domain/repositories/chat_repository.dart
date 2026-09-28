@@ -50,6 +50,9 @@ abstract class ChatRepository {
   /// Returns the server-side `clearedAt` ISO-8601 timestamp.
   Future<String?> clearChat(String conversationId);
 
+  /// DELETE /messages/{messageId} to delete a message for everyone via REST API.
+  Future<bool> deleteMessageForEveryone(String messageId);
+
   /// Fetches the list of available conversation theme colors.
   Future<List<ThemeColorModel>> getThemes();
 
@@ -93,11 +96,39 @@ abstract class ChatRepository {
   /// PUT /messages/scheduled/{id} to edit/update a scheduled message.
   Future<ScheduledMessageModel> updateScheduledMessage(String scheduledMessageId, Map<String, dynamic> requestData);
 
+  /// POST /media/{mediaId}/share to grant file access with custom permissions.
+  Future<bool> shareMedia({
+    required String mediaId,
+    required String granteeId,
+    String? parentGrantId,
+    bool canView = true,
+    bool canDownload = false,
+    bool canShare = false,
+  });
+
   /// GET /media/{mediaId}/permissions to fetch media DRM and access control permissions.
   Future<MediaPermissionsModel> getMediaPermissions(String mediaId);
 
   /// GET /media/{mediaId}/access-tree to fetch the hierarchical access and downstream share tree.
   Future<MediaAccessTreeModel> getMediaAccessTree(String mediaId);
+
+  /// PATCH /media/{mediaId}/grants/{grantId}/override to apply owner override permissions.
+  Future<bool> setMediaOwnerOverride({
+    required String mediaId,
+    required String grantId,
+    required bool canView,
+    required bool canDownload,
+    required bool canShare,
+  });
+
+  /// DELETE /media/{mediaId}/grants/{grantId} to revoke a share grant and all downstream shares.
+  Future<bool> revokeMediaShareGrant({
+    required String mediaId,
+    required String grantId,
+  });
+
+  /// POST /media/{mediaId}/revoke-all to revoke all shares for this media.
+  Future<bool> revokeAllMediaShares(String mediaId);
 
   /// Screen capture permission methods
   Future<ScreenPermissionModel> requestScreenPermission({

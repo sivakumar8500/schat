@@ -131,7 +131,10 @@ class ChatRepositoryImpl implements ChatRepository {
       );
 
       final res = completeResult.when(
-        success: (_) => objectKey,
+        success: (_) {
+          debugPrint('========\nmediaid: $mediaId\n========');
+          return objectKey;
+        },
         failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
       );
       return res;
@@ -657,6 +660,34 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<bool> shareMedia({
+    required String mediaId,
+    required String granteeId,
+    String? parentGrantId,
+    bool canView = true,
+    bool canDownload = false,
+    bool canShare = false,
+  }) async {
+    final result = await _apiService.post(
+      CommonEndpoints.shareMedia(mediaId),
+      data: {
+        'grantee_id': granteeId,
+        ...?parentGrantId == null ? null : {'parent_grant_id': parentGrantId},
+        'permissions': {
+          'can_view': canView,
+          'can_download': canDownload,
+          'can_share': canShare,
+        },
+      },
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
   Future<MediaPermissionsModel> getMediaPermissions(String mediaId) async {
     final result = await _apiService.get<MediaPermissionsModel>(
       CommonEndpoints.mediaPermissions(mediaId),
@@ -678,6 +709,58 @@ class ChatRepositoryImpl implements ChatRepository {
 
     return result.when(
       success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<bool> setMediaOwnerOverride({
+    required String mediaId,
+    required String grantId,
+    required bool canView,
+    required bool canDownload,
+    required bool canShare,
+  }) async {
+    final result = await _apiService.patch(
+      CommonEndpoints.mediaOwnerOverride(mediaId, grantId),
+      data: {
+        'owner_override': {
+          'can_view': canView,
+          'can_download': canDownload,
+          'can_share': canShare,
+        },
+      },
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<bool> revokeMediaShareGrant({
+    required String mediaId,
+    required String grantId,
+  }) async {
+    final result = await _apiService.delete(
+      CommonEndpoints.mediaRevokeGrant(mediaId, grantId),
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<bool> revokeAllMediaShares(String mediaId) async {
+    final result = await _apiService.post(
+      CommonEndpoints.mediaRevokeAll(mediaId),
+    );
+
+    return result.when(
+      success: (_) => true,
       failure: (error, _) => throw Exception(error),
     );
   }
@@ -772,6 +855,27 @@ class ChatRepositoryImpl implements ChatRepository {
       success: (data) => data,
       failure: (error, _) => throw Exception(error),
     );
+  }
+
+  @override
+  Future<bool> deleteMessageForEveryone(String messageId) async {
+    try {
+      final result = await _apiService.delete(
+        CommonEndpoints.deleteMessage(messageId),
+        mapper: (data) => data,
+      );
+      final isSuccess = result.when(
+        success: (_) => true,
+        failure: (error, _) {
+          debugPrint('deleteMessageForEveryone API error: $error');
+          return false;
+        },
+      );
+      return isSuccess;
+    } catch (e) {
+      debugPrint('deleteMessageForEveryone exception: $e');
+      return false;
+    }
   }
 }
 

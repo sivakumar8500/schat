@@ -18,4 +18,28 @@ class CallHistoryCubit extends Cubit<CallHistoryState> {
       emit(CallHistoryState.error(e.toString()));
     }
   }
+
+  Future<void> deleteCall(String callId) async {
+    state.maybeWhen(
+      loaded: (calls) {
+        final updated = calls.where((c) => c.id != callId).toList();
+        emit(CallHistoryState.loaded(updated));
+        _repository.deleteCall(callId);
+      },
+      orElse: () {},
+    );
+  }
+
+  Future<void> deleteMultipleCalls(Set<String> callIds) async {
+    state.maybeWhen(
+      loaded: (calls) {
+        final updated = calls.where((c) => !callIds.contains(c.id)).toList();
+        emit(CallHistoryState.loaded(updated));
+        for (final id in callIds) {
+          _repository.deleteCall(id);
+        }
+      },
+      orElse: () {},
+    );
+  }
 }

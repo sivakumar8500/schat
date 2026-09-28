@@ -48,6 +48,11 @@ class ChatLoaded extends ChatState {
   final ScreenPermissionModel? activeScreenPermission;
   final ScreenPermissionModel? incomingScreenPermissionRequest;
 
+  // Block state
+  final bool isBlocked;
+  final bool isBlockedByMe;
+  final bool isBlockedByOther;
+
   const ChatLoaded({
     required this.messages,
     this.pinnedMessages = const [],
@@ -71,6 +76,9 @@ class ChatLoaded extends ChatState {
     this.onlyAdminsSendMessages = false,
     this.activeScreenPermission,
     this.incomingScreenPermissionRequest,
+    this.isBlocked = false,
+    this.isBlockedByMe = false,
+    this.isBlockedByOther = false,
   });
 
   ChatLoaded copyWith({
@@ -102,6 +110,9 @@ class ChatLoaded extends ChatState {
     bool clearActiveScreenPermission = false,
     ScreenPermissionModel? incomingScreenPermissionRequest,
     bool clearIncomingScreenPermissionRequest = false,
+    bool? isBlocked,
+    bool? isBlockedByMe,
+    bool? isBlockedByOther,
   }) {
     return ChatLoaded(
       messages: messages ?? this.messages,
@@ -134,6 +145,9 @@ class ChatLoaded extends ChatState {
       incomingScreenPermissionRequest: clearIncomingScreenPermissionRequest
           ? null
           : (incomingScreenPermissionRequest ?? this.incomingScreenPermissionRequest),
+      isBlocked: isBlocked ?? this.isBlocked,
+      isBlockedByMe: isBlockedByMe ?? this.isBlockedByMe,
+      isBlockedByOther: isBlockedByOther ?? this.isBlockedByOther,
     );
   }
 }

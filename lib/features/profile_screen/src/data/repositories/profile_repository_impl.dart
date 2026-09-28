@@ -161,7 +161,10 @@ class ProfileRepositoryImpl implements ProfileRepository {
       );
 
       String resolvedUrl = completeResult.when(
-        success: (data) => data['url']?.toString() ?? data['file_url']?.toString() ?? '',
+        success: (data) {
+          debugPrint('========\nmediaid: $mediaId\n========');
+          return data['url']?.toString() ?? data['file_url']?.toString() ?? '';
+        },
         failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
       );
 

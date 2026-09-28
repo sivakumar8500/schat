@@ -1403,6 +1403,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 isGroup: chat.isGroup,
                 initialThemeColor: chat.themeColor,
                 initialDisappearingTimer: chat.disappearingTimer,
+                isBlocked: chat.recipient.isBlocked,
+                isBlockedByMe: chat.recipient.isBlockedByMe,
+                isBlockedByOther: chat.recipient.isBlockedByOther,
               ),
             ),
           );

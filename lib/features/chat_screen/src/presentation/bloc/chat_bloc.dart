@@ -57,6 +57,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
     on<UpdateAttachmentPermissionsEvent>(_onUpdateAttachmentPermissions);
+    on<ReceiveMediaPermissionsUpdatedEvent>(_onReceiveMediaPermissionsUpdated);
     on<MarkMessageFailedEvent>(_onMarkMessageFailed);
     on<ToggleFavoriteEvent>(_onToggleFavorite);
     on<SetDisappearingTimerEvent>(_onSetDisappearingTimer);
@@ -97,6 +98,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateActiveScreenPermissionEvent>(_onUpdateActiveScreenPermission);
     on<ConsumeScreenPermissionEvent>(_onConsumeScreenPermission);
     on<DismissIncomingScreenPermissionRequestEvent>(_onDismissIncomingScreenPermissionRequest);
+    on<UpdateBlockStatusEvent>((event, emit) {
+      if (state is ChatLoaded) {
+        final currentState = state as ChatLoaded;
+        emit(currentState.copyWith(
+          isBlocked: event.isBlocked,
+          isBlockedByMe: event.isBlockedByMe,
+          isBlockedByOther: event.isBlockedByOther,
+          isRecipientOnline: event.isBlocked ? false : currentState.isRecipientOnline,
+          isRecipientTyping: event.isBlocked ? false : currentState.isRecipientTyping,
+          lastSeen: event.isBlocked ? null : currentState.lastSeen,
+        ));
+      }
+    });
 
     _listenToSocket();
     _startExpiryTimer();
@@ -243,19 +257,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (securityMap is Map) {
             if (securityMap['allowShare'] != null) {
               allowShare = securityMap['allowShare'] as bool;
-            } else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+            } else if (securityMap['allow_share'] != null) {
+              allowShare = securityMap['allow_share'] as bool;
+            }
 
             if (securityMap['allowDownload'] != null) {
               allowDownload = securityMap['allowDownload'] as bool;
-            } else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+            } else if (securityMap['allow_download'] != null) {
+              allowDownload = securityMap['allow_download'] as bool;
+            }
 
             if (securityMap['allowView'] != null) {
               allowView = securityMap['allowView'] as bool;
-            } else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
+            } else if (securityMap['allow_view'] != null) {
+              allowView = securityMap['allow_view'] as bool;
+            }
 
             if (securityMap['isLocked'] != null) {
               isLocked = securityMap['isLocked'] as bool;
-            } else if (securityMap['is_locked'] != null) isLocked = securityMap['is_locked'] as bool;
+            } else if (securityMap['is_locked'] != null) {
+              isLocked = securityMap['is_locked'] as bool;
+            }
           }
 
           if (viewControlMap is Map) {
@@ -360,33 +382,50 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             msgId = contentMap['text']?.toString();
           }
           
-          bool allowShare = true;
-          bool allowDownload = true;
-          bool allowView = true;
+          bool? allowShare;
+          bool? allowDownload;
+          bool? allowView;
 
           if (securityMap is Map) {
-            allowShare = (securityMap['allowShare'] ?? securityMap['allow_share'] ?? allowShare) as bool;
-            allowDownload = (securityMap['allowDownload'] ?? securityMap['allow_download'] ?? allowDownload) as bool;
-            allowView = (securityMap['allowView'] ?? securityMap['allow_view'] ?? allowView) as bool;
+            if (securityMap['allowShare'] != null) allowShare = securityMap['allowShare'] as bool;
+            else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+
+            if (securityMap['allowDownload'] != null) allowDownload = securityMap['allowDownload'] as bool;
+            else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+
+            if (securityMap['allowView'] != null) allowView = securityMap['allowView'] as bool;
+            else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
           }
 
           if (viewControlMap is Map) {
-            allowShare = (viewControlMap['allowShare'] ?? viewControlMap['allow_share'] ?? allowShare) as bool;
-            allowDownload = (viewControlMap['allowDownload'] ?? viewControlMap['allow_download'] ?? allowDownload) as bool;
-            allowView = (viewControlMap['allowView'] ?? viewControlMap['allow_view'] ?? allowView) as bool;
+            if (allowShare == null) {
+              if (viewControlMap['allowShare'] != null) allowShare = viewControlMap['allowShare'] as bool;
+              else if (viewControlMap['allow_share'] != null) allowShare = viewControlMap['allow_share'] as bool;
+            }
+            if (allowDownload == null) {
+              if (viewControlMap['allowDownload'] != null) allowDownload = viewControlMap['allowDownload'] as bool;
+              else if (viewControlMap['allow_download'] != null) allowDownload = viewControlMap['allow_download'] as bool;
+            }
+            if (allowView == null) {
+              if (viewControlMap['allowView'] != null) allowView = viewControlMap['allowView'] as bool;
+              else if (viewControlMap['allow_view'] != null) allowView = viewControlMap['allow_view'] as bool;
+            }
           }
 
-          allowShare = (cleanData['allowShare'] ?? cleanData['allow_share'] ?? allowShare) as bool;
-          allowDownload = (cleanData['allowDownload'] ?? cleanData['allow_download'] ?? allowDownload) as bool;
-          allowView = (cleanData['allowView'] ?? cleanData['allow_view'] ?? allowView) as bool;
+          if (cleanData['allowShare'] != null) allowShare = cleanData['allowShare'] as bool;
+          if (cleanData['allow_share'] != null) allowShare = cleanData['allow_share'] as bool;
+          if (cleanData['allowDownload'] != null) allowDownload = cleanData['allowDownload'] as bool;
+          if (cleanData['allow_download'] != null) allowDownload = cleanData['allow_download'] as bool;
+          if (cleanData['allowView'] != null) allowView = cleanData['allowView'] as bool;
+          if (cleanData['allow_view'] != null) allowView = cleanData['allow_view'] as bool;
 
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(UpdateAttachmentPermissionsEvent(
               messageId: msgId,
               conversationId: convId!,
-              allowShare: allowShare,
-              allowDownload: allowDownload,
-              allowView: allowView,
+              allowShare: allowShare ?? true,
+              allowDownload: allowDownload ?? true,
+              allowView: allowView ?? true,
             ));
           }
         } else if (type == 'call_log_updated') {
@@ -417,6 +456,36 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final dynamic rawTimer = cleanData['disappearing_timer'] ?? cleanData['disappearingTimer'] ?? cleanData['timer'];
             final int? timerSec = rawTimer != null ? int.tryParse(rawTimer.toString()) : null;
             add(ReceiveDisappearingTimerUpdatedEvent(seconds: timerSec));
+          }
+        } else if (type == 'media_permissions_updated' || type == 'media_access_revoked') {
+          final mediaId = (cleanData['media_id'] ?? cleanData['mediaId'])?.toString();
+          final fileKey = (cleanData['file_key'] ?? cleanData['fileKey'])?.toString();
+          final fileName = (cleanData['file_name'] ?? cleanData['fileName'])?.toString();
+          final perms = cleanData['permissions'];
+          bool allowShare = false;
+          bool allowDownload = false;
+          bool allowView = false;
+          if (perms is Map) {
+            allowShare = (perms['can_share'] ?? perms['canShare'] ?? perms['allow_share'] ?? perms['allowShare'] ?? false) as bool;
+            allowDownload = (perms['can_download'] ?? perms['canDownload'] ?? perms['allow_download'] ?? perms['allowDownload'] ?? false) as bool;
+            allowView = (perms['can_view'] ?? perms['canView'] ?? perms['allow_view'] ?? perms['allowView'] ?? false) as bool;
+          }
+          final isRevoked = type == 'media_access_revoked' || cleanData['is_all_revoked'] == true;
+          if (isRevoked) {
+            allowShare = false;
+            allowDownload = false;
+            allowView = false;
+          }
+          if ((mediaId != null && mediaId.isNotEmpty) || (fileKey != null && fileKey.isNotEmpty) || (fileName != null && fileName.isNotEmpty)) {
+            add(ReceiveMediaPermissionsUpdatedEvent(
+              mediaId: mediaId ?? '',
+              fileKey: fileKey,
+              fileName: fileName,
+              allowShare: allowShare,
+              allowDownload: allowDownload,
+              allowView: allowView,
+              isRevoked: isRevoked,
+            ));
           }
         } else if (type == 'error') {
           final errorMsg = cleanData['message']?.toString() ?? 'An error occurred';
@@ -516,18 +585,25 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       debugPrint('Error loading cached disappearing timer: $e');
     }
 
+    final bool isBlocked = event.initialIsBlocked ?? false;
+    final bool isBlockedByMe = event.initialIsBlockedByMe ?? false;
+    final bool isBlockedByOther = event.initialIsBlockedByOther ?? false;
+
     if (cachedMessages.isNotEmpty) {
       final filteredCached = _filterExpiredMessages(cachedMessages);
       emit(ChatLoaded(
         messages: filteredCached,
         myId: myId,
         isMuted: isMuted,
-        isRecipientOnline: _currentIsOnline,
-        isRecipientTyping: _currentIsTyping,
+        isRecipientOnline: isBlocked ? false : _currentIsOnline,
+        isRecipientTyping: isBlocked ? false : _currentIsTyping,
         customBgColor: savedColor,
         customWallpaperUrl: savedWallpaper,
         themeColor: savedThemeColor,
         disappearingTimer: disappearingTimer,
+        isBlocked: isBlocked,
+        isBlockedByMe: isBlockedByMe,
+        isBlockedByOther: isBlockedByOther,
       ));
     } else {
       emit(const ChatLoading());
@@ -607,6 +683,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
           activeScreenPermission: activeScreenPermission ?? currentState.activeScreenPermission,
+          isBlocked: isBlocked || currentState.isBlocked,
+          isBlockedByMe: isBlockedByMe || currentState.isBlockedByMe,
+          isBlockedByOther: isBlockedByOther || currentState.isBlockedByOther,
         ));
       } else {
         emit(ChatLoaded(
@@ -614,13 +693,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           pinnedMessages: pinnedMessages,
           myId: myId,
           isMuted: isMuted,
-          isRecipientOnline: _currentIsOnline,
-          isRecipientTyping: _currentIsTyping,
+          isRecipientOnline: isBlocked ? false : _currentIsOnline,
+          isRecipientTyping: isBlocked ? false : _currentIsTyping,
           customBgColor: savedColor,
           customWallpaperUrl: savedWallpaper,
           themeColor: savedThemeColor,
           disappearingTimer: disappearingTimer,
           activeScreenPermission: activeScreenPermission,
+          isBlocked: isBlocked,
+          isBlockedByMe: isBlockedByMe,
+          isBlockedByOther: isBlockedByOther,
         ));
       }
     } catch (e) {
@@ -631,7 +713,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
     }
 
-    // Fetch recipient profile for initial lastSeen in background
+    // Fetch recipient profile for initial lastSeen and block status in background
     final rId = event.recipientId;
     if (rId != null && rId.isNotEmpty) {
       getIt<ProfileRepository>().getUserById(rId).then((result) {
@@ -639,17 +721,24 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           success: (user) {
             final currentState = state;
             if (currentState is ChatLoaded) {
-              add(UpdateUserStatusEvent(
-                userId: rId,
-                isOnline: user.isOnline,
-                lastSeen: user.lastSeen,
+              add(UpdateBlockStatusEvent(
+                isBlocked: user.isBlocked,
+                isBlockedByMe: user.isBlockedByMe,
+                isBlockedByOther: user.isBlockedByOther,
               ));
+              if (!user.isBlocked) {
+                add(UpdateUserStatusEvent(
+                  userId: rId,
+                  isOnline: user.isOnline,
+                  lastSeen: user.lastSeen,
+                ));
+              }
             }
           },
           failure: (_, _) {},
         );
       }).catchError((e) {
-        debugPrint('Error fetching recipient lastSeen: $e');
+        debugPrint('Error fetching recipient profile: $e');
       });
     }
   }
@@ -934,6 +1023,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _currentIsOnline = event.isOnline;
     final currentState = state;
     if (currentState is ChatLoaded) {
+      if (currentState.isBlocked) {
+        emit(currentState.copyWith(
+          isRecipientOnline: false,
+          lastSeen: null,
+        ));
+        return;
+      }
       emit(currentState.copyWith(
         isRecipientOnline: _currentIsOnline,
         lastSeen: event.lastSeen ?? currentState.lastSeen,
@@ -945,6 +1041,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _currentIsTyping = event.isTyping;
     final currentState = state;
     if (currentState is ChatLoaded) {
+      if (currentState.isBlocked) {
+        emit(currentState.copyWith(isRecipientTyping: false));
+        return;
+      }
       if (event.isTyping) {
         emit(currentState.copyWith(isRecipientTyping: true));
         _typingTimer?.cancel();
@@ -1019,6 +1119,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           messageId: id,
           deleteType: event.deleteType,
         );
+        if (event.deleteType == 'everyone') {
+          _chatRepository.deleteMessageForEveryone(id).catchError((e) {
+            debugPrint('Fallback delete API error: $e');
+            return false;
+          });
+        }
       }
 
       final updatedPinned = currentState.pinnedMessages
@@ -1239,6 +1345,34 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onReceiveMediaPermissionsUpdated(ReceiveMediaPermissionsUpdatedEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        final mediaKey = msg.mediaUrl ?? msg.content;
+        final attachmentName = msg.attachmentName ?? '';
+        final matchesMediaId = event.mediaId.isNotEmpty && (mediaKey.contains(event.mediaId) || msg.id == event.mediaId);
+        final matchesFileKey = event.fileKey != null && event.fileKey!.isNotEmpty && (mediaKey.contains(event.fileKey!) || attachmentName.contains(event.fileKey!));
+        final matchesFileName = event.fileName != null && event.fileName!.isNotEmpty && (mediaKey.contains(event.fileName!) || attachmentName.contains(event.fileName!));
+
+        if (matchesMediaId || matchesFileKey || matchesFileName) {
+          if (msg.senderId != currentState.myId) {
+            return msg.copyWith(
+              allowShare: event.allowShare,
+              allowDownload: event.allowDownload,
+              allowView: event.allowView,
+            );
+          }
+        }
+        return msg;
+      }).toList();
+      emit(currentState.copyWith(messages: updatedMessages));
+      if (_conversationId != null) {
+        _saveToCache(_conversationId!, updatedMessages);
+      }
     }
   }
 

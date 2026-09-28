@@ -23,6 +23,9 @@ _RecipientModel _$RecipientModelFromJson(Map<String, dynamic> json) =>
       createdAt: json['created_at'] as String? ?? '',
       updatedAt: json['updated_at'] as String? ?? '',
       contactName: json['contactName'] as String?,
+      isBlocked: json['is_blocked'] as bool? ?? false,
+      isBlockedByMe: json['is_blocked_by_me'] as bool? ?? false,
+      isBlockedByOther: json['is_blocked_by_other'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$RecipientModelToJson(_RecipientModel instance) =>
@@ -42,4 +45,7 @@ Map<String, dynamic> _$RecipientModelToJson(_RecipientModel instance) =>
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
       'contactName': instance.contactName,
+      'is_blocked': instance.isBlocked,
+      'is_blocked_by_me': instance.isBlockedByMe,
+      'is_blocked_by_other': instance.isBlockedByOther,
     };
