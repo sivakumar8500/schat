@@ -232,7 +232,7 @@ class MessageModel {
       else if (security['canDownload'] != null) allowDownload = security['canDownload'] == true;
       else if (security['can_download'] != null) allowDownload = security['can_download'] == true;
 
-      if (security['isLocked'] == true) {
+      if (security['isLocked'] == true || security['is_locked'] == true) {
         allowView = false;
       } else if (security['allowView'] != null) {
         allowView = security['allowView'] == true;
@@ -260,10 +260,17 @@ class MessageModel {
       else if (viewControl['canDownload'] != null) allowDownload = viewControl['canDownload'] as bool;
       else if (viewControl['can_download'] != null) allowDownload = viewControl['can_download'] as bool;
 
-      if (viewControl['allowView'] != null) allowView = viewControl['allowView'] as bool;
-      else if (viewControl['allow_view'] != null) allowView = viewControl['allow_view'] as bool;
-      else if (viewControl['canView'] != null) allowView = viewControl['canView'] as bool;
-      else if (viewControl['can_view'] != null) allowView = viewControl['can_view'] as bool;
+      if (viewControl['isLocked'] == true || viewControl['is_locked'] == true) {
+        allowView = false;
+      } else if (viewControl['allowView'] != null) {
+        allowView = viewControl['allowView'] as bool;
+      } else if (viewControl['allow_view'] != null) {
+        allowView = viewControl['allow_view'] as bool;
+      } else if (viewControl['canView'] != null) {
+        allowView = viewControl['canView'] as bool;
+      } else if (viewControl['can_view'] != null) {
+        allowView = viewControl['can_view'] as bool;
+      }
 
       isFileViewed = (viewControl['isFileViewed'] ?? viewControl['file_viewed'] ?? viewControl['is_file_viewed'] ?? isFileViewed) as bool? ?? false;
       isFileDownloaded = (viewControl['isFileDownloaded'] ?? viewControl['file_downloaded'] ?? viewControl['is_file_downloaded'] ?? isFileDownloaded) as bool? ?? false;
