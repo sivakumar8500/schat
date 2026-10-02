@@ -44,6 +44,7 @@ import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
+import 'widgets/chat_lock_bottom_sheet.dart';
 import 'package:collection/collection.dart';
 import 'contact_profile_page.dart';
 import 'full_screen_image_page.dart';
@@ -84,6 +85,9 @@ class ChatPage extends StatefulWidget {
   final bool isBlocked;
   final bool isBlockedByMe;
   final bool isBlockedByOther;
+  final bool? initialReadReceiptsEnabled;
+  final bool? initialTypingIndicatorsEnabled;
+  final bool initialIsLocked;
 
   const ChatPage({
     super.key,
@@ -105,6 +109,9 @@ class ChatPage extends StatefulWidget {
     this.isBlocked = false,
     this.isBlockedByMe = false,
     this.isBlockedByOther = false,
+    this.initialReadReceiptsEnabled,
+    this.initialTypingIndicatorsEnabled,
+    this.initialIsLocked = false,
   });
 
   @override
@@ -208,6 +215,9 @@ class _ChatPageState extends State<ChatPage> {
       initialIsBlocked: widget.isBlocked,
       initialIsBlockedByMe: widget.isBlockedByMe,
       initialIsBlockedByOther: widget.isBlockedByOther,
+      initialReadReceiptsEnabled: widget.initialReadReceiptsEnabled,
+      initialTypingIndicatorsEnabled: widget.initialTypingIndicatorsEnabled,
+      initialIsLocked: widget.initialIsLocked,
     ));
 
     // Pre-populate with shared text if provided
@@ -2045,6 +2055,18 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  bool _isTypingIndicatorEnabled() {
+    final state = _chatBloc.state;
+    final chatOverride = state is ChatLoaded ? state.typingIndicatorsEnabled : null;
+    final globalSetting = getIt<StorageService>().getTypingIndicatorsEnabled();
+    return chatOverride ?? globalSetting;
+  }
+
+  void _sendTypingStatus(bool isTyping) {
+    if (isTyping && !_isTypingIndicatorEnabled()) return;
+    context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: isTyping));
+  }
+
   void _onTextChanged(String value) {
     final hasText = value.trim().isNotEmpty;
     final hasAttachment = _selectedAttachmentType != null;
@@ -2053,8 +2075,8 @@ class _ChatPageState extends State<ChatPage> {
       setState(() {
         _isTyping = shouldShowSend;
       });
-      // Immediately notify about change
-      context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: hasText));
+      // Immediately notify about change if enabled
+      _sendTypingStatus(hasText);
     }
 
     if (widget.isGroup) {
@@ -2209,7 +2231,7 @@ class _ChatPageState extends State<ChatPage> {
     
     _typingIndicatorTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (_messageController.text.trim().isNotEmpty) {
-        context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: true));
+        _sendTypingStatus(true);
       } else {
         _stopTypingTimer();
       }
@@ -3856,40 +3878,27 @@ class _ChatPageState extends State<ChatPage> {
                 );
               }
             } else if (value == 'clear_chat') {
-              // Show confirmation dialog before clearing
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: Theme.of(ctx).colorScheme.surface,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  title: const Text('Clear chat?', style: TextStyle(fontWeight: FontWeight.bold)),
-                  content: const Text(
-                    'This will clear all messages in this chat for you only. This action cannot be undone.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel'),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Clear'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                _chatBloc.add(ClearChatEvent(conversationId: widget.conversationId));
-              }
+              _showClearChatBottomSheet(context);
             } else if (value == 'scheduled') {
               _showScheduleMessageBottomSheet(context);
             } else if (value == 'screen_permission') {
               _showRequestScreenPermissionBottomSheet(context);
+            } else if (value == 'chat_privacy') {
+              _showChatPrivacyBottomSheet(context);
+            } else if (value == 'lock_chat') {
+              final isCurrentlyLocked = state is ChatLoaded && state.isLocked;
+              final changed = await ChatLockBottomSheet.show(
+                context,
+                conversationId: widget.conversationId,
+                contactName: widget.contactName,
+                isCurrentlyLocked: isCurrentlyLocked,
+              );
+              if (changed == true && context.mounted) {
+                _chatBloc.add(ToggleLockEvent(isLocked: !isCurrentlyLocked));
+                if (!isCurrentlyLocked) {
+                  Navigator.of(context).pop();
+                }
+              }
             }
           },
           itemBuilder: (BuildContext context) {
@@ -3912,6 +3921,7 @@ class _ChatPageState extends State<ChatPage> {
               return [
                 _buildMenuItem('search', CommonIcons.search, 'Search message'),
                 _buildMenuItem('screen_permission', Icons.security_rounded, 'Request Screenshot / Record'),
+                _buildMenuItem('chat_privacy', Icons.lock_person_outlined, 'Chat privacy'),
                 _buildMenuItem('new_group', Icons.group_add_rounded, 'New group'),
                 _buildMenuItem('view_contact', CommonIcons.personOutline, 'View contact'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Media, links, and docs'),
@@ -3919,6 +3929,11 @@ class _ChatPageState extends State<ChatPage> {
                 _buildMenuItem('mute', isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, isMuted ? 'Unmute notifications' : 'Mute notifications'),
                 _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
+                _buildMenuItem(
+                  'lock_chat',
+                  (state is ChatLoaded && state.isLocked) ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+                  (state is ChatLoaded && state.isLocked) ? 'Unlock chat' : 'Lock chat',
+                ),
                 _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
               ];
             }
@@ -4329,7 +4344,7 @@ class _ChatPageState extends State<ChatPage> {
       if (_mentionQuery.isEmpty) return true;
       final name = u.displayName.toLowerCase();
       final uname = (u.username ?? '').toLowerCase();
-      final phone = u.phoneNumber ?? '';
+      final phone = u.phoneNumber;
       return name.contains(_mentionQuery) ||
           uname.contains(_mentionQuery) ||
           phone.contains(_mentionQuery);
@@ -5467,6 +5482,475 @@ class _ChatPageState extends State<ChatPage> {
             ),
         ],
       ),
+    );
+  }
+
+  void _showChatPrivacyBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return BlocBuilder<ChatBloc, ChatState>(
+          bloc: _chatBloc,
+          builder: (context, state) {
+            final readReceiptsEnabled = state is ChatLoaded ? state.readReceiptsEnabled : null;
+            final typingIndicatorsEnabled = state is ChatLoaded ? state.typingIndicatorsEnabled : null;
+            final globalRead = getIt<StorageService>().getReadReceiptsEnabled();
+            final globalTyping = getIt<StorageService>().getTypingIndicatorsEnabled();
+
+            return Material(
+              color: context.colors.scaffoldBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            color: context.colors.textHint.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5E9),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.security_rounded, color: Color(0xFF00873C), size: 20),
+                          ),
+                          CommonSpaces.w12,
+                          Text(
+                            'Chat Privacy',
+                            style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      CommonSpaces.h8,
+                      Text(
+                        'Customize privacy settings for this chat with ${widget.contactName}.',
+                        style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+                      ),
+                      CommonSpaces.h20,
+
+                      // Read Receipts Section
+                      Text(
+                        'Read Receipts',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: context.colors.primary,
+                        ),
+                      ),
+                      CommonSpaces.h8,
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Default (App setting: ${globalRead ? "On" : "Off"})',
+                        subtitle: 'Follows your global privacy setting',
+                        isSelected: readReceiptsEnabled == null,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              clearReadReceipts: true,
+                            ),
+                          );
+                          context.showInfoNotification('Read receipts set to Default for ${widget.contactName}');
+                        },
+                      ),
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Always On',
+                        subtitle: 'Show read receipts for this person only',
+                        isSelected: readReceiptsEnabled == true,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              readReceiptsEnabled: true,
+                            ),
+                          );
+                          context.showInfoNotification('Read receipts enabled for ${widget.contactName}');
+                        },
+                      ),
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Off',
+                        subtitle: 'Turn off read receipts for this person only',
+                        isSelected: readReceiptsEnabled == false,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              readReceiptsEnabled: false,
+                            ),
+                          );
+                          context.showInfoNotification('Read receipts disabled for ${widget.contactName}');
+                        },
+                      ),
+                      CommonSpaces.h20,
+
+                      // Typing Indicators Section
+                      Text(
+                        'Typing Indicator',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: context.colors.primary,
+                        ),
+                      ),
+                      CommonSpaces.h8,
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Default (App setting: ${globalTyping ? "On" : "Off"})',
+                        subtitle: 'Follows your global privacy setting',
+                        isSelected: typingIndicatorsEnabled == null,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              clearTypingIndicators: true,
+                            ),
+                          );
+                          context.showInfoNotification('Typing indicator set to Default for ${widget.contactName}');
+                        },
+                      ),
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Always On',
+                        subtitle: 'Show typing indicator for this person only',
+                        isSelected: typingIndicatorsEnabled == true,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              typingIndicatorsEnabled: true,
+                            ),
+                          );
+                          context.showInfoNotification('Typing indicator enabled for ${widget.contactName}');
+                        },
+                      ),
+                      _buildPrivacyOptionTile(
+                        context: context,
+                        title: 'Off',
+                        subtitle: 'Turn off typing indicator for this person only',
+                        isSelected: typingIndicatorsEnabled == false,
+                        onTap: () {
+                          _chatBloc.add(
+                            UpdateChatPrivacyEvent(
+                              conversationId: widget.conversationId,
+                              typingIndicatorsEnabled: false,
+                            ),
+                          );
+                          context.showInfoNotification('Typing indicator disabled for ${widget.contactName}');
+                        },
+                      ),
+                      CommonSpaces.h16,
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPrivacyOptionTile({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final isDark = context.colors.isDark;
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            : (isDark ? context.colors.cardBackground : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isSelected ? primaryColor : context.colors.border.withValues(alpha: 0.3),
+          width: isSelected ? 1.5 : 1.0,
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14.5,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            color: isSelected ? primaryColor : context.colors.textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            color: isSelected
+                ? (isDark ? Colors.white70 : const Color(0xFF027A48))
+                : (isDark ? Colors.white54 : const Color(0xFF6B7280)),
+          ),
+        ),
+        trailing: isSelected
+            ? Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: primaryColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.check_rounded,
+                  size: 15,
+                  color: isDark ? Colors.black : Colors.white,
+                ),
+              )
+            : null,
+        onTap: onTap,
+      ),
+    );
+  }
+
+  void _showClearChatBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return Material(
+          color: sheetCtx.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE4E2),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.cleaning_services_rounded,
+                          color: Color(0xFFD92D20),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          'Clear Chat',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: sheetCtx.colors.textPrimary,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Are you sure you want to clear messages in this chat? Choose whether to clear for yourself or for both participants.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.45,
+                      color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Button 1: Clear for me
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(sheetCtx);
+                        _chatBloc.add(ClearChatEvent(
+                          conversationId: widget.conversationId,
+                          clearType: 'me',
+                        ));
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                        alignment: Alignment.centerLeft,
+                        side: BorderSide(
+                          color: const Color(0xFFD92D20).withValues(alpha: 0.4),
+                          width: 1.2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        backgroundColor: isDark
+                            ? const Color(0xFFD92D20).withValues(alpha: 0.08)
+                            : const Color(0xFFFEF3F2),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.person_outline_rounded,
+                            color: Color(0xFFD92D20),
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Clear for me',
+                                  style: TextStyle(
+                                    color: Color(0xFFD92D20),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Messages will be cleared for you only',
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white60 : const Color(0xFF6B7280),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Button 2: Clear for everyone
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(sheetCtx);
+                        _chatBloc.add(ClearChatEvent(
+                          conversationId: widget.conversationId,
+                          clearType: 'everyone',
+                        ));
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                        alignment: Alignment.centerLeft,
+                        backgroundColor: const Color(0xFFD92D20),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(
+                            Icons.groups_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Clear for everyone',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Permanently clears messages for all participants',
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Cancel Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(sheetCtx),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: sheetCtx.colors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

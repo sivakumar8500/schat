@@ -1,4 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 
 part 'user_model.freezed.dart';
 part 'user_model.g.dart';
@@ -26,6 +28,9 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'is_blocked') @Default(false) bool isBlocked,
     @JsonKey(name: 'is_blocked_by_me') @Default(false) bool isBlockedByMe,
     @JsonKey(name: 'is_blocked_by_other') @Default(false) bool isBlockedByOther,
+    @JsonKey(name: 'read_receipts_enabled') @Default(true) bool readReceiptsEnabled,
+    @JsonKey(name: 'typing_indicators_enabled') @Default(true) bool typingIndicatorsEnabled,
+    @JsonKey(name: 'notifications_enabled') @Default(true) bool notificationsEnabled,
   }) = _UserModel;
 
   String get displayName {
@@ -65,5 +70,29 @@ Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
   normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
   normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;
+  
+  if (json.containsKey('read_receipts_enabled') && json['read_receipts_enabled'] != null) {
+    normalizedJson['read_receipts_enabled'] = json['read_receipts_enabled'] == true;
+  } else if (json.containsKey('readReceiptsEnabled') && json['readReceiptsEnabled'] != null) {
+    normalizedJson['read_receipts_enabled'] = json['readReceiptsEnabled'] == true;
+  } else {
+    try {
+      normalizedJson['read_receipts_enabled'] = getIt<StorageService>().getReadReceiptsEnabled();
+    } catch (_) {
+      normalizedJson['read_receipts_enabled'] = true;
+    }
+  }
+
+  if (json.containsKey('typing_indicators_enabled') && json['typing_indicators_enabled'] != null) {
+    normalizedJson['typing_indicators_enabled'] = json['typing_indicators_enabled'] == true;
+  } else if (json.containsKey('typingIndicatorsEnabled') && json['typingIndicatorsEnabled'] != null) {
+    normalizedJson['typing_indicators_enabled'] = json['typingIndicatorsEnabled'] == true;
+  } else {
+    try {
+      normalizedJson['typing_indicators_enabled'] = getIt<StorageService>().getTypingIndicatorsEnabled();
+    } catch (_) {
+      normalizedJson['typing_indicators_enabled'] = true;
+    }
+  }
   return normalizedJson;
 }

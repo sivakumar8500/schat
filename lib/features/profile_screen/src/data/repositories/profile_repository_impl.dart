@@ -47,6 +47,14 @@ class ProfileRepositoryImpl implements ProfileRepository {
     if (data.containsKey('default_disappearing_timer')) {
       data['defaultDisappearingTimer'] = data['default_disappearing_timer'];
     }
+    if (request.readReceiptsEnabled != null) {
+      data['read_receipts_enabled'] = request.readReceiptsEnabled;
+      data['readReceiptsEnabled'] = request.readReceiptsEnabled;
+    }
+    if (request.typingIndicatorsEnabled != null) {
+      data['typing_indicators_enabled'] = request.typingIndicatorsEnabled;
+      data['typingIndicatorsEnabled'] = request.typingIndicatorsEnabled;
+    }
 
     final result = await _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,
@@ -59,6 +67,12 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUserId(user.id);
         _storageService.saveUsername(user.username);
         _storageService.saveProfilePic(user.profilePictureUrl);
+        if (request.readReceiptsEnabled != null) {
+          _storageService.saveReadReceiptsEnabled(request.readReceiptsEnabled!);
+        }
+        if (request.typingIndicatorsEnabled != null) {
+          _storageService.saveTypingIndicatorsEnabled(request.typingIndicatorsEnabled!);
+        }
         return ApiResult.success(user);
       },
       failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),

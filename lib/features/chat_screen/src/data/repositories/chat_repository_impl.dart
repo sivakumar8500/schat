@@ -219,6 +219,31 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> updateChatPrivacySettings({
+    required String conversationId,
+    bool? readReceiptsEnabled,
+    bool? typingIndicatorsEnabled,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (readReceiptsEnabled != null) {
+      payload['read_receipts_enabled'] = readReceiptsEnabled;
+    }
+    if (typingIndicatorsEnabled != null) {
+      payload['typing_indicators_enabled'] = typingIndicatorsEnabled;
+    }
+
+    final result = await _apiService.put(
+      CommonEndpoints.updateChatPrivacy(conversationId),
+      data: payload,
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => throw Exception(error),
+    );
+  }
+
+  @override
   Future<void> forwardMessage({required String messageId, required String targetConversationId}) async {
     final result = await _apiService.post(
       CommonEndpoints.forwardMessage(messageId),
@@ -877,5 +902,102 @@ class ChatRepositoryImpl implements ChatRepository {
       return false;
     }
   }
+
+  @override
+  Future<ChatLockStatusModel> getChatLockStatus() async {
+    try {
+      final result = await _apiService.get<ChatLockStatusModel>(
+        CommonEndpoints.getLockStatus,
+        mapper: (data) => ChatLockStatusModel.fromJson(Map<String, dynamic>.from(data as Map)),
+      );
+      final value = result.when(
+        success: (data) => data,
+        failure: (error, _) => const ChatLockStatusModel(),
+      );
+      return value;
+    } catch (_) {
+      return const ChatLockStatusModel();
+    }
+  }
+
+  @override
+  Future<bool> setChatLockPassword(String password, {String? oldPassword}) async {
+    try {
+      final data = <String, dynamic>{'password': password};
+      if (oldPassword != null && oldPassword.isNotEmpty) {
+        data['oldPassword'] = oldPassword;
+      }
+      final result = await _apiService.post(
+        CommonEndpoints.setLockPassword,
+        data: data,
+        mapper: (d) => d,
+      );
+      final value = result.when(
+        success: (_) => true,
+        failure: (error, _) => false,
+      );
+      return value;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> verifyChatLockPassword(String password) async {
+    try {
+      final result = await _apiService.post(
+        CommonEndpoints.verifyLockPassword,
+        data: {'password': password},
+        mapper: (d) => d,
+      );
+      final value = result.when(
+        success: (d) => d is Map ? (d['valid'] == true) : true,
+        failure: (error, _) => false,
+      );
+      return value;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> toggleChatLock(String conversationId, {required bool isLocked, String? password}) async {
+    try {
+      final data = <String, dynamic>{'isLocked': isLocked};
+      if (password != null && password.isNotEmpty) {
+        data['password'] = password;
+      }
+      final result = await _apiService.post(
+        CommonEndpoints.lockChat(conversationId),
+        data: data,
+        mapper: (d) => d,
+      );
+      final value = result.when(
+        success: (_) => true,
+        failure: (error, _) => false,
+      );
+      return value;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<List<dynamic>> getLockedChats() async {
+    try {
+      final result = await _apiService.get<List<dynamic>>(
+        CommonEndpoints.getLockedChats,
+        mapper: (data) => data is List ? data : [],
+      );
+      final value = result.when(
+        success: (data) => data,
+        failure: (error, _) => [],
+      );
+      return value;
+    } catch (_) {
+      return [];
+    }
+  }
 }
+
 

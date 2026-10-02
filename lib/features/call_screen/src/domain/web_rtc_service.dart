@@ -1,5 +1,6 @@
 // mason make usecase --name web_rtc_service
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:injectable/injectable.dart';
@@ -77,6 +78,7 @@ class WebRtcService {
   }
 
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
   // MAKE CALL (Caller side)
   // ─────────────────────────────────────────────
 
@@ -86,6 +88,8 @@ class WebRtcService {
     required ChatSocketRepository repository,
     String? callerName,
     String? profilePictureUrl,
+    bool isGroup = false,
+    String? groupName,
   }) async {
     _activeConversationId = conversationId;
     await initRenderers();
@@ -118,13 +122,59 @@ class WebRtcService {
       'call_type': isVideo ? 'video' : 'audio',
       'caller_name': callerName,
       'profile_picture_url': profilePictureUrl,
+      'is_group': isGroup,
+      'isGroup': isGroup,
+      'group_name': ?groupName,
+      'groupName': ?groupName,
       'offer': {
         'type': offer.type,
         'sdp': offer.sdp,
       },
     });
 
-    debugPrint('WebRTC: call_initiate sent for conv=$conversationId');
+    debugPrint('WebRTC: call_initiate sent for conv=$conversationId (isGroup=$isGroup)');
+  }
+
+  /// Retrieves the current local SDP offer or creates a new one for newly added/reinvited participants.
+  Future<Map<String, dynamic>?> getCurrentOrNewOffer({bool? isVideo}) async {
+    try {
+      if (_peerConnection != null) {
+        final localDesc = await _peerConnection!.getLocalDescription();
+        if (localDesc != null && localDesc.sdp != null && localDesc.sdp!.isNotEmpty) {
+          return {
+            'type': localDesc.type,
+            'sdp': localDesc.sdp,
+          };
+        }
+        final offer = await _peerConnection!.createOffer(_offerConstraints);
+        await _peerConnection!.setLocalDescription(offer);
+        return {
+          'type': offer.type,
+          'sdp': offer.sdp,
+        };
+      } else {
+        await initRenderers();
+        if (_localStream == null) {
+          _localStream = await _getUserMedia(isVideo: isVideo ?? false);
+          localRenderer.srcObject = _localStream;
+          _localStreamController.add(_localStream);
+        }
+        _peerConnection = await createPeerConnection(_peerConfig, _offerConstraints);
+        _attachLocalTracks();
+        if (getIt.isRegistered<ChatSocketRepository>()) {
+          _setupConnectionCallbacks(getIt<ChatSocketRepository>());
+        }
+        final offer = await _peerConnection!.createOffer(_offerConstraints);
+        await _peerConnection!.setLocalDescription(offer);
+        return {
+          'type': offer.type,
+          'sdp': offer.sdp,
+        };
+      }
+    } catch (e) {
+      debugPrint('WebRTC: Error in getCurrentOrNewOffer: $e');
+      return null;
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -135,21 +185,26 @@ class WebRtcService {
     required Map<String, dynamic> incomingEvent,
     required ChatSocketRepository repository,
   }) async {
-    final conversationId = incomingEvent['conversation_id'] as String;
+    final conversationId = (incomingEvent['conversation_id'] ?? incomingEvent['conversationId'] ?? '').toString();
     final messageId = incomingEvent['message_id'] ?? incomingEvent['messageId'];
-    final callType = incomingEvent['call_type'] as String? ?? 'audio';
-    final offerMap = incomingEvent['offer'] as Map<String, dynamic>;
+    final callType = (incomingEvent['call_type'] ?? incomingEvent['callType']) as String? ?? 'audio';
+    
+    dynamic rawOffer = incomingEvent['offer'];
+    Map<String, dynamic>? offerMap;
+    if (rawOffer is Map) {
+      offerMap = Map<String, dynamic>.from(rawOffer);
+    } else if (rawOffer is String && rawOffer.isNotEmpty) {
+      try {
+        offerMap = jsonDecode(rawOffer) as Map<String, dynamic>?;
+      } catch (e) {
+        debugPrint('WebRTC: Error decoding offer string: $e');
+      }
+    }
+
     _activeConversationId = conversationId;
 
     await initRenderers();
     _callSignalController.add(CallSignalState.connecting);
-
-    // Set audio mode for communication
-    try {
-      // Note: setAudioMode might not be available in all plugin versions
-    } catch (e) {
-      debugPrint('WebRTC: setAudioMode failed: $e');
-    }
 
     // 1. Get callee's local media
     _localStream = await _getUserMedia(isVideo: callType == 'video');
@@ -161,14 +216,29 @@ class WebRtcService {
     _attachLocalTracks();
     _setupConnectionCallbacks(repository);
 
-    // 3. Set remote description (the caller's SDP offer)
-    final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type']);
-    await _peerConnection!.setRemoteDescription(remoteOffer);
-    await _processRemoteCandidateQueue();
+    Map<String, dynamic>? answerData;
+    if (offerMap != null && offerMap['sdp'] != null && (offerMap['sdp'] as String).isNotEmpty) {
+      // 3. Set remote description (the caller's SDP offer)
+      final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type'] ?? 'offer');
+      await _peerConnection!.setRemoteDescription(remoteOffer);
+      await _processRemoteCandidateQueue();
 
-    // 4. Create and set local SDP answer
-    final answer = await _peerConnection!.createAnswer(_offerConstraints);
-    await _peerConnection!.setLocalDescription(answer);
+      // 4. Create and set local SDP answer
+      final answer = await _peerConnection!.createAnswer(_offerConstraints);
+      await _peerConnection!.setLocalDescription(answer);
+      answerData = {
+        'type': answer.type,
+        'sdp': answer.sdp,
+      };
+    } else {
+      // Fallback: If no remote offer was provided, generate local offer/description
+      final offer = await _peerConnection!.createOffer(_offerConstraints);
+      await _peerConnection!.setLocalDescription(offer);
+      answerData = {
+        'type': offer.type,
+        'sdp': offer.sdp,
+      };
+    }
 
     // 5. Send call_response with accept over WebSocket
     repository.emit('message', {
@@ -176,10 +246,7 @@ class WebRtcService {
       'conversation_id': conversationId,
       'message_id': messageId,
       'response': 'accept',
-      'answer': {
-        'type': answer.type,
-        'sdp': answer.sdp,
-      },
+      'answer': answerData,
     });
 
     debugPrint('WebRTC: call_response (accept) sent for conv=$conversationId');

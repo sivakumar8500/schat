@@ -98,6 +98,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateActiveScreenPermissionEvent>(_onUpdateActiveScreenPermission);
     on<ConsumeScreenPermissionEvent>(_onConsumeScreenPermission);
     on<DismissIncomingScreenPermissionRequestEvent>(_onDismissIncomingScreenPermissionRequest);
+    on<UpdateChatPrivacyEvent>(_onUpdateChatPrivacy);
     on<UpdateBlockStatusEvent>((event, emit) {
       if (state is ChatLoaded) {
         final currentState = state as ChatLoaded;
@@ -604,6 +605,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isBlocked: isBlocked,
         isBlockedByMe: isBlockedByMe,
         isBlockedByOther: isBlockedByOther,
+        isLocked: event.initialIsLocked ?? false,
       ));
     } else {
       emit(const ChatLoading());
@@ -626,10 +628,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Save fresh messages to cache
       _saveToCache(event.conversationId, messages);
 
-      // Mark unread messages from recipient as read (send read receipt to server)
-      for (var msg in messages) {
-        if (msg.senderId != myId && !msg.isRead) {
-          _socketRepository.sendReadReceipt(msg.conversationId, msg.id);
+      // Mark unread messages from recipient as read (send read receipt to server) if enabled
+      final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
+      final effectiveReadReceipts = event.initialReadReceiptsEnabled ?? globalReadReceipts;
+      if (effectiveReadReceipts) {
+        for (var msg in messages) {
+          if (msg.senderId != myId && !msg.isRead) {
+            _socketRepository.sendReadReceipt(msg.conversationId, msg.id);
+          }
         }
       }
 
@@ -683,6 +689,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
           activeScreenPermission: activeScreenPermission ?? currentState.activeScreenPermission,
+          readReceiptsEnabled: event.initialReadReceiptsEnabled ?? currentState.readReceiptsEnabled,
+          typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled ?? currentState.typingIndicatorsEnabled,
           isBlocked: isBlocked || currentState.isBlocked,
           isBlockedByMe: isBlockedByMe || currentState.isBlockedByMe,
           isBlockedByOther: isBlockedByOther || currentState.isBlockedByOther,
@@ -700,9 +708,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           themeColor: savedThemeColor,
           disappearingTimer: disappearingTimer,
           activeScreenPermission: activeScreenPermission,
+          readReceiptsEnabled: event.initialReadReceiptsEnabled,
+          typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
           isBlocked: isBlocked,
           isBlockedByMe: isBlockedByMe,
           isBlockedByOther: isBlockedByOther,
+          isLocked: event.initialIsLocked ?? false,
         ));
       }
     } catch (e) {
@@ -882,8 +893,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));
         _currentIsTyping = false;
         
-        // Send read receipt back to sender via socket
-        _socketRepository.sendReadReceipt(newMessage.conversationId, newMessage.id);
+        // Send read receipt back to sender via socket if enabled
+        final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
+        final effectiveReadReceipts = currentState.readReceiptsEnabled ?? globalReadReceipts;
+        if (effectiveReadReceipts) {
+          _socketRepository.sendReadReceipt(newMessage.conversationId, newMessage.id);
+        }
 
         emit(currentState.copyWith(
           messages: updatedMessages,
@@ -904,6 +919,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (currentState is ChatLoaded && _conversationId != null) {
       _chatRepository.toggleMute(conversationId: _conversationId!, isMuted: event.isMuted);
       emit(currentState.copyWith(isMuted: event.isMuted));
+      await _storageService.saveChatMuted(_conversationId!, event.isMuted);
       
       try {
         final box = await Hive.openBox('muted_chats_box');
@@ -1439,44 +1455,57 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is! ChatLoaded) return;
     try {
-      final clearedAt = await _chatRepository.clearChat(event.conversationId);
+      if (event.clearType == 'everyone') {
+        final messageIds = currentState.messages.map((m) => m.id).toList();
+        if (messageIds.isNotEmpty) {
+          add(DeleteMessagesEvent(
+            messageIds: messageIds,
+            conversationId: event.conversationId,
+            deleteType: 'everyone',
+          ));
+        }
+        await _chatRepository.clearChat(event.conversationId);
+        final box = await Hive.openBox('cached_messages');
+        await box.delete(event.conversationId);
+        emit(currentState.copyWith(
+          messages: [],
+          pinnedMessages: [],
+          notificationMessage: 'Chat cleared for everyone',
+        ));
+      } else {
+        final clearedAt = await _chatRepository.clearChat(event.conversationId);
 
-      // Filter messages: keep only those whose createdAt is AFTER clearedAt
-      List<MessageModel> remaining;
-      if (clearedAt != null) {
-        final clearedAtMs = DateTime.tryParse(clearedAt)?.millisecondsSinceEpoch;
-        if (clearedAtMs != null) {
-          remaining = currentState.messages.where((msg) {
-            final msgMs = DateTime.tryParse(msg.createdAt)?.millisecondsSinceEpoch;
-            return msgMs != null && msgMs > clearedAtMs;
-          }).toList();
+        // Filter messages: keep only those whose createdAt is AFTER clearedAt
+        List<MessageModel> remaining;
+        if (clearedAt != null) {
+          final clearedAtMs = DateTime.tryParse(clearedAt)?.millisecondsSinceEpoch;
+          if (clearedAtMs != null) {
+            remaining = currentState.messages.where((msg) {
+              final msgMs = DateTime.tryParse(msg.createdAt)?.millisecondsSinceEpoch;
+              return msgMs != null && msgMs > clearedAtMs;
+            }).toList();
+          } else {
+            remaining = [];
+          }
         } else {
           remaining = [];
         }
-      } else {
-        remaining = [];
+
+        // Wipe the Hive cache for this conversation
+        final box = await Hive.openBox('cached_messages');
+        await box.delete(event.conversationId);
+
+        emit(currentState.copyWith(
+          messages: remaining,
+          pinnedMessages: [],
+          notificationMessage: 'Chat cleared for you',
+        ));
       }
-
-      // Wipe the Hive cache for this conversation
-      Hive.openBox('cached_messages').then((box) => box.delete(event.conversationId));
-
-      emit(currentState.copyWith(
-        messages: remaining,
-        pinnedMessages: [],
-        notificationMessage: 'Chat cleared',
-      ));
-      // Reset notification toast
-      emit(currentState.copyWith(
-        messages: remaining,
-        pinnedMessages: [],
-        notificationMessage: null,
-      ));
     } catch (e) {
       debugPrint('Error clearing chat: $e');
       emit(currentState.copyWith(
         notificationMessage: 'Failed to clear chat',
       ));
-      emit(currentState.copyWith(notificationMessage: null));
     }
   }
 
@@ -1827,6 +1856,39 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       } catch (e) {
         debugPrint('Error consuming screen permission: $e');
+      }
+    }
+  }
+
+  Future<void> _onUpdateChatPrivacy(
+    UpdateChatPrivacyEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      try {
+        final updatedReadReceipts = event.clearReadReceipts
+            ? null
+            : (event.readReceiptsEnabled ?? currentState.readReceiptsEnabled);
+        final updatedTypingIndicators = event.clearTypingIndicators
+            ? null
+            : (event.typingIndicatorsEnabled ?? currentState.typingIndicatorsEnabled);
+
+        await _chatRepository.updateChatPrivacySettings(
+          conversationId: event.conversationId,
+          readReceiptsEnabled: updatedReadReceipts,
+          typingIndicatorsEnabled: updatedTypingIndicators,
+        );
+        emit(currentState.copyWith(
+          readReceiptsEnabled: updatedReadReceipts,
+          clearReadReceiptsEnabled: event.clearReadReceipts,
+          typingIndicatorsEnabled: updatedTypingIndicators,
+          clearTypingIndicatorsEnabled: event.clearTypingIndicators,
+        ));
+      } catch (e) {
+        emit(currentState.copyWith(
+          notificationMessage: 'Failed to update privacy settings: $e',
+        ));
       }
     }
   }

@@ -48,6 +48,10 @@ class ChatLoaded extends ChatState {
   final ScreenPermissionModel? activeScreenPermission;
   final ScreenPermissionModel? incomingScreenPermissionRequest;
 
+  // Privacy settings (null = inherit global, true = on, false = off)
+  final bool? readReceiptsEnabled;
+  final bool? typingIndicatorsEnabled;
+
   // Block state
   final bool isBlocked;
   final bool isBlockedByMe;
@@ -76,6 +80,8 @@ class ChatLoaded extends ChatState {
     this.onlyAdminsSendMessages = false,
     this.activeScreenPermission,
     this.incomingScreenPermissionRequest,
+    this.readReceiptsEnabled,
+    this.typingIndicatorsEnabled,
     this.isBlocked = false,
     this.isBlockedByMe = false,
     this.isBlockedByOther = false,
@@ -110,6 +116,10 @@ class ChatLoaded extends ChatState {
     bool clearActiveScreenPermission = false,
     ScreenPermissionModel? incomingScreenPermissionRequest,
     bool clearIncomingScreenPermissionRequest = false,
+    bool? readReceiptsEnabled,
+    bool clearReadReceiptsEnabled = false,
+    bool? typingIndicatorsEnabled,
+    bool clearTypingIndicatorsEnabled = false,
     bool? isBlocked,
     bool? isBlockedByMe,
     bool? isBlockedByOther,
@@ -145,6 +155,12 @@ class ChatLoaded extends ChatState {
       incomingScreenPermissionRequest: clearIncomingScreenPermissionRequest
           ? null
           : (incomingScreenPermissionRequest ?? this.incomingScreenPermissionRequest),
+      readReceiptsEnabled: clearReadReceiptsEnabled
+          ? null
+          : (readReceiptsEnabled ?? this.readReceiptsEnabled),
+      typingIndicatorsEnabled: clearTypingIndicatorsEnabled
+          ? null
+          : (typingIndicatorsEnabled ?? this.typingIndicatorsEnabled),
       isBlocked: isBlocked ?? this.isBlocked,
       isBlockedByMe: isBlockedByMe ?? this.isBlockedByMe,
       isBlockedByOther: isBlockedByOther ?? this.isBlockedByOther,

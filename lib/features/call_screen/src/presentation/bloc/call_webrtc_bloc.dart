@@ -415,6 +415,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         repository: _repository,
         callerName: myName,
         profilePictureUrl: myPic,
+        isGroup: event.isGroup,
+        groupName: event.groupName,
       );
       debugPrint('CallWebRtcBloc: makeCall completed');
     } catch (e) {
@@ -477,9 +479,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           safeEvent['profile_picture_url'] ??
           safeEvent['profilePictureUrl'];
 
-      final bool isGroup = safeEvent['is_group'] == true;
-      final String? groupName = safeEvent['group_name']?.toString();
-      final convoId = safeEvent['conversation_id'] ?? '';
+      final isGroupVal = safeEvent['is_group'] ?? safeEvent['isGroup'];
+      final bool isGroup = isGroupVal == true || isGroupVal == 1 || isGroupVal == 'true';
+      final String? groupName = (safeEvent['group_name'] ?? safeEvent['groupName'])?.toString();
+      final convoId = safeEvent['conversation_id'] ?? safeEvent['conversationId'] ?? '';
 
       if (isGroup && convoId.isNotEmpty) {
         _ongoingGroupCalls[convoId] = OngoingGroupCall(
@@ -1419,102 +1422,116 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
   }
 
-  void _onAddParticipants(
-      AddParticipantsCallEvent event, Emitter<CallWebRtcState> emit) {
+  Future<void> _onAddParticipants(
+      AddParticipantsCallEvent event, Emitter<CallWebRtcState> emit) async {
     if (event.users.isEmpty) return;
 
-    if (state is CallActive) {
-      final current = state as CallActive;
-      final existingIds = current.extraParticipants.map((u) => u.id).toSet();
-      existingIds.add(current.recipientId);
-      final newUsers =
-          event.users.where((u) => !existingIds.contains(u.id)).toList();
-      if (newUsers.isEmpty) return;
+    final currentState = state;
+    if (currentState is! CallActive && currentState is! CallConnecting) return;
 
-      final updated = [...current.extraParticipants, ...newUsers];
-      emit(current.copyWith(extraParticipants: updated));
+    final bool isVideo = currentState is CallActive
+        ? currentState.isVideo
+        : (currentState as CallConnecting).isVideo;
+    final String conversationId = currentState is CallActive
+        ? currentState.conversationId
+        : (currentState as CallConnecting).conversationId;
+    final String contactName = currentState is CallActive
+        ? currentState.contactName
+        : (currentState as CallConnecting).contactName;
+    final String? groupName = currentState is CallActive
+        ? currentState.groupName
+        : (currentState as CallConnecting).groupName;
+    final List<UserModel> currentExtra = currentState is CallActive
+        ? currentState.extraParticipants
+        : (currentState as CallConnecting).extraParticipants;
+    final String recipientId = currentState is CallActive
+        ? currentState.recipientId
+        : (currentState as CallConnecting).recipientId;
 
-      for (final user in newUsers) {
-        _startParticipantTimeout(user.id, conversationId: current.conversationId);
-        _repository.emit('message', {
-          'type': 'call_initiate',
-          'conversation_id': current.conversationId,
-          'recipient_id': user.id,
-          'recipientId': user.id,
-          'call_type': current.isVideo ? 'video' : 'audio',
-          'caller_name': current.contactName,
-        });
-      }
-    } else if (state is CallConnecting) {
-      final current = state as CallConnecting;
-      final existingIds = current.extraParticipants.map((u) => u.id).toSet();
-      existingIds.add(current.recipientId);
-      final newUsers =
-          event.users.where((u) => !existingIds.contains(u.id)).toList();
-      if (newUsers.isEmpty) return;
+    final existingIds = currentExtra.map((u) => u.id).toSet();
+    if (recipientId.isNotEmpty) existingIds.add(recipientId);
+    final newUsers =
+        event.users.where((u) => !existingIds.contains(u.id)).toList();
+    if (newUsers.isEmpty) return;
 
-      final updated = [...current.extraParticipants, ...newUsers];
-      emit(current.copyWith(extraParticipants: updated));
+    final updated = [...currentExtra, ...newUsers];
+    if (currentState is CallActive) {
+      emit(currentState.copyWith(extraParticipants: updated, isGroup: true));
+    } else if (currentState is CallConnecting) {
+      emit(currentState.copyWith(extraParticipants: updated, isGroup: true));
+    }
 
-      for (final user in newUsers) {
-        _startParticipantTimeout(user.id, conversationId: current.conversationId);
-        _repository.emit('message', {
-          'type': 'call_initiate',
-          'conversation_id': current.conversationId,
-          'recipient_id': user.id,
-          'recipientId': user.id,
-          'call_type': current.isVideo ? 'video' : 'audio',
-          'caller_name': current.contactName,
-        });
-      }
+    final offerData = await _webRtcService.getCurrentOrNewOffer(isVideo: isVideo);
+
+    for (final user in newUsers) {
+      _startParticipantTimeout(user.id, conversationId: conversationId);
+      _repository.emit('message', {
+        'type': 'call_initiate',
+        'conversation_id': conversationId,
+        'recipient_id': user.id,
+        'recipientId': user.id,
+        'call_type': isVideo ? 'video' : 'audio',
+        'caller_name': contactName,
+        'is_group': true,
+        'isGroup': true,
+        'group_name': ?groupName,
+        'groupName': ?groupName,
+        'offer': ?offerData,
+      });
     }
   }
 
-  void _onReinviteParticipant(
+  Future<void> _onReinviteParticipant(
     ReinviteParticipantCallEvent event,
     Emitter<CallWebRtcState> emit,
-  ) {
+  ) async {
     final user = event.user;
     if (user.id.isEmpty) return;
 
     final currentState = state;
-    String convoId = '';
-    bool isVid = false;
-    String cName = '';
+    if (currentState is! CallActive && currentState is! CallConnecting) return;
+
+    final String convoId = currentState is CallActive
+        ? currentState.conversationId
+        : (currentState as CallConnecting).conversationId;
+    final bool isVid = currentState is CallActive
+        ? currentState.isVideo
+        : (currentState as CallConnecting).isVideo;
+    final String cName = currentState is CallActive
+        ? currentState.contactName
+        : (currentState as CallConnecting).contactName;
+    final String? gName = currentState is CallActive
+        ? currentState.groupName
+        : (currentState as CallConnecting).groupName;
+    final Set<String> discSet = currentState is CallActive
+        ? currentState.disconnectedParticipantIds
+        : (currentState as CallConnecting).disconnectedParticipantIds;
+    final List<UserModel> extraList = currentState is CallActive
+        ? currentState.extraParticipants
+        : (currentState as CallConnecting).extraParticipants;
+
+    final updatedDisconnected =
+        discSet.where((id) => id != user.id).toSet();
+    final existingIds = extraList.map((u) => u.id).toSet();
+    final updatedList = existingIds.contains(user.id)
+        ? extraList
+        : [...extraList, user];
 
     if (currentState is CallActive) {
-      convoId = currentState.conversationId;
-      isVid = currentState.isVideo;
-      cName = currentState.contactName;
-
-      final updatedDisconnected =
-          currentState.disconnectedParticipantIds.where((id) => id != user.id).toSet();
-      final existingIds = currentState.extraParticipants.map((u) => u.id).toSet();
-      final updatedList = existingIds.contains(user.id)
-          ? currentState.extraParticipants
-          : [...currentState.extraParticipants, user];
-
       emit(currentState.copyWith(
         disconnectedParticipantIds: updatedDisconnected,
         extraParticipants: updatedList,
+        isGroup: true,
       ));
     } else if (currentState is CallConnecting) {
-      convoId = currentState.conversationId;
-      isVid = currentState.isVideo;
-      cName = currentState.contactName;
-
-      final updatedDisconnected =
-          currentState.disconnectedParticipantIds.where((id) => id != user.id).toSet();
-      final existingIds = currentState.extraParticipants.map((u) => u.id).toSet();
-      final updatedList = existingIds.contains(user.id)
-          ? currentState.extraParticipants
-          : [...currentState.extraParticipants, user];
-
       emit(currentState.copyWith(
         disconnectedParticipantIds: updatedDisconnected,
         extraParticipants: updatedList,
+        isGroup: true,
       ));
     }
+
+    final offerData = await _webRtcService.getCurrentOrNewOffer(isVideo: isVid);
 
     if (convoId.isNotEmpty) {
       _startParticipantTimeout(user.id, conversationId: convoId);
@@ -1525,6 +1542,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         'recipientId': user.id,
         'call_type': isVid ? 'video' : 'audio',
         'caller_name': cName,
+        'is_group': true,
+        'isGroup': true,
+        'group_name': ?gName,
+        'groupName': ?gName,
+        'offer': ?offerData,
       });
     }
   }

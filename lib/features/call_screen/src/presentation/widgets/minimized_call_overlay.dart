@@ -14,6 +14,7 @@ import 'package:schat/features/call_screen/src/presentation/video_call_page.dart
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/main.dart';
 
 class MinimizedCallOverlay extends StatefulWidget {
@@ -72,6 +73,15 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
           final String? profilePictureUrl = state is CallActive
               ? state.profilePictureUrl
               : (state as CallConnecting).profilePictureUrl;
+          final bool isGroup = state is CallActive
+              ? state.isGroup
+              : (state as CallConnecting).isGroup;
+          final String? groupName = state is CallActive
+              ? state.groupName
+              : (state as CallConnecting).groupName;
+          final List<UserModel> extraParticipants = state is CallActive
+              ? state.extraParticipants
+              : (state as CallConnecting).extraParticipants;
           final bool isConnected = state is CallActive;
           final bool isRemoteVideoOff = state is CallActive && state.isRemoteVideoOff;
           final bool isLocalVideoOff = state is CallActive ? state.isVideoOff : false;
@@ -107,6 +117,9 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                           profilePictureUrl: profilePictureUrl,
                           myProfilePictureUrl:
                               getIt<StorageService>().getProfilePic(),
+                          isGroup: isGroup,
+                          groupName: groupName,
+                          extraParticipants: extraParticipants,
                         )
                       : AudioCallPage(
                           conversationId: conversationId,
@@ -117,6 +130,9 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                           profilePictureUrl: profilePictureUrl,
                           myProfilePictureUrl:
                               getIt<StorageService>().getProfilePic(),
+                          isGroup: isGroup,
+                          groupName: groupName,
+                          extraParticipants: extraParticipants,
                         ),
                 ),
               ),

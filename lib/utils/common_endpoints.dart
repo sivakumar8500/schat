@@ -61,6 +61,12 @@ class CommonEndpoints {
   static String muteChat(String conversationId) => '/chats/$conversationId/mute';
   static String unmuteChat(String conversationId) => '/chats/$conversationId/unmute';
   static String setDisappearingTimer(String conversationId) => '/chats/$conversationId/disappearing-timer';
+  static String updateChatPrivacy(String conversationId) => '/chats/$conversationId/privacy';
+  static String lockChat(String conversationId) => '/chats/$conversationId/lock';
+  static const String setLockPassword = '/chats/lock/set-password';
+  static const String verifyLockPassword = '/chats/lock/verify-password';
+  static const String getLockStatus = '/chats/lock/status';
+  static const String getLockedChats = '/chats/lock/chats';
   
   // Chat Transfer & View Requests
   static const String chatViewRequests = '/chats/view-requests';

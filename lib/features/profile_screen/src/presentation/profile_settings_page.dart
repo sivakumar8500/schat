@@ -73,6 +73,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   int? _defaultDisappearingTimer;
   String _callRingtoneName = "Digital Horizon (Default)";
   String _messageToneName = "Schat Pop (Default)";
+  bool _readReceiptsEnabled = true;
+  bool _typingIndicatorsEnabled = true;
+  bool _notificationsEnabled = true;
 
   @override
   void initState() {
@@ -81,6 +84,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     _currentImageUrl = widget.profilePicUrl;
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
     _defaultDisappearingTimer = null;
+    _readReceiptsEnabled = getIt<StorageService>().getReadReceiptsEnabled();
+    _typingIndicatorsEnabled = getIt<StorageService>().getTypingIndicatorsEnabled();
+    _notificationsEnabled = getIt<StorageService>().getNotificationsEnabled();
 
     final cachedCallTone = getIt<StorageService>().getCallRingtoneName();
     if (cachedCallTone != null && cachedCallTone.isNotEmpty) {
@@ -348,7 +354,11 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             _currentImageUrl = state.imagePath;
             _currentAbout = state.user?.about ?? "Hey there! I am using Schat.";
             _currentEmail = getIt<StorageService>().getEmail() ?? "";
-            _defaultDisappearingTimer = state.user?.defaultDisappearingTimer;
+            if (state.user != null) {
+              _readReceiptsEnabled = state.user!.readReceiptsEnabled;
+              _typingIndicatorsEnabled = state.user!.typingIndicatorsEnabled;
+              _notificationsEnabled = state.user!.notificationsEnabled;
+            }
           });
         } else if (state is ProfileLogoutSuccess) {
           Navigator.pushAndRemoveUntil(
@@ -436,10 +446,83 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                         ),
                         const SizedBox(height: 18),
 
+                        // Section: Privacy & Activity
+                        _buildSectionContainer(
+                          title: 'Privacy & Activity',
+                          items: [
+                            _buildSettingRow(
+                              context: context,
+                              icon: Icons.done_all_rounded,
+                              title: 'Read Receipts',
+                              subtitle: _readReceiptsEnabled
+                                  ? 'Others can see when you have read messages'
+                                  : 'Read receipts are turned off for all chats',
+                              trailing: Switch.adaptive(
+                                value: _readReceiptsEnabled,
+                                activeThumbColor: const Color(0xFF00873C),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _readReceiptsEnabled = val;
+                                  });
+                                  getIt<StorageService>().saveReadReceiptsEnabled(val);
+                                  context.read<ProfileBloc>().add(
+                                    UpdateGlobalPrivacyEvent(readReceiptsEnabled: val),
+                                  );
+                                },
+                              ),
+                            ),
+                            _buildSettingRow(
+                              context: context,
+                              icon: Icons.keyboard_rounded,
+                              title: 'Typing Indicators',
+                              subtitle: _typingIndicatorsEnabled
+                                  ? 'Others can see when you are typing'
+                                  : 'Typing indicators are turned off for all chats',
+                              trailing: Switch.adaptive(
+                                value: _typingIndicatorsEnabled,
+                                activeThumbColor: const Color(0xFF00873C),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _typingIndicatorsEnabled = val;
+                                  });
+                                  getIt<StorageService>().saveTypingIndicatorsEnabled(val);
+                                  context.read<ProfileBloc>().add(
+                                    UpdateGlobalPrivacyEvent(typingIndicatorsEnabled: val),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+
                         // Section 2: Notifications & Sounds
                         _buildSectionContainer(
                           title: 'Notifications & Sounds',
                           items: [
+                            _buildSettingRow(
+                              context: context,
+                              icon: _notificationsEnabled
+                                  ? Icons.notifications_active_rounded
+                                  : Icons.notifications_off_rounded,
+                              title: 'Notifications',
+                              subtitle: _notificationsEnabled
+                                  ? 'Push notifications & message alerts are enabled'
+                                  : 'All notifications are muted for this account',
+                              trailing: Switch.adaptive(
+                                value: _notificationsEnabled,
+                                activeThumbColor: const Color(0xFF00873C),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _notificationsEnabled = val;
+                                  });
+                                  getIt<StorageService>().saveNotificationsEnabled(val);
+                                  context.read<ProfileBloc>().add(
+                                    UpdateGlobalPrivacyEvent(notificationsEnabled: val),
+                                  );
+                                },
+                              ),
+                            ),
                             _buildSettingRow(
                               context: context,
                               icon: Icons.ring_volume_rounded,

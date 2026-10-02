@@ -37,3 +37,15 @@ class UpdateDefaultDisappearingTimerEvent extends ProfileEvent {
 
   const UpdateDefaultDisappearingTimerEvent({this.seconds});
 }
+
+class UpdateGlobalPrivacyEvent extends ProfileEvent {
+  final bool? readReceiptsEnabled;
+  final bool? typingIndicatorsEnabled;
+  final bool? notificationsEnabled;
+
+  const UpdateGlobalPrivacyEvent({
+    this.readReceiptsEnabled,
+    this.typingIndicatorsEnabled,
+    this.notificationsEnabled,
+  });
+}

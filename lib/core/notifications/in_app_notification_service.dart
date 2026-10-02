@@ -150,6 +150,18 @@ class InAppNotificationService {
       return;
     }
 
+    // Suppress notification if user disabled notifications at app level
+    if (!_storageService.getNotificationsEnabled()) {
+      debugPrint('InAppNotificationService: Suppressing in-app notification because account notifications are disabled');
+      return;
+    }
+
+    // Suppress notification if this individual chat is muted
+    if (convId != null && _storageService.isChatMuted(convId)) {
+      debugPrint('InAppNotificationService: Suppressing in-app notification because chat $convId is muted');
+      return;
+    }
+
     // CRITICAL: Suppress in-app notification if user is currently chatting with this person / in this conversation
     if (isChatActive(conversationId: convId, senderId: senderId)) {
       debugPrint('InAppNotificationService: Suppressing in-app notification because user is actively in chat with $senderId / conv $convId');

@@ -16,6 +16,9 @@ class LoadMessagesEvent extends ChatEvent {
   final bool? initialIsBlocked;
   final bool? initialIsBlockedByMe;
   final bool? initialIsBlockedByOther;
+  final bool? initialReadReceiptsEnabled;
+  final bool? initialTypingIndicatorsEnabled;
+  final bool? initialIsLocked;
   const LoadMessagesEvent({
     required this.conversationId,
     this.recipientId,
@@ -26,6 +29,9 @@ class LoadMessagesEvent extends ChatEvent {
     this.initialIsBlocked,
     this.initialIsBlockedByMe,
     this.initialIsBlockedByOther,
+    this.initialReadReceiptsEnabled,
+    this.initialTypingIndicatorsEnabled,
+    this.initialIsLocked,
   });
 }
 
@@ -99,6 +105,21 @@ class ToggleMuteEvent extends ChatEvent {
 class ToggleLockEvent extends ChatEvent {
   final bool isLocked;
   const ToggleLockEvent({required this.isLocked});
+}
+
+class UpdateChatPrivacyEvent extends ChatEvent {
+  final String conversationId;
+  final bool? readReceiptsEnabled;
+  final bool? typingIndicatorsEnabled;
+  final bool clearReadReceipts;
+  final bool clearTypingIndicators;
+  const UpdateChatPrivacyEvent({
+    required this.conversationId,
+    this.readReceiptsEnabled,
+    this.typingIndicatorsEnabled,
+    this.clearReadReceipts = false,
+    this.clearTypingIndicators = false,
+  });
 }
 
 class UpdateUserStatusEvent extends ChatEvent {
@@ -283,7 +304,8 @@ class ShowNotificationEvent extends ChatEvent {
 
 class ClearChatEvent extends ChatEvent {
   final String conversationId;
-  const ClearChatEvent({required this.conversationId});
+  final String clearType; // 'me' or 'everyone'
+  const ClearChatEvent({required this.conversationId, this.clearType = 'me'});
 }
 
 class LoadThemesEvent extends ChatEvent {

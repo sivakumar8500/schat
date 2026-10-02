@@ -26,6 +26,8 @@ _ChatModel _$ChatModelFromJson(Map<String, dynamic> json) => _ChatModel(
       ? null
       : ThemeColorModel.fromJson(json['themeColor'] as Map<String, dynamic>),
   disappearingTimer: (json['disappearing_timer'] as num?)?.toInt(),
+  readReceiptsEnabled: json['read_receipts_enabled'] as bool?,
+  typingIndicatorsEnabled: json['typing_indicators_enabled'] as bool?,
 );
 
 Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
@@ -45,4 +47,6 @@ Map<String, dynamic> _$ChatModelToJson(_ChatModel instance) =>
       'is_favorite': instance.isFavorite,
       'themeColor': instance.themeColor,
       'disappearing_timer': instance.disappearingTimer,
+      'read_receipts_enabled': instance.readReceiptsEnabled,
+      'typing_indicators_enabled': instance.typingIndicatorsEnabled,
     };

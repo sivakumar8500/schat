@@ -226,6 +226,17 @@ class PushNotificationService {
     }
 
     final convId = (message.data['conversationId'] ?? message.data['conversation_id'])?.toString();
+    final storage = getIt<StorageService>();
+    if (!storage.getNotificationsEnabled()) {
+      debugPrint('PushNotificationService: Suppressing push notification because account notifications are disabled');
+      return;
+    }
+
+    if (convId != null && storage.isChatMuted(convId)) {
+      debugPrint('PushNotificationService: Suppressing push notification because chat $convId is muted');
+      return;
+    }
+
     try {
       final inAppService = getIt<InAppNotificationService>();
       if (inAppService.isChatActive(conversationId: convId, senderId: senderId)) {

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/update_profile_request.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
@@ -23,6 +24,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<UpdateAboutEvent>(_onUpdateAbout);
     on<LogoutEvent>(_onLogout);
     on<UpdateDefaultDisappearingTimerEvent>(_onUpdateDefaultDisappearingTimer);
+    on<UpdateGlobalPrivacyEvent>(_onUpdateGlobalPrivacy);
   }
 
   Future<void> _onUpdateAbout(UpdateAboutEvent event, Emitter<ProfileState> emit) async {
@@ -48,6 +50,8 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     
     result.when(
       success: (user) {
+        getIt<StorageService>().saveReadReceiptsEnabled(user.readReceiptsEnabled);
+        getIt<StorageService>().saveTypingIndicatorsEnabled(user.typingIndicatorsEnabled);
         emit(ProfileLoaded(
           username: user.username ?? '',
           imagePath: user.profilePictureUrl,
@@ -154,6 +158,49 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         imagePath: user.profilePictureUrl,
         user: user,
       )),
+      failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+    );
+  }
+
+  Future<void> _onUpdateGlobalPrivacy(
+    UpdateGlobalPrivacyEvent event,
+    Emitter<ProfileState> emit,
+  ) async {
+    final storage = getIt<StorageService>();
+    if (event.readReceiptsEnabled != null) {
+      await storage.saveReadReceiptsEnabled(event.readReceiptsEnabled!);
+    }
+    if (event.typingIndicatorsEnabled != null) {
+      await storage.saveTypingIndicatorsEnabled(event.typingIndicatorsEnabled!);
+    }
+    if (event.notificationsEnabled != null) {
+      await storage.saveNotificationsEnabled(event.notificationsEnabled!);
+    }
+
+    final request = UpdateProfileRequest(
+      readReceiptsEnabled: event.readReceiptsEnabled,
+      typingIndicatorsEnabled: event.typingIndicatorsEnabled,
+      notificationsEnabled: event.notificationsEnabled,
+    );
+    final result = await _profileRepository.updateProfile(request);
+    result.when(
+      success: (user) {
+        final effectiveReadReceipts = event.readReceiptsEnabled ?? user.readReceiptsEnabled;
+        final effectiveTyping = event.typingIndicatorsEnabled ?? user.typingIndicatorsEnabled;
+        final effectiveNotifications = event.notificationsEnabled ?? user.notificationsEnabled;
+        storage.saveReadReceiptsEnabled(effectiveReadReceipts);
+        storage.saveTypingIndicatorsEnabled(effectiveTyping);
+        storage.saveNotificationsEnabled(effectiveNotifications);
+        emit(ProfileLoaded(
+          username: user.displayName,
+          imagePath: user.profilePictureUrl,
+          user: user.copyWith(
+            readReceiptsEnabled: effectiveReadReceipts,
+            typingIndicatorsEnabled: effectiveTyping,
+            notificationsEnabled: effectiveNotifications,
+          ),
+        ));
+      },
       failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
     );
   }

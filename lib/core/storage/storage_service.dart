@@ -17,6 +17,10 @@ class StorageService {
   static const String _callRingtoneUrlKey = 'call_ringtone_url';
   static const String _messageToneNameKey = 'message_tone_name';
   static const String _messageToneUrlKey = 'message_tone_url';
+  static const String _readReceiptsEnabledKey = 'read_receipts_enabled';
+  static const String _typingIndicatorsEnabledKey = 'typing_indicators_enabled';
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+  static const String _mutedChatsKey = 'muted_chats_list';
 
   final SharedPreferences _prefs;
 
@@ -140,5 +144,52 @@ class StorageService {
     await _prefs.remove(_callRingtoneUrlKey);
     await _prefs.remove(_messageToneNameKey);
     await _prefs.remove(_messageToneUrlKey);
+  }
+
+  // --- Privacy Preferences ---
+  Future<void> saveReadReceiptsEnabled(bool enabled) async {
+    await _prefs.setBool(_readReceiptsEnabledKey, enabled);
+  }
+
+  bool getReadReceiptsEnabled() {
+    return _prefs.getBool(_readReceiptsEnabledKey) ?? true;
+  }
+
+  Future<void> saveTypingIndicatorsEnabled(bool enabled) async {
+    await _prefs.setBool(_typingIndicatorsEnabledKey, enabled);
+  }
+
+  bool getTypingIndicatorsEnabled() {
+    return _prefs.getBool(_typingIndicatorsEnabledKey) ?? true;
+  }
+
+  // --- Notification Preferences ---
+  Future<void> saveNotificationsEnabled(bool enabled) async {
+    await _prefs.setBool(_notificationsEnabledKey, enabled);
+  }
+
+  bool getNotificationsEnabled() {
+    return _prefs.getBool(_notificationsEnabledKey) ?? true;
+  }
+
+  Future<void> saveChatMuted(String conversationId, bool isMuted) async {
+    final list = List<String>.from(_prefs.getStringList(_mutedChatsKey) ?? []);
+    if (isMuted) {
+      if (!list.contains(conversationId)) {
+        list.add(conversationId);
+      }
+    } else {
+      list.remove(conversationId);
+    }
+    await _prefs.setStringList(_mutedChatsKey, list);
+  }
+
+  bool isChatMuted(String conversationId) {
+    final list = _prefs.getStringList(_mutedChatsKey) ?? [];
+    return list.contains(conversationId);
+  }
+
+  List<String> getMutedChats() {
+    return _prefs.getStringList(_mutedChatsKey) ?? [];
   }
 }

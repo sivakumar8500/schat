@@ -24,6 +24,8 @@ abstract class ChatModel with _$ChatModel {
     @JsonKey(name: 'is_favorite') @Default(false) bool isFavorite,
     @JsonKey(name: 'themeColor') ThemeColorModel? themeColor,
     @JsonKey(name: 'disappearing_timer') int? disappearingTimer,
+    @JsonKey(name: 'read_receipts_enabled') bool? readReceiptsEnabled,
+    @JsonKey(name: 'typing_indicators_enabled') bool? typingIndicatorsEnabled,
     @JsonKey(includeFromJson: false, includeToJson: false) @Default(false) bool isTyping,
   }) = _ChatModel;
 
@@ -73,6 +75,13 @@ Map<String, dynamic> _normalizeChatJson(Map<String, dynamic> json) {
     normalizedJson['disappearing_timer'] = json['timer_seconds'];
   } else if (json.containsKey('disappearingTimer')) {
     normalizedJson['disappearing_timer'] = json['disappearingTimer'];
+  }
+
+  if (json.containsKey('readReceiptsEnabled') && !json.containsKey('read_receipts_enabled')) {
+    normalizedJson['read_receipts_enabled'] = json['readReceiptsEnabled'];
+  }
+  if (json.containsKey('typingIndicatorsEnabled') && !json.containsKey('typing_indicators_enabled')) {
+    normalizedJson['typing_indicators_enabled'] = json['typingIndicatorsEnabled'];
   }
 
   return normalizedJson;

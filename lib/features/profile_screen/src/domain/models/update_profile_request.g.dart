@@ -16,6 +16,9 @@ _UpdateProfileRequest _$UpdateProfileRequestFromJson(
   about: json['about'] as String?,
   defaultDisappearingTimer: (json['default_disappearing_timer'] as num?)
       ?.toInt(),
+  readReceiptsEnabled: json['read_receipts_enabled'] as bool?,
+  typingIndicatorsEnabled: json['typing_indicators_enabled'] as bool?,
+  notificationsEnabled: json['notifications_enabled'] as bool?,
 );
 
 Map<String, dynamic> _$UpdateProfileRequestToJson(
@@ -27,4 +30,7 @@ Map<String, dynamic> _$UpdateProfileRequestToJson(
   'profile_picture_url': instance.profilePictureUrl,
   'about': instance.about,
   'default_disappearing_timer': instance.defaultDisappearingTimer,
+  'read_receipts_enabled': instance.readReceiptsEnabled,
+  'typing_indicators_enabled': instance.typingIndicatorsEnabled,
+  'notifications_enabled': instance.notificationsEnabled,
 };

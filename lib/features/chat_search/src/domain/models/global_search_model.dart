@@ -5,6 +5,8 @@ class GlobalSearchResponse {
   final int limit;
   final int offset;
   final bool hasMore;
+  final bool isSecretCodeMatch;
+  final List<SearchChatItem> lockedChats;
   final List<SearchChatItem> chats;
   final List<SearchContactItem> contacts;
   final List<SearchMessageItem> messages;
@@ -16,6 +18,8 @@ class GlobalSearchResponse {
     this.limit = 20,
     this.offset = 0,
     this.hasMore = false,
+    this.isSecretCodeMatch = false,
+    this.lockedChats = const [],
     this.chats = const [],
     this.contacts = const [],
     this.messages = const [],
@@ -29,6 +33,11 @@ class GlobalSearchResponse {
       limit: (json['limit'] is num) ? (json['limit'] as num).toInt() : 20,
       offset: (json['offset'] is num) ? (json['offset'] as num).toInt() : 0,
       hasMore: json['hasMore'] == true || json['has_more'] == true,
+      isSecretCodeMatch: json['isSecretCodeMatch'] == true || json['is_secret_code_match'] == true,
+      lockedChats: ((json['lockedChats'] ?? json['locked_chats']) as List<dynamic>?)
+              ?.map((e) => SearchChatItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       chats: (json['chats'] as List<dynamic>?)
               ?.map((e) => SearchChatItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -55,6 +64,7 @@ class SearchChatItem {
   final String? lastMessageSnippet;
   final int? lastMessageTimestamp;
   final int? updatedAt;
+  final bool isLocked;
 
   const SearchChatItem({
     required this.id,
@@ -66,23 +76,79 @@ class SearchChatItem {
     this.lastMessageSnippet,
     this.lastMessageTimestamp,
     this.updatedAt,
+    this.isLocked = false,
   });
 
   factory SearchChatItem.fromJson(Map<String, dynamic> json) {
+    String? resolvedName = json['name']?.toString() ??
+        json['contactName']?.toString() ??
+        json['contact_name']?.toString() ??
+        json['displayName']?.toString() ??
+        json['display_name']?.toString() ??
+        json['groupName']?.toString() ??
+        json['group_name']?.toString();
+
+    String? phone = json['phoneNumber']?.toString() ?? json['phone_number']?.toString();
+    String? pic = json['pictureUrl']?.toString() ??
+        json['picture_url']?.toString() ??
+        json['profilePictureUrl']?.toString() ??
+        json['profile_picture_url']?.toString() ??
+        json['groupPictureUrl']?.toString() ??
+        json['group_picture_url']?.toString();
+
+    final recipient = json['recipient'];
+    if (recipient is Map) {
+      resolvedName ??= recipient['contactName']?.toString() ??
+          recipient['contact_name']?.toString() ??
+          recipient['name']?.toString() ??
+          recipient['displayName']?.toString() ??
+          recipient['username']?.toString();
+      phone ??= recipient['phoneNumber']?.toString() ?? recipient['phone_number']?.toString();
+      pic ??= recipient['profilePictureUrl']?.toString() ??
+          recipient['profile_picture_url']?.toString() ??
+          recipient['profile_picture']?.toString();
+    }
+
+    String? snippet = json['lastMessageSnippet']?.toString() ??
+        json['last_message_snippet']?.toString() ??
+        json['snippet']?.toString() ??
+        json['message']?.toString();
+
+    final lm = json['lastMessage'] ?? json['last_message'];
+    if ((snippet == null || snippet.isEmpty) && lm != null) {
+      if (lm is Map) {
+        final content = lm['content'];
+        if (content is Map) {
+          snippet = content['text']?.toString() ??
+              content['fileName']?.toString() ??
+              content['caption']?.toString();
+        } else if (content is String) {
+          snippet = content;
+        } else if (lm['text'] != null) {
+          snippet = lm['text']?.toString();
+        }
+      } else if (lm is String) {
+        snippet = lm;
+      }
+    }
+
     return SearchChatItem(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       isGroup: json['isGroup'] == true || json['is_group'] == true,
-      name: json['name']?.toString() ?? 'Chat',
-      phoneNumber: json['phoneNumber']?.toString() ?? json['phone_number']?.toString(),
-      pictureUrl: json['pictureUrl']?.toString() ?? json['picture_url']?.toString(),
+      name: (resolvedName != null && resolvedName.isNotEmpty)
+          ? resolvedName
+          : (phone != null && phone.isNotEmpty ? phone : 'Chat'),
+      phoneNumber: phone,
+      pictureUrl: pic,
       unreadCount: (json['unreadCount'] ?? json['unread_count'] ?? 0) is num
           ? (json['unreadCount'] ?? json['unread_count'] ?? 0).toInt()
           : 0,
-      lastMessageSnippet: json['lastMessageSnippet']?.toString() ?? json['last_message_snippet']?.toString(),
+      lastMessageSnippet: snippet,
       lastMessageTimestamp: json['lastMessageTimestamp'] is num
           ? (json['lastMessageTimestamp'] as num).toInt()
-          : null,
+          : (json['last_message_timestamp'] is num ? (json['last_message_timestamp'] as num).toInt() : null),
       updatedAt: json['updatedAt'] is num ? (json['updatedAt'] as num).toInt() : null,
+      isLocked: json['isLocked'] == true || json['is_locked'] == true,
     );
   }
 }

@@ -27,6 +27,11 @@ abstract class ChatRepository {
   // New Backend APIs
   Future<void> toggleFavorite({required String conversationId, required bool isFavorite});
   Future<void> toggleMute({required String conversationId, required bool isMuted});
+  Future<void> updateChatPrivacySettings({
+    required String conversationId,
+    bool? readReceiptsEnabled,
+    bool? typingIndicatorsEnabled,
+  });
   Future<void> forwardMessage({required String messageId, required String targetConversationId});
   Future<void> setDisappearingTimer({required String conversationId, int? seconds});
   Future<void> deleteGroup(String groupId);
@@ -148,5 +153,35 @@ abstract class ChatRepository {
   Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId);
 
   Future<ScreenPermissionModel> consumeScreenPermission(String requestId);
+
+  /// Chat Lock & Secret Code endpoints
+  Future<ChatLockStatusModel> getChatLockStatus();
+  Future<bool> setChatLockPassword(String password, {String? oldPassword});
+  Future<bool> verifyChatLockPassword(String password);
+  Future<bool> toggleChatLock(String conversationId, {required bool isLocked, String? password});
+  Future<List<dynamic>> getLockedChats();
 }
+
+class ChatLockStatusModel {
+  final bool isChatLockEnabled;
+  final bool hasPassword;
+  final int lockedChatsCount;
+
+  const ChatLockStatusModel({
+    this.isChatLockEnabled = false,
+    this.hasPassword = false,
+    this.lockedChatsCount = 0,
+  });
+
+  factory ChatLockStatusModel.fromJson(Map<String, dynamic> json) {
+    return ChatLockStatusModel(
+      isChatLockEnabled: json['isChatLockEnabled'] == true || json['is_chat_lock_enabled'] == true,
+      hasPassword: json['hasPassword'] == true || json['has_password'] == true,
+      lockedChatsCount: (json['lockedChatsCount'] ?? json['locked_chats_count'] ?? 0) is num
+          ? (json['lockedChatsCount'] ?? json['locked_chats_count'] ?? 0).toInt()
+          : 0,
+    );
+  }
+}
+
 

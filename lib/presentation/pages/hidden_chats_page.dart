@@ -446,6 +446,8 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
                   recipientId: chat.recipient.id,
                   isGroup: chat.isGroup,
                   initialThemeColor: chat.themeColor,
+                  initialReadReceiptsEnabled: chat.readReceiptsEnabled,
+                  initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
                 ),
               ),
             );

@@ -544,6 +544,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   !serverMuted.contains(id));
           });
           // Persist in local storage
+          for (final c in state.chats) {
+            getIt<StorageService>().saveChatMuted(c.id, c.isMuted);
+          }
           Hive.openBox('muted_chats_box').then((box) {
             box.put('muted_list', _mutedChatIds.toList());
           }).catchError((_) {});
@@ -1406,6 +1409,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 isBlocked: chat.recipient.isBlocked,
                 isBlockedByMe: chat.recipient.isBlockedByMe,
                 isBlockedByOther: chat.recipient.isBlockedByOther,
+                initialReadReceiptsEnabled: chat.readReceiptsEnabled,
+                initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
               ),
             ),
           );

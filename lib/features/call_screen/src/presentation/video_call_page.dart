@@ -264,6 +264,10 @@ class _VideoCallPageState extends State<VideoCallPage>
           final bool isSystemPip = (state is CallActive && state.isSystemPip) ||
               (state is CallConnecting && state.isSystemPip);
 
+          final bool isGroupCall = widget.isGroup ||
+              (state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) ||
+              (state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty));
+
           return PopScope(
             canPop: true,
             onPopInvokedWithResult: (didPop, result) {
@@ -286,7 +290,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                     Positioned.fill(
                       child: isSystemPip
                           ? Container(color: Colors.black)
-                          : ((widget.isGroup || (state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) || (state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty)))
+                          : (isGroupCall
                               ? _buildGroupVideoGrid(state, isVideoOff, isFrontCamera, isMuted)
                               : (state is CallActive
                                   ? (_isLocalVideoSmall
@@ -361,32 +365,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                       ),
                     ),
 
-                    // ─── Extra Participants Floating Overlay (only in 1-on-1 calls) ───
-                    if (!widget.isGroup && !(state is CallActive && state.isGroup) && !(state is CallConnecting && state.isGroup)) ...[
-                      if (state is CallActive && state.extraParticipants.isNotEmpty)
-                        Positioned(
-                          top: 130,
-                          left: 16,
-                          right: 70,
-                          child: FadeTransition(
-                            opacity: _fadeController,
-                            child: _buildExtraParticipantsOverlay(context, state.extraParticipants),
-                          ),
-                        )
-                      else if (state is CallConnecting && state.extraParticipants.isNotEmpty)
-                        Positioned(
-                          top: 130,
-                          left: 16,
-                          right: 70,
-                          child: FadeTransition(
-                            opacity: _fadeController,
-                            child: _buildExtraParticipantsOverlay(context, state.extraParticipants),
-                          ),
-                        ),
-                    ],
-
                     // ─── Small Video (Picture-in-Picture) (only in 1-on-1 calls) ───
-                    if (!widget.isGroup && !(state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) && !(state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty)) && state is CallActive)
+                    if (!isGroupCall && state is CallActive)
                       _buildSmallVideoPiP(state, isVideoOff, isFrontCamera),
 
                     // ─── Bottom Control Bar ───
@@ -405,84 +385,6 @@ class _VideoCallPageState extends State<VideoCallPage>
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildExtraParticipantsOverlay(
-      BuildContext context, List<UserModel> participants) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: participants.map((user) {
-          return Container(
-            margin: const EdgeInsets.only(right: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.25),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: const Color(0xFF00873C),
-                  backgroundImage: (user.profilePictureUrl != null &&
-                          user.profilePictureUrl!.isNotEmpty)
-                      ? NetworkImage(user.profilePictureUrl!)
-                      : null,
-                  child: (user.profilePictureUrl == null ||
-                          user.profilePictureUrl!.isEmpty)
-                      ? Text(
-                          user.displayName.isNotEmpty
-                              ? user.displayName[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 6),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      user.displayName,
-                      style: context.bodySmall.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                    Text(
-                      'Calling...',
-                      style: context.bodySmall.copyWith(
-                        color: const Color(0xFF34C759),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        }).toList(),
       ),
     );
   }

@@ -15,6 +15,9 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_endpoints.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
+import 'package:collection/collection.dart';
 import 'package:schat/injection.dart';
 
 class ChatSearchPage extends StatefulWidget {
@@ -367,6 +370,13 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   Widget _buildQueryResultList(List<ChatModel> chatList, bool isDark) {
     final query = _searchQuery.toLowerCase();
     final myId = getIt<StorageService>().getUserId() ?? '';
+
+    // Handle Secret Code unlock match
+    final isSecretCodeMatch = _serverSearchResponse?.isSecretCodeMatch == true;
+    final lockedChats = _serverSearchResponse?.lockedChats ?? [];
+    if (isSecretCodeMatch || lockedChats.isNotEmpty) {
+      return _buildLockedChatsResultView(lockedChats, isDark);
+    }
 
     // Merge server search results or local filtered items
     final serverMessages = _serverSearchResponse?.messages ?? [];
@@ -999,6 +1009,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           isGroup: chat.isGroup,
           initialThemeColor: chat.themeColor,
           initialDisappearingTimer: chat.disappearingTimer,
+          initialReadReceiptsEnabled: chat.readReceiptsEnabled,
+          initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
         ),
       ),
     );
@@ -1709,4 +1721,286 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       ),
     );
   }
+
+  Widget _buildLockedChatsResultView(List<SearchChatItem> lockedChats, bool isDark) {
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+
+    if (lockedChats.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.lock_open_rounded, color: primaryColor, size: 36),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Secret Code Recognized',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: context.colors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'No locked chats found for this code',
+              style: TextStyle(
+                fontSize: 14,
+                color: context.colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_rounded, size: 14, color: primaryColor),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Locked Chats (${lockedChats.length})',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Secret Code Unlocked',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: context.colors.textHint,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        ...lockedChats.map((chat) => _buildLockedChatItem(chat, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildLockedChatItem(SearchChatItem item, bool isDark) {
+    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
+    final displayName = _resolveContactDisplayName(item);
+    final messageSnippet = (item.lastMessageSnippet != null && item.lastMessageSnippet!.trim().isNotEmpty)
+        ? item.lastMessageSnippet!.trim()
+        : 'Locked conversation';
+
+    return InkWell(
+      onTap: () => _openSearchChatItem(item),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: avatarBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: item.pictureUrl != null && item.pictureUrl!.isNotEmpty
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: item.pictureUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Center(
+                              child: Icon(item.isGroup ? Icons.group_rounded : Icons.person_rounded, color: primaryColor, size: 26),
+                            ),
+                            errorWidget: (context, url, error) => Center(
+                              child: Icon(item.isGroup ? Icons.group_rounded : Icons.person_rounded, color: primaryColor, size: 26),
+                            ),
+                          ),
+                        )
+                      : Center(
+                          child: Icon(
+                            item.isGroup ? Icons.group_rounded : Icons.person_rounded,
+                            color: primaryColor,
+                            size: 26,
+                          ),
+                        ),
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F2937) : Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00873C),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.lock_rounded, size: 10, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: context.colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (item.updatedAt != null || item.lastMessageTimestamp != null)
+                        Text(
+                          _formatLockedChatTime(item.lastMessageTimestamp ?? item.updatedAt ?? 0),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: context.colors.textHint,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          messageSnippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: isDark ? Colors.white54 : const Color(0xFF6B7280),
+                            fontSize: 13.5,
+                          ),
+                        ),
+                      ),
+                      if (item.unreadCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: primaryColor,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${item.unreadCount}',
+                            style: TextStyle(
+                              color: isDark ? Colors.black : Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _resolveContactDisplayName(SearchChatItem item) {
+    if (item.isGroup) return item.name;
+    try {
+      final contactsState = context.read<ContactsBloc>().state;
+      if (contactsState is ContactsLoaded) {
+        final phone = item.phoneNumber ?? '';
+        final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+        final matched = contactsState.syncedContacts.firstWhereOrNull((u) {
+          final uPhone = u.phoneNumber.replaceAll(RegExp(r'\D'), '');
+          if (cleanPhone.isNotEmpty && uPhone.isNotEmpty) {
+            return uPhone == cleanPhone || uPhone.endsWith(cleanPhone) || cleanPhone.endsWith(uPhone);
+          }
+          return u.id.isNotEmpty && u.id == item.id;
+        });
+        if (matched != null && matched.displayName.isNotEmpty) {
+          return matched.displayName;
+        }
+      }
+    } catch (_) {}
+    return item.name;
+  }
+
+  void _openSearchChatItem(SearchChatItem item) async {
+    final displayName = _resolveContactDisplayName(item);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatPage(
+          conversationId: item.id,
+          contactName: displayName,
+          contactColor: context.colors.primary,
+          isOnline: false,
+          profilePictureUrl: item.pictureUrl,
+          recipientId: item.id,
+          isGroup: item.isGroup,
+          initialIsLocked: true,
+        ),
+      ),
+    );
+    if (mounted) {
+      context.read<ChatsBloc>().add(const FetchChats());
+    }
+  }
+
+  String _formatLockedChatTime(int timestamp) {
+    if (timestamp <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(
+      timestamp < 10000000000 ? timestamp * 1000 : timestamp,
+    );
+    final now = DateTime.now();
+    if (dt.day == now.day && dt.month == now.month && dt.year == now.year) {
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$hour:$minute';
+    }
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
 }
+
