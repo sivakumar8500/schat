@@ -135,12 +135,6 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
       targetId = _manualIdController.text.trim();
     } else {
       if (_selectedUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please select a user to send request'),
-            backgroundColor: context.colors.error,
-          ),
-        );
         return;
       }
       targetId = _selectedUser!.id;

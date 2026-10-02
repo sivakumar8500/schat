@@ -102,13 +102,6 @@ class _ChatSocketPageState extends State<ChatSocketPage> with SingleTickerProvid
   void _copyToClipboard(Map<String, dynamic> payload) {
     final jsonStr = const JsonEncoder.withIndent('  ').convert(payload);
     Clipboard.setData(ClipboardData(text: jsonStr));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Payload copied to clipboard'),
-        backgroundColor: context.colors.primary,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
@@ -252,9 +245,6 @@ class _ChatSocketPageState extends State<ChatSocketPage> with SingleTickerProvid
                 onPressed: () {
                   final msgId = _messageIdController.text.trim();
                   if (msgId.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a message UUID')),
-                    );
                     return;
                   }
                   context.read<ChatSocketBloc>().add(SendReadReceipt(

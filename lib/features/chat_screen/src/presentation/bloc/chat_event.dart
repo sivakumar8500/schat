@@ -58,6 +58,8 @@ class SendMessageEvent extends ChatEvent {
   final bool allowShare;
   final bool allowDownload;
   final bool allowView;
+  final bool isViewOnce;
+  final int maxViews;
   final int? fileSize;
   final String? messageId;
   final double? latitude;
@@ -77,6 +79,8 @@ class SendMessageEvent extends ChatEvent {
     this.allowShare = false,
     this.allowDownload = false,
     this.allowView = true,
+    this.isViewOnce = false,
+    this.maxViews = 1,
     this.fileSize,
     this.messageId,
     this.latitude,

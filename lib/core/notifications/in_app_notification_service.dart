@@ -2,15 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/features/call_screen/src/domain/call_sound_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
-import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/incoming_screen_permission_bottom_sheet.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/main.dart';
-import 'package:schat/utils/common_notifications.dart';
 
 @lazySingleton
 class InAppNotificationService {
@@ -168,159 +165,9 @@ class InAppNotificationService {
       return;
     }
 
-    // Determine if the message is a file share / media attachment or call
-    final msgType = (message['message_type'] ??
-            message['messageType'] ??
-            message['type'] ??
-            message['media_type'] ??
-            message['mediaType'] ??
-            data['message_type'] ??
-            data['type'])
-        ?.toString()
-        .toLowerCase();
-
-    final dynamic contentData = message['content'];
-    final String? fileUrl = (message['media_url'] ??
-            message['mediaUrl'] ??
-            message['url'] ??
-            message['fileKey'] ??
-            message['file_key'] ??
-            (contentData is Map
-                ? (contentData['fileKey'] ??
-                    contentData['file_key'] ??
-                    contentData['url'] ??
-                    contentData['media_url'])
-                : null))
-        ?.toString();
-
-    final String? fileName = (message['file_name'] ??
-            message['fileName'] ??
-            message['attachment_name'] ??
-            message['attachmentName'] ??
-            (contentData is Map
-                ? (contentData['fileName'] ??
-                    contentData['file_name'] ??
-                    contentData['name'] ??
-                    contentData['attachmentName'] ??
-                    contentData['attachment_name'])
-                : null))
-        ?.toString();
-
-    final bool isCall = msgType == 'call' ||
-        message['callMeta'] != null ||
-        message['call_meta'] != null ||
-        data['callMeta'] != null ||
-        data['call_meta'] != null;
-
-    final bool isFileShare = (msgType != null &&
-            msgType.isNotEmpty &&
-            msgType != 'text' &&
-            msgType != 'chat' &&
-            msgType != 'system') ||
-        (fileUrl != null && fileUrl.trim().isNotEmpty) ||
-        (fileName != null && fileName.trim().isNotEmpty) ||
-        message['has_attachment'] == true ||
-        message['is_file'] == true ||
-        message['isFileShared'] == true ||
-        message['file_shared'] == true ||
-        message['is_file_shared'] == true;
-
-    // Play message notification tone for all incoming messages
-    try {
-      getIt<CallSoundService>().playMessageTone();
-    } catch (e) {
-      debugPrint('InAppNotificationService: Error playing message tone: $e');
-    }
-
-    // REQUIREMENT: Only show in-app banner notification for call and file share. Suppress regular text messages.
-    if (!isFileShare && !isCall) {
-      debugPrint('InAppNotificationService: Suppressing in-app banner notification for regular text message');
-      return;
-    }
-
-    // Extract content preview
-    String previewText = 'Shared a file';
-    if (isCall) {
-      previewText = '📞 Call notification';
-    } else if (fileName != null && fileName.isNotEmpty) {
-      previewText = '📁 $fileName';
-    } else if (msgType != null && msgType.isNotEmpty && msgType != 'text') {
-      if (msgType == 'image') {
-        previewText = '📷 Shared an image';
-      } else if (msgType == 'video') {
-        previewText = '🎥 Shared a video';
-      } else if (msgType == 'document') {
-        previewText = '📄 Shared a document';
-      } else if (msgType == 'audio' || msgType == 'voice') {
-        previewText = '🎵 Shared an audio clip';
-      } else {
-        previewText = '📁 Shared a file ($msgType)';
-      }
-    } else if (contentData is Map && contentData['text'] != null && contentData['text'].toString().isNotEmpty) {
-      previewText = '📁 ${contentData['text']}';
-    }
-
-    // Extract sender name and profile picture
-    String senderName = (message['sender_name'] ??
-            message['senderName'] ??
-            message['username'] ??
-            data['sender_name'] ??
-            data['senderName'] ??
-            'New Message')
-        .toString();
-
-    final senderObj = message['sender'] is Map
-        ? message['sender'] as Map
-        : (data['sender'] is Map ? data['sender'] as Map : null);
-    if (senderObj != null && (senderName == 'New Message' || senderName.isEmpty)) {
-      senderName = (senderObj['name'] ?? senderObj['username'] ?? senderObj['fullName'] ?? 'New Message').toString();
-    }
-
-    String? profilePic = (message['sender_profile_pic'] ??
-            message['senderProfilePic'] ??
-            message['profile_picture_url'] ??
-            message['profilePictureUrl'] ??
-            message['profile_picture'] ??
-            message['profilePic'] ??
-            message['avatar'] ??
-            senderObj?['profile_picture_url'] ??
-            senderObj?['profilePictureUrl'] ??
-            senderObj?['profile_picture'] ??
-            senderObj?['profilePic'] ??
-            senderObj?['avatar'] ??
-            data['sender_profile_pic'] ??
-            data['senderProfilePic'] ??
-            data['profile_picture_url'] ??
-            data['profilePictureUrl'] ??
-            data['profile_picture'] ??
-            data['avatar'])
-        ?.toString();
-
-    if (profilePic != null && profilePic.trim().isEmpty) {
-      profilePic = null;
-    }
-
-    bool isGroup = message['is_group'] == true || message['isGroup'] == true;
-
-    final context = navigatorKey.currentContext;
-    if (context == null || !context.mounted) return;
-
-    context.showInAppChatNotification(
-      senderName: isGroup && message['group_name'] != null ? '${message['group_name']} ($senderName)' : senderName,
-      messageText: previewText,
-      profilePictureUrl: profilePic,
-      onTap: () {
-        if (convId != null) {
-          _navigateToChat(
-            conversationId: convId,
-            contactName: senderName,
-            recipientId: senderId,
-            profilePic: profilePic,
-            isGroup: isGroup,
-          );
-        }
-      },
-    );
+    // Foreground message notification is handled via system push notification (PushNotificationService),
+    // so in-app banner is disabled to avoid duplicate notifications.
+    return;
   }
 
   void showIncomingScreenPermissionBottomSheet(ScreenPermissionModel request) {
@@ -378,31 +225,6 @@ class InAppNotificationService {
     } catch (e) {
       debugPrint('InAppNotificationService: Error checking pending screen permissions: $e');
     }
-  }
-
-  void _navigateToChat({
-    required String conversationId,
-    required String contactName,
-    required String recipientId,
-    String? profilePic,
-    bool isGroup = false,
-  }) {
-    final navState = navigatorKey.currentState;
-    if (navState == null) return;
-
-    navState.push(
-      MaterialPageRoute(
-        builder: (_) => ChatPage(
-          conversationId: conversationId,
-          contactName: contactName,
-          contactColor: const Color(0xFF00873C),
-          isOnline: true,
-          recipientId: recipientId,
-          profilePictureUrl: profilePic,
-          isGroup: isGroup,
-        ),
-      ),
-    );
   }
 
   void dispose() {

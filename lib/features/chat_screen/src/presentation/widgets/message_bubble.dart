@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:video_player/video_player.dart';
@@ -13,10 +14,12 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
-import 'package:schat/features/chat_screen/src/domain/models/message_model.dart' show CallMeta;
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/multi_image_grid_bubble.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_spaces.dart';
@@ -66,6 +69,9 @@ class MessageBubble extends StatefulWidget {
   final bool isFileViewed;
   final bool isFileDownloaded;
   final bool isFileShared;
+  final bool isViewOnce;
+  final int maxViews;
+  final bool isViewOnceOpened;
   final VoidCallback? onSharePressed;
   final int? fileSize;
   final CallMeta? callMeta;
@@ -79,6 +85,7 @@ class MessageBubble extends StatefulWidget {
   final int? expiry;
   final String? senderName;
   final String? senderProfilePictureUrl;
+  final List<MessageModel>? groupedImages;
 
   const MessageBubble({
     super.key,
@@ -112,6 +119,9 @@ class MessageBubble extends StatefulWidget {
     this.isFileViewed = false,
     this.isFileDownloaded = false,
     this.isFileShared = false,
+    this.isViewOnce = false,
+    this.maxViews = 1,
+    this.isViewOnceOpened = false,
     this.onSharePressed,
     this.fileSize,
     this.callMeta,
@@ -126,6 +136,7 @@ class MessageBubble extends StatefulWidget {
     this.expiry,
     this.senderName,
     this.senderProfilePictureUrl,
+    this.groupedImages,
     this.onMentionTap,
   });
 
@@ -158,7 +169,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get isPinned => widget.isPinned;
   bool get isSelected => widget.isSelected;
   bool get isHighlighted => widget.isHighlighted;
-  bool get isUploading => widget.isUploading;
+  bool get isUploading => widget.isUploading || (isMe && messageId.startsWith('temp_') && !isFailed);
   bool get isFailed => widget.isFailed;
   VoidCallback? get onResendPressed => widget.onResendPressed;
   bool get isGroup => widget.isGroup;
@@ -168,6 +179,19 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get isFileViewed => widget.isFileViewed;
   bool get isFileDownloaded => widget.isFileDownloaded;
   bool get isFileShared => widget.isFileShared;
+  bool get isViewOnce => widget.isViewOnce;
+  int get maxViews => widget.maxViews;
+  bool get isViewOnceOpened {
+    if (widget.isViewOnceOpened || (widget.isViewOnce && widget.isFileViewed)) {
+      return true;
+    }
+    if (widget.isViewOnce && Hive.isBoxOpen('opened_view_once_messages')) {
+      try {
+        return Hive.box('opened_view_once_messages').get(messageId) == true;
+      } catch (_) {}
+    }
+    return false;
+  }
   VoidCallback? get onSharePressed => widget.onSharePressed;
   int? get fileSize => widget.fileSize;
   CallMeta? get callMeta => widget.callMeta;
@@ -180,6 +204,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get locationTitle => widget.locationTitle;
   int? get expiry => widget.expiry;
   String? get senderName => widget.senderName;
+  bool _isDownloading = false;
+  double? _downloadProgress;
 
   Color _getSenderColor(String name) {
     const palette = [
@@ -304,6 +330,10 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
+    if (type == 'call') {
+      return _buildCenteredCallBanner(context);
+    }
+
     final isMedia = _isMediaMessage;
 
     return AnimatedContainer(
@@ -368,21 +398,21 @@ class _MessageBubbleState extends State<MessageBubble> {
             Flexible(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: isMedia ? 256 : MediaQuery.of(context).size.width * 0.72,
+                  maxWidth: isViewOnce ? MediaQuery.of(context).size.width * 0.72 : (isMedia ? 256 : MediaQuery.of(context).size.width * 0.72),
                 ),
                 child: Container(
-                  width: isMedia ? 256 : null,
-                  padding: isMedia
+                  width: (isMedia && !isViewOnce) ? 256 : null,
+                  padding: (isMedia && !isViewOnce)
                       ? const EdgeInsets.all(8)
-                      : const EdgeInsets.all(16),
+                      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: isMe
-                        ? (isMedia
+                        ? (isMedia && !isViewOnce
                             ? (Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFF132B25)
                                 : context.colors.sentBubble)
                             : context.colors.sentBubble)
-                        : (isMedia
+                        : (isMedia && !isViewOnce
                             ? (Theme.of(context).brightness == Brightness.dark
                                 ? const Color(0xFF1E2B33)
                                 : context.colors.lightBackground)
@@ -393,7 +423,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       bottomLeft: isMe ? const Radius.circular(18) : const Radius.circular(4),
                       bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(18),
                     ),
-                    border: isMedia
+                    border: (isMedia && !isViewOnce)
                         ? Border.all(
                             color: const Color(0xFF00D084).withValues(alpha: 0.15),
                             width: 0.8,
@@ -413,8 +443,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                       if (isGroup && !isMe && senderName != null && senderName!.trim().isNotEmpty && !isDeleted)
                         Padding(
                           padding: EdgeInsets.only(
-                            left: isMedia ? 4.0 : 0.0,
-                            right: isMedia ? 4.0 : 0.0,
+                            left: (isMedia && !isViewOnce) ? 4.0 : 0.0,
+                            right: (isMedia && !isViewOnce) ? 4.0 : 0.0,
                             bottom: 6.0,
                           ),
                           child: Text(
@@ -485,9 +515,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                             ),
                           ),
                         ),
-                      if (isMedia) ...[
+                      if (isViewOnce && !isDeleted) ...[
+                        _buildViewOnceContent(context),
+                      ] else if (isMedia) ...[
                         if (!isDeleted) _buildAttachment(context),
-                        if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted)
+                        if (message.isNotEmpty && message != '[View Restricted]' && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted && (!(!allowView && !isMe)))
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
                             child: _buildMessageText(
@@ -500,10 +532,152 @@ class _MessageBubbleState extends State<MessageBubble> {
                             ),
                           ),
                         if (!isDeleted) _buildMediaActionBar(context),
+                        if (isUploading && !isDeleted)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              isMe ? context.colors.primary : const Color(0xFF00D084),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          'Sending...',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: isMe ? context.colors.primary : const Color(0xFF00D084),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    minHeight: 3.5,
+                                    backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      isMe ? context.colors.primary : const Color(0xFF00D084),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_isDownloading)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Downloading...',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF00D084),
+                                      ),
+                                    ),
+                                    if (_downloadProgress != null && _downloadProgress! > 0)
+                                      Text(
+                                        '${(_downloadProgress! * 100).toInt()}%',
+                                        style: const TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF00D084),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _downloadProgress,
+                                    minHeight: 3.5,
+                                    backgroundColor: const Color(0xFF00D084).withValues(alpha: 0.2),
+                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00D084)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (!isDeleted) _buildMediaFooter(context),
                       ] else ...[
                         if (!isDeleted) _buildAttachment(context),
                         if (!isDeleted) _buildPermissionControls(context),
+                        if (isUploading && !isDeleted)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 4.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              isMe ? context.colors.primary : const Color(0xFF00D084),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          'Sending...',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: isMe ? context.colors.primary : const Color(0xFF00D084),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    minHeight: 3.5,
+                                    backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      isMe ? context.colors.primary : const Color(0xFF00D084),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         _buildMessageText(
                           context,
                           context.bodyLarge.copyWith(
@@ -520,6 +694,67 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewOnceContent(BuildContext context) {
+    final bool opened = isViewOnceOpened;
+
+    String labelText;
+    if (opened) {
+      labelText = 'Opened';
+    } else {
+      if (type == 'video') {
+        labelText = 'Video';
+      } else if (type == 'audio' || type == 'voice') {
+        labelText = 'Voice message';
+      } else if (type == 'file' || type == 'document') {
+        labelText = (attachmentName != null && attachmentName!.isNotEmpty) ? attachmentName! : 'Document';
+      } else {
+        labelText = 'Photo';
+      }
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (!isMe && !opened) {
+          _openInAppViewer(context);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                labelText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: opened ? FontWeight.normal : FontWeight.w600,
+                  fontStyle: opened ? FontStyle.italic : FontStyle.normal,
+                  color: opened
+                      ? context.colors.textHint
+                      : context.colors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ViewOnceIconWidget(
+              count: 1,
+              isActive: !opened,
+              isOpened: opened,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            _buildDefaultTimestampRow(context),
           ],
         ),
       ),
@@ -612,6 +847,12 @@ class _MessageBubbleState extends State<MessageBubble> {
           ? (isDownloadActive ? textColor : disabledRed)
           : textColor;
 
+      final String downloadText = _isDownloading
+          ? (_downloadProgress != null && _downloadProgress! > 0
+              ? '${(_downloadProgress! * 100).toInt()}%'
+              : 'Downloading...')
+          : 'Download';
+
       actionButtons.add(
         Expanded(
           child: InkWell(
@@ -637,20 +878,30 @@ class _MessageBubbleState extends State<MessageBubble> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    isDownloadActive ? Icons.file_download_outlined : Icons.file_download_off_outlined,
-                    size: 15,
-                    color: iconColor,
-                  ),
+                  if (_isDownloading)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: accentGreen,
+                      ),
+                    )
+                  else
+                    Icon(
+                      isDownloadActive ? Icons.file_download_outlined : Icons.file_download_off_outlined,
+                      size: 15,
+                      color: iconColor,
+                    ),
                   const SizedBox(width: 3),
                   Flexible(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        'Download',
+                        downloadText,
                         maxLines: 1,
                         style: context.bodySmall.copyWith(
-                          color: labelColor,
+                          color: _isDownloading ? accentGreen : labelColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 11.5,
                           decoration: (!isDownloadActive && isMe) ? TextDecoration.lineThrough : null,
@@ -936,11 +1187,24 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildAttachment(BuildContext context) {
-    if (attachmentPath == null && attachmentBytes == null && type != 'call' && type != 'location') {
+    final effectivePath = (attachmentPath != null && attachmentPath!.isNotEmpty)
+        ? attachmentPath!
+        : ((type != 'call' && type != 'location' && type != 'text' && message.isNotEmpty && message != '[View Restricted]') ? message : null);
+
+    if (effectivePath == null && attachmentBytes == null && type != 'call' && type != 'location') {
       return const SizedBox.shrink();
     }
 
     final viewLocked = !allowView && !isMe;
+
+    if (widget.groupedImages != null && widget.groupedImages!.length > 1) {
+      return MultiImageGridBubble(
+        images: widget.groupedImages!,
+        isMe: isMe,
+        contactName: widget.senderName ?? 'Photo',
+        onSharePressed: widget.onSharePressed != null ? (_) => widget.onSharePressed!() : null,
+      );
+    }
 
     Widget result;
     if (type == 'image') {
@@ -952,8 +1216,8 @@ class _MessageBubbleState extends State<MessageBubble> {
           width: double.infinity,
           fit: BoxFit.cover,
         );
-      } else if (attachmentPath != null) {
-        String displayUrl = attachmentPath!;
+      } else if (effectivePath != null) {
+        String displayUrl = effectivePath;
         if (displayUrl.contains('minio')) {
           try {
             final serverUri = Uri.parse(CommonEndpoints.baseUrl);
@@ -999,6 +1263,12 @@ class _MessageBubbleState extends State<MessageBubble> {
             }
           } catch (_) {
             s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+          }
+          if (displayUrl.startsWith('/')) {
+            displayUrl = displayUrl.substring(1);
+          }
+          if (displayUrl.startsWith('qlyncs-docs/')) {
+            displayUrl = displayUrl.replaceFirst('qlyncs-docs/', '');
           }
           final s3Url = '$s3BaseUrl$displayUrl';
           imageWidget = Image.network(
@@ -1074,14 +1344,19 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: imageContent,
         ),
       );
-    } else if (type == 'audio' || type == 'voice_note') {
+    } else if (type == 'audio' || type == 'voice' || type == 'voice_note') {
       if (viewLocked) {
         result = _buildLockedAttachmentCard(context, type: type, label: 'Audio Restricted');
       } else {
         result = _AudioWaveformPlayer(
-          audioUrl: attachmentPath,
+          audioUrl: effectivePath,
+          fileName: (attachmentName != null && attachmentName!.isNotEmpty)
+              ? attachmentName
+              : (message.isNotEmpty && message != '[View Restricted]' ? message : null),
+          fileSize: fileSize,
           isMe: isMe,
           payloadDuration: duration,
+          isUploading: isUploading,
         );
       }
     } else if (type == 'video') {
@@ -1091,7 +1366,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         result = Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
           child: _VideoMessagePreview(
-            url: attachmentPath,
+            url: effectivePath,
             messageId: messageId,
             isMe: isMe,
             onTap: () => _openInAppViewer(context),
@@ -1099,9 +1374,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         );
       }
-    } else if (type == 'file') {
+    } else if (type == 'file' || type == 'document') {
       if (viewLocked) {
-        result = _buildLockedAttachmentCard(context, type: type, label: 'File Restricted');
+        result = _buildLockedAttachmentCard(context, type: type, label: 'Document Restricted');
       } else {
         result = _buildFileBubbleCard(context);
       }
@@ -1379,79 +1654,134 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         ),
       );
-    } else if (type == 'call') {
-      final statusLower = callMeta?.status.toLowerCase() ?? '';
-      final isMissed = statusLower == 'missed';
-      final isDeclined = statusLower == 'rejected' || statusLower == 'reject' || statusLower == 'busy' || statusLower == 'decline' || statusLower == 'declined';
-      final isErrorState = isMissed || isDeclined;
-      final isVideo = callMeta?.callType.toLowerCase() == 'video';
-      final duration = callMeta?.duration ?? 0;
-      
-      result = Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: isMe
-              ? context.colors.textPrimary.withValues(alpha: 0.05)
-              : context.colors.lightBackground,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isErrorState 
-                    ? context.colors.error.withValues(alpha: 0.1) 
-                    : context.colors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isVideo 
-                    ? (isErrorState ? CommonIcons.missedVideoCall : CommonIcons.videocam) 
-                    : (isErrorState ? CommonIcons.phoneMissed : CommonIcons.phone),
-                color: isErrorState 
-                    ? context.colors.error 
-                    : context.colors.primary,
-                size: 16,
-              ),
-            ),
-            CommonSpaces.w8,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isVideo ? 'Video Call' : 'Voice Call',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: context.colors.textPrimary,
-                  ),
-                ),
-                CommonSpaces.h2,
-                Text(
-                  isMissed 
-                      ? 'Missed' 
-                      : (isDeclined ? 'Declined' : (duration > 0 ? _formatCallDuration(duration) : 'Completed')),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isErrorState 
-                        ? context.colors.error 
-                        : context.colors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
     } else {
       return const SizedBox.shrink();
     }
 
     return result;
+  }
+
+  Widget _buildCenteredCallBanner(BuildContext context) {
+    final statusLower = callMeta?.status.toLowerCase() ?? '';
+    final msgLower = message.toLowerCase();
+    final isMissed = statusLower == 'missed' || msgLower.contains('missed');
+    final isDeclined = statusLower == 'rejected' ||
+        statusLower == 'reject' ||
+        statusLower == 'busy' ||
+        statusLower == 'decline' ||
+        statusLower == 'declined' ||
+        msgLower.contains('declined') ||
+        msgLower.contains('rejected') ||
+        msgLower.contains('busy');
+    final isErrorState = isMissed || isDeclined;
+    final isVideo = (callMeta?.callType.toLowerCase() == 'video') || msgLower.contains('video');
+    final duration = callMeta?.duration ?? (widget.duration?.toInt() ?? 0);
+
+    String title;
+    if (isMissed) {
+      title = isVideo ? 'Missed Video Call' : 'Missed Voice Call';
+    } else if (isDeclined) {
+      title = isVideo ? 'Video Call Declined' : 'Voice Call Declined';
+    } else if (duration > 0) {
+      title = '${isVideo ? 'Video Call' : 'Voice Call'} (${_formatCallDuration(duration)})';
+    } else {
+      title = isVideo ? 'Video Call' : 'Voice Call';
+    }
+
+    final displayTime = time.trim();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Divider(
+              color: context.colors.border.withValues(alpha: 0.35),
+              thickness: 0.8,
+              endIndent: 10,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78,
+            ),
+            decoration: BoxDecoration(
+              color: context.colors.isDark
+                  ? const Color(0xFF1E2428).withValues(alpha: 0.95)
+                  : const Color(0xFFF0F4F8).withValues(alpha: 0.95),
+              borderRadius: BorderRadius.circular(14.0),
+              border: Border.all(
+                color: isErrorState
+                    ? context.colors.error.withValues(alpha: 0.3)
+                    : context.colors.border.withValues(alpha: 0.35),
+                width: 0.6,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  isVideo
+                      ? (isErrorState ? CommonIcons.missedVideoCall : CommonIcons.videocam)
+                      : (isErrorState ? CommonIcons.phoneMissed : CommonIcons.phone),
+                  color: isErrorState ? context.colors.error : context.colors.primary,
+                  size: 15,
+                ),
+                CommonSpaces.w8,
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: title,
+                          style: TextStyle(
+                            color: isErrorState
+                                ? context.colors.error
+                                : context.colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (displayTime.isNotEmpty) ...[
+                          TextSpan(
+                            text: '  •  $displayTime',
+                            style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontWeight: FontWeight.w400,
+                              fontSize: 11.0,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Divider(
+              color: context.colors.border.withValues(alpha: 0.35),
+              thickness: 0.8,
+              indent: 10,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLockedAttachmentCard(BuildContext context, {required String type, required String label}) {
@@ -1468,7 +1798,6 @@ class _MessageBubbleState extends State<MessageBubble> {
         ),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
@@ -1483,27 +1812,31 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
           ),
           CommonSpaces.w12,
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: context.bodyMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: context.colors.textPrimary,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: context.bodyMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: context.colors.textPrimary,
+                  ),
                 ),
-              ),
-              CommonSpaces.h2,
-              Text(
-                'Playback & viewing locked by sender',
-                style: context.bodySmall.copyWith(
-                  fontSize: 11,
-                  color: context.colors.textSecondary,
+                CommonSpaces.h2,
+                Text(
+                  'Playback & viewing locked by sender',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.bodySmall.copyWith(
+                    fontSize: 11,
+                    color: context.colors.textSecondary,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -1693,24 +2026,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       },
     ));
 
-    context.read<ChatSocketBloc>().add(SendMessage(
-      conversationId: conversationId,
-      type: 'update_attachment_permissions',
-      text: messageId,
-      security: {
-        'messageId': messageId,
-        'allowShare': newShare,
-        'allowDownload': newDownload,
-        'allowView': newView,
-      },
-      viewControl: {
-        'messageId': messageId,
-        'allowShare': newShare,
-        'allowDownload': newDownload,
-        'allowView': newView,
-      },
-    ));
-
     if (messageId.isNotEmpty) {
       getIt<ChatRepository>().updateMessageSecurity(
         messageId,
@@ -1724,8 +2039,27 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _openInAppViewer(BuildContext context) {
-    final String? path = attachmentPath;
-    if (path == null || path.isEmpty) return;
+    String? path = attachmentPath;
+    if (path == null || path.isEmpty) {
+      if (message.isNotEmpty && (message.startsWith('http') || message.startsWith('/') || message.contains('.'))) {
+        path = message;
+      }
+    }
+    if ((path == null || path.isEmpty) && attachmentBytes != null) {
+      try {
+        final tempDir = Directory.systemTemp;
+        final tempFile = File('${tempDir.path}/vo_${DateTime.now().millisecondsSinceEpoch}_${attachmentName ?? 'media'}');
+        tempFile.writeAsBytesSync(attachmentBytes!);
+        path = tempFile.path;
+      } catch (e) {
+        debugPrint('Error creating temp file for viewer: $e');
+      }
+    }
+
+    if (path == null || path.isEmpty) {
+      debugPrint('Cannot open viewer: attachmentPath, message and attachmentBytes are all empty');
+      return;
+    }
     String url = path;
 
     if (url.contains('minio')) {
@@ -1762,8 +2096,42 @@ class _MessageBubbleState extends State<MessageBubble> {
       fileName: attachmentName ?? 'File',
       type: type,
       mediaId: messageId,
-      allowShare: allowShare,
-      allowDownload: allowDownload,
+      allowShare: isViewOnce ? false : allowShare,
+      allowDownload: isViewOnce ? false : allowDownload,
+      isViewOnce: isViewOnce,
+      isMe: isMe,
+      onViewed: () {
+        if (isViewOnce) {
+          try {
+            if (Hive.isBoxOpen('opened_view_once_messages')) {
+              Hive.box('opened_view_once_messages').put(messageId, true);
+            } else {
+              Hive.openBox('opened_view_once_messages').then((box) {
+                box.put(messageId, true);
+              });
+            }
+          } catch (_) {}
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {});
+            }
+          });
+          try {
+            context.read<ChatBloc>().add(
+              ReceiveFileActionEvent(
+                messageId: messageId,
+                actionType: 'file_viewed',
+              ),
+            );
+          } catch (_) {}
+          getIt<ChatSocketRepository>().sendFileAction(
+            type: 'file_viewed',
+            conversationId: conversationId,
+            messageId: messageId,
+            fileKey: url,
+          );
+        }
+      },
       onSharePressed: () {
         if (onSharePressed != null) {
           onSharePressed!();
@@ -1772,7 +2140,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           type: 'share_file',
           conversationId: conversationId,
           messageId: messageId,
-          fileKey: path,
+          fileKey: url,
         );
       },
       onDownloadPressed: () {
@@ -1781,7 +2149,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             type: 'download_file',
             conversationId: conversationId,
             messageId: messageId,
-            fileKey: path,
+            fileKey: url,
           );
         }
       },
@@ -1793,14 +2161,14 @@ class _MessageBubbleState extends State<MessageBubble> {
         type: 'view_file',
         conversationId: conversationId,
         messageId: messageId,
-        fileKey: path,
+        fileKey: url,
       );
     }
   }
 
   void _triggerDownload(BuildContext context) async {
     final String? path = attachmentPath;
-    if (path == null || path.isEmpty) return;
+    if (path == null || path.isEmpty || _isDownloading) return;
     String url = path;
 
     final bool isLocalFile = !kIsWeb && File(url).existsSync();
@@ -1821,58 +2189,53 @@ class _MessageBubbleState extends State<MessageBubble> {
       url = '$s3BaseUrl$url';
     }
 
-    final messenger = ScaffoldMessenger.of(context);
     final fileName = attachmentName ?? 'File';
 
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 2),
-        content: Text('Downloading $fileName: 0%'),
-      ),
-    );
+    if (mounted) {
+      setState(() {
+        _isDownloading = true;
+        _downloadProgress = 0.1;
+      });
+    }
 
-    final downloadedFile = await downloadFile(
-      url,
-      fileName,
-      onProgress: (received, total) {
-        if (total > 0) {
-          final pct = ((received / total) * 100).toInt();
-          messenger.hideCurrentSnackBar();
-          messenger.showSnackBar(
-            SnackBar(
-              duration: const Duration(seconds: 1),
-              content: Text('Downloading $fileName: $pct%'),
-            ),
-          );
-        }
-      },
-    );
+    bool downloadSucceeded = false;
+    try {
+      final downloadedFile = await downloadFile(
+        url,
+        fileName,
+        onProgress: (received, total) {
+          if (mounted) {
+            setState(() {
+              if (total > 0) {
+                _downloadProgress = (received / total).clamp(0.05, 1.0);
+              } else {
+                _downloadProgress = null;
+              }
+            });
+          }
+        },
+      );
+      if (downloadedFile != null) {
+        downloadSucceeded = true;
+      }
+    } catch (e) {
+      debugPrint('Error downloading file: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+          _downloadProgress = null;
+        });
+      }
+    }
 
     if (!context.mounted) return;
 
-    messenger.hideCurrentSnackBar();
-    final savePath = downloadedFile?.path ?? 'Schat secure storage';
-    messenger.showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 5),
-        backgroundColor: context.colors.primary,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '✅ $fileName (100%) Encrypted & Downloaded',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Saved to: $savePath',
-              style: const TextStyle(fontSize: 11, color: Colors.white70),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (downloadSucceeded) {
+      _openInAppViewer(context);
+    }
+
+    if (!context.mounted) return;
 
     // Notify backend about file download
     if (!isLocalFile) {
@@ -2153,11 +2516,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildMessageText(BuildContext context, TextStyle baseStyle, String text) {
     if (isDeleted) {
+      final Color deletedColor = context.colors.isDark
+          ? const Color(0xFFB0B3B8)
+          : const Color(0xFF667781);
       final deletedStyle = baseStyle.copyWith(
+        fontSize: 13.5,
         fontStyle: FontStyle.italic,
-        color: isMe
-            ? context.colors.textLight.withValues(alpha: 0.7)
-            : context.colors.textSecondary,
+        color: deletedColor,
       );
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -2165,9 +2530,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              CommonIcons.block,
-              size: 16,
-              color: deletedStyle.color,
+              Icons.block_outlined,
+              size: 15,
+              color: deletedColor,
             ),
             CommonSpaces.w6,
             Text(
@@ -2376,11 +2741,12 @@ class _VideoMessagePreview extends StatefulWidget {
 class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.url != null && !widget.isUploading) {
+    if (widget.url != null && widget.url!.isNotEmpty && !widget.isUploading) {
       _initializePlayer();
     }
   }
@@ -2389,14 +2755,14 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   void didUpdateWidget(_VideoMessagePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.url != oldWidget.url || (oldWidget.isUploading && !widget.isUploading)) {
-      if (widget.url != null && !widget.isUploading) {
+      if (widget.url != null && widget.url!.isNotEmpty && !widget.isUploading) {
         _initializePlayer();
       }
     }
   }
 
   String _resolveUrl(String path) {
-    String url = path;
+    String url = path.trim();
     if (url.contains('minio')) {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
@@ -2422,13 +2788,24 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       } catch (_) {
         s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
       }
+      if (url.startsWith('/')) {
+        url = url.substring(1);
+      }
+      if (url.startsWith('qlyncs-docs/')) {
+        url = url.replaceFirst('qlyncs-docs/', '');
+      }
       url = '$s3BaseUrl$url';
     }
     return url;
   }
 
   Future<void> _initializePlayer() async {
-    if (_controller != null) await _controller!.dispose();
+    if (_controller != null) {
+      try {
+        await _controller!.dispose();
+      } catch (_) {}
+      _controller = null;
+    }
 
     try {
       final url = _resolveUrl(widget.url!);
@@ -2442,10 +2819,16 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _hasError = false;
         });
       }
     } catch (e) {
       debugPrint('Error initializing video preview: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+        });
+      }
     }
   }
 
@@ -2464,7 +2847,7 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         child: Container(
           height: 180,
           width: 220,
-          color: context.colors.pureBlack.withValues(alpha: 0.12),
+          color: const Color(0xFF1E2428),
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -2473,23 +2856,62 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
                   child: FittedBox(
                     fit: BoxFit.cover,
                     child: SizedBox(
-                      width: _controller!.value.size.width,
-                      height: _controller!.value.size.height,
+                      width: _controller!.value.size.width > 0 ? _controller!.value.size.width : 220,
+                      height: _controller!.value.size.height > 0 ? _controller!.value.size.height : 180,
                       child: VideoPlayer(_controller!),
                     ),
                   ),
                 ),
-              if (!_isInitialized)
-                Icon(CommonIcons.playCircleOutline, color: context.colors.pureWhite.withValues(alpha: 0.54), size: 50),
+              if (!_isInitialized && !widget.isUploading)
+                Center(
+                  child: _hasError
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CommonIcons.playCircleOutline, color: Colors.white70, size: 48),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Video',
+                              style: context.bodySmall.copyWith(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                          ),
+                        ),
+                ),
               if (widget.isUploading)
                 Container(
-                  color: context.colors.pureBlack.withValues(alpha: 0.3),
-                  child: Center(
-                    child: CircularProgressIndicator(color: context.colors.pureWhite),
+                  color: Colors.black45,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
                   ),
                 ),
               if (_isInitialized && !widget.isUploading)
-                Icon(CommonIcons.playArrowRounded, color: context.colors.pureWhite, size: 40),
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                ),
             ],
           ),
         ),
@@ -2500,9 +2922,19 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
 
 class _AudioWaveformPlayer extends StatefulWidget {
   final String? audioUrl;
+  final String? fileName;
+  final int? fileSize;
   final bool isMe;
   final double? payloadDuration;
-  const _AudioWaveformPlayer({required this.audioUrl, required this.isMe, this.payloadDuration});
+  final bool isUploading;
+  const _AudioWaveformPlayer({
+    required this.audioUrl,
+    this.fileName,
+    this.fileSize,
+    required this.isMe,
+    this.payloadDuration,
+    this.isUploading = false,
+  });
 
   @override
   State<_AudioWaveformPlayer> createState() => _AudioWaveformPlayerState();
@@ -2553,7 +2985,6 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
     });
     _audioPlayer.onPositionChanged.listen((p) {
       if (mounted) {
-        // If we have a payload duration, clamp position to not exceed duration
         final currentPosition = widget.payloadDuration != null && p > _duration ? _duration : p;
         setState(() => _position = currentPosition);
       }
@@ -2575,8 +3006,15 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
     super.dispose();
   }
 
+  String _formatFileSize(int bytes) {
+    if (bytes <= 0) return '';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
   String _resolveUrl(String path) {
-    String url = path;
+    String url = path.trim();
     if (url.contains('minio')) {
       try {
         final serverUri = Uri.parse(CommonEndpoints.baseUrl);
@@ -2601,6 +3039,12 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
         }
       } catch (_) {
         s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+      }
+      if (url.startsWith('/')) {
+        url = url.substring(1);
+      }
+      if (url.startsWith('qlyncs-docs/')) {
+        url = url.replaceFirst('qlyncs-docs/', '');
       }
       url = '$s3BaseUrl$url';
     }
@@ -2641,7 +3085,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   @override
   Widget build(BuildContext context) {
     final activeColor = widget.isMe ? context.colors.pureWhite : context.colors.primary;
-    final inactiveColor = widget.isMe ? context.colors.pureWhite.withValues(alpha: 0.4) : context.colors.textHint;
+    final inactiveColor = widget.isMe ? context.colors.pureWhite.withValues(alpha: 0.6) : context.colors.textHint;
     final buttonBg = widget.isMe ? context.colors.pureWhite : context.colors.primary;
     final buttonIconColor = widget.isMe ? context.colors.primary : context.colors.pureWhite;
 
@@ -2649,66 +3093,131 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
         ? _position.inMilliseconds / _duration.inMilliseconds 
         : 0.0;
 
+    final hasName = widget.fileName != null &&
+        widget.fileName!.trim().isNotEmpty &&
+        widget.fileName != '[View Restricted]' &&
+        !widget.fileName!.startsWith('http');
+
+    String displayName = '';
+    if (hasName) {
+      displayName = widget.fileName!.trim();
+      if (displayName.contains('/')) {
+        displayName = displayName.split('/').last;
+      }
+    }
+
     return Container(
-      padding: const EdgeInsets.all(8),
-      constraints: const BoxConstraints(minWidth: 150),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      constraints: const BoxConstraints(minWidth: 180),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Play button
-          GestureDetector(
-            onTap: _togglePlay,
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: buttonBg,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                _isPlaying ? CommonIcons.pause : CommonIcons.playArrow,
-                color: buttonIconColor,
-                size: 20,
-              ),
-            ),
-          ),
-          CommonSpaces.w8,
-          // Waveform
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final availableWidth = constraints.maxWidth;
-                const barWidth = 2.0;
-                const spacing = 2.0;
-                final int barsCount = (availableWidth / (barWidth + spacing)).floor().clamp(5, 30);
-                
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(barsCount, (index) {
-                    final barProgress = index / barsCount;
-                    final isPlayed = progress >= barProgress;
-                    return Container(
-                      width: barWidth,
-                      height: _barHeights[index % _barHeights.length],
-                      decoration: BoxDecoration(
-                        color: isPlayed ? activeColor : inactiveColor,
-                        borderRadius: BorderRadius.circular(1),
+          if (hasName && displayName.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6.0, left: 2.0, right: 2.0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.audiotrack_rounded,
+                    size: 15,
+                    color: activeColor,
+                  ),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.bodySmall.copyWith(
+                        color: activeColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
                       ),
+                    ),
+                  ),
+                  if (widget.fileSize != null && widget.fileSize! > 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatFileSize(widget.fileSize!),
+                      style: context.bodySmall.copyWith(
+                        color: inactiveColor,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Play button
+              GestureDetector(
+                onTap: widget.isUploading ? null : _togglePlay,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: buttonBg,
+                    shape: BoxShape.circle,
+                  ),
+                  child: widget.isUploading
+                      ? Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(buttonIconColor),
+                          ),
+                        )
+                      : Icon(
+                          _isPlaying ? CommonIcons.pause : CommonIcons.playArrow,
+                          color: buttonIconColor,
+                          size: 20,
+                        ),
+                ),
+              ),
+              CommonSpaces.w8,
+              // Waveform
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final availableWidth = constraints.maxWidth;
+                    const barWidth = 2.0;
+                    const spacing = 2.0;
+                    final int barsCount = (availableWidth / (barWidth + spacing)).floor().clamp(5, 30);
+                    
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: List.generate(barsCount, (index) {
+                        final barProgress = index / barsCount;
+                        final isPlayed = progress >= barProgress;
+                        return Container(
+                          width: barWidth,
+                          height: _barHeights[index % _barHeights.length],
+                          decoration: BoxDecoration(
+                            color: isPlayed ? activeColor : inactiveColor,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        );
+                      }),
                     );
-                  }),
-                );
-              },
-            ),
-          ),
-          CommonSpaces.w8,
-          // Duration
-          Text(
-            "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
-            style: context.bodySmall.copyWith(
-              color: activeColor,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
+                  },
+                ),
+              ),
+              CommonSpaces.w8,
+              // Duration
+              Text(
+                "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
+                style: context.bodySmall.copyWith(
+                  color: activeColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
         ],
       ),

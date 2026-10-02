@@ -142,12 +142,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       final repo = getIt<ChatRepository>();
       await repo.revokeAllMediaShares(widget.mediaId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All shares and downstream access revoked successfully'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
         setState(() {
           _isActionProcessing = false;
           _loadData();
@@ -156,12 +150,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     } catch (e) {
       if (mounted) {
         setState(() => _isActionProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to revoke shares: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
       }
     }
   }
@@ -205,12 +193,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       final repo = getIt<ChatRepository>();
       await repo.revokeMediaShareGrant(mediaId: widget.mediaId, grantId: grantId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Access revoked for $userName and downstream shares'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
         setState(() {
           _isActionProcessing = false;
           _loadData();
@@ -219,12 +201,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     } catch (e) {
       if (mounted) {
         setState(() => _isActionProcessing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to revoke access: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
       }
     }
   }
@@ -347,12 +323,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           canShare: canShare,
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Permissions updated for ${node.grantee.displayName}'),
-              backgroundColor: const Color(0xFF00873C),
-            ),
-          );
           setState(() {
             _isActionProcessing = false;
             _loadData();
@@ -361,12 +331,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       } catch (e) {
         if (mounted) {
           setState(() => _isActionProcessing = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to update permissions: $e'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
         }
       }
     }
@@ -631,12 +595,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 color: context.colors.textSecondary,
                 onPressed: () {
                   Clipboard.setData(ClipboardData(text: widget.mediaId));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Media ID copied to clipboard'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
                 },
               ),
             ],

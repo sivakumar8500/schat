@@ -47,7 +47,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   int _currentIndex = 0;
-  int _filterIndex = 0; // 0: All, 1: Unread, 2: Groups
+  int _filterIndex = 0; // 0: All, 1: Unread, 2: Individual, 3: Groups
   String _username = 'David';
   String? _profilePicUrl;
   final Set<String> _hiddenChatIds = {};
@@ -601,7 +601,8 @@ class _DashboardPageState extends State<DashboardPage> {
                           .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
                           .where((c) {
                             if (_filterIndex == 1) return c.unreadCount > 0;
-                            if (_filterIndex == 2) return c.isGroup;
+                            if (_filterIndex == 2) return !c.isGroup;
+                            if (_filterIndex == 3) return c.isGroup;
                             return true;
                           })
                           .toList();
@@ -982,52 +983,56 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildFilterChips() {
     final isDark = context.colors.isDark;
-    final filterOptions = ['All', 'Unread', 'Groups'];
+    final filterOptions = ['All', 'Unread', 'Individual', 'Groups'];
     final activeColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
     final activeTextColor = isDark ? Colors.black : Colors.white;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
-      child: Row(
-        children: List.generate(filterOptions.length, (index) {
-          final isSelected = _filterIndex == index;
-          return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _filterIndex = index;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? activeColor
-                      : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.transparent),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: List.generate(filterOptions.length, (index) {
+            final isSelected = _filterIndex == index;
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _filterIndex = index;
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                  decoration: BoxDecoration(
                     color: isSelected
                         ? activeColor
-                        : (isDark ? Colors.white24 : const Color(0xFFD1D5DB)),
-                    width: 1,
+                        : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.transparent),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? activeColor
+                          : (isDark ? Colors.white24 : const Color(0xFFD1D5DB)),
+                      width: 1,
+                    ),
                   ),
-                ),
-                child: Text(
-                  filterOptions[index],
-                  style: TextStyle(
-                    color: isSelected
-                        ? activeTextColor
-                        : (isDark ? Colors.white70 : const Color(0xFF374151)),
-                    fontSize: 13.5,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  child: Text(
+                    filterOptions[index],
+                    style: TextStyle(
+                      color: isSelected
+                          ? activeTextColor
+                          : (isDark ? Colors.white70 : const Color(0xFF374151)),
+                      fontSize: 13.5,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }

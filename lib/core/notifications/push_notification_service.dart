@@ -122,6 +122,15 @@ class PushNotificationService {
     try {
       debugPrint('==================================================');
       debugPrint('🔔 [FCM] Requesting FCM Token from Firebase...');
+      if (Platform.isIOS) {
+        try {
+          String? apnsToken = await _fcm.getAPNSToken();
+          if (apnsToken == null) {
+            await Future.delayed(const Duration(milliseconds: 1000));
+            apnsToken = await _fcm.getAPNSToken();
+          }
+        } catch (_) {}
+      }
       final token = await _fcm.getToken();
       if (token != null) {
         debugPrint('==================================================');
@@ -200,13 +209,29 @@ class PushNotificationService {
 
   void _handleForegroundMessage(RemoteMessage message) {
     debugPrint('PushNotificationService: Received foreground message: ${message.messageId}');
-    
-    final type = message.data['type'];
-    if (type == 'call_initiate' || type == 'call_incoming') {
+    Map<String, dynamic> data = Map<String, dynamic>.from(message.data);
+    if (data.containsKey('data') && data['data'] is String) {
+      try {
+        final nested = jsonDecode(data['data'] as String);
+        if (nested is Map) data.addAll(Map<String, dynamic>.from(nested));
+      } catch (_) {}
+    }
+
+    final String type = (data['type'] ?? data['action'] ?? data['event'] ?? '').toString().toLowerCase();
+    final bool isCall = type == 'call_initiate' ||
+        type == 'call_incoming' ||
+        type == 'incoming_call' ||
+        type == 'call' ||
+        type == 'call_offer' ||
+        data.containsKey('call_type') ||
+        data.containsKey('callType') ||
+        data.containsKey('offer');
+
+    if (isCall) {
       try {
         final webrtcBloc = getIt<CallWebRtcBloc>();
         if (webrtcBloc.state is CallIdle) {
-          webrtcBloc.add(HandleIncomingCallEvent(Map<String, dynamic>.from(message.data)));
+          webrtcBloc.add(HandleIncomingCallEvent(data));
         }
       } catch (_) {}
       return;
@@ -291,7 +316,7 @@ class PushNotificationService {
     _pendingNotificationData = null;
     debugPrint('PushNotificationService: Applying notification action: $data');
 
-    final type = data['type']?.toString();
+    final String type = (data['type'] ?? data['action'] ?? data['event'] ?? '').toString().toLowerCase();
     if (type == 'screen_permission_request') {
       try {
         getIt<InAppNotificationService>().checkPendingScreenPermissions();
@@ -301,7 +326,16 @@ class PushNotificationService {
       return;
     }
 
-    if (type == 'call_initiate' || type == 'call_incoming') {
+    final bool isCall = type == 'call_initiate' ||
+        type == 'call_incoming' ||
+        type == 'incoming_call' ||
+        type == 'call' ||
+        type == 'call_offer' ||
+        data.containsKey('call_type') ||
+        data.containsKey('callType') ||
+        data.containsKey('offer');
+
+    if (isCall) {
       try {
         final webrtcBloc = getIt<CallWebRtcBloc>();
         if (webrtcBloc.state is CallIdle) {

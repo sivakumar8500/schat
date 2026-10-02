@@ -1,19 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:schat/main.dart'; // For navigatorKey
 import 'package:schat/injection.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/features/chat_screen/chat_screen.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
-import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
-import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
-import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
-import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_spaces.dart';
-import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/features/chat_screen/src/presentation/share_forward_target_page.dart';
 
 class ShareReceiverService {
   static final ShareReceiverService _instance = ShareReceiverService._internal();
@@ -48,7 +40,7 @@ class ShareReceiverService {
     _intentSub?.cancel();
   }
 
-  void _handleSharedMedia(List<SharedMediaFile> media) {
+  Future<void> _handleSharedMedia(List<SharedMediaFile> media) async {
     if (_isHandling) return;
     _isHandling = true;
 
@@ -57,9 +49,16 @@ class ShareReceiverService {
       _isHandling = false;
     });
 
-    final context = navigatorKey.currentContext;
-    if (context == null) {
-      debugPrint("ShareReceiverService: No current context available");
+    // Wait for navigator to be mounted if app is just launching
+    int retryCount = 0;
+    while (navigatorKey.currentState == null && retryCount < 10) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      retryCount++;
+    }
+
+    final navState = navigatorKey.currentState;
+    if (navState == null) {
+      debugPrint("ShareReceiverService: No navigator state available");
       return;
     }
 
@@ -70,314 +69,55 @@ class ShareReceiverService {
       return;
     }
 
-    final firstItem = media.first;
-    final String path = firstItem.path;
-    
-    // Detect shared type
-    final typeStr = firstItem.type.toString().toLowerCase();
-    String type = 'file';
-    if (typeStr.contains('image')) {
-      type = 'image';
-    } else if (typeStr.contains('video')) {
-      type = 'video';
-    } else if (typeStr.contains('text') || typeStr.contains('url')) {
-      type = 'text';
-    }
+    final List<SharedMediaItem> mediaItems = [];
+    String? sharedText;
 
-    // Extract file name
-    String name = 'Shared File';
-    if (type != 'text') {
-      try {
-        name = Uri.parse(path).pathSegments.last;
-      } catch (_) {
-        name = path.split('/').last;
+    for (final item in media) {
+      final String path = item.path;
+      final typeStr = item.type.toString().toLowerCase();
+
+      if (typeStr.contains('text') || typeStr.contains('url')) {
+        sharedText = path;
+      } else {
+        String type = 'file';
+        if (typeStr.contains('image')) {
+          type = 'image';
+        } else if (typeStr.contains('video')) {
+          type = 'video';
+        } else if (typeStr.contains('audio')) {
+          type = 'audio';
+        }
+
+        String name = 'Shared File';
+        try {
+          name = Uri.parse(path).pathSegments.last;
+        } catch (_) {
+          name = path.split('/').last;
+        }
+
+        int size = 0;
+        try {
+          final f = File(path);
+          if (f.existsSync()) {
+            size = f.lengthSync();
+          }
+        } catch (_) {}
+
+        mediaItems.add(SharedMediaItem(
+          path: path,
+          name: name,
+          type: type,
+          size: size,
+        ));
       }
     }
 
-    _showRecipientSelectionSheet(
-      context: context,
-      sharedText: type == 'text' ? path : null,
-      sharedFilePath: type != 'text' ? path : null,
-      sharedFileName: name,
-      sharedFileType: type,
-    );
-  }
-
-  void _showRecipientSelectionSheet({
-    required BuildContext context,
-    String? sharedText,
-    String? sharedFilePath,
-    String? sharedFileName,
-    String? sharedFileType,
-  }) async {
-    // Load contacts and chats
-    final contactsRepo = getIt<ContactsRepository>();
-    final dashboardRepo = getIt<DashboardRepository>();
-    
-    // Fetch contacts from cache or remote
-    List<UserModel> contacts = await contactsRepo.getCachedContacts();
-    if (contacts.isEmpty) {
-      final res = await contactsRepo.fetchSyncedContacts();
-      res.when(
-        success: (list) => contacts = list,
-        failure: (_, _) {},
-      );
-    }
-
-    // Get active chats from ChatsBloc state
-    List<ChatModel> recentChats = [];
-    final chatsState = getIt<ChatsBloc>().state;
-    if (chatsState is ChatsLoaded) {
-      recentChats = chatsState.chats;
-    }
-
-    if (!context.mounted) return;
-
-    String searchQuery = '';
-    
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            // Filter both lists based on search query
-            final filteredChats = recentChats.where((chat) {
-              final name = chat.isGroup 
-                  ? (chat.groupName ?? 'Group')
-                  : chat.recipient.displayName;
-              return name.toLowerCase().contains(searchQuery.toLowerCase());
-            }).toList();
-
-            final filteredContacts = contacts.where((contact) {
-              return contact.displayName.toLowerCase().contains(searchQuery.toLowerCase());
-            }).toList();
-
-            return Material(
-              color: context.colors.scaffoldBackground,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: Container(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.75,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CommonSpaces.h16,
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: context.colors.textSecondary.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      CommonSpaces.h16,
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          children: [
-                            Text(
-                              'Share to...',
-                              style: context.titleLarge.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: context.colors.textPrimary,
-                              ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Search Bar
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Search chats or contacts...',
-                            prefixIcon: Icon(Icons.search, color: context.colors.textSecondary),
-                            filled: true,
-                            fillColor: context.colors.border.withValues(alpha: 0.1),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                          onChanged: (val) {
-                            setState(() {
-                              searchQuery = val;
-                            });
-                          },
-                        ),
-                      ),
-                      const Divider(),
-                      Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          children: [
-                            if (filteredChats.isNotEmpty) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Text(
-                                  'Recent Chats',
-                                  style: context.bodySmall.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: context.colors.primary,
-                                  ),
-                                ),
-                              ),
-                              ...filteredChats.map((chat) {
-                                final name = chat.isGroup 
-                                    ? (chat.groupName ?? 'Group')
-                                    : chat.recipient.displayName;
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: context.colors.primary.withValues(alpha: 0.1),
-                                    backgroundImage: chat.recipient.profilePictureUrl != null && chat.recipient.profilePictureUrl!.isNotEmpty
-                                        ? NetworkImage(chat.recipient.profilePictureUrl!)
-                                        : null,
-                                    child: chat.recipient.profilePictureUrl == null || chat.recipient.profilePictureUrl!.isEmpty
-                                        ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?')
-                                        : null,
-                                  ),
-                                  title: Text(name, style: context.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                                  subtitle: Text(
-                                    chat.isGroup ? 'Group Chat' : (chat.recipient.about ?? 'sChat User'),
-                                    style: context.bodySmall.copyWith(color: context.colors.textSecondary),
-                                  ),
-                                  onTap: () {
-                                    Navigator.pop(sheetContext);
-                                    _navigateToChat(
-                                      context: context,
-                                      conversationId: chat.id,
-                                      contactName: name,
-                                      recipientId: chat.recipient.id.isNotEmpty ? chat.recipient.id : chat.id,
-                                      isGroup: chat.isGroup,
-                                      profilePictureUrl: chat.recipient.profilePictureUrl,
-                                      sharedText: sharedText,
-                                      sharedFilePath: sharedFilePath,
-                                      sharedFileName: sharedFileName,
-                                      sharedFileType: sharedFileType,
-                                    );
-                                  },
-                                );
-                              }),
-                            ],
-                            if (filteredContacts.isNotEmpty) ...[
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                child: Text(
-                                  'All Contacts',
-                                  style: context.bodySmall.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: context.colors.primary,
-                                  ),
-                                ),
-                              ),
-                              ...filteredContacts.map((contact) {
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: context.colors.primary.withValues(alpha: 0.1),
-                                    backgroundImage: contact.profilePictureUrl != null && contact.profilePictureUrl!.isNotEmpty
-                                        ? NetworkImage(contact.profilePictureUrl!)
-                                        : null,
-                                    child: contact.profilePictureUrl == null || contact.profilePictureUrl!.isEmpty
-                                        ? Text(contact.displayName.isNotEmpty ? contact.displayName[0].toUpperCase() : '?')
-                                        : null,
-                                  ),
-                                  title: Text(contact.displayName, style: context.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                                  subtitle: Text(
-                                    contact.about ?? 'Hey there! I am using sChat.',
-                                    style: context.bodySmall.copyWith(color: context.colors.textSecondary),
-                                  ),
-                                  onTap: () async {
-                                    Navigator.pop(sheetContext);
-                                    
-                                    // Show a loading dialog
-                                    showDialog(
-                                      context: context,
-                                      barrierDismissible: false,
-                                      builder: (_) => const Center(child: CircularProgressIndicator()),
-                                    );
-
-                                    final chatResult = await dashboardRepo.startDirectChat(contact.id);
-                                    
-                                    if (context.mounted) {
-                                      Navigator.pop(context); // Dismiss loading
-                                    }
-
-                                    chatResult.when(
-                                      success: (chat) {
-                                        _navigateToChat(
-                                          context: context,
-                                          conversationId: chat.id,
-                                          contactName: contact.displayName,
-                                          recipientId: contact.id,
-                                          isGroup: false,
-                                          profilePictureUrl: contact.profilePictureUrl,
-                                          sharedText: sharedText,
-                                          sharedFilePath: sharedFilePath,
-                                          sharedFileName: sharedFileName,
-                                          sharedFileType: sharedFileType,
-                                        );
-                                      },
-                                      failure: (err, _) {
-                                        debugPrint("Failed to start chat for sharing: $err");
-                                      },
-                                    );
-                                  },
-                                );
-                              }),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _navigateToChat({
-    required BuildContext context,
-    required String conversationId,
-    required String contactName,
-    required String recipientId,
-    required bool isGroup,
-    String? profilePictureUrl,
-    String? sharedText,
-    String? sharedFilePath,
-    String? sharedFileName,
-    String? sharedFileType,
-  }) {
-    Navigator.push(
-      context,
+    // Navigate to dedicated multi-select ShareForwardTargetPage
+    navState.push(
       MaterialPageRoute(
-        builder: (context) => ChatPage(
-          conversationId: conversationId,
-          contactName: contactName,
-          contactColor: context.colors.primary,
-          isOnline: false,
-          recipientId: recipientId,
-          isGroup: isGroup,
-          profilePictureUrl: profilePictureUrl,
-          initialSharedText: sharedText,
-          initialSharedFilePath: sharedFilePath,
-          initialSharedFileName: sharedFileName,
-          initialSharedFileType: sharedFileType,
+        builder: (context) => ShareForwardTargetPage(
+          mediaItems: mediaItems,
+          sharedText: sharedText,
         ),
       ),
     );

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
+import 'package:dio/dio.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
@@ -61,9 +63,96 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
   }) async {
     try {
+      if (!kIsWeb) {
+        await WakelockPlus.enable();
+      }
+    } catch (_) {}
+
+    try {
+      String resolvedMime = mimeType;
+      final ext = fileName.split('.').last.toLowerCase();
+      if (mediaType == 'CHAT_VIDEO' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+        switch (ext) {
+          case 'mov':
+            resolvedMime = 'video/quicktime';
+            break;
+          case 'webm':
+            resolvedMime = 'video/webm';
+            break;
+          case 'avi':
+            resolvedMime = 'video/x-msvideo';
+            break;
+          case 'mkv':
+            resolvedMime = 'video/x-matroska';
+            break;
+          default:
+            resolvedMime = 'video/mp4';
+        }
+      } else if (mediaType == 'CHAT_IMAGE' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+        switch (ext) {
+          case 'png':
+            resolvedMime = 'image/png';
+            break;
+          case 'webp':
+            resolvedMime = 'image/webp';
+            break;
+          case 'gif':
+            resolvedMime = 'image/gif';
+            break;
+          default:
+            resolvedMime = 'image/jpeg';
+        }
+      } else if ((mediaType == 'VOICE_NOTE' || mediaType == 'CHAT_AUDIO') && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+        switch (ext) {
+          case 'wav':
+            resolvedMime = 'audio/wav';
+            break;
+          case 'm4a':
+            resolvedMime = 'audio/mp4';
+            break;
+          case 'aac':
+            resolvedMime = 'audio/aac';
+            break;
+          case 'ogg':
+            resolvedMime = 'audio/ogg';
+            break;
+          default:
+            resolvedMime = 'audio/mpeg';
+        }
+      } else if (mediaType == 'DOCUMENT') {
+        switch (ext) {
+          case 'pdf':
+            resolvedMime = 'application/pdf';
+            break;
+          case 'doc':
+            resolvedMime = 'application/msword';
+            break;
+          case 'docx':
+            resolvedMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            break;
+          case 'xls':
+            resolvedMime = 'application/vnd.ms-excel';
+            break;
+          case 'xlsx':
+            resolvedMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            break;
+          case 'ppt':
+            resolvedMime = 'application/vnd.ms-powerpoint';
+            break;
+          case 'pptx':
+            resolvedMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            break;
+          case 'zip':
+            resolvedMime = 'application/zip';
+            break;
+          default:
+            resolvedMime = 'application/pdf';
+        }
+      }
+
       final requestData = <String, dynamic>{
         'media_type': mediaType,
-        'mime_type': mimeType,
+        'mime_type': resolvedMime,
         'file_size_bytes': fileSizeBytes,
         'filename': fileName,
       };
@@ -71,16 +160,60 @@ class ChatRepositoryImpl implements ChatRepository {
         requestData['conversation_id'] = conversationId;
       }
 
-      final requestResult = await _apiService.post<Map<String, dynamic>>(
-        CommonEndpoints.requestUpload,
-        data: requestData,
-        mapper: (data) => Map<String, dynamic>.from(data as Map),
-      );
+      // 1. Request upload metadata with retries
+      Map<String, dynamic>? uploadMeta;
+      Exception? lastRequestError;
 
-      final uploadMeta = requestResult.when(
-        success: (data) => data,
-        failure: (error, statusCode) => throw Exception('Failed to request upload URL: $error'),
-      );
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          final requestResult = await _apiService.call<Map<String, dynamic>>(
+            path: CommonEndpoints.requestUpload,
+            method: 'POST',
+            data: requestData,
+            options: Options(
+              sendTimeout: const Duration(minutes: 2),
+              receiveTimeout: const Duration(minutes: 2),
+            ),
+            mapper: (data) => Map<String, dynamic>.from(data as Map),
+          );
+
+          uploadMeta = requestResult.when(
+            success: (data) => data,
+            failure: (error, statusCode) => throw Exception('Failed to request upload URL: $error'),
+          );
+          if (uploadMeta != null) break;
+        } catch (e) {
+          lastRequestError = Exception(e.toString());
+          debugPrint('Upload request attempt $attempt failed: $e');
+          final errStr = e.toString();
+          if (errStr.contains('Invalid document MIME type') ||
+              errStr.contains('Invalid video MIME type') ||
+              errStr.contains('Invalid audio MIME type') ||
+              errStr.contains('Invalid image MIME type') ||
+              errStr.contains('MIME type')) {
+            if (mediaType == 'DOCUMENT') {
+              if (attempt == 1) {
+                requestData['mime_type'] = 'application/pdf';
+              } else if (attempt == 2) {
+                requestData['mime_type'] = 'application/octet-stream';
+              }
+            } else if (mediaType == 'CHAT_VIDEO') {
+              requestData['mime_type'] = 'video/mp4';
+            } else if (mediaType == 'CHAT_IMAGE') {
+              requestData['mime_type'] = 'image/jpeg';
+            } else if (mediaType == 'VOICE_NOTE' || mediaType == 'CHAT_AUDIO') {
+              requestData['mime_type'] = 'audio/mpeg';
+            }
+          }
+          if (attempt < 3) {
+            await Future.delayed(Duration(milliseconds: 500 * attempt));
+          }
+        }
+      }
+
+      if (uploadMeta == null) {
+        throw lastRequestError ?? Exception('Failed to request upload URL after retries');
+      }
 
       final mediaId = uploadMeta['media_id']?.toString() ?? '';
       String uploadUrl = uploadMeta['upload_url']?.toString() ?? '';
@@ -100,47 +233,96 @@ class ChatRepositoryImpl implements ChatRepository {
         throw Exception('Invalid metadata received from request-upload');
       }
 
+      // 2. Perform direct S3/MinIO upload with retry
       Uint8List bytes;
-      if (kIsWeb) {
-        if (fileBytes == null) throw Exception('File bytes must not be null for web uploads');
+      if (fileBytes != null && fileBytes.isNotEmpty) {
         bytes = fileBytes;
+      } else if (!kIsWeb && filePath.isNotEmpty) {
+        final file = File(filePath);
+        if (!await file.exists()) throw Exception('File does not exist at path: $filePath');
+        bytes = await file.readAsBytes();
       } else {
-        if (fileBytes != null) {
-          bytes = fileBytes;
-        } else {
-          final file = File(filePath);
-          if (!await file.exists()) throw Exception('File does not exist at path: $filePath');
-          bytes = await file.readAsBytes();
+        throw Exception('No file data available for upload');
+      }
+
+      Exception? lastUploadError;
+      bool s3Success = false;
+
+      for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
+        try {
+          final uploadResponse = await http.put(
+            Uri.parse(uploadUrl),
+            body: bytes,
+            headers: {'Content-Type': mimeType},
+          ).timeout(const Duration(minutes: 10));
+
+          if (uploadResponse.statusCode == 200) {
+            s3Success = true;
+            break;
+          } else {
+            throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
+          }
+        } catch (e) {
+          lastUploadError = Exception(e.toString());
+          debugPrint('S3 upload attempt $uploadAttempt failed: $e');
+          if (uploadAttempt < 3) {
+            await Future.delayed(Duration(milliseconds: 1000 * uploadAttempt));
+          }
         }
       }
 
-      final uploadResponse = await http.put(
-        Uri.parse(uploadUrl),
-        body: bytes,
-        headers: {'Content-Type': mimeType},
-      );
-
-      if (uploadResponse.statusCode != 200) {
-        throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
+      if (!s3Success) {
+        throw lastUploadError ?? Exception('S3 upload failed after retries');
       }
 
-      final completeResult = await _apiService.post<Map<String, dynamic>>(
-        CommonEndpoints.completeUpload(mediaId),
-        data: {'sha256_checksum': null},
-        mapper: (data) => Map<String, dynamic>.from(data as Map),
-      );
+      // 3. Complete upload with retries
+      String? completedObjectKey;
+      Exception? lastCompleteError;
 
-      final res = completeResult.when(
-        success: (_) {
-          debugPrint('========\nmediaid: $mediaId\n========');
-          return objectKey;
-        },
-        failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
-      );
-      return res;
+      for (int completeAttempt = 1; completeAttempt <= 3; completeAttempt++) {
+        try {
+          final completeResult = await _apiService.call<Map<String, dynamic>>(
+            path: CommonEndpoints.completeUpload(mediaId),
+            method: 'POST',
+            data: {'sha256_checksum': null},
+            options: Options(
+              sendTimeout: const Duration(minutes: 2),
+              receiveTimeout: const Duration(minutes: 2),
+            ),
+            mapper: (data) => Map<String, dynamic>.from(data as Map),
+          );
+
+          completedObjectKey = completeResult.when(
+            success: (_) {
+              debugPrint('========\nmediaid: $mediaId completed\n========');
+              return objectKey;
+            },
+            failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
+          );
+          if (completedObjectKey != null) break;
+        } catch (e) {
+          lastCompleteError = Exception(e.toString());
+          debugPrint('Complete upload attempt $completeAttempt failed: $e');
+          if (completeAttempt < 3) {
+            await Future.delayed(Duration(milliseconds: 1000 * completeAttempt));
+          }
+        }
+      }
+
+      if (completedObjectKey == null) {
+        throw lastCompleteError ?? Exception('Failed to complete upload after retries');
+      }
+
+      return completedObjectKey;
     } catch (e) {
       debugPrint('Error in uploadMedia: $e');
       rethrow;
+    } finally {
+      try {
+        if (!kIsWeb) {
+          await WakelockPlus.disable();
+        }
+      } catch (_) {}
     }
   }
 

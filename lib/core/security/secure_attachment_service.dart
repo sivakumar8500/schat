@@ -15,12 +15,10 @@ import 'package:schat/utils/download_helper/download_helper.dart';
 @lazySingleton
 class SecureAttachmentService {
   final StorageService _storageService;
-  final Dio _dio;
   final Dio _cleanDio;
 
   SecureAttachmentService(this._storageService)
-      : _dio = Dio(),
-        _cleanDio = Dio(BaseOptions(
+      : _cleanDio = Dio(BaseOptions(
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
           followRedirects: true,
@@ -192,7 +190,11 @@ class SecureAttachmentService {
 
     if (await targetFile.exists()) {
       debugPrint('SecureAttachmentService: Encrypted attachment already cached -> ${targetFile.path}');
-      if (onProgress != null) onProgress(100, 100);
+      if (onProgress != null) {
+        onProgress(50, 100);
+        await Future.delayed(const Duration(milliseconds: 150));
+        onProgress(100, 100);
+      }
       return targetFile;
     }
 

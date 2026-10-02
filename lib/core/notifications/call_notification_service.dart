@@ -61,6 +61,15 @@ class CallNotificationService {
   Future<void> registerDevice() async {
     if (kIsWeb) return;
     try {
+      if (Platform.isIOS) {
+        try {
+          String? apnsToken = await _fcm.getAPNSToken();
+          if (apnsToken == null) {
+            await Future.delayed(const Duration(milliseconds: 1000));
+            apnsToken = await _fcm.getAPNSToken();
+          }
+        } catch (_) {}
+      }
       final token = await _fcm.getToken();
       if (token != null) {
         await _registerDeviceWithToken(token);
@@ -80,12 +89,6 @@ class CallNotificationService {
 
   /// Registers the device token on the server
   Future<void> _registerDeviceWithToken(String token) async {
-    // Allow device registration without auth token as per new requirements
-    // if (!_storageService.hasToken()) {
-    //   debugPrint('CallNotificationService: User not authenticated, skipping token registration');
-    //   return;
-    // }
-
     final deviceId = _storageService.getOrGenerateDeviceId();
     String deviceType = 'unknown';
     if (kIsWeb) {
@@ -102,8 +105,14 @@ class CallNotificationService {
       CommonEndpoints.registerDevice,
       data: {
         'device_id': deviceId,
+        'deviceId': deviceId,
         'push_token': token,
+        'pushToken': token,
+        'fcm_token': token,
+        'fcmToken': token,
+        'token': token,
         'device_type': deviceType,
+        'platform': deviceType,
       },
     );
 
@@ -301,21 +310,47 @@ class CallNotificationService {
   @pragma('vm:entry-point')
   static Future<void> handleBackgroundMessage(RemoteMessage message) async {
     debugPrint('FCM Background Message received: ${message.data}');
-    final type = message.data['type']?.toString();
+    Map<String, dynamic> data = Map<String, dynamic>.from(message.data);
 
-    // 1. Incoming Call (CallKit VoIP)
-    if (type == 'call_initiate' || type == 'call_incoming') {
+    if (data.containsKey('data') && data['data'] is String) {
+      try {
+        final nested = jsonDecode(data['data'] as String);
+        if (nested is Map) {
+          data.addAll(Map<String, dynamic>.from(nested));
+        }
+      } catch (_) {}
+    } else if (data.containsKey('payload') && data['payload'] is String) {
+      try {
+        final nested = jsonDecode(data['payload'] as String);
+        if (nested is Map) {
+          data.addAll(Map<String, dynamic>.from(nested));
+        }
+      } catch (_) {}
+    }
+
+    final String type = (data['type'] ?? data['action'] ?? data['event'] ?? data['message_type'] ?? '').toString().toLowerCase();
+    final bool isCall = type == 'call_initiate' ||
+        type == 'call_incoming' ||
+        type == 'incoming_call' ||
+        type == 'call' ||
+        type == 'call_offer' ||
+        data.containsKey('call_type') ||
+        data.containsKey('callType') ||
+        data.containsKey('offer');
+
+    // 1. Incoming Call (CallKit VoIP + Local heads-up fallback)
+    if (isCall) {
       final Uuid uuid = const Uuid();
       final String callUuid = uuid.v4();
-      final callerInfo = _extractCallerInfo(message.data);
+      final callerInfo = _extractCallerInfo(data);
       final String callerName = callerInfo.name;
       final String profilePicUrl = callerInfo.avatar;
-      final bool isVideo = message.data['call_type'] == 'video' || message.data['callType'] == 'video';
+      final bool isVideo = data['call_type'] == 'video' || data['callType'] == 'video';
 
-      final dynamic offerParsed = _tryParseJson(message.data['offer']);
+      final dynamic offerParsed = _tryParseJson(data['offer']);
 
       final Map<String, dynamic> extra = {
-        ...message.data,
+        ...data,
         'offer': offerParsed,
         'caller_name': callerName,
         'profile_picture_url': profilePicUrl,
@@ -329,7 +364,7 @@ class CallNotificationService {
         avatar: profilePicUrl.isNotEmpty ? profilePicUrl : null,
         handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
         type: isVideo ? 1 : 0,
-        duration: 30000,
+        duration: 35000,
         extra: extra,
         android: const AndroidParams(
           isCustomNotification: false,
@@ -355,7 +390,72 @@ class CallNotificationService {
           ringtonePath: 'system_ringtone_default',
         ),
       );
-      await FlutterCallkitIncoming.showCallkitIncoming(params);
+
+      try {
+        await FlutterCallkitIncoming.showCallkitIncoming(params);
+      } catch (e) {
+        debugPrint('CallNotificationService: Error showing CallKit: $e');
+      }
+
+      // Also ensure a high-priority heads-up local notification is shown as fallback
+      try {
+        final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+        const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
+        const initializationSettingsIOS = DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+        await flutterLocalNotificationsPlugin.initialize(
+          settings: const InitializationSettings(
+            android: initializationSettingsAndroid,
+            iOS: initializationSettingsIOS,
+          ),
+        );
+
+        final androidPlugin = flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        if (androidPlugin != null) {
+          const callChannel = AndroidNotificationChannel(
+            'schat_calls_channel',
+            'Incoming Calls',
+            description: 'Incoming video and audio calls',
+            importance: Importance.max,
+            playSound: true,
+            enableVibration: true,
+          );
+          await androidPlugin.createNotificationChannel(callChannel);
+        }
+
+        await flutterLocalNotificationsPlugin.show(
+          id: callUuid.hashCode,
+          title: callerName,
+          body: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call...',
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'schat_calls_channel',
+              'Incoming Calls',
+              channelDescription: 'Incoming video and audio calls',
+              importance: Importance.max,
+              priority: Priority.max,
+              fullScreenIntent: true,
+              category: AndroidNotificationCategory.call,
+              playSound: true,
+              enableVibration: true,
+            ),
+            iOS: DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
+              presentBanner: true,
+              interruptionLevel: InterruptionLevel.critical,
+            ),
+          ),
+          payload: jsonEncode(extra),
+        );
+      } catch (e) {
+        debugPrint('CallNotificationService: Fallback notification error: $e');
+      }
       return;
     }
 

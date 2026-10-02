@@ -68,22 +68,7 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
   Future<void> _requestPermission(Permission permission) async {
     if (kIsWeb) return;
 
-    final status = await permission.request();
-    if (status.isPermanentlyDenied) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Permission permanently denied. Please enable it in Settings.'),
-            backgroundColor: context.colors.error,
-            action: SnackBarAction(
-              label: 'Settings',
-              textColor: context.colors.pureWhite,
-              onPressed: () => openAppSettings(),
-            ),
-          ),
-        );
-      }
-    }
+    await permission.request();
     _checkStatuses();
   }
 

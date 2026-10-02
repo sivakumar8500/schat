@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:hive/hive.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
@@ -79,11 +80,102 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
   late TabController _tabController;
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
+  List<String> _userUploadedWallpapers = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadUserUploadedWallpapers();
+  }
+
+  Future<void> _loadUserUploadedWallpapers() async {
+    try {
+      final List<String> loaded = [];
+      // 1. Load from Hive box
+      final box = await Hive.openBox('user_uploaded_wallpapers');
+      final dynamic saved = box.get('wallpapers', defaultValue: <dynamic>[]);
+      if (saved is List) {
+        for (final item in saved) {
+          if (item is String && item.isNotEmpty && !loaded.contains(item)) {
+            loaded.add(item);
+          }
+        }
+      }
+
+      // 2. Load from local wallpapers directory on device
+      if (!kIsWeb) {
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final wallpapersDir = Directory('${appDir.path}/wallpapers');
+          if (await wallpapersDir.exists()) {
+            final files = wallpapersDir.listSync();
+            for (final f in files) {
+              if (f is File && !loaded.contains(f.path)) {
+                final lower = f.path.toLowerCase();
+                if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp')) {
+                  loaded.insert(0, f.path);
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _userUploadedWallpapers = loaded;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user uploaded wallpapers: $e');
+    }
+  }
+
+  Future<void> _saveUserUploadedWallpaper(String path) async {
+    try {
+      final box = await Hive.openBox('user_uploaded_wallpapers');
+      final dynamic saved = box.get('wallpapers', defaultValue: <dynamic>[]);
+      final list = saved is List ? List<String>.from(saved.whereType<String>()) : <String>[];
+      if (!list.contains(path)) {
+        list.insert(0, path);
+        await box.put('wallpapers', list);
+      }
+      if (mounted) {
+        setState(() {
+          if (!_userUploadedWallpapers.contains(path)) {
+            _userUploadedWallpapers.insert(0, path);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error saving user uploaded wallpaper: $e');
+    }
+  }
+
+  Future<void> _deleteUserUploadedWallpaper(String path) async {
+    try {
+      final box = await Hive.openBox('user_uploaded_wallpapers');
+      final dynamic saved = box.get('wallpapers', defaultValue: <dynamic>[]);
+      final list = saved is List ? List<String>.from(saved.whereType<String>()) : <String>[];
+      list.remove(path);
+      await box.put('wallpapers', list);
+
+      if (!kIsWeb && File(path).existsSync()) {
+        try {
+          await File(path).delete();
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        setState(() {
+          _userUploadedWallpapers.remove(path);
+        });
+        context.showSuccessNotification('Uploaded theme removed');
+      }
+    } catch (e) {
+      debugPrint('Error deleting user uploaded wallpaper: $e');
+    }
   }
 
   @override
@@ -151,6 +243,9 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
               debugPrint('Error persisting custom wallpaper locally: $e');
             }
           }
+
+          // Save to uploaded list
+          await _saveUserUploadedWallpaper(persistentPath);
 
           // 2. Apply locally first so UI updates immediately and stays permanently
           if (mounted) {
@@ -315,7 +410,7 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
         final currentWallpaper = state is ChatLoaded ? state.customWallpaperUrl : null;
 
         return Container(
-          height: MediaQuery.of(context).size.height * 0.58,
+          height: MediaQuery.of(context).size.height * 0.72,
           decoration: BoxDecoration(
             color: context.colors.scaffoldBackground,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -802,8 +897,235 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
             );
           },
         ),
+        // ─── USER UPLOADED WALLPAPERS / THEMES (SEPARATED BY BOTTOM DIVIDER) ───
+        if (_userUploadedWallpapers.isNotEmpty) ...[
+          CommonSpaces.h20,
+          Divider(
+            color: context.colors.border.withValues(alpha: 0.5),
+            thickness: 1,
+          ),
+          CommonSpaces.h16,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'YOUR UPLOADED THEMES',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: context.colors.textSecondary,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.colors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${_userUploadedWallpapers.length}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          CommonSpaces.h12,
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              childAspectRatio: 0.68,
+            ),
+            itemCount: _userUploadedWallpapers.length,
+            itemBuilder: (ctx, index) {
+              final path = _userUploadedWallpapers[index];
+              final isSelected = currentWallpaper == path;
+
+              return _buildUserUploadedWallpaperItem(
+                path: path,
+                name: 'Custom ${index + 1}',
+                isSelected: isSelected,
+                onTap: () => _onWallpaperSelected(path),
+                onDelete: () => _deleteUserUploadedWallpaper(path),
+              );
+            },
+          ),
+        ],
         CommonSpaces.h24,
       ],
+    );
+  }
+
+  Widget _buildUserUploadedWallpaperItem({
+    required String path,
+    required String name,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required VoidCallback onDelete,
+  }) {
+    final bool isLocal = !kIsWeb && File(path).existsSync();
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: context.colors.scaffoldBackground,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Delete Wallpaper'),
+            content: const Text('Are you sure you want to remove this uploaded wallpaper?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  onDelete();
+                },
+                child: Text('Delete', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isSelected
+                      ? context.colors.primary
+                      : context.colors.border.withValues(alpha: 0.5),
+                  width: isSelected ? 3 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    isLocal
+                        ? Image.file(
+                            File(path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (ctx, err, stack) => Container(
+                              color: context.colors.cardBackground,
+                              child: Icon(
+                                Icons.broken_image_rounded,
+                                color: context.colors.textSecondary,
+                              ),
+                            ),
+                          )
+                        : Image.network(
+                            path,
+                            fit: BoxFit.cover,
+                            errorBuilder: (ctx, err, stack) => Container(
+                              color: context.colors.cardBackground,
+                              child: Icon(
+                                Icons.broken_image_rounded,
+                                color: context.colors.textSecondary,
+                              ),
+                            ),
+                          ),
+                    if (isSelected)
+                      Container(
+                        color: context.colors.primary.withValues(alpha: 0.3),
+                        child: const Center(
+                          child: CircleAvatar(
+                            radius: 14,
+                            backgroundColor: Colors.white,
+                            child: Icon(
+                              Icons.check_rounded,
+                              color: Color(0xFF00873C),
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: context.colors.scaffoldBackground,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              title: const Text('Delete Wallpaper'),
+                              content: const Text('Are you sure you want to remove this uploaded wallpaper?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    onDelete();
+                                  },
+                                  child: Text('Delete', style: TextStyle(color: context.colors.error, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.white,
+                            size: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          CommonSpaces.h6,
+          Text(
+            name,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected
+                  ? context.colors.primary
+                  : context.colors.textPrimary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
     );
   }
 }

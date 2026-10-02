@@ -60,6 +60,11 @@ Future<void> main() async {
 
     // Initialize Hive
     await Hive.initFlutter();
+    try {
+      await Hive.openBox('opened_view_once_messages');
+    } catch (e) {
+      debugPrint('Error opening opened_view_once_messages box: $e');
+    }
 
     await configureDependencies();
 

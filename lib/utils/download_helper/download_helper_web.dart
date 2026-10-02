@@ -52,3 +52,7 @@ Future<dynamic> downloadFile(
   }
   return null;
 }
+
+Future<dynamic> saveFileToPublicDownloads(dynamic source, String fileName) async {
+  return source;
+}

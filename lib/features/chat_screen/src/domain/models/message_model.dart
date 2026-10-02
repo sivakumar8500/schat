@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'package:hive/hive.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/storage/storage_service.dart';
 
@@ -82,6 +83,11 @@ class MessageModel {
   final bool isFileDownloaded;
   final bool isFileShared;
 
+  // View Once Support
+  final bool isViewOnce;
+  final int maxViews;
+  final bool isViewOnceOpened;
+
   // Call support
   final CallMeta? callMeta;
   final double? duration;
@@ -133,6 +139,9 @@ class MessageModel {
     this.isFileViewed = false,
     this.isFileDownloaded = false,
     this.isFileShared = false,
+    this.isViewOnce = false,
+    this.maxViews = 1,
+    this.isViewOnceOpened = false,
     this.fileSize,
     this.callMeta,
     this.duration,
@@ -146,9 +155,7 @@ class MessageModel {
   factory MessageModel.fromJson(Map<String, dynamic> json) {
     String contentText = '';
     String? mediaUrl;
-    final String rawType = (json['type'] as String?)?.toLowerCase() ?? 'text';
-    // messageType holds the top-level type (e.g. 'system', 'text', 'image').
-    // mediaType holds the media sub-type for attachment bubbles.
+    final String rawType = (json['type'] ?? json['message_type'] ?? json['messageType'] ?? json['media_type'] ?? json['mediaType'] as String?)?.toLowerCase() ?? 'text';
     final String messageType = rawType;
     String? mediaType = rawType == 'system' ? null : rawType;
 
@@ -163,23 +170,49 @@ class MessageModel {
     }
     double? duration;
     if (contentData is Map) {
-      contentText = (contentData['text'] ?? '')?.toString() ?? '';
-      mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url']) as String?;
+      contentText = (contentData['text'] ?? contentData['caption'] ?? '')?.toString() ?? '';
+      mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url'] ?? contentData['mediaUrl'] ?? contentData['media_url'] ?? contentData['path'] ?? contentData['filePath'] ?? contentData['file_url'] ?? contentData['file'] ?? contentData['document'] ?? contentData['video'] ?? contentData['audio']) as String?;
       final rawDuration = contentData['duration'] ?? json['duration'];
       if (rawDuration != null) {
         duration = double.tryParse(rawDuration.toString());
       }
     } else if (contentData is String) {
       contentText = contentData;
-      mediaUrl = (json['media_url'] ?? json['url']) as String?;
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
       final rawDuration = json['duration'];
       if (rawDuration != null) {
         duration = double.tryParse(rawDuration.toString());
+      }
+    } else {
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
+    }
+
+    if (mediaUrl == null || mediaUrl.isEmpty) {
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['attachmentPath'] ?? json['mediaPath'] ?? json['file_path'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
+    }
+    if ((mediaUrl == null || mediaUrl.isEmpty) && contentText.isNotEmpty && (messageType == 'image' || messageType == 'video' || messageType == 'file' || messageType == 'audio' || messageType == 'document' || messageType == 'voice')) {
+      if (contentText.startsWith('http') || contentText.startsWith('/') || contentText.startsWith('file:') || contentText.contains('.')) {
+        mediaUrl = contentText;
+      }
+    }
+
+    // Auto-detect mediaType if it defaulted to text but mediaUrl/extension is present
+    if (mediaType == 'text' && mediaUrl != null && mediaUrl.isNotEmpty) {
+      final lowerUrl = mediaUrl.toLowerCase();
+      if (lowerUrl.endsWith('.mp4') || lowerUrl.endsWith('.mov') || lowerUrl.endsWith('.avi') || lowerUrl.endsWith('.mkv') || lowerUrl.endsWith('.3gp')) {
+        mediaType = 'video';
+      } else if (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp') || lowerUrl.endsWith('.gif')) {
+        mediaType = 'image';
+      } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.m4a') || lowerUrl.endsWith('.wav') || lowerUrl.endsWith('.aac') || lowerUrl.endsWith('.ogg')) {
+        mediaType = 'audio';
+      } else if (lowerUrl.endsWith('.pdf') || lowerUrl.endsWith('.doc') || lowerUrl.endsWith('.docx') || lowerUrl.endsWith('.xls') || lowerUrl.endsWith('.xlsx') || lowerUrl.endsWith('.txt') || lowerUrl.endsWith('.zip') || lowerUrl.endsWith('.csv')) {
+        mediaType = 'file';
       }
     }
 
     final dynamic security = json['security'];
     final dynamic viewControl = json['viewControl'] ?? json['view_control'];
+    final dynamic perms = json['permissions'];
     
     bool allowShare = true;
     bool allowDownload = true;
@@ -189,34 +222,100 @@ class MessageModel {
     bool isFileShared = false;
 
     if (security is Map) {
-      allowShare = (security['allowShare'] ?? security['allow_share'] ?? allowShare) as bool;
-      allowDownload = (security['allowDownload'] ?? security['allow_download'] ?? allowDownload) as bool;
-      allowView = (security['allowView'] ?? security['allow_view'] ?? allowView) as bool;
-      isFileViewed = (security['isFileViewed'] ?? security['file_viewed'] ?? security['is_file_viewed'] ?? isFileViewed) as bool? ?? false;
-      isFileDownloaded = (security['isFileDownloaded'] ?? security['file_downloaded'] ?? security['is_file_downloaded'] ?? isFileDownloaded) as bool? ?? false;
-      isFileShared = (security['isFileShared'] ?? security['file_shared'] ?? security['is_file_shared'] ?? isFileShared) as bool? ?? false;
+      if (security['allowShare'] != null) allowShare = security['allowShare'] == true;
+      else if (security['allow_share'] != null) allowShare = security['allow_share'] == true;
+      else if (security['canShare'] != null) allowShare = security['canShare'] == true;
+      else if (security['can_share'] != null) allowShare = security['can_share'] == true;
+
+      if (security['allowDownload'] != null) allowDownload = security['allowDownload'] == true;
+      else if (security['allow_download'] != null) allowDownload = security['allow_download'] == true;
+      else if (security['canDownload'] != null) allowDownload = security['canDownload'] == true;
+      else if (security['can_download'] != null) allowDownload = security['can_download'] == true;
+
+      if (security['isLocked'] == true) {
+        allowView = false;
+      } else if (security['allowView'] != null) {
+        allowView = security['allowView'] == true;
+      } else if (security['allow_view'] != null) {
+        allowView = security['allow_view'] == true;
+      } else if (security['canView'] != null) {
+        allowView = security['canView'] == true;
+      } else if (security['can_view'] != null) {
+        allowView = security['can_view'] == true;
+      }
+
+      isFileViewed = (security['isFileViewed'] ?? security['file_viewed'] ?? security['is_file_viewed'] ?? isFileViewed) == true;
+      isFileDownloaded = (security['isFileDownloaded'] ?? security['file_downloaded'] ?? security['is_file_downloaded'] ?? isFileDownloaded) == true;
+      isFileShared = (security['isFileShared'] ?? security['file_shared'] ?? security['is_file_shared'] ?? isFileShared) == true;
     }
 
     if (viewControl is Map) {
-      allowShare = (viewControl['allowShare'] ?? viewControl['allow_share'] ?? allowShare) as bool;
-      allowDownload = (viewControl['allowDownload'] ?? viewControl['allow_download'] ?? allowDownload) as bool;
-      allowView = (viewControl['allowView'] ?? viewControl['allow_view'] ?? allowView) as bool;
+      if (viewControl['allowShare'] != null) allowShare = viewControl['allowShare'] as bool;
+      else if (viewControl['allow_share'] != null) allowShare = viewControl['allow_share'] as bool;
+      else if (viewControl['canShare'] != null) allowShare = viewControl['canShare'] as bool;
+      else if (viewControl['can_share'] != null) allowShare = viewControl['can_share'] as bool;
+
+      if (viewControl['allowDownload'] != null) allowDownload = viewControl['allowDownload'] as bool;
+      else if (viewControl['allow_download'] != null) allowDownload = viewControl['allow_download'] as bool;
+      else if (viewControl['canDownload'] != null) allowDownload = viewControl['canDownload'] as bool;
+      else if (viewControl['can_download'] != null) allowDownload = viewControl['can_download'] as bool;
+
+      if (viewControl['allowView'] != null) allowView = viewControl['allowView'] as bool;
+      else if (viewControl['allow_view'] != null) allowView = viewControl['allow_view'] as bool;
+      else if (viewControl['canView'] != null) allowView = viewControl['canView'] as bool;
+      else if (viewControl['can_view'] != null) allowView = viewControl['can_view'] as bool;
+
       isFileViewed = (viewControl['isFileViewed'] ?? viewControl['file_viewed'] ?? viewControl['is_file_viewed'] ?? isFileViewed) as bool? ?? false;
       isFileDownloaded = (viewControl['isFileDownloaded'] ?? viewControl['file_downloaded'] ?? viewControl['is_file_downloaded'] ?? isFileDownloaded) as bool? ?? false;
       isFileShared = (viewControl['isFileShared'] ?? viewControl['file_shared'] ?? viewControl['is_file_shared'] ?? isFileShared) as bool? ?? false;
     }
 
+    if (perms is Map) {
+      if (perms['allowShare'] != null) allowShare = perms['allowShare'] as bool;
+      else if (perms['allow_share'] != null) allowShare = perms['allow_share'] as bool;
+      else if (perms['canShare'] != null) allowShare = perms['canShare'] as bool;
+      else if (perms['can_share'] != null) allowShare = perms['can_share'] as bool;
+
+      if (perms['allowDownload'] != null) allowDownload = perms['allowDownload'] as bool;
+      else if (perms['allow_download'] != null) allowDownload = perms['allow_download'] as bool;
+      else if (perms['canDownload'] != null) allowDownload = perms['canDownload'] as bool;
+      else if (perms['can_download'] != null) allowDownload = perms['can_download'] as bool;
+
+      if (perms['allowView'] != null) allowView = perms['allowView'] as bool;
+      else if (perms['allow_view'] != null) allowView = perms['allow_view'] as bool;
+      else if (perms['canView'] != null) allowView = perms['canView'] as bool;
+      else if (perms['can_view'] != null) allowView = perms['can_view'] as bool;
+    }
+
     if (json['allowShare'] != null) {
       allowShare = json['allowShare'] as bool;
-    } else if (json['allow_share'] != null) allowShare = json['allow_share'] as bool;
+    } else if (json['allow_share'] != null) {
+      allowShare = json['allow_share'] as bool;
+    } else if (json['canShare'] != null) {
+      allowShare = json['canShare'] as bool;
+    } else if (json['can_share'] != null) {
+      allowShare = json['can_share'] as bool;
+    }
 
     if (json['allowDownload'] != null) {
       allowDownload = json['allowDownload'] as bool;
-    } else if (json['allow_download'] != null) allowDownload = json['allow_download'] as bool;
+    } else if (json['allow_download'] != null) {
+      allowDownload = json['allow_download'] as bool;
+    } else if (json['canDownload'] != null) {
+      allowDownload = json['canDownload'] as bool;
+    } else if (json['can_download'] != null) {
+      allowDownload = json['can_download'] as bool;
+    }
 
     if (json['allowView'] != null) {
       allowView = json['allowView'] as bool;
-    } else if (json['allow_view'] != null) allowView = json['allow_view'] as bool;
+    } else if (json['allow_view'] != null) {
+      allowView = json['allow_view'] as bool;
+    } else if (json['canView'] != null) {
+      allowView = json['canView'] as bool;
+    } else if (json['can_view'] != null) {
+      allowView = json['can_view'] as bool;
+    }
 
     if (json['isFileViewed'] != null) {
       isFileViewed = json['isFileViewed'] as bool;
@@ -229,6 +328,50 @@ class MessageModel {
     if (json['isFileShared'] != null) {
       isFileShared = json['isFileShared'] as bool;
     } else if (json['file_shared'] != null) isFileShared = json['file_shared'] as bool;
+
+    bool isViewOnce = false;
+    int maxViews = 1;
+    bool isViewOnceOpened = false;
+
+    if (viewControl is Map) {
+      final vcType = (viewControl['type'] ?? viewControl['viewType'] ?? '').toString().toLowerCase();
+      isViewOnce = vcType == 'once' || viewControl['isViewOnce'] == true || viewControl['is_view_once'] == true;
+      maxViews = int.tryParse((viewControl['maxViews'] ?? viewControl['max_views'])?.toString() ?? '') ?? (isViewOnce ? 1 : 1);
+      isViewOnceOpened = (viewControl['isOpened'] == true || viewControl['is_opened'] == true || viewControl['openedAt'] != null || viewControl['opened_at'] != null);
+    }
+
+    if (json['isViewOnce'] != null) {
+      isViewOnce = json['isViewOnce'] as bool;
+    } else if (json['is_view_once'] != null) {
+      isViewOnce = json['is_view_once'] as bool;
+    }
+
+    if (json['maxViews'] != null) {
+      maxViews = int.tryParse(json['maxViews'].toString()) ?? maxViews;
+    } else if (json['max_views'] != null) {
+      maxViews = int.tryParse(json['max_views'].toString()) ?? maxViews;
+    }
+
+    if (json['isViewOnceOpened'] != null) {
+      isViewOnceOpened = json['isViewOnceOpened'] as bool;
+    } else if (json['is_view_once_opened'] != null) {
+      isViewOnceOpened = json['is_view_once_opened'] as bool;
+    } else if (isViewOnce && isFileViewed) {
+      isViewOnceOpened = true;
+    }
+
+    if (isViewOnce && !isViewOnceOpened) {
+      final msgId = (json['id'] ?? json['_id'] ?? json['message_id'] ?? json['messageId'])?.toString();
+      if (msgId != null && Hive.isBoxOpen('opened_view_once_messages')) {
+        try {
+          final box = Hive.box('opened_view_once_messages');
+          if (box.get(msgId) == true) {
+            isViewOnceOpened = true;
+            isFileViewed = true;
+          }
+        } catch (_) {}
+      }
+    }
 
     int? fileSize;
     final dynamic rawFileSize = json['fileSize'] ?? json['file_size'] ?? json['file_size_bytes'] ?? 
@@ -348,6 +491,9 @@ class MessageModel {
       isFileViewed: isFileViewed,
       isFileDownloaded: isFileDownloaded,
       isFileShared: isFileShared,
+      isViewOnce: isViewOnce,
+      maxViews: maxViews,
+      isViewOnceOpened: isViewOnceOpened,
       fileSize: fileSize,
       callMeta: callMeta,
       duration: duration,
@@ -440,6 +586,9 @@ class MessageModel {
     'isFileViewed': isFileViewed,
     'isFileDownloaded': isFileDownloaded,
     'isFileShared': isFileShared,
+    'isViewOnce': isViewOnce,
+    'maxViews': maxViews,
+    'isViewOnceOpened': isViewOnceOpened,
     'security': {
       'allowShare': allowShare,
       'allowDownload': allowDownload,
@@ -449,6 +598,9 @@ class MessageModel {
       'isFileShared': isFileShared,
     },
     'viewControl': {
+      'type': isViewOnce ? 'once' : 'normal',
+      'maxViews': maxViews,
+      'isOpened': isViewOnceOpened,
       'allowShare': allowShare,
       'allowDownload': allowDownload,
       'allowView': allowView,
@@ -494,6 +646,9 @@ class MessageModel {
     bool? isFileViewed,
     bool? isFileDownloaded,
     bool? isFileShared,
+    bool? isViewOnce,
+    int? maxViews,
+    bool? isViewOnceOpened,
     int? fileSize,
     CallMeta? callMeta,
     double? duration,
@@ -538,6 +693,9 @@ class MessageModel {
       isFileViewed: isFileViewed ?? this.isFileViewed,
       isFileDownloaded: isFileDownloaded ?? this.isFileDownloaded,
       isFileShared: isFileShared ?? this.isFileShared,
+      isViewOnce: isViewOnce ?? this.isViewOnce,
+      maxViews: maxViews ?? this.maxViews,
+      isViewOnceOpened: isViewOnceOpened ?? this.isViewOnceOpened,
       fileSize: fileSize ?? this.fileSize,
       callMeta: callMeta ?? this.callMeta,
       duration: duration ?? this.duration,

@@ -13,6 +13,8 @@ import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
 
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/injection.dart';
 
 class InAppViewer extends StatefulWidget {
@@ -22,8 +24,11 @@ class InAppViewer extends StatefulWidget {
   final String? mediaId;
   final bool allowShare;
   final bool allowDownload;
+  final bool isViewOnce;
+  final bool isMe;
   final VoidCallback? onSharePressed;
   final VoidCallback? onDownloadPressed;
+  final VoidCallback? onViewed;
 
   const InAppViewer({
     super.key,
@@ -33,8 +38,11 @@ class InAppViewer extends StatefulWidget {
     this.mediaId,
     this.allowShare = true,
     this.allowDownload = true,
+    this.isViewOnce = false,
+    this.isMe = false,
     this.onSharePressed,
     this.onDownloadPressed,
+    this.onViewed,
   });
 
   static void show(
@@ -45,8 +53,11 @@ class InAppViewer extends StatefulWidget {
     String? mediaId,
     bool allowShare = true,
     bool allowDownload = true,
+    bool isViewOnce = false,
+    bool isMe = false,
     VoidCallback? onSharePressed,
     VoidCallback? onDownloadPressed,
+    VoidCallback? onViewed,
   }) {
     Navigator.push(
       context,
@@ -58,8 +69,11 @@ class InAppViewer extends StatefulWidget {
           mediaId: mediaId,
           allowShare: allowShare,
           allowDownload: allowDownload,
+          isViewOnce: isViewOnce,
+          isMe: isMe,
           onSharePressed: onSharePressed,
           onDownloadPressed: onDownloadPressed,
+          onViewed: onViewed,
         ),
       ),
     );
@@ -93,6 +107,13 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       });
     _transformationController.addListener(_onTransformationChanged);
     _prepareAttachment();
+    if (widget.onViewed != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onViewed!();
+        }
+      });
+    }
   }
 
   void _onTransformationChanged() {
@@ -155,14 +176,23 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
   Future<void> _prepareAttachment() async {
     try {
       if (kIsWeb) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      // 1. If local file exists, use it directly
+      final isLocal = File(widget.url).existsSync();
+      if (isLocal) {
         if (mounted) {
           setState(() {
+            _decryptedTempFile = File(widget.url);
             _isLoading = false;
           });
         }
         return;
       }
 
+      // 2. Fetch and decrypt securely
       final secureService = getIt<SecureAttachmentService>();
       final tempFile = await secureService.getDecryptedTempFileForViewing(
         url: widget.url,
@@ -176,10 +206,10 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      debugPrint('InAppViewer preparation error: $e');
+      debugPrint('InAppViewer preparation fallback to direct url: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = 'Failed to decrypt attachment securely.';
+          _errorMessage = null; // fallback to direct url
           _isLoading = false;
         });
       }
@@ -426,28 +456,44 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           icon: const Icon(CommonIcons.close, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          widget.fileName,
-          style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: widget.isViewOnce
+            ? Row(
+                children: [
+                  const ViewOnceIconWidget(count: 1, isActive: true, size: 20),
+                  CommonSpaces.w8,
+                  Flexible(
+                    child: Text(
+                      'View Once',
+                      style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              )
+            : Text(
+                widget.fileName,
+                style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.shield_outlined, color: Colors.white),
-            tooltip: 'Security & Protection',
-            onPressed: () {
-              final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
-                  ? widget.mediaId!
-                  : '3fa85f64-5717-4562-b3fc-2c963f66afa6';
-              MediaProtectionBottomSheet.show(
-                context,
-                mediaId: idToUse,
-                fileName: widget.fileName,
-              );
-            },
-          ),
-          if (widget.allowShare && widget.onSharePressed != null)
+          if (!widget.isViewOnce && widget.isMe)
+            IconButton(
+              icon: const Icon(Icons.shield_outlined, color: Colors.white),
+              tooltip: 'Security & Protection',
+              onPressed: () {
+                final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
+                    ? widget.mediaId!
+                    : '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+                MediaProtectionBottomSheet.show(
+                  context,
+                  mediaId: idToUse,
+                  fileName: widget.fileName,
+                );
+              },
+            ),
+          if (!widget.isViewOnce && widget.allowShare && widget.onSharePressed != null)
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: 'Share/Forward',
@@ -456,66 +502,39 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                 widget.onSharePressed!();
               },
             ),
-          if (widget.allowDownload)
+          if (!widget.isViewOnce && widget.allowDownload)
             IconButton(
               icon: const Icon(Icons.download, color: Colors.white),
               tooltip: 'Download',
               onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final primaryColor = context.colors.primary;
+                try {
+                  File? fileToSave = _decryptedTempFile;
+                  if (fileToSave == null || !await fileToSave.exists()) {
+                    fileToSave = await getIt<SecureAttachmentService>().getDecryptedTempFileForViewing(
+                      url: widget.url,
+                      fileName: widget.fileName,
+                    );
+                  }
 
-                messenger.showSnackBar(
-                  SnackBar(
-                    duration: const Duration(seconds: 2),
-                    content: Text('Downloading ${widget.fileName}: 0%'),
-                  ),
-                );
-
-                final file = await downloadFile(
-                  widget.url,
-                  widget.fileName,
-                  onProgress: (received, total) {
-                    if (total > 0 && mounted) {
-                      final pct = ((received / total) * 100).toInt();
-                      messenger.hideCurrentSnackBar();
-                      messenger.showSnackBar(
-                        SnackBar(
-                          duration: const Duration(seconds: 1),
-                          content: Text('Downloading ${widget.fileName}: $pct%'),
-                        ),
-                      );
+                  if (await fileToSave.exists()) {
+                    await saveFileToPublicDownloads(fileToSave, widget.fileName);
+                    if (context.mounted) {
+                      context.showSuccessNotification('Saved to Downloads: ${widget.fileName}');
                     }
-                  },
-                );
+                  } else {
+                    if (context.mounted) {
+                      context.showErrorNotification('Failed to download media');
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('Download error in InAppViewer: $e');
+                  if (context.mounted) {
+                    context.showErrorNotification('Download failed: $e');
+                  }
+                }
 
                 if (widget.onDownloadPressed != null) {
                   widget.onDownloadPressed!();
-                }
-
-                if (mounted) {
-                  messenger.hideCurrentSnackBar();
-                  final savePath = file?.path ?? 'Schat secure storage';
-                  messenger.showSnackBar(
-                    SnackBar(
-                      duration: const Duration(seconds: 5),
-                      backgroundColor: primaryColor,
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '✅ ${widget.fileName} (100%) Encrypted & Downloaded',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Saved to: $savePath',
-                            style: const TextStyle(fontSize: 11, color: Colors.white70),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
                 }
               },
             ),

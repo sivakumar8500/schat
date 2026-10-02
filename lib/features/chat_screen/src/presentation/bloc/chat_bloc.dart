@@ -158,6 +158,45 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }).toList();
   }
 
+  List<MessageModel> _applyPersistentViewOnceStates(List<MessageModel> messages, [List<MessageModel>? existingMessages]) {
+    try {
+      Box? openedVoBox;
+      if (Hive.isBoxOpen('opened_view_once_messages')) {
+        openedVoBox = Hive.box('opened_view_once_messages');
+      }
+      final Map<String, MessageModel> existingMap = {};
+      if (existingMessages != null) {
+        for (final m in existingMessages) {
+          existingMap[m.id] = m;
+        }
+      }
+
+      return messages.map((msg) {
+        if (!msg.isViewOnce) return msg;
+        final bool isRecordedOpened = (openedVoBox != null && openedVoBox.get(msg.id) == true) ||
+            (existingMap[msg.id]?.isViewOnceOpened == true) ||
+            (existingMap[msg.id]?.isFileViewed == true) ||
+            msg.isViewOnceOpened ||
+            msg.isFileViewed;
+
+        if (isRecordedOpened) {
+          if (openedVoBox != null && openedVoBox.get(msg.id) != true) {
+            try {
+              openedVoBox.put(msg.id, true);
+            } catch (_) {}
+          }
+          return msg.copyWith(
+            isViewOnceOpened: true,
+            isFileViewed: true,
+          );
+        }
+        return msg;
+      }).toList();
+    } catch (_) {
+      return messages;
+    }
+  }
+
   bool _isSameConversation(dynamic id1, dynamic id2) {
     if (id1 == null || id2 == null) return false;
     final s1 = id1.toString().replaceAll('-', '').toLowerCase().trim();
@@ -249,6 +288,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
           final securityMap = msgMap['security'] ?? cleanData['security'];
           final viewControlMap = msgMap['viewControl'] ?? msgMap['view_control'] ?? cleanData['viewControl'] ?? cleanData['view_control'];
+          final permsMap = msgMap['permissions'] ?? cleanData['permissions'];
 
           bool? allowShare;
           bool? allowDownload;
@@ -256,40 +296,81 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           bool? isLocked;
 
           if (securityMap is Map) {
-            if (securityMap['allowShare'] != null) {
-              allowShare = securityMap['allowShare'] as bool;
-            } else if (securityMap['allow_share'] != null) {
-              allowShare = securityMap['allow_share'] as bool;
-            }
+            if (securityMap['allowShare'] != null) allowShare = securityMap['allowShare'] as bool;
+            else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+            else if (securityMap['canShare'] != null) allowShare = securityMap['canShare'] as bool;
+            else if (securityMap['can_share'] != null) allowShare = securityMap['can_share'] as bool;
 
-            if (securityMap['allowDownload'] != null) {
-              allowDownload = securityMap['allowDownload'] as bool;
-            } else if (securityMap['allow_download'] != null) {
-              allowDownload = securityMap['allow_download'] as bool;
-            }
+            if (securityMap['allowDownload'] != null) allowDownload = securityMap['allowDownload'] as bool;
+            else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+            else if (securityMap['canDownload'] != null) allowDownload = securityMap['canDownload'] as bool;
+            else if (securityMap['can_download'] != null) allowDownload = securityMap['can_download'] as bool;
 
-            if (securityMap['allowView'] != null) {
-              allowView = securityMap['allowView'] as bool;
-            } else if (securityMap['allow_view'] != null) {
-              allowView = securityMap['allow_view'] as bool;
-            }
+            if (securityMap['allowView'] != null) allowView = securityMap['allowView'] as bool;
+            else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
+            else if (securityMap['canView'] != null) allowView = securityMap['canView'] as bool;
+            else if (securityMap['can_view'] != null) allowView = securityMap['can_view'] as bool;
 
-            if (securityMap['isLocked'] != null) {
-              isLocked = securityMap['isLocked'] as bool;
-            } else if (securityMap['is_locked'] != null) {
-              isLocked = securityMap['is_locked'] as bool;
-            }
+            if (securityMap['isLocked'] != null) isLocked = securityMap['isLocked'] as bool;
+            else if (securityMap['is_locked'] != null) isLocked = securityMap['is_locked'] as bool;
           }
 
           if (viewControlMap is Map) {
-            if (allowShare == null && viewControlMap['allowShare'] != null) allowShare = viewControlMap['allowShare'] as bool;
-            if (allowDownload == null && viewControlMap['allowDownload'] != null) allowDownload = viewControlMap['allowDownload'] as bool;
-            if (allowView == null && viewControlMap['allowView'] != null) allowView = viewControlMap['allowView'] as bool;
+            if (allowShare == null) {
+              if (viewControlMap['allowShare'] != null) allowShare = viewControlMap['allowShare'] as bool;
+              else if (viewControlMap['allow_share'] != null) allowShare = viewControlMap['allow_share'] as bool;
+              else if (viewControlMap['canShare'] != null) allowShare = viewControlMap['canShare'] as bool;
+              else if (viewControlMap['can_share'] != null) allowShare = viewControlMap['can_share'] as bool;
+            }
+            if (allowDownload == null) {
+              if (viewControlMap['allowDownload'] != null) allowDownload = viewControlMap['allowDownload'] as bool;
+              else if (viewControlMap['allow_download'] != null) allowDownload = viewControlMap['allow_download'] as bool;
+              else if (viewControlMap['canDownload'] != null) allowDownload = viewControlMap['canDownload'] as bool;
+              else if (viewControlMap['can_download'] != null) allowDownload = viewControlMap['can_download'] as bool;
+            }
+            if (allowView == null) {
+              if (viewControlMap['allowView'] != null) allowView = viewControlMap['allowView'] as bool;
+              else if (viewControlMap['allow_view'] != null) allowView = viewControlMap['allow_view'] as bool;
+              else if (viewControlMap['canView'] != null) allowView = viewControlMap['canView'] as bool;
+              else if (viewControlMap['can_view'] != null) allowView = viewControlMap['can_view'] as bool;
+            }
+          }
+
+          if (permsMap is Map) {
+            if (allowShare == null) {
+              if (permsMap['allowShare'] != null) allowShare = permsMap['allowShare'] as bool;
+              else if (permsMap['allow_share'] != null) allowShare = permsMap['allow_share'] as bool;
+              else if (permsMap['canShare'] != null) allowShare = permsMap['canShare'] as bool;
+              else if (permsMap['can_share'] != null) allowShare = permsMap['can_share'] as bool;
+            }
+            if (allowDownload == null) {
+              if (permsMap['allowDownload'] != null) allowDownload = permsMap['allowDownload'] as bool;
+              else if (permsMap['allow_download'] != null) allowDownload = permsMap['allow_download'] as bool;
+              else if (permsMap['canDownload'] != null) allowDownload = permsMap['canDownload'] as bool;
+              else if (permsMap['can_download'] != null) allowDownload = permsMap['can_download'] as bool;
+            }
+            if (allowView == null) {
+              if (permsMap['allowView'] != null) allowView = permsMap['allowView'] as bool;
+              else if (permsMap['allow_view'] != null) allowView = permsMap['allow_view'] as bool;
+              else if (permsMap['canView'] != null) allowView = permsMap['canView'] as bool;
+              else if (permsMap['can_view'] != null) allowView = permsMap['can_view'] as bool;
+            }
           }
 
           if (msgMap['allowShare'] != null) allowShare = msgMap['allowShare'] as bool;
+          else if (msgMap['allow_share'] != null) allowShare = msgMap['allow_share'] as bool;
+          else if (msgMap['canShare'] != null) allowShare = msgMap['canShare'] as bool;
+          else if (msgMap['can_share'] != null) allowShare = msgMap['can_share'] as bool;
+
           if (msgMap['allowDownload'] != null) allowDownload = msgMap['allowDownload'] as bool;
+          else if (msgMap['allow_download'] != null) allowDownload = msgMap['allow_download'] as bool;
+          else if (msgMap['canDownload'] != null) allowDownload = msgMap['canDownload'] as bool;
+          else if (msgMap['can_download'] != null) allowDownload = msgMap['can_download'] as bool;
+
           if (msgMap['allowView'] != null) allowView = msgMap['allowView'] as bool;
+          else if (msgMap['allow_view'] != null) allowView = msgMap['allow_view'] as bool;
+          else if (msgMap['canView'] != null) allowView = msgMap['canView'] as bool;
+          else if (msgMap['can_view'] != null) allowView = msgMap['can_view'] as bool;
 
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(ReceiveEditMessageEvent(
@@ -387,38 +468,81 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           bool? allowDownload;
           bool? allowView;
 
+          final permsMap = cleanData['permissions'] ?? cleanData['perms'];
+
           if (securityMap is Map) {
             if (securityMap['allowShare'] != null) allowShare = securityMap['allowShare'] as bool;
             else if (securityMap['allow_share'] != null) allowShare = securityMap['allow_share'] as bool;
+            else if (securityMap['canShare'] != null) allowShare = securityMap['canShare'] as bool;
+            else if (securityMap['can_share'] != null) allowShare = securityMap['can_share'] as bool;
 
             if (securityMap['allowDownload'] != null) allowDownload = securityMap['allowDownload'] as bool;
             else if (securityMap['allow_download'] != null) allowDownload = securityMap['allow_download'] as bool;
+            else if (securityMap['canDownload'] != null) allowDownload = securityMap['canDownload'] as bool;
+            else if (securityMap['can_download'] != null) allowDownload = securityMap['can_download'] as bool;
 
             if (securityMap['allowView'] != null) allowView = securityMap['allowView'] as bool;
             else if (securityMap['allow_view'] != null) allowView = securityMap['allow_view'] as bool;
+            else if (securityMap['canView'] != null) allowView = securityMap['canView'] as bool;
+            else if (securityMap['can_view'] != null) allowView = securityMap['can_view'] as bool;
           }
 
           if (viewControlMap is Map) {
             if (allowShare == null) {
               if (viewControlMap['allowShare'] != null) allowShare = viewControlMap['allowShare'] as bool;
               else if (viewControlMap['allow_share'] != null) allowShare = viewControlMap['allow_share'] as bool;
+              else if (viewControlMap['canShare'] != null) allowShare = viewControlMap['canShare'] as bool;
+              else if (viewControlMap['can_share'] != null) allowShare = viewControlMap['can_share'] as bool;
             }
             if (allowDownload == null) {
               if (viewControlMap['allowDownload'] != null) allowDownload = viewControlMap['allowDownload'] as bool;
               else if (viewControlMap['allow_download'] != null) allowDownload = viewControlMap['allow_download'] as bool;
+              else if (viewControlMap['canDownload'] != null) allowDownload = viewControlMap['canDownload'] as bool;
+              else if (viewControlMap['can_download'] != null) allowDownload = viewControlMap['can_download'] as bool;
             }
             if (allowView == null) {
               if (viewControlMap['allowView'] != null) allowView = viewControlMap['allowView'] as bool;
               else if (viewControlMap['allow_view'] != null) allowView = viewControlMap['allow_view'] as bool;
+              else if (viewControlMap['canView'] != null) allowView = viewControlMap['canView'] as bool;
+              else if (viewControlMap['can_view'] != null) allowView = viewControlMap['can_view'] as bool;
+            }
+          }
+
+          if (permsMap is Map) {
+            if (allowShare == null) {
+              if (permsMap['allowShare'] != null) allowShare = permsMap['allowShare'] as bool;
+              else if (permsMap['allow_share'] != null) allowShare = permsMap['allow_share'] as bool;
+              else if (permsMap['canShare'] != null) allowShare = permsMap['canShare'] as bool;
+              else if (permsMap['can_share'] != null) allowShare = permsMap['can_share'] as bool;
+            }
+            if (allowDownload == null) {
+              if (permsMap['allowDownload'] != null) allowDownload = permsMap['allowDownload'] as bool;
+              else if (permsMap['allow_download'] != null) allowDownload = permsMap['allow_download'] as bool;
+              else if (permsMap['canDownload'] != null) allowDownload = permsMap['canDownload'] as bool;
+              else if (permsMap['can_download'] != null) allowDownload = permsMap['can_download'] as bool;
+            }
+            if (allowView == null) {
+              if (permsMap['allowView'] != null) allowView = permsMap['allowView'] as bool;
+              else if (permsMap['allow_view'] != null) allowView = permsMap['allow_view'] as bool;
+              else if (permsMap['canView'] != null) allowView = permsMap['canView'] as bool;
+              else if (permsMap['can_view'] != null) allowView = permsMap['can_view'] as bool;
             }
           }
 
           if (cleanData['allowShare'] != null) allowShare = cleanData['allowShare'] as bool;
-          if (cleanData['allow_share'] != null) allowShare = cleanData['allow_share'] as bool;
+          else if (cleanData['allow_share'] != null) allowShare = cleanData['allow_share'] as bool;
+          else if (cleanData['canShare'] != null) allowShare = cleanData['canShare'] as bool;
+          else if (cleanData['can_share'] != null) allowShare = cleanData['can_share'] as bool;
+
           if (cleanData['allowDownload'] != null) allowDownload = cleanData['allowDownload'] as bool;
-          if (cleanData['allow_download'] != null) allowDownload = cleanData['allow_download'] as bool;
+          else if (cleanData['allow_download'] != null) allowDownload = cleanData['allow_download'] as bool;
+          else if (cleanData['canDownload'] != null) allowDownload = cleanData['canDownload'] as bool;
+          else if (cleanData['can_download'] != null) allowDownload = cleanData['can_download'] as bool;
+
           if (cleanData['allowView'] != null) allowView = cleanData['allowView'] as bool;
-          if (cleanData['allow_view'] != null) allowView = cleanData['allow_view'] as bool;
+          else if (cleanData['allow_view'] != null) allowView = cleanData['allow_view'] as bool;
+          else if (cleanData['canView'] != null) allowView = cleanData['canView'] as bool;
+          else if (cleanData['can_view'] != null) allowView = cleanData['can_view'] as bool;
 
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(UpdateAttachmentPermissionsEvent(
@@ -462,16 +586,29 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final mediaId = (cleanData['media_id'] ?? cleanData['mediaId'])?.toString();
           final fileKey = (cleanData['file_key'] ?? cleanData['fileKey'])?.toString();
           final fileName = (cleanData['file_name'] ?? cleanData['fileName'])?.toString();
-          final perms = cleanData['permissions'];
+          final perms = cleanData['permissions'] ?? cleanData['security'] ?? cleanData['viewControl'] ?? cleanData['view_control'] ?? cleanData;
+          final isRevoked = type == 'media_access_revoked' || cleanData['is_all_revoked'] == true;
+          
           bool allowShare = false;
           bool allowDownload = false;
-          bool allowView = false;
-          if (perms is Map) {
-            allowShare = (perms['can_share'] ?? perms['canShare'] ?? perms['allow_share'] ?? perms['allowShare'] ?? false) as bool;
-            allowDownload = (perms['can_download'] ?? perms['canDownload'] ?? perms['allow_download'] ?? perms['allowDownload'] ?? false) as bool;
-            allowView = (perms['can_view'] ?? perms['canView'] ?? perms['allow_view'] ?? perms['allowView'] ?? false) as bool;
+          bool allowView = isRevoked ? false : true;
+          
+          if (perms is Map && !isRevoked) {
+            if (perms['can_share'] != null) allowShare = perms['can_share'] as bool;
+            else if (perms['canShare'] != null) allowShare = perms['canShare'] as bool;
+            else if (perms['allow_share'] != null) allowShare = perms['allow_share'] as bool;
+            else if (perms['allowShare'] != null) allowShare = perms['allowShare'] as bool;
+
+            if (perms['can_download'] != null) allowDownload = perms['can_download'] as bool;
+            else if (perms['canDownload'] != null) allowDownload = perms['canDownload'] as bool;
+            else if (perms['allow_download'] != null) allowDownload = perms['allow_download'] as bool;
+            else if (perms['allowDownload'] != null) allowDownload = perms['allowDownload'] as bool;
+
+            if (perms['can_view'] != null) allowView = perms['can_view'] as bool;
+            else if (perms['canView'] != null) allowView = perms['canView'] as bool;
+            else if (perms['allow_view'] != null) allowView = perms['allow_view'] as bool;
+            else if (perms['allowView'] != null) allowView = perms['allowView'] as bool;
           }
-          final isRevoked = type == 'media_access_revoked' || cleanData['is_all_revoked'] == true;
           if (isRevoked) {
             allowShare = false;
             allowDownload = false;
@@ -614,6 +751,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // 2. Fetch fresh messages from API in background
     try {
       var messages = await _chatRepository.getMessages(event.conversationId, limit: 50, skip: 0);
+      messages = _applyPersistentViewOnceStates(messages, cachedMessages);
       _messagesSkip = messages.length;
       if (messages.length < 50) {
         _hasReachedMax = true;
@@ -781,7 +919,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
 
       // Prepend the older messages to the existing list.
-      final filteredMore = _filterExpiredMessages(moreMessages);
+      var filteredMore = _filterExpiredMessages(moreMessages);
+      filteredMore = _applyPersistentViewOnceStates(filteredMore, currentState.messages);
       final updatedMessages = List<MessageModel>.from(filteredMore)..addAll(currentState.messages);
 
       emit(currentState.copyWith(messages: updatedMessages));
@@ -838,6 +977,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         allowShare: event.allowShare,
         allowDownload: event.allowDownload,
         allowView: event.allowView,
+        isViewOnce: event.isViewOnce,
+        maxViews: event.maxViews,
+        isViewOnceOpened: false,
         fileSize: event.fileSize,
         expiry: expiryTimestamp,
       );
@@ -853,7 +995,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     debugPrint('DEBUG: _onReceiveMessage called. state is ${currentState.runtimeType}');
     if (currentState is ChatLoaded) {
       try {
-        final newMessage = MessageModel.fromJson(event.messageData);
+        final rawMessage = MessageModel.fromJson(event.messageData);
+        final newMessage = _applyPersistentViewOnceStates([rawMessage], currentState.messages).first;
         debugPrint('DEBUG: Decoded new message. ID=${newMessage.id}, sender=${newMessage.senderId}, myId=${currentState.myId}');
         
         // Determine if this is our own echoed message:
@@ -1393,6 +1536,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onReceiveFileAction(ReceiveFileActionEvent event, Emitter<ChatState> emit) {
+    if (event.actionType == 'file_viewed') {
+      try {
+        if (Hive.isBoxOpen('opened_view_once_messages')) {
+          Hive.box('opened_view_once_messages').put(event.messageId, true);
+        } else {
+          Hive.openBox('opened_view_once_messages').then((box) {
+            box.put(event.messageId, true);
+          });
+        }
+      } catch (_) {}
+    }
     final currentState = state;
     if (currentState is ChatLoaded) {
       final updatedMessages = currentState.messages.map((msg) {
@@ -1401,6 +1555,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             isFileViewed: event.actionType == 'file_viewed' ? true : msg.isFileViewed,
             isFileDownloaded: event.actionType == 'file_downloaded' ? true : msg.isFileDownloaded,
             isFileShared: event.actionType == 'file_shared' ? true : msg.isFileShared,
+            isViewOnceOpened: (event.actionType == 'file_viewed' && msg.isViewOnce) ? true : msg.isViewOnceOpened,
           );
         }
         return msg;

@@ -1154,17 +1154,6 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             onPressed: () {
               Navigator.pop(ctx, true);
               context.read<ChatBloc>().add(ToggleMuteEvent(isMuted: !isMuted));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    isMuted
-                        ? 'Notifications unmuted for ${widget.contactName}'
-                        : 'Notifications muted for ${widget.contactName}',
-                  ),
-                  duration: const Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
             },
             child: Text(action),
           ),

@@ -87,9 +87,6 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       debugPrint('Error fetching group details: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading group info: $e')),
-        );
       }
     }
   }
@@ -258,11 +255,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                   Navigator.pop(context); // Close chat page using outer context
                 }
               } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete group: $e')),
-                  );
-                }
+                debugPrint('Failed to delete group: $e');
               }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -280,9 +273,6 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
       listener: (context, state) {
         if (state is ChatLoaded) {
           if (state.notificationMessage != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.notificationMessage!)),
-            );
             if (state.notificationMessage!.contains('successfully') || 
                 state.notificationMessage!.contains('added') || 
                 state.notificationMessage!.contains('removed') ||
@@ -1185,9 +1175,6 @@ class _EditGroupBottomSheetState extends State<_EditGroupBottomSheet> {
   Future<void> _saveChanges() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Group name cannot be empty')),
-      );
       return;
     }
 
@@ -1220,9 +1207,6 @@ class _EditGroupBottomSheetState extends State<_EditGroupBottomSheet> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save changes: $e')),
-        );
       }
     }
   }

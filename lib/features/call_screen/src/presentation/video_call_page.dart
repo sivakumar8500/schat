@@ -593,14 +593,6 @@ class _VideoCallPageState extends State<VideoCallPage>
     if (!mounted || selectedUsers == null || selectedUsers.isEmpty) return;
 
     bloc.add(AddParticipantsCallEvent(selectedUsers));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Calling ${selectedUsers.map((u) => u.displayName).join(", ")}...'),
-        duration: const Duration(seconds: 3),
-        backgroundColor: const Color(0xFF00873C),
-      ),
-    );
   }
 
   Widget _buildFrostedButton({
@@ -1157,13 +1149,6 @@ class _VideoCallPageState extends State<VideoCallPage>
                         GestureDetector(
                           onTap: () {
                             context.read<CallWebRtcBloc>().add(ReinviteParticipantCallEvent(user));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Calling ${user.displayName}...'),
-                                duration: const Duration(seconds: 2),
-                                backgroundColor: const Color(0xFF00873C),
-                              ),
-                            );
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
