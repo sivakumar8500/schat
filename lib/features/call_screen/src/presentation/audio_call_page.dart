@@ -16,6 +16,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
 
 /// 1-to-1 Audio Call Page — wired to WebRTC via CallWebRtcBloc.
 /// mason make page --name audio_call
@@ -70,6 +71,7 @@ class _AudioCallPageState extends State<AudioCallPage>
   @override
   void initState() {
     super.initState();
+    CallWebRtcBloc.isCallScreenMounted = true;
     try {
       WakelockPlus.enable();
     } catch (e) {
@@ -116,6 +118,7 @@ class _AudioCallPageState extends State<AudioCallPage>
           conversationId: widget.conversationId,
           isVideo: false,
           contactName: widget.contactName,
+          recipientId: widget.recipientId,
           profilePictureUrl: widget.profilePictureUrl,
           isGroup: widget.isGroup,
           groupName: widget.groupName,
@@ -177,6 +180,7 @@ class _AudioCallPageState extends State<AudioCallPage>
 
   @override
   void dispose() {
+    CallWebRtcBloc.isCallScreenMounted = false;
     _timer?.cancel();
     _pulseController.dispose();
     _ring1Controller.dispose();
@@ -500,13 +504,15 @@ class _AudioCallPageState extends State<AudioCallPage>
         final isConnected = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
 
         if (isConnected) {
-          final remoteMuted = state is CallActive ? state.isRemoteMuted : false;
-          final isRemoteSpeaking = !remoteMuted;
+          final isUserMuted = state is CallActive
+              ? state.mutedParticipantIds.contains(user.id)
+              : false;
+          final isRemoteSpeaking = !isUserMuted;
           connectedCards.add(_buildAudioUserCard(
             name: user.displayName,
             avatarUrl: user.profilePictureUrl,
-            isMuted: remoteMuted,
-            status: isRemoteSpeaking ? 'Speaking' : 'Connected',
+            isMuted: isUserMuted,
+            status: isRemoteSpeaking ? 'Speaking' : 'Muted',
             isSpeaking: isRemoteSpeaking,
           ));
         } else {
@@ -516,12 +522,13 @@ class _AudioCallPageState extends State<AudioCallPage>
     } else {
       // Fallback if extra participants not yet populated
       if (state is CallActive) {
-        final isRemoteSpeaking = !state.isRemoteMuted;
+        final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
+        final isRemoteSpeaking = !isUserMuted;
         connectedCards.add(_buildAudioUserCard(
           name: state.contactName,
           avatarUrl: widget.profilePictureUrl,
-          isMuted: state.isRemoteMuted,
-          status: isRemoteSpeaking ? 'Speaking' : 'Connected',
+          isMuted: isUserMuted,
+          status: isRemoteSpeaking ? 'Speaking' : 'Muted',
           isSpeaking: isRemoteSpeaking,
         ));
       }
@@ -755,31 +762,11 @@ class _AudioCallPageState extends State<AudioCallPage>
     required String status,
     bool isSpeaking = false,
   }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+    return AnimatedGlowingBorderCard(
+      isSpeaking: isSpeaking,
+      borderRadius: 20,
+      borderWidth: 2.5,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isSpeaking
-            ? const Color(0xFF1E2922)
-            : Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isSpeaking
-              ? const Color(0xFF34C759)
-              : Colors.white.withValues(alpha: 0.22),
-          width: isSpeaking ? 2.5 : 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isSpeaking
-                ? const Color(0xFF34C759).withValues(alpha: 0.35)
-                : Colors.black.withValues(alpha: 0.25),
-            blurRadius: isSpeaking ? 16 : 10,
-            spreadRadius: isSpeaking ? 1 : 0,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -793,7 +780,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: const Color(0xFF34C759),
+                      color: const Color(0xFF00FF7F),
                       width: 2,
                     ),
                   ),
@@ -862,7 +849,7 @@ class _AudioCallPageState extends State<AudioCallPage>
             status,
             style: TextStyle(
               color: isSpeaking
-                  ? const Color(0xFF34C759)
+                  ? const Color(0xFF00FF7F)
                   : (status == 'Connected' ? const Color(0xFF34C759) : Colors.white60),
               fontSize: 11,
               fontWeight: isSpeaking ? FontWeight.bold : FontWeight.w500,

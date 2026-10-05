@@ -128,13 +128,28 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
 
   Future<void> _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) async {
     try {
+      final fileName = event.path != null ? event.path!.split('/').last : 'media.jpg';
+      String inferredType = event.statusType ?? 'image';
+      String inferredMime = event.mimeType ?? 'image/jpeg';
+      if (event.path != null) {
+        final lower = event.path!.toLowerCase();
+        if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi')) {
+          inferredType = 'video';
+          inferredMime = 'video/mp4';
+        } else if (lower.endsWith('.m4a') || lower.endsWith('.mp3') || lower.endsWith('.aac') || lower.endsWith('.wav')) {
+          inferredType = 'audio';
+          inferredMime = 'audio/m4a';
+        }
+      }
+
       await _repository.createStatus(
-        statusType: event.path != null && event.path!.endsWith('.mp4') ? 'video' : 'image',
+        statusType: inferredType,
         textContent: event.caption,
         filePath: event.path,
         fileBytes: event.bytes,
-        fileName: event.path != null ? event.path!.split('/').last : 'media.jpg',
-        mimeType: event.path != null && event.path!.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg',
+        fileName: fileName,
+        mimeType: inferredMime,
+        textColor: event.textColor,
         fileSizeBytes: event.bytes?.length ?? 1024,
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,

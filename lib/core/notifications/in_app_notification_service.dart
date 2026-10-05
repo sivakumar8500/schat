@@ -86,7 +86,7 @@ class InAppNotificationService {
 
     final type = data['type']?.toString();
 
-    // Handle screen permission request popup globally (across the entire app)
+    // Handle screen permission request popup
     if (type == 'screen_permission_request') {
       final reqMap = data['request'] ?? data['data'] ?? data;
       if (reqMap is Map) {
@@ -95,6 +95,11 @@ class InAppNotificationService {
           final myId = (_storageService.getUserId() ?? '').trim();
           // Never show incoming permission request popup to the requester themselves
           if (myId.isNotEmpty && model.senderId.trim() == myId) {
+            return;
+          }
+          // If active in chat, chat page banner handles it inside the conversation
+          if (isChatActive(conversationId: model.conversationId, senderId: model.senderId)) {
+            debugPrint('InAppNotificationService: Suppressing popup because user is in conversation ${model.conversationId}');
             return;
           }
           if (model.isPending && (myId.isEmpty || model.receiverId.trim() == myId || model.senderId.trim() != myId)) {

@@ -98,7 +98,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<UpdateActiveScreenPermissionEvent>(_onUpdateActiveScreenPermission);
     on<ConsumeScreenPermissionEvent>(_onConsumeScreenPermission);
     on<DismissIncomingScreenPermissionRequestEvent>(_onDismissIncomingScreenPermissionRequest);
+    on<RespondScreenPermissionEvent>(_onRespondScreenPermission);
     on<UpdateChatPrivacyEvent>(_onUpdateChatPrivacy);
+    on<ToggleMessageReactionEvent>(_onToggleMessageReaction);
+    on<ReceiveMessageReactionEvent>(_onReceiveMessageReaction);
     on<UpdateBlockStatusEvent>((event, emit) {
       if (state is ChatLoaded) {
         final currentState = state as ChatLoaded;
@@ -553,7 +556,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               allowView: allowView ?? true,
             ));
           }
-        } else if (type == 'call_log_updated') {
+        } else if (type == 'call_log_updated' ||
+            type == 'call_log' ||
+            type == 'call_hangup' ||
+            type == 'call_disconnected' ||
+            type == 'call_disconnect' ||
+            type == 'call_ended' ||
+            type == 'call_end' ||
+            type == 'call_canceled' ||
+            type == 'call_cancelled' ||
+            type == 'call_rejected' ||
+            type == 'call_reject' ||
+            type == 'call_missed' ||
+            type == 'missed_call') {
           final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
           if (_isSameConversation(convId, _conversationId)) {
             add(ReceiveCallLogUpdateEvent(callLogData: cleanData));
@@ -574,6 +589,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             if (_isSameConversation(convId, _conversationId)) {
               add(ReceiveScreenPermissionResponseEvent(requestData: Map<String, dynamic>.from(req), action: action));
             }
+          }
+        } else if (type == 'message_reaction' || type == 'reaction' || type == 'message_reacted' || type == 'reaction_added' || type == 'reaction_removed') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final emoji = (cleanData['emoji'] ?? cleanData['reaction'] ?? '').toString();
+          final userId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['senderId'] ?? cleanData['sender_id'] ?? '').toString();
+          final userName = (cleanData['userName'] ?? cleanData['user_name'] ?? cleanData['username'] ?? cleanData['senderName'])?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(ReceiveMessageReactionEvent(
+              messageId: msgId,
+              conversationId: convId ?? _conversationId!,
+              emoji: emoji,
+              userId: userId,
+              userName: userName,
+            ));
           }
         } else if (type == 'conversation_settings_updated' || type == 'disappearing_timer_updated') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -819,6 +849,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         activeScreenPermission = await _chatRepository.getActiveScreenPermission(event.conversationId);
       } catch (_) {}
 
+      ScreenPermissionModel? incomingScreenPermissionRequest;
+      try {
+        final pendingList = await _chatRepository.getPendingScreenPermissions();
+        final myId = (_storageService.getUserId() ?? '').trim();
+        for (final req in pendingList) {
+          if (req.isPending && (req.conversationId == event.conversationId || req.senderId == event.recipientId)) {
+            if (req.receiverId == myId || (myId.isNotEmpty && req.senderId != myId)) {
+              incomingScreenPermissionRequest = req;
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+
       final currentState = state;
       if (currentState is ChatLoaded) {
         emit(currentState.copyWith(
@@ -827,6 +871,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
           activeScreenPermission: activeScreenPermission ?? currentState.activeScreenPermission,
+          incomingScreenPermissionRequest: incomingScreenPermissionRequest ?? currentState.incomingScreenPermissionRequest,
           readReceiptsEnabled: event.initialReadReceiptsEnabled ?? currentState.readReceiptsEnabled,
           typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled ?? currentState.typingIndicatorsEnabled,
           isBlocked: isBlocked || currentState.isBlocked,
@@ -846,6 +891,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           themeColor: savedThemeColor,
           disappearingTimer: disappearingTimer,
           activeScreenPermission: activeScreenPermission,
+          incomingScreenPermissionRequest: incomingScreenPermissionRequest,
           readReceiptsEnabled: event.initialReadReceiptsEnabled,
           typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
           isBlocked: isBlocked,
@@ -1174,6 +1220,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onToggleLock(ToggleLockEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      try {
+        if (_conversationId != null) {
+          getIt<StorageService>().saveChatLocked(_conversationId!, event.isLocked);
+        }
+      } catch (_) {}
       emit(currentState.copyWith(isLocked: event.isLocked));
     }
   }
@@ -1581,28 +1632,84 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
-  void _onReceiveCallLogUpdate(ReceiveCallLogUpdateEvent event, Emitter<ChatState> emit) {
+  Future<void> _onReceiveCallLogUpdate(ReceiveCallLogUpdateEvent event, Emitter<ChatState> emit) async {
     final currentState = state;
-    if (currentState is ChatLoaded) {
-      final callMetaMap = event.callLogData['call_meta'] ?? event.callLogData['callMeta'];
-      var msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'])?.toString();
-      if (msgId == null && callMetaMap is Map) {
-        msgId = (callMetaMap['message_id'] ?? callMetaMap['messageId'])?.toString();
+    if (currentState is! ChatLoaded || _conversationId == null) return;
+
+    final callMetaMap = event.callLogData['call_meta'] ?? event.callLogData['callMeta'];
+    var msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'] ?? event.callLogData['id'])?.toString();
+    if (msgId == null && callMetaMap is Map) {
+      msgId = (callMetaMap['message_id'] ?? callMetaMap['messageId'])?.toString();
+    }
+
+    final callMeta = callMetaMap is Map ? CallMeta.fromJson(Map<String, dynamic>.from(callMetaMap)) : null;
+
+    final existingIndex = (msgId != null && msgId.isNotEmpty)
+        ? currentState.messages.indexWhere((m) => m.id == msgId)
+        : -1;
+    List<MessageModel> updatedMessages;
+
+    if (existingIndex != -1) {
+      updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == msgId) {
+          return msg.copyWith(
+            callMeta: callMeta ?? msg.callMeta,
+            mediaType: 'call',
+            messageType: 'call',
+          );
+        }
+        return msg;
+      }).toList();
+      final filteredMessages = _filterExpiredMessages(updatedMessages);
+      emit(currentState.copyWith(messages: filteredMessages));
+      _saveToCache(_conversationId!, filteredMessages);
+    } else if (msgId != null && msgId.isNotEmpty && callMeta != null) {
+      final senderId = (event.callLogData['sender_id'] ?? event.callLogData['senderId'] ?? event.callLogData['caller_id'] ?? event.callLogData['from'])?.toString() ?? currentState.myId;
+      final newCallMsg = MessageModel(
+        id: msgId,
+        conversationId: _conversationId!,
+        senderId: senderId,
+        content: '',
+        messageType: 'call',
+        mediaType: 'call',
+        callMeta: callMeta,
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+      updatedMessages = [...currentState.messages, newCallMsg];
+      final filteredMessages = _filterExpiredMessages(updatedMessages);
+      emit(currentState.copyWith(messages: filteredMessages));
+      _saveToCache(_conversationId!, filteredMessages);
+    }
+
+    // Always fetch latest messages in background to ensure all call log messages from server are accurately synchronized into the active chat
+    try {
+      final freshMsgs = await _chatRepository.getMessages(_conversationId!, limit: 20, skip: 0);
+      if (freshMsgs.isNotEmpty && state is ChatLoaded) {
+        final latestState = state as ChatLoaded;
+        final Map<String, MessageModel> merged = {};
+        for (final m in latestState.messages) {
+          merged[m.id] = m;
+        }
+        for (final m in freshMsgs) {
+          merged[m.id] = m;
+        }
+        final mergedList = merged.values.toList()
+          ..sort((a, b) {
+            final aDate = DateTime.tryParse(a.createdAt);
+            final bDate = DateTime.tryParse(b.createdAt);
+            if (aDate == null && bDate == null) return 0;
+            if (aDate == null) return -1;
+            if (bDate == null) return 1;
+            return aDate.compareTo(bDate);
+          });
+        final finalFiltered = _filterExpiredMessages(mergedList);
+        emit(latestState.copyWith(messages: finalFiltered));
+        _saveToCache(_conversationId!, finalFiltered);
       }
-      
-      if (msgId != null && callMetaMap is Map) {
-        final callMeta = CallMeta.fromJson(Map<String, dynamic>.from(callMetaMap));
-        final updatedMessages = currentState.messages.map((msg) {
-          if (msg.id == msgId) {
-            return msg.copyWith(callMeta: callMeta, mediaType: 'call');
-          }
-          return msg;
-        }).toList();
-        
-        final filteredMessages = _filterExpiredMessages(updatedMessages);
-        emit(currentState.copyWith(messages: filteredMessages));
-        _saveToCache(_conversationId!, filteredMessages);
-      }
+    } catch (e) {
+      debugPrint('ChatBloc: Error syncing fresh call log messages: $e');
     }
   }
 
@@ -1923,7 +2030,39 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
       final model = ScreenPermissionModel.fromJson(event.requestData);
-      emit(currentState.copyWith(incomingScreenPermissionRequest: model));
+      final myId = _storageService.getUserId() ?? '';
+      final isMe = myId.isNotEmpty && model.senderId == myId;
+      final permLabel = model.permissionType == 'screen_record' ? 'screen record' : 'screenshot';
+      final details = model.isScreenshot
+          ? '${model.allowedCount ?? 1} screenshot${(model.allowedCount ?? 1) > 1 ? 's' : ''}'
+          : '${model.durationSeconds ?? 30}s recording';
+      final contentText = isMe
+          ? '📷 You requested $permLabel permission ($details)'
+          : '📷 ${model.senderName ?? 'Contact'} requested $permLabel permission ($details)';
+
+      final systemMsg = MessageModel(
+        id: 'perm_req_${model.id}',
+        conversationId: model.conversationId,
+        senderId: model.senderId,
+        content: contentText,
+        messageType: 'system',
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+
+      final List<MessageModel> updatedMessages = List.from(currentState.messages);
+      if (!updatedMessages.any((m) => m.id == 'perm_req_${model.id}')) {
+        updatedMessages.add(systemMsg);
+      }
+
+      emit(currentState.copyWith(
+        messages: updatedMessages,
+        incomingScreenPermissionRequest: model,
+      ));
+      if (_conversationId != null) {
+        _saveToCache(_conversationId!, updatedMessages);
+      }
     }
   }
 
@@ -1934,6 +2073,60 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
       emit(currentState.copyWith(clearIncomingScreenPermissionRequest: true));
+    }
+  }
+
+  Future<void> _onRespondScreenPermission(
+    RespondScreenPermissionEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    if (state is ChatLoaded) {
+      final currentState = state as ChatLoaded;
+      try {
+        final updated = await _chatRepository.respondToScreenPermission(
+          requestId: event.requestId,
+          action: event.action,
+        );
+        final isAccepted = event.action == 'accept';
+        final permText = updated.isScreenshot
+            ? '${updated.allowedCount ?? 1} screenshot(s)'
+            : '${updated.durationSeconds ?? 30}s recording';
+        final contentText = isAccepted
+            ? '✅ You granted $permText permission to ${updated.senderName ?? 'Contact'}'
+            : '❌ You rejected $permText permission request';
+
+        final systemMsg = MessageModel(
+          id: 'perm_my_resp_${updated.id}',
+          conversationId: updated.conversationId,
+          senderId: updated.receiverId,
+          content: contentText,
+          messageType: 'system',
+          isDeleted: false,
+          createdAt: DateTime.now().toIso8601String(),
+          updatedAt: DateTime.now().toIso8601String(),
+        );
+
+        final List<MessageModel> updatedMessages = List.from(currentState.messages);
+        if (!updatedMessages.any((m) => m.id == 'perm_my_resp_${updated.id}')) {
+          updatedMessages.add(systemMsg);
+        }
+
+        emit(currentState.copyWith(
+          messages: updatedMessages,
+          clearIncomingScreenPermissionRequest: true,
+          notificationMessage: isAccepted
+              ? 'Permission granted to ${updated.senderName ?? 'Contact'}'
+              : 'Permission request rejected',
+        ));
+        if (_conversationId != null) {
+          _saveToCache(_conversationId!, updatedMessages);
+        }
+      } catch (e) {
+        debugPrint('Error responding to screen permission: $e');
+        emit(currentState.copyWith(
+          clearIncomingScreenPermissionRequest: true,
+        ));
+      }
     }
   }
 
@@ -1949,17 +2142,41 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final permText = model.isScreenshot
           ? '${model.allowedCount ?? 1} screenshot(s)'
           : '${model.durationSeconds ?? 30}s recording';
+      final contentText = isAccepted
+          ? '✅ $receiverName granted $permText permission'
+          : '❌ $receiverName rejected $permText permission request';
+
+      final systemMsg = MessageModel(
+        id: 'perm_resp_${model.id}',
+        conversationId: model.conversationId,
+        senderId: model.receiverId,
+        content: contentText,
+        messageType: 'system',
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+
+      final List<MessageModel> updatedMessages = List.from(currentState.messages);
+      if (!updatedMessages.any((m) => m.id == 'perm_resp_${model.id}')) {
+        updatedMessages.add(systemMsg);
+      }
 
       if (isAccepted) {
         emit(currentState.copyWith(
+          messages: updatedMessages,
           activeScreenPermission: model,
           notificationMessage: '$receiverName accepted your request for $permText!',
         ));
       } else {
         emit(currentState.copyWith(
+          messages: updatedMessages,
           clearActiveScreenPermission: true,
           notificationMessage: '$receiverName rejected your request for $permText.',
         ));
+      }
+      if (_conversationId != null) {
+        _saveToCache(_conversationId!, updatedMessages);
       }
     }
   }
@@ -2045,6 +2262,102 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           notificationMessage: 'Failed to update privacy settings: $e',
         ));
       }
+    }
+  }
+
+  Future<void> _onToggleMessageReaction(ToggleMessageReactionEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final myId = currentState.myId;
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          final existing = List<MessageReaction>.from(msg.reactions);
+          final existingIdx = existing.indexWhere((r) => r.userId == myId);
+          if (existingIdx != -1) {
+            if (existing[existingIdx].emoji == event.emoji) {
+              // Tapping the same emoji removes/toggles it off
+              existing.removeAt(existingIdx);
+            } else {
+              // Replace with new reaction emoji
+              existing[existingIdx] = MessageReaction(
+                emoji: event.emoji,
+                userId: myId,
+                userName: 'You',
+                createdAt: DateTime.now().toIso8601String(),
+              );
+            }
+          } else {
+            // Add new reaction
+            existing.add(MessageReaction(
+              emoji: event.emoji,
+              userId: myId,
+              userName: 'You',
+              createdAt: DateTime.now().toIso8601String(),
+            ));
+          }
+          return msg.copyWith(reactions: existing);
+        }
+        return msg;
+      }).toList();
+
+      emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
+
+      // Send via socket
+      _socketRepository.sendReaction(
+        conversationId: event.conversationId,
+        messageId: event.messageId,
+        emoji: event.emoji,
+      );
+
+      // Persist via REST
+      try {
+        await _chatRepository.reactToMessage(
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          emoji: event.emoji,
+        );
+      } catch (e) {
+        debugPrint('Failed to persist reaction via REST: $e');
+      }
+    }
+  }
+
+  void _onReceiveMessageReaction(ReceiveMessageReactionEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = currentState.messages.map((msg) {
+        if (msg.id == event.messageId) {
+          final existing = List<MessageReaction>.from(msg.reactions);
+          final existingIdx = existing.indexWhere((r) => r.userId == event.userId && (r.userId.isNotEmpty || r.emoji == event.emoji));
+          if (event.emoji.isEmpty) {
+            if (existingIdx != -1) {
+              existing.removeAt(existingIdx);
+            }
+          } else {
+            if (existingIdx != -1) {
+              existing[existingIdx] = MessageReaction(
+                emoji: event.emoji,
+                userId: event.userId,
+                userName: event.userName ?? existing[existingIdx].userName,
+                createdAt: DateTime.now().toIso8601String(),
+              );
+            } else {
+              existing.add(MessageReaction(
+                emoji: event.emoji,
+                userId: event.userId,
+                userName: event.userName,
+                createdAt: DateTime.now().toIso8601String(),
+              ));
+            }
+          }
+          return msg.copyWith(reactions: existing);
+        }
+        return msg;
+      }).toList();
+
+      emit(currentState.copyWith(messages: updatedMessages));
+      _saveToCache(event.conversationId, updatedMessages);
     }
   }
 

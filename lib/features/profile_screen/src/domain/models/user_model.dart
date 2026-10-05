@@ -30,6 +30,7 @@ abstract class UserModel with _$UserModel {
     @JsonKey(name: 'is_blocked_by_other') @Default(false) bool isBlockedByOther,
     @JsonKey(name: 'read_receipts_enabled') @Default(true) bool readReceiptsEnabled,
     @JsonKey(name: 'typing_indicators_enabled') @Default(true) bool typingIndicatorsEnabled,
+    @JsonKey(name: 'last_seen_enabled') @Default(true) bool lastSeenEnabled,
     @JsonKey(name: 'notifications_enabled') @Default(true) bool notificationsEnabled,
   }) = _UserModel;
 
@@ -92,6 +93,18 @@ Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
       normalizedJson['typing_indicators_enabled'] = getIt<StorageService>().getTypingIndicatorsEnabled();
     } catch (_) {
       normalizedJson['typing_indicators_enabled'] = true;
+    }
+  }
+
+  if (json.containsKey('last_seen_enabled') && json['last_seen_enabled'] != null) {
+    normalizedJson['last_seen_enabled'] = json['last_seen_enabled'] == true;
+  } else if (json.containsKey('lastSeenEnabled') && json['lastSeenEnabled'] != null) {
+    normalizedJson['last_seen_enabled'] = json['lastSeenEnabled'] == true;
+  } else {
+    try {
+      normalizedJson['last_seen_enabled'] = getIt<StorageService>().getLastSeenEnabled();
+    } catch (_) {
+      normalizedJson['last_seen_enabled'] = true;
     }
   }
   return normalizedJson;

@@ -27,6 +27,9 @@ class UploadMediaStatusEvent extends StatusEvent {
   final String? path;
   final Uint8List? bytes;
   final String? caption;
+  final String? statusType;
+  final String? mimeType;
+  final String? textColor;
   final String? privacyType;
   final List<String>? privacyUserIds;
 
@@ -34,6 +37,9 @@ class UploadMediaStatusEvent extends StatusEvent {
     this.path,
     this.bytes,
     this.caption,
+    this.statusType,
+    this.mimeType,
+    this.textColor,
     this.privacyType,
     this.privacyUserIds,
   });

@@ -48,6 +48,7 @@ class ThemeColors {
 
   // Borders & Dividers
   Color get border => isDark ? const Color(0xFF333333) : const Color(0xFFE0E0E0);
+  Color get divider => isDark ? const Color(0xFF333333) : const Color(0xFFE0E0E0);
 
   // App Theme Accents & Specific Component Colors
   Color get primaryAccent => isDark ? const Color(0xFF81C784) : primary;

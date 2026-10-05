@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -24,11 +25,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:label="schat"
-        android:name="${applicationName}"
+        android:name=".MainApplication"
         android:icon="@mipmap/launcher_icon"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
         <meta-data
@@ -41,7 +49,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -119,6 +126,19 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyDzdftYEP9bbhXFHyjGSmydrvGKZSx6cSk" />
+
+        <service
+            android:name="com.hiennv.flutter_callkit_incoming.CallkitNotificationService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="phoneCall|microphone|camera"
+            tools:replace="android:foregroundServiceType" />
+
+        <service
+            android:name="com.hiennv.flutter_callkit_incoming.CallkitConnectionService"
+            android:enabled="false"
+            android:exported="false"
+            tools:replace="android:enabled,android:exported" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

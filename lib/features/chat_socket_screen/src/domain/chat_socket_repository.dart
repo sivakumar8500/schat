@@ -77,6 +77,11 @@ abstract class ChatSocketRepository {
   });
   void pinMessage({required String messageId});
   void unpinMessage({required String messageId});
+  void sendReaction({
+    required String conversationId,
+    required String messageId,
+    required String emoji,
+  });
   void sendScreenShareSignaling({
     required String type,
     required String conversationId,
@@ -101,6 +106,9 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   Timer? _heartbeatTimer;
   DateTime? _lastPongReceived;
   bool _isConnected = false;
+  bool _isConnecting = false;
+  Completer<void>? _connectCompleter;
+  final List<dynamic> _pendingMessagesQueue = [];
 
   ChatSocketRepositoryImpl(this._storageService);
 
@@ -142,16 +150,29 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void connect() async {
-    debugPrint('DEBUG: ChatSocketRepository.connect() called');
+    debugPrint('DEBUG: ChatSocketRepository.connect() called (isConnected=$_isConnected, isConnecting=$_isConnecting)');
     
     if (_isConnected) {
       debugPrint('DEBUG: Socket already connected');
       return;
     }
 
+    if (_isConnecting) {
+      debugPrint('DEBUG: Socket connection already in progress, awaiting existing connection...');
+      await _connectCompleter?.future;
+      return;
+    }
+
+    _isConnecting = true;
+    _connectCompleter = Completer<void>();
+
     final token = _storageService.getAccessToken();
     if (token == null) {
       debugPrint('DEBUG: Socket connection aborted: No access token found');
+      _isConnecting = false;
+      if (!(_connectCompleter?.isCompleted ?? true)) {
+        _connectCompleter?.complete();
+      }
       return;
     }
 
@@ -168,6 +189,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       
       await _channel!.ready;
       _isConnected = true;
+      _isConnecting = false;
+      if (!(_connectCompleter?.isCompleted ?? true)) {
+        _connectCompleter?.complete();
+      }
       _lastPongReceived = DateTime.now();
       debugPrint('--------------------------');
       debugPrint('Socket Status: CONNECTED ✅');
@@ -176,6 +201,19 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       _logEvent('status', {'status': 'connected'});
 
       _startHeartbeat();
+
+      // Flush any queued outbound messages (e.g. call_response or ice candidates)
+      if (_pendingMessagesQueue.isNotEmpty) {
+        final messages = List<dynamic>.from(_pendingMessagesQueue);
+        _pendingMessagesQueue.clear();
+        for (final msg in messages) {
+          try {
+            emit('message', msg);
+          } catch (e) {
+            debugPrint('Error flushing queued socket message: $e');
+          }
+        }
+      }
 
       _subscription = _channel!.stream.listen(
         (data) {
@@ -189,6 +227,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         },
       );
     } catch (e) {
+      _isConnecting = false;
+      if (!(_connectCompleter?.isCompleted ?? true)) {
+        _connectCompleter?.complete();
+      }
       _handleConnectionError(e);
     }
   }
@@ -492,6 +534,24 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   }
 
   @override
+  void sendReaction({
+    required String conversationId,
+    required String messageId,
+    required String emoji,
+  }) {
+    final Map<String, dynamic> payload = {
+      "type": "message_reaction",
+      "conversationId": conversationId,
+      "conversation_id": conversationId,
+      "messageId": messageId,
+      "message_id": messageId,
+      "emoji": emoji,
+      "reaction": emoji,
+    };
+    emit('message', payload);
+  }
+
+  @override
   void sendScreenShareSignaling({
     required String type,
     required String conversationId,
@@ -515,9 +575,13 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void emit(String event, dynamic data) {
-    if (_channel == null) {
-      debugPrint('Cannot emit: Socket not connected');
-      _logEvent('status', {'status': 'cannot_emit', 'message': 'Socket not connected'});
+    if (_channel == null || !_isConnected) {
+      debugPrint('ChatSocketRepository: Socket not connected yet. Queueing message for delivery once connected.');
+      _pendingMessagesQueue.add(data);
+      _logEvent('status', {'status': 'queued_outbound', 'data': data});
+      if (!_isConnecting && !_isConnected) {
+        connect();
+      }
       return;
     }
 
@@ -529,7 +593,12 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     
     _logEvent('outbound', data is Map<String, dynamic> ? data : {'raw': data.toString()});
 
-    _channel!.sink.add(jsonEncode(data));
+    try {
+      _channel!.sink.add(jsonEncode(data));
+    } catch (e) {
+      debugPrint('Error sending data over socket sink: $e. Re-queueing message.');
+      _pendingMessagesQueue.add(data);
+    }
   }
 
   @override

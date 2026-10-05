@@ -1,15 +1,18 @@
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_state.dart';
 import 'package:schat/features/status_screen/src/presentation/widgets/status_privacy_sheet.dart';
 import 'package:schat/features/status_screen/src/presentation/widgets/text_status_creator_page.dart';
+import 'package:schat/features/status_screen/src/presentation/widgets/voice_status_creator_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_view_page.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -41,8 +44,64 @@ class StatusPageContent extends StatelessWidget {
     final path = kIsWeb ? null : image.path;
 
     if (context.mounted) {
-      _showStatusTextDialog(context, bytes: bytes, path: path);
+      _showStatusTextDialog(context, bytes: bytes, path: path, statusType: 'image');
     }
+  }
+
+  Future<void> _pickStatusVideo(BuildContext context, {ImageSource source = ImageSource.gallery}) async {
+    final picker = ImagePicker();
+    final XFile? video = await picker.pickVideo(
+      source: source,
+      maxDuration: const Duration(seconds: 60),
+    );
+    if (video == null) return;
+
+    final path = video.path;
+    final bytes = kIsWeb ? await video.readAsBytes() : null;
+
+    // Check video duration (restrict to max 1 minute / 60 seconds)
+    if (!kIsWeb && path.isNotEmpty) {
+      try {
+        final videoController = VideoPlayerController.file(File(path));
+        await videoController.initialize();
+        final duration = videoController.value.duration;
+        await videoController.dispose();
+
+        if (duration.inSeconds > 60) {
+          if (context.mounted) {
+            context.showErrorNotification(
+              'Video duration (${duration.inSeconds}s) exceeds 1 minute limit (60s). Please select a shorter video.',
+            );
+          }
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error inspecting video duration: $e');
+      }
+    }
+
+    if (context.mounted) {
+      _showStatusTextDialog(
+        context,
+        bytes: bytes,
+        path: path,
+        statusType: 'video',
+        title: 'Add Video Caption',
+      );
+    }
+  }
+
+  void _addVoiceStatus(BuildContext context) {
+    final bloc = context.read<StatusBloc>();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: const VoiceStatusCreatorPage(),
+        ),
+      ),
+    );
   }
 
   void _addTextStatus(BuildContext context) {
@@ -58,8 +117,13 @@ class StatusPageContent extends StatelessWidget {
     );
   }
 
-
-  void _showStatusTextDialog(BuildContext context, {Uint8List? bytes, String? path}) {
+  void _showStatusTextDialog(
+    BuildContext context, {
+    Uint8List? bytes,
+    String? path,
+    String statusType = 'image',
+    String title = 'Add Caption',
+  }) {
     final controller = TextEditingController();
     showDialog(
       context: context,
@@ -67,7 +131,7 @@ class StatusPageContent extends StatelessWidget {
         return AlertDialog(
           backgroundColor: ctx.colors.cardBackground,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text('Add Caption', style: TextStyle(color: ctx.colors.textPrimary)),
+          title: Text(title, style: TextStyle(color: ctx.colors.textPrimary)),
           content: TextField(
             controller: controller,
             style: TextStyle(color: ctx.colors.textPrimary),
@@ -88,6 +152,7 @@ class StatusPageContent extends StatelessWidget {
                   path: path,
                   bytes: bytes,
                   caption: null,
+                  statusType: statusType,
                 ));
               },
               child: Text('Skip', style: TextStyle(color: ctx.colors.textHint)),
@@ -101,6 +166,7 @@ class StatusPageContent extends StatelessWidget {
                   path: path,
                   bytes: bytes,
                   caption: caption.isNotEmpty ? caption : null,
+                  statusType: statusType,
                 ));
               },
               style: ElevatedButton.styleFrom(
@@ -125,8 +191,73 @@ class StatusPageContent extends StatelessWidget {
     final path = kIsWeb ? null : image.path;
 
     if (context.mounted) {
-      _showStatusTextDialog(context, bytes: bytes, path: path);
+      _showStatusTextDialog(context, bytes: bytes, path: path, statusType: 'image');
     }
+  }
+
+  void _showCameraOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final colors = ctx.colors;
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.cardBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: MediaQuery.of(ctx).padding.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Camera',
+                style: ctx.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.camera_alt_outlined, color: colors.primary),
+                ),
+                title: Text('Take Photo', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickStatusCamera(context);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.videocam_outlined, color: colors.primary),
+                ),
+                title: Text('Record Video (Max 1 min)', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickStatusVideo(context, source: ImageSource.camera);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showUploadOptions(BuildContext context) {
@@ -187,11 +318,12 @@ class StatusPageContent extends StatelessWidget {
               Divider(height: 1, color: colors.textHint.withValues(alpha: 0.12)),
               const SizedBox(height: 6),
 
-              // 1. Photo / Video
+              // 1. Photo
               _buildUploadOptionRow(
                 context: ctx,
                 icon: Icons.image_outlined,
-                title: 'Photo / Video',
+                title: 'Photo',
+                subtitle: 'Add a picture to your status',
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickStatusImage(context);
@@ -199,11 +331,38 @@ class StatusPageContent extends StatelessWidget {
               ),
               Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
 
-              // 2. Text Status
+              // 2. Video (Max 1 min)
+              _buildUploadOptionRow(
+                context: ctx,
+                icon: Icons.videocam_outlined,
+                title: 'Video (Max 1 min)',
+                subtitle: 'Share video clips up to 60 seconds',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickStatusVideo(context, source: ImageSource.gallery);
+                },
+              ),
+              Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
+
+              // 3. Voice Status (Max 1 min)
+              _buildUploadOptionRow(
+                context: ctx,
+                icon: Icons.mic_none_outlined,
+                title: 'Voice Status (Max 1 min)',
+                subtitle: 'Record voice notes up to 60 seconds',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _addVoiceStatus(context);
+                },
+              ),
+              Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
+
+              // 4. Text Status
               _buildUploadOptionRow(
                 context: ctx,
                 icon: Icons.title,
                 title: 'Text Status',
+                subtitle: 'Share thoughts with colorful background',
                 onTap: () {
                   Navigator.pop(ctx);
                   _addTextStatus(context);
@@ -211,14 +370,15 @@ class StatusPageContent extends StatelessWidget {
               ),
               Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
 
-              // 3. Camera
+              // 5. Camera
               _buildUploadOptionRow(
                 context: ctx,
                 icon: Icons.camera_alt_outlined,
                 title: 'Camera',
+                subtitle: 'Take a photo or record video',
                 onTap: () {
                   Navigator.pop(ctx);
-                  _pickStatusCamera(context);
+                  _showCameraOptions(context);
                 },
               ),
             ],
@@ -232,6 +392,7 @@ class StatusPageContent extends StatelessWidget {
     required BuildContext context,
     required IconData icon,
     required String title,
+    String? subtitle,
     required VoidCallback onTap,
   }) {
     final colors = context.colors;
@@ -239,38 +400,45 @@ class StatusPageContent extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F5E9),
+                color: colors.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(
-                icon,
-                color: const Color(0xFF00873C),
-                size: 24,
-              ),
+              child: Icon(icon, color: colors.primary, size: 24),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: colors.textPrimary,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: colors.textHint,
-              size: 22,
-            ),
+            Icon(Icons.arrow_forward_ios, size: 14, color: colors.textHint),
           ],
         ),
       ),

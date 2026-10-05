@@ -72,6 +72,7 @@ class _VideoCallPageState extends State<VideoCallPage>
   @override
   void initState() {
     super.initState();
+    CallWebRtcBloc.isCallScreenMounted = true;
     try {
       WakelockPlus.enable();
     } catch (e) {
@@ -122,6 +123,7 @@ class _VideoCallPageState extends State<VideoCallPage>
           conversationId: widget.conversationId,
           isVideo: true,
           contactName: widget.contactName,
+          recipientId: widget.recipientId,
           profilePictureUrl: widget.profilePictureUrl,
           isGroup: widget.isGroup,
           groupName: widget.groupName,
@@ -182,6 +184,7 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   @override
   void dispose() {
+    CallWebRtcBloc.isCallScreenMounted = false;
     _timer?.cancel();
     _controlsTimer?.cancel();
     _fadeController.dispose();
@@ -930,20 +933,26 @@ class _VideoCallPageState extends State<VideoCallPage>
         final isConnectedPeer = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
 
         if (isConnectedPeer) {
-          final remoteMuted = state is CallActive ? state.isRemoteMuted : false;
-          final isRemoteSpeaking = !remoteMuted;
-          final isRemoteVidOff = state is CallActive ? state.isRemoteVideoOff : false;
+          final isUserMuted = state is CallActive
+              ? state.mutedParticipantIds.contains(user.id)
+              : false;
+          final isRemoteSpeaking = !isUserMuted;
+          final isRemoteVidOff = state is CallActive
+              ? (state.videoOffParticipantIds.contains(user.id) || state.isRemoteVideoOff)
+              : false;
+          final peerRenderer = _webRtcService.getPeerRenderer(user.id) ?? _webRtcService.remoteRenderer;
           connectedTiles.add(_buildGridTile(
             child: isRemoteVidOff
                 ? _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl)
                 : RTCVideoView(
-                    _webRtcService.remoteRenderer,
-                    key: ValueKey('grid_remote_${_webRtcService.remoteRenderer.textureId}'),
+                    peerRenderer,
+                    key: ValueKey('grid_peer_${user.id}_${peerRenderer.textureId}'),
                     objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                     mirror: false,
+                    filterQuality: FilterQuality.medium,
                   ),
             label: user.displayName,
-            isMuted: remoteMuted,
+            isMuted: isUserMuted,
             avatarUrl: user.profilePictureUrl,
             isSpeaking: isRemoteSpeaking,
           ));
@@ -953,18 +962,22 @@ class _VideoCallPageState extends State<VideoCallPage>
       }
     } else {
       if (state is CallActive) {
-        final isRemoteSpeaking = !state.isRemoteMuted;
+        final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
+        final isRemoteSpeaking = !isUserMuted;
+        final isRemoteVidOff = state.videoOffParticipantIds.contains(state.recipientId) || state.isRemoteVideoOff;
+        final peerRenderer = _webRtcService.getPeerRenderer(state.recipientId) ?? _webRtcService.remoteRenderer;
         connectedTiles.add(_buildGridTile(
-          child: state.isRemoteVideoOff
+          child: isRemoteVidOff
               ? _buildRemoteParticipantPlaceholder(state.contactName, widget.profilePictureUrl)
               : RTCVideoView(
-                  _webRtcService.remoteRenderer,
-                  key: ValueKey('grid_remote_${_webRtcService.remoteRenderer.textureId}'),
+                  peerRenderer,
+                  key: ValueKey('grid_remote_${peerRenderer.textureId}'),
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                   mirror: false,
+                  filterQuality: FilterQuality.medium,
                 ),
           label: state.contactName,
-          isMuted: state.isRemoteMuted,
+          isMuted: isUserMuted,
           avatarUrl: widget.profilePictureUrl,
           isSpeaking: isRemoteSpeaking,
         ));

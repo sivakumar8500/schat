@@ -724,6 +724,28 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> reactToMessage({
+    required String conversationId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    final result = await _apiService.post(
+      CommonEndpoints.reactToMessage(messageId),
+      data: {
+        'conversationId': conversationId,
+        'conversation_id': conversationId,
+        'emoji': emoji,
+        'reaction': emoji,
+      },
+      mapper: (data) => data,
+    );
+    result.when(
+      success: (_) {},
+      failure: (error, statusCode) => debugPrint('reactToMessage error: $error'),
+    );
+  }
+
+  @override
   Future<bool> scheduleMessage(Map<String, dynamic> requestData) async {
     final result = await _apiService.post(
       CommonEndpoints.scheduleMessage,

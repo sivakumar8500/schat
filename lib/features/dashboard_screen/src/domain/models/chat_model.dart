@@ -84,5 +84,12 @@ Map<String, dynamic> _normalizeChatJson(Map<String, dynamic> json) {
     normalizedJson['typing_indicators_enabled'] = json['typingIndicatorsEnabled'];
   }
 
+  if (json.containsKey('updatedAt') && !json.containsKey('updated_at')) {
+    normalizedJson['updated_at'] = json['updatedAt'];
+  }
+  if (json.containsKey('createdAt') && !json.containsKey('created_at')) {
+    normalizedJson['created_at'] = json['createdAt'];
+  }
+
   return normalizedJson;
 }

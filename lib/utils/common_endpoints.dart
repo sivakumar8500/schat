@@ -91,6 +91,7 @@ class CommonEndpoints {
   static String deleteMessage(String messageId) => '/messages/$messageId';
   static String updateMessageSecurity(String messageId) => '/messages/$messageId';
   static String getMessageShares(String messageId) => '/messages/$messageId/shares';
+  static String reactToMessage(String messageId) => '/messages/$messageId/reactions';
 
   // Media Upload & Permissions
   static const String requestUpload = '/media/request-upload';

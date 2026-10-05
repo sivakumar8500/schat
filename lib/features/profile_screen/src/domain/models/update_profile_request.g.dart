@@ -18,6 +18,7 @@ _UpdateProfileRequest _$UpdateProfileRequestFromJson(
       ?.toInt(),
   readReceiptsEnabled: json['read_receipts_enabled'] as bool?,
   typingIndicatorsEnabled: json['typing_indicators_enabled'] as bool?,
+  lastSeenEnabled: json['last_seen_enabled'] as bool?,
   notificationsEnabled: json['notifications_enabled'] as bool?,
 );
 
@@ -32,5 +33,6 @@ Map<String, dynamic> _$UpdateProfileRequestToJson(
   'default_disappearing_timer': instance.defaultDisappearingTimer,
   'read_receipts_enabled': instance.readReceiptsEnabled,
   'typing_indicators_enabled': instance.typingIndicatorsEnabled,
+  'last_seen_enabled': instance.lastSeenEnabled,
   'notifications_enabled': instance.notificationsEnabled,
 };

@@ -29,6 +29,34 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastScreenshotTimestamp = 0L
 
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        bringActivityToFront()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        bringActivityToFront()
+    }
+
+    private fun bringActivityToFront() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            val keyguardManager = getSystemService(android.content.Context.KEYGUARD_SERVICE) as? android.app.KeyguardManager
+            keyguardManager?.requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)

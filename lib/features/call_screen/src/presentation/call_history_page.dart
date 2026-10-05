@@ -8,10 +8,10 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/permission_helper.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/src/domain/call_history.dart';
-import 'package:schat/features/call_screen/src/domain/repositories/call_history_repository.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_state.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
@@ -29,13 +29,8 @@ class CallHistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider<CallHistoryCubit>(
-      create: (context) {
-        if (getIt.isRegistered<CallHistoryCubit>()) {
-          return getIt<CallHistoryCubit>()..fetchCallHistory();
-        }
-        return CallHistoryCubit(getIt<CallHistoryRepository>())..fetchCallHistory();
-      },
+    return BlocProvider.value(
+      value: getIt<CallHistoryCubit>()..fetchCallHistory(),
       child: const _CallHistoryPageContent(),
     );
   }
@@ -58,6 +53,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
   @override
   void initState() {
     super.initState();
+    getIt<CallHistoryCubit>().fetchCallHistory();
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -351,14 +347,28 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
         if (!_isSearching) _buildFilterPills(),
         if (_isSearching) _buildSearchBar(),
         BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
-          builder: (context, _) {
+          builder: (context, callState) {
+            final bool isCurrentlyInCall = (callState is CallActive || callState is CallConnecting);
             final ongoingCalls = getIt<CallWebRtcBloc>()
                 .ongoingGroupCalls
                 .values
-                .where((c) => c.connectedParticipantIds.isNotEmpty)
+                .where((c) => !isCurrentlyInCall || (callState is CallActive && callState.conversationId != c.conversationId))
                 .toList();
-            if (ongoingCalls.isEmpty) return const SizedBox.shrink();
-            return _buildOngoingCallsSection(ongoingCalls);
+
+            if (!isCurrentlyInCall && ongoingCalls.isEmpty) {
+              return const SizedBox.shrink();
+            }
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isCurrentlyInCall) _buildCurrentActiveCallCard(context, callState),
+                  ...ongoingCalls.map((call) => _buildOngoingCallCard(call)),
+                ],
+              ),
+            );
           },
         ),
         Expanded(
@@ -375,7 +385,14 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                 loaded: (calls) {
                   final filteredCalls = calls.where((call) {
                     if (_searchQuery.isNotEmpty) {
-                      if (!call.displayName.toLowerCase().contains(_searchQuery)) {
+                      final q = _searchQuery.toLowerCase();
+                      final nameMatch = call.displayName.toLowerCase().contains(q);
+                      final callerMatch = (call.callerName ?? '').toLowerCase().contains(q);
+                      final receiverMatch = (call.receiverName ?? '').toLowerCase().contains(q);
+                      final groupMatch = (call.groupName ?? '').toLowerCase().contains(q);
+                      final callerIdMatch = (call.callerId ?? '').toLowerCase().contains(q);
+                      final receiverIdMatch = (call.receiverId ?? '').toLowerCase().contains(q);
+                      if (!nameMatch && !callerMatch && !receiverMatch && !groupMatch && !callerIdMatch && !receiverIdMatch) {
                         return false;
                       }
                     }
@@ -389,9 +406,9 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                       case CallFilter.missed:
                         return call.isMissed;
                       case CallFilter.incoming:
-                        return call.isIncoming;
+                        return call.isIncoming || call.isMissed;
                       case CallFilter.outgoing:
-                        return !call.isIncoming;
+                        return !call.isIncoming && !call.isMissed;
                     }
                   }).toList();
 
@@ -1187,12 +1204,226 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     }
   }
 
-  Widget _buildOngoingCallsSection(List<OngoingGroupCall> ongoingCalls) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+  void _returnToActiveCall(CallWebRtcState state) {
+    final bloc = context.read<CallWebRtcBloc>();
+    bloc.add(const SetCallMinimizedEvent(false));
+    final isVideo = state is CallActive ? state.isVideo : (state as CallConnecting).isVideo;
+    final conversationId = state is CallActive ? state.conversationId : (state as CallConnecting).conversationId;
+    final contactName = state is CallActive ? state.contactName : (state as CallConnecting).contactName;
+    final recipientId = state is CallActive ? state.recipientId : (state as CallConnecting).recipientId;
+    final profilePictureUrl = state is CallActive ? state.profilePictureUrl : (state as CallConnecting).profilePictureUrl;
+    final isGroup = state is CallActive ? state.isGroup : (state as CallConnecting).isGroup;
+    final groupName = state is CallActive ? state.groupName : (state as CallConnecting).groupName;
+    final extraParticipants = state is CallActive ? state.extraParticipants : (state as CallConnecting).extraParticipants;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: isVideo
+              ? VideoCallPage(
+                  conversationId: conversationId,
+                  contactName: contactName,
+                  contactColor: context.colors.primary,
+                  recipientId: recipientId,
+                  isOutgoing: false,
+                  profilePictureUrl: profilePictureUrl,
+                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                  isGroup: isGroup,
+                  groupName: groupName,
+                  extraParticipants: extraParticipants,
+                )
+              : AudioCallPage(
+                  conversationId: conversationId,
+                  contactName: contactName,
+                  contactColor: context.colors.primary,
+                  recipientId: recipientId,
+                  isOutgoing: false,
+                  profilePictureUrl: profilePictureUrl,
+                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                  isGroup: isGroup,
+                  groupName: groupName,
+                  extraParticipants: extraParticipants,
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentActiveCallCard(BuildContext context, CallWebRtcState state) {
+    final bool isConnecting = state is CallConnecting;
+    final bool isVideo = state is CallActive
+        ? state.isVideo
+        : (state as CallConnecting).isVideo;
+    final String contactName = state is CallActive
+        ? state.contactName
+        : (state as CallConnecting).contactName;
+    final String? profilePictureUrl = state is CallActive
+        ? state.profilePictureUrl
+        : (state as CallConnecting).profilePictureUrl;
+    final bool isGroup = state is CallActive
+        ? state.isGroup
+        : (state as CallConnecting).isGroup;
+    final String? groupName = state is CallActive
+        ? state.groupName
+        : (state as CallConnecting).groupName;
+    final displayName = (isGroup && groupName != null && groupName.isNotEmpty)
+        ? groupName
+        : (contactName.isNotEmpty ? contactName : 'Call');
+    final DateTime? startedAt = state is CallActive
+        ? (state.startedAt ?? getIt<CallWebRtcBloc>().activeCallStart ?? DateTime.now())
+        : null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00873C).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF00873C).withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: ongoingCalls.map((call) => _buildOngoingCallCard(call)).toList(),
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF00E676),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0xFF00E676),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              CommonSpaces.w6,
+              Text(
+                isConnecting ? 'CALLING...' : (isGroup ? 'ACTIVE GROUP CALL' : 'ACTIVE CALL'),
+                style: context.bodySmall.copyWith(
+                  color: const Color(0xFF00E676),
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                  fontSize: 10,
+                ),
+              ),
+              const Spacer(),
+              if (startedAt != null && !isConnecting)
+                _LiveCallTimerBadge(startedAt: startedAt),
+            ],
+          ),
+          CommonSpaces.h8,
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF00873C).withValues(alpha: 0.25),
+                  border: Border.all(
+                    color: const Color(0xFF00873C),
+                    width: 1.5,
+                  ),
+                ),
+                child: Center(
+                  child: profilePictureUrl != null && profilePictureUrl.isNotEmpty
+                      ? ClipOval(
+                          child: Image.network(
+                            profilePictureUrl,
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Icon(
+                              isGroup ? Icons.group : (isVideo ? Icons.videocam : Icons.person),
+                              color: const Color(0xFF00E676),
+                              size: 22,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          isGroup ? Icons.group : (isVideo ? Icons.videocam : Icons.person),
+                          color: const Color(0xFF00E676),
+                          size: 22,
+                        ),
+                ),
+              ),
+              CommonSpaces.w12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: context.titleMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    CommonSpaces.h2,
+                    Row(
+                      children: [
+                        Icon(
+                          isVideo ? Icons.videocam : Icons.phone_in_talk,
+                          size: 13,
+                          color: const Color(0xFF00E676),
+                        ),
+                        CommonSpaces.w4,
+                        Text(
+                          isConnecting
+                              ? 'Connecting...'
+                              : (isVideo ? 'Video Call in progress' : 'Voice Call in progress'),
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              CommonSpaces.w8,
+              ElevatedButton.icon(
+                onPressed: () => _returnToActiveCall(state),
+                icon: Icon(
+                  isVideo ? Icons.videocam : Icons.call,
+                  size: 16,
+                  color: Colors.white,
+                ),
+                label: const Text(
+                  'Return',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00873C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1769,9 +2000,64 @@ class _GroupCallParticipantPickerSheetState extends State<_GroupCallParticipantP
   }
 }
 
+class _LiveCallTimerBadge extends StatefulWidget {
+  final DateTime startedAt;
+  const _LiveCallTimerBadge({required this.startedAt});
+
+  @override
+  State<_LiveCallTimerBadge> createState() => _LiveCallTimerBadgeState();
+}
+
+class _LiveCallTimerBadgeState extends State<_LiveCallTimerBadge> {
+  late Stream<int> _timerStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _timerStream = Stream.periodic(const Duration(seconds: 1), (i) => i);
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      final hours = d.inHours.toString().padLeft(2, '0');
+      return '$hours:$minutes:$seconds';
+    }
+    return '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: _timerStream,
+      builder: (context, snapshot) {
+        final elapsed = DateTime.now().difference(widget.startedAt);
+        final clampedElapsed = elapsed.isNegative ? Duration.zero : elapsed;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF00873C).withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            _formatDuration(clampedElapsed),
+            style: const TextStyle(
+              color: Color(0xFF00E676),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 extension StringExtension on String {
   String capitalize() {
     if (isEmpty) return this;
     return '${this[0].toUpperCase()}${substring(1)}';
   }
 }
+

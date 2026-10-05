@@ -19,8 +19,11 @@ class StorageService {
   static const String _messageToneUrlKey = 'message_tone_url';
   static const String _readReceiptsEnabledKey = 'read_receipts_enabled';
   static const String _typingIndicatorsEnabledKey = 'typing_indicators_enabled';
+  static const String _lastSeenEnabledKey = 'last_seen_enabled';
   static const String _notificationsEnabledKey = 'notifications_enabled';
   static const String _mutedChatsKey = 'muted_chats_list';
+  static const String _lockedChatsKey = 'locked_chats_list';
+  static const String _hiddenChatsKey = 'hidden_chats_list';
 
   final SharedPreferences _prefs;
 
@@ -163,6 +166,14 @@ class StorageService {
     return _prefs.getBool(_typingIndicatorsEnabledKey) ?? true;
   }
 
+  Future<void> saveLastSeenEnabled(bool enabled) async {
+    await _prefs.setBool(_lastSeenEnabledKey, enabled);
+  }
+
+  bool getLastSeenEnabled() {
+    return _prefs.getBool(_lastSeenEnabledKey) ?? true;
+  }
+
   // --- Notification Preferences ---
   Future<void> saveNotificationsEnabled(bool enabled) async {
     await _prefs.setBool(_notificationsEnabledKey, enabled);
@@ -192,4 +203,39 @@ class StorageService {
   List<String> getMutedChats() {
     return _prefs.getStringList(_mutedChatsKey) ?? [];
   }
+
+  Future<void> saveChatLocked(String conversationId, bool isLocked) async {
+    final list = List<String>.from(_prefs.getStringList(_lockedChatsKey) ?? []);
+    if (isLocked) {
+      if (!list.contains(conversationId)) list.add(conversationId);
+    } else {
+      list.remove(conversationId);
+    }
+    await _prefs.setStringList(_lockedChatsKey, list);
+  }
+
+  bool isChatLocked(String conversationId) {
+    final list = _prefs.getStringList(_lockedChatsKey) ?? [];
+    return list.contains(conversationId);
+  }
+
+  Future<void> saveChatHidden(String conversationId, bool isHidden) async {
+    final list = List<String>.from(_prefs.getStringList(_hiddenChatsKey) ?? []);
+    if (isHidden) {
+      if (!list.contains(conversationId)) list.add(conversationId);
+    } else {
+      list.remove(conversationId);
+    }
+    await _prefs.setStringList(_hiddenChatsKey, list);
+  }
+
+  bool isChatHidden(String conversationId) {
+    final list = _prefs.getStringList(_hiddenChatsKey) ?? [];
+    return list.contains(conversationId);
+  }
+
+  Future<void> clearAll() async {
+    await _prefs.clear();
+  }
 }
+

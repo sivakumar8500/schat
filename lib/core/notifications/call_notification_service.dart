@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,8 +15,15 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
+import 'package:schat/features/call_screen/src/domain/call_sound_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
+
+@pragma('vm:entry-point')
+void callNotificationTapBackground(NotificationResponse notificationResponse) {
+  debugPrint('CallNotificationService: Background notification action tapped: ${notificationResponse.actionId}');
+  CallNotificationService.handleBackgroundNotificationAction(notificationResponse);
+}
 
 @pragma('vm:entry-point')
 @lazySingleton
@@ -24,12 +32,162 @@ class CallNotificationService {
   final StorageService _storageService;
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final Uuid _uuid = const Uuid();
+  static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+
+  static const String _callChannelId = 'schat_calls_channel_v5';
+  static const String _callChannelName = 'Incoming Calls';
 
   CallNotificationService(this._apiService, this._storageService);
 
-  // Stream to notify the app when a call is answered from CallKit
+  // Stream to notify the app when a call is answered from CallKit or Notification
   final _answerCallController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onCallAnswered => _answerCallController.stream;
+
+  static bool _isLocalNotificationsInitialized = false;
+
+  /// Formatted call notification logger for clean debugging
+  static void printCallLog({
+    required String stage,
+    String? callType,
+    String? callerName,
+    String? conversationId,
+    List<String>? availableButtons,
+    String? actionClicked,
+    Map<String, dynamic>? payload,
+    dynamic exception,
+    StackTrace? stackTrace,
+    String? note,
+  }) {
+    final buffer = StringBuffer();
+    buffer.writeln('\n**************************************************');
+    buffer.writeln('📞 CALL NOTIFICATION LOG: $stage');
+    buffer.writeln('--------------------------------------------------');
+    if (callerName != null && callerName.isNotEmpty) {
+      buffer.writeln('👤 Caller Name      : $callerName');
+    }
+    if (callType != null && callType.isNotEmpty) {
+      buffer.writeln('📱 Call Type        : $callType');
+    }
+    if (conversationId != null && conversationId.isNotEmpty) {
+      buffer.writeln('💬 Conversation ID  : $conversationId');
+    }
+    if (availableButtons != null && availableButtons.isNotEmpty) {
+      buffer.writeln('🔘 Available Buttons: [ ${availableButtons.join(' , ')} ]');
+    }
+    if (actionClicked != null && actionClicked.isNotEmpty) {
+      buffer.writeln('👉 Action Clicked   : $actionClicked');
+    }
+    if (note != null && note.isNotEmpty) {
+      buffer.writeln('ℹ️ Note             : $note');
+    }
+    if (payload != null && payload.isNotEmpty) {
+      buffer.writeln('📦 Payload Data     : $payload');
+    }
+    if (exception != null) {
+      buffer.writeln('⚠️ EXCEPTION DETECTED:');
+      buffer.writeln('   $exception');
+      if (stackTrace != null) {
+        buffer.writeln('   $stackTrace');
+      }
+    } else {
+      buffer.writeln('✅ Exception        : None');
+    }
+    buffer.writeln('**************************************************\n');
+    print(buffer.toString());
+  }
+
+  static Future<void> _ensureLocalNotificationsInitialized() async {
+    if (_isLocalNotificationsInitialized) return;
+
+    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
+    final initializationSettingsIOS = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+      notificationCategories: [
+        DarwinNotificationCategory(
+          'CALL_CATEGORY',
+          actions: <DarwinNotificationAction>[
+            DarwinNotificationAction.plain(
+              'decline_call',
+              'Decline',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.destructive,
+              },
+            ),
+            DarwinNotificationAction.plain(
+              'answer_call',
+              'Accept',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.foreground,
+              },
+            ),
+          ],
+          options: <DarwinNotificationCategoryOption>{
+            DarwinNotificationCategoryOption.hiddenPreviewShowTitle,
+            DarwinNotificationCategoryOption.allowAnnouncement,
+          },
+        ),
+        DarwinNotificationCategory(
+          'call_category',
+          actions: <DarwinNotificationAction>[
+            DarwinNotificationAction.plain(
+              'decline_call',
+              'Decline',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.destructive,
+              },
+            ),
+            DarwinNotificationAction.plain(
+              'answer_call',
+              'Accept',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.foreground,
+              },
+            ),
+          ],
+          options: <DarwinNotificationCategoryOption>{
+            DarwinNotificationCategoryOption.hiddenPreviewShowTitle,
+            DarwinNotificationCategoryOption.allowAnnouncement,
+          },
+        ),
+      ],
+    );
+
+    final initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await _localNotifications.initialize(
+      settings: initializationSettings,
+      onDidReceiveNotificationResponse: _onLocalNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: callNotificationTapBackground,
+    );
+
+    final androidPlugin = _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      const callChannel = AndroidNotificationChannel(
+        _callChannelId,
+        _callChannelName,
+        description: 'Incoming video and audio calls with Decline and Accept actions',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        showBadge: true,
+      );
+      await androidPlugin.createNotificationChannel(callChannel);
+      try {
+        await androidPlugin.requestNotificationsPermission();
+      } catch (_) {}
+      try {
+        await androidPlugin.requestExactAlarmsPermission();
+      } catch (_) {}
+    }
+
+    _isLocalNotificationsInitialized = true;
+  }
 
   Future<void> initialize() async {
     if (kIsWeb) {
@@ -37,21 +195,121 @@ class CallNotificationService {
       return;
     }
 
+    await _ensureLocalNotificationsInitialized();
+
     // Handle background actions from CallKit
     FlutterCallkitIncoming.onEvent.listen(_onCallKitEvent);
 
-    // Listen for foreground messages.
+    // Check for any active accepted calls on cold launch
+    try {
+      final dynamic activeCalls = await FlutterCallkitIncoming.activeCalls();
+      if (activeCalls is List && activeCalls.isNotEmpty) {
+        debugPrint('CallNotificationService: Found ${activeCalls.length} active calls on cold launch');
+        for (final dynamic call in activeCalls) {
+          Map<String, dynamic>? extra;
+          bool isAccepted = false;
+          if (call is CallKitParams) {
+            extra = call.extra != null ? Map<String, dynamic>.from(call.extra!) : null;
+            isAccepted = (call as dynamic).isAccepted == true;
+          } else if (call is Map) {
+            final rawExtra = call['extra'];
+            if (rawExtra is Map) {
+              extra = Map<String, dynamic>.from(rawExtra);
+            }
+            isAccepted = call['isAccepted'] == true || call['accepted'] == true;
+          }
+          if (isAccepted && extra != null && extra.isNotEmpty) {
+            printCallLog(
+              stage: 'COLD LAUNCH ACTIVE CALL DETECTED',
+              callerName: extra['caller_name']?.toString() ?? extra['name']?.toString(),
+              callType: extra['call_type']?.toString(),
+              conversationId: extra['conversation_id']?.toString(),
+              actionClicked: 'Auto-accepted from CallKit cold launch',
+              payload: extra,
+            );
+            dismissAllIncomingCalls();
+            final normalised = _normaliseExtra(extra);
+            _answerCallController.add(normalised);
+            getIt<CallWebRtcBloc>().add(AnswerCallEvent(normalised));
+          }
+        }
+      }
+    } catch (e, st) {
+      printCallLog(
+        stage: 'ERROR CHECKING ACTIVE CALLS ON LAUNCH',
+        exception: e,
+        stackTrace: st,
+      );
+    }
+
+    // Listen for foreground FCM messages.
     FirebaseMessaging.onMessage.listen((message) {
-      if (kDebugMode) print('FCM Foreground Message: ${message.data}');
-      final type = message.data['type']?.toString();
-      if (type == 'call_initiate' || type == 'call_incoming') {
+      final data = message.data;
+      final type = (data['type'] ?? data['action'] ?? data['event'] ?? '').toString().toLowerCase();
+      final callerInfo = _extractCallerInfo(data);
+      final isCall = type == 'call_initiate' ||
+          type == 'call_incoming' ||
+          type == 'incoming_call' ||
+          type == 'call' ||
+          type == 'call_offer' ||
+          data.containsKey('offer') ||
+          data.containsKey('call_type');
+
+      if (isCall) {
+        printCallLog(
+          stage: 'FOREGROUND NOTIFICATION RECEIVED (CALL)',
+          callerName: callerInfo.name,
+          callType: data['call_type']?.toString() ?? 'audio',
+          conversationId: data['conversation_id']?.toString(),
+          availableButtons: ['Accept (Green)', 'Decline (Red)'],
+          payload: data,
+          note: 'App in foreground: triggering internal incoming call dialog & WebRTC signaling',
+        );
+
         try {
           final webrtcBloc = getIt<CallWebRtcBloc>();
-          if (webrtcBloc.state is CallIdle) {
-            webrtcBloc.add(HandleIncomingCallEvent(Map<String, dynamic>.from(message.data)));
+          if (webrtcBloc.state is! CallActive && webrtcBloc.state is! CallConnecting) {
+            webrtcBloc.add(HandleIncomingCallEvent(Map<String, dynamic>.from(data)));
           }
-        } catch (e) {
-          debugPrint('CallNotificationService: Error handling foreground call message: $e');
+        } catch (e, st) {
+          printCallLog(
+            stage: 'ERROR IN FOREGROUND CALL HANDLER',
+            callerName: callerInfo.name,
+            conversationId: data['conversation_id']?.toString(),
+            exception: e,
+            stackTrace: st,
+          );
+        }
+      } else if (type == 'call_hangup' ||
+                 type == 'call_ended' ||
+                 type == 'call_end' ||
+                 type == 'call_cancel' ||
+                 type == 'call_canceled' ||
+                 type == 'call_cancelled' ||
+                 type == 'call_disconnected' ||
+                 type == 'call_disconnect' ||
+                 type == 'call_rejected' ||
+                 type == 'call_reject' ||
+                 type == 'call_timeout' ||
+                 type == 'call_missed' ||
+                 type == 'missed_call') {
+        printCallLog(
+          stage: 'FOREGROUND CALL TERMINATED / CANCELLED',
+          callerName: callerInfo.name,
+          conversationId: data['conversation_id']?.toString(),
+          payload: data,
+          note: 'Event type: $type. Dismissing notifications & CallKit.',
+        );
+        dismissAllIncomingCalls();
+        try {
+          getIt<CallSoundService>().stopAll();
+          getIt<CallWebRtcBloc>().add(const HandleCallDisconnectedEvent());
+        } catch (e, st) {
+          printCallLog(
+            stage: 'ERROR STOPPING CALL ON FCM CANCEL',
+            exception: e,
+            stackTrace: st,
+          );
         }
       }
     });
@@ -187,99 +445,373 @@ class CallNotificationService {
     return (name: name, avatar: resolvedAvatar);
   }
 
+  static DateTime? _lastCallKitShowTime;
+
+  /// Displays the incoming call heads-up notification and CallKit UI
   Future<void> showIncomingCall(Map<String, dynamic> data) async {
     if (kIsWeb) {
       debugPrint('CallNotificationService: showIncomingCall skipped on Web');
       return;
     }
+    _lastCallKitShowTime = DateTime.now();
     final String uuid = _uuid.v4();
     final callerInfo = _extractCallerInfo(data);
     final String callerName = callerInfo.name;
     final String profilePicUrl = callerInfo.avatar;
     final String conversationId = (data['conversation_id'] ?? data['conversationId'] ?? '').toString();
     final bool isVideo = data['call_type'] == 'video' || data['callType'] == 'video';
+    final bool isGroup = data['is_group'] == true ||
+        data['is_group'] == 'true' ||
+        data['isGroup'] == true ||
+        data['isGroup'] == 'true';
+    final String groupName = (data['group_name'] ?? data['groupName'] ?? '').toString().trim();
+    final String notificationTitle = (isGroup && groupName.isNotEmpty) ? groupName : callerName;
+    final String callSubtitle = isGroup && groupName.isNotEmpty
+        ? '$callerName started a group ${isVideo ? 'video' : 'voice'} call'
+        : 'Incoming ${isVideo ? 'video' : 'voice'} call';
 
     // FCM delivers all payload values as Strings — parse `offer` to a Map.
     final dynamic offerParsed = _tryParseJson(data['offer']);
 
-    final CallKitParams params = CallKitParams(
-      id: uuid,
-      nameCaller: callerName,
-      appName: 'sChat',
-      avatar: profilePicUrl.isNotEmpty ? profilePicUrl : null,
-      handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
-      type: isVideo ? 1 : 0,
-      duration: 30000,
-      extra: <String, dynamic>{
-        'conversation_id': conversationId,
-        'caller_name': callerName,
-        'call_type': data['call_type'] ?? (isVideo ? 'video' : 'audio'),
-        'offer': offerParsed,
-        'recipient_id': data['recipient_id'] ?? data['recipientId'],
-        'profile_picture_url': profilePicUrl,
-        'avatar': profilePicUrl,
-      },
-      android: const AndroidParams(
-        isCustomNotification: false,
-        isShowLogo: false,
-        isShowCallID: true,
-        isShowFullLockedScreen: true,
-        isFullScreen: true,
-        isImportant: true,
-        ringtonePath: 'system_ringtone_default',
-        backgroundColor: '#0F3460',
-        actionColor: '#4CAF50',
-        textColor: '#FFFFFF',
-        incomingCallNotificationChannelName: 'Incoming Calls',
-        textAccept: 'Answer',
-        textDecline: 'Decline',
-      ),
-      ios: const IOSParams(
-        iconName: 'AppIcon',
-        handleType: 'generic',
-        supportsVideo: true,
-        maximumCallGroups: 1,
-        maximumCallsPerCallGroup: 1,
-        audioSessionMode: 'default',
-        audioSessionActive: true,
-        audioSessionPreferredSampleRate: 44100.0,
-        audioSessionPreferredIOBufferDuration: 0.005,
-        supportsDTMF: true,
-        supportsHolding: true,
-        supportsGrouping: true,
-        supportsUngrouping: true,
-        ringtonePath: 'system_ringtone_default',
-      ),
-    );
+    final Map<String, dynamic> extra = {
+      ...data,
+      'call_uuid': uuid,
+      'conversation_id': conversationId,
+      'caller_name': callerName,
+      'group_name': groupName,
+      'is_group': isGroup,
+      'call_type': data['call_type'] ?? (isVideo ? 'video' : 'audio'),
+      'offer': offerParsed,
+      'recipient_id': data['recipient_id'] ?? data['recipientId'],
+      'profile_picture_url': profilePicUrl,
+      'avatar': profilePicUrl,
+    };
 
+    final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (!isForeground) {
+      printCallLog(
+        stage: 'DISPLAYING HEADS-UP CALL NOTIFICATION (BACKGROUND)',
+        callerName: notificationTitle,
+        callType: isVideo ? 'Video Call' : 'Voice Call',
+        conversationId: conversationId,
+        availableButtons: ['Accept (Green Button)', 'Decline (Red Button)'],
+        payload: extra,
+        note: 'Showing heads-up notification with Accept / Decline action buttons (Battery friendly, no background overlay)',
+      );
+      await _showLocalCallNotification(uuid, notificationTitle, callSubtitle, extra);
+    }
+  }
+
+  /// Displays high priority heads-up notification with action buttons
+  static Future<void> _showLocalCallNotification(
+    String callUuid,
+    String callerName,
+    String subText,
+    Map<String, dynamic> extra,
+  ) async {
     try {
-      await FlutterCallkitIncoming.showCallkitIncoming(params);
+      await _ensureLocalNotificationsInitialized();
+
+      printCallLog(
+        stage: 'DISPLAYING HEADS-UP NOTIFICATION BANNER',
+        callerName: callerName,
+        callType: extra['call_type']?.toString(),
+        conversationId: extra['conversation_id']?.toString(),
+        availableButtons: ['Accept (Action Button)', 'Decline (Action Button)'],
+        payload: extra,
+        note: 'Showing notification banner with Accept/Decline action buttons',
+      );
+
+      // Cancel previous notifications so Android does not group them together
+      try {
+        await _localNotifications.cancelAll();
+      } catch (_) {}
+
+      final androidDetails = AndroidNotificationDetails(
+        _callChannelId,
+        _callChannelName,
+        icon: '@mipmap/launcher_icon',
+        channelDescription: 'Incoming video and audio calls',
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.call,
+        playSound: true,
+        enableVibration: true,
+        ongoing: true,
+        autoCancel: false,
+        timeoutAfter: 35000,
+        color: const Color(0xFF1F2C34),
+        colorized: true,
+        subText: 'Incoming Call',
+        styleInformation: BigTextStyleInformation(
+          subText,
+          contentTitle: callerName,
+          summaryText: 'sChat Call',
+          htmlFormatBigText: false,
+          htmlFormatContentTitle: false,
+        ),
+        groupKey: 'schat_active_call_group',
+        setAsGroupSummary: false,
+        actions: const <AndroidNotificationAction>[
+          AndroidNotificationAction(
+            'decline_call',
+            'Decline',
+            titleColor: Color(0xFFFF3B30),
+            showsUserInterface: false,
+            cancelNotification: true,
+            contextual: false,
+          ),
+          AndroidNotificationAction(
+            'answer_call',
+            'Accept',
+            titleColor: Color(0xFF00BFA5),
+            showsUserInterface: true,
+            cancelNotification: true,
+            contextual: false,
+          ),
+        ],
+      );
+
+      const iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        presentBanner: true,
+        presentList: true,
+        categoryIdentifier: 'CALL_CATEGORY',
+        interruptionLevel: InterruptionLevel.critical,
+      );
+
+      await _localNotifications.show(
+        id: callUuid.hashCode,
+        title: callerName,
+        body: subText,
+        notificationDetails: NotificationDetails(
+          android: androidDetails,
+          iOS: iosDetails,
+        ),
+        payload: jsonEncode(extra),
+      );
+    } catch (e, st) {
+      printCallLog(
+        stage: 'ERROR SHOWING LOCAL NOTIFICATION BANNER',
+        callerName: callerName,
+        exception: e,
+        stackTrace: st,
+      );
+    }
+  }
+
+  bool _isProgrammaticDismiss = false;
+
+  /// Cancels local notification banners without ending active CallKit calls
+  Future<void> cancelNotificationBannerOnly() async {
+    try {
+      await _localNotifications.cancelAll();
     } catch (e) {
-      debugPrint('CallNotificationService: Error showing CallKit: $e');
+      debugPrint('CallNotificationService: Error cancelling notification banners: $e');
+    }
+  }
+
+  /// Cancels all active call notifications and ends CallKit
+  Future<void> dismissAllIncomingCalls() async {
+    try {
+      _isProgrammaticDismiss = true;
+      await _localNotifications.cancelAll();
+      await FlutterCallkitIncoming.endAllCalls();
+    } catch (e) {
+      debugPrint('CallNotificationService: Error dismissing incoming calls: $e');
+    } finally {
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        _isProgrammaticDismiss = false;
+      });
     }
   }
 
   void _onCallKitEvent(CallEvent? event) {
     if (event == null) return;
+    if (_isProgrammaticDismiss) {
+      debugPrint('CallKit: Ignoring event during programmatic dismiss: $event');
+      return;
+    }
 
     if (event is CallEventActionCallAccept) {
-      debugPrint('CallKit: Call Accepted');
       final raw = Map<String, dynamic>.from(event.callKitParams.extra ?? {});
-      // CallKit may re-serialize the offer map as a JSON string — parse it back.
-      _answerCallController.add(_normaliseExtra(raw));
+      printCallLog(
+        stage: 'CALLKIT ACTION EVENT: ACCEPTED',
+        callerName: raw['caller_name']?.toString() ?? raw['name']?.toString(),
+        callType: raw['call_type']?.toString(),
+        conversationId: raw['conversation_id']?.toString(),
+        availableButtons: ['Accept (Clicked)', 'Decline'],
+        actionClicked: 'Accept (CallKit Screen)',
+        payload: raw,
+        note: 'User tapped Accept on CallKit screen. Navigating to active call.',
+      );
+
+      cancelNotificationBannerOnly();
+      final normalised = _normaliseExtra(raw);
+      _answerCallController.add(normalised);
     } else if (event is CallEventActionCallDecline) {
-      debugPrint('CallKit: Call Declined');
       final raw = Map<String, dynamic>.from(event.callKitParams.extra ?? {});
       final conversationId = raw['conversation_id'] as String?;
 
-      if (conversationId != null) {
-        getIt<ChatSocketRepository>().emit('message', {
-          'type': 'call_response',
-          'conversation_id': conversationId,
-          'response': 'reject',
-          'answer': null,
-        });
+      printCallLog(
+        stage: 'CALLKIT ACTION EVENT: DECLINED',
+        callerName: raw['caller_name']?.toString() ?? raw['name']?.toString(),
+        callType: raw['call_type']?.toString(),
+        conversationId: conversationId,
+        availableButtons: ['Accept', 'Decline (Clicked)'],
+        actionClicked: 'Decline (CallKit Screen)',
+        payload: raw,
+      );
+
+      final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (isForeground) {
+        debugPrint('CallKit: Ignoring CallDecline because app is in foreground');
+        return;
       }
+      // Ignore spurious immediate declines from OS / CallKit initialization (< 3.0s)
+      if (_lastCallKitShowTime != null &&
+          DateTime.now().difference(_lastCallKitShowTime!).inMilliseconds < 3000) {
+        debugPrint('CallKit: Ignoring auto/spurious CallDecline received within 3s of incoming call');
+        return;
+      }
+      final webrtcBloc = getIt<CallWebRtcBloc>();
+      // ONLY reject if we are actually in a ringing incoming call (callee)
+      if (webrtcBloc.state is! CallRinging) {
+        debugPrint('CallKit: Ignoring CallDecline because state is not CallRinging (state=${webrtcBloc.state})');
+        return;
+      }
+      dismissAllIncomingCalls();
+
+      if (conversationId != null && conversationId.isNotEmpty) {
+        try {
+          webrtcBloc.add(RejectCallEvent(conversationId));
+        } catch (_) {}
+      }
+    }
+  }
+
+  static void onLocalNotificationResponse(NotificationResponse response) {
+    _onLocalNotificationResponse(response);
+  }
+
+  static void _onLocalNotificationResponse(NotificationResponse response) {
+    final payload = response.payload;
+    Map<String, dynamic> extra = {};
+    if (payload != null && payload.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map) extra = Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+
+    final conversationId = extra['conversation_id']?.toString() ?? extra['conversationId']?.toString();
+    final action = (response.actionId ?? '').toLowerCase();
+
+    if (action == 'decline_call' || action == 'decline' || action == 'reject') {
+      printCallLog(
+        stage: 'NOTIFICATION BANNER ACTION: DECLINE CLICKED',
+        callerName: extra['caller_name']?.toString() ?? extra['name']?.toString(),
+        callType: extra['call_type']?.toString(),
+        conversationId: conversationId,
+        availableButtons: ['Accept', 'Decline (Clicked)'],
+        actionClicked: 'Decline Button (Notification Banner)',
+        payload: extra,
+      );
+
+      final webrtcBloc = getIt<CallWebRtcBloc>();
+      if (webrtcBloc.state is! CallRinging) {
+        debugPrint('CallNotificationService: Ignoring decline action because state is not CallRinging');
+        return;
+      }
+      try {
+        getIt<CallNotificationService>().dismissAllIncomingCalls();
+        if (conversationId != null && conversationId.isNotEmpty) {
+          getIt<ChatSocketRepository>().emit('message', {
+            'type': 'call_response',
+            'conversation_id': conversationId,
+            'response': 'reject',
+            'answer': null,
+          });
+          webrtcBloc.add(RejectCallEvent(conversationId));
+        }
+      } catch (e, st) {
+        printCallLog(
+          stage: 'ERROR DECLINING CALL FROM NOTIFICATION',
+          conversationId: conversationId,
+          exception: e,
+          stackTrace: st,
+        );
+      }
+    } else if (action == 'answer_call' || action == 'accept_call' || action == 'accept') {
+      printCallLog(
+        stage: 'NOTIFICATION BANNER ACTION: ACCEPT CLICKED',
+        callerName: extra['caller_name']?.toString() ?? extra['name']?.toString(),
+        callType: extra['call_type']?.toString(),
+        conversationId: conversationId,
+        availableButtons: ['Accept (Clicked)', 'Decline'],
+        actionClicked: 'Accept Button (Notification Banner)',
+        payload: extra,
+        note: 'Accept button pressed -> opening app directly into active call',
+      );
+
+      try {
+        final instance = getIt<CallNotificationService>();
+        instance.dismissAllIncomingCalls();
+        final normalised = instance._normaliseExtra(extra);
+        final webrtcBloc = getIt<CallWebRtcBloc>();
+        webrtcBloc.add(AnswerCallEvent(normalised));
+        webrtcBloc.navigateToCallPage(normalised);
+      } catch (e, st) {
+        printCallLog(
+          stage: 'ERROR ANSWERING CALL FROM NOTIFICATION',
+          conversationId: conversationId,
+          exception: e,
+          stackTrace: st,
+        );
+      }
+    } else {
+      // User tapped notification body -> open incoming call dialog/screen with Accept & Decline without ending the ringing call
+      printCallLog(
+        stage: 'NOTIFICATION BANNER BODY TAPPED (OPEN INCOMING CALL SCREEN)',
+        callerName: extra['caller_name']?.toString() ?? extra['name']?.toString(),
+        callType: extra['call_type']?.toString(),
+        conversationId: conversationId,
+        availableButtons: ['Accept', 'Decline'],
+        actionClicked: 'Notification Body Clicked -> Opens Incoming Call UI',
+        payload: extra,
+      );
+
+      try {
+        getIt<CallNotificationService>().cancelNotificationBannerOnly();
+        final webrtcBloc = getIt<CallWebRtcBloc>();
+        webrtcBloc.add(ShowIncomingCallUiEvent(extra));
+      } catch (e, st) {
+        printCallLog(
+          stage: 'ERROR OPENING INCOMING CALL UI FROM NOTIFICATION BODY',
+          conversationId: conversationId,
+          exception: e,
+          stackTrace: st,
+        );
+      }
+    }
+  }
+
+  @pragma('vm:entry-point')
+  static void handleBackgroundNotificationAction(NotificationResponse response) {
+    printCallLog(
+      stage: 'BACKGROUND NOTIFICATION ACTION CLICKED',
+      actionClicked: response.actionId ?? 'Unknown Action',
+      availableButtons: ['Accept', 'Decline'],
+    );
+    final action = (response.actionId ?? '').toLowerCase();
+    if (action == 'decline_call' || action == 'decline' || action == 'reject') {
+      FlutterCallkitIncoming.endAllCalls();
+      FlutterLocalNotificationsPlugin().cancelAll();
+    } else if (action == 'answer_call' || action == 'accept_call' || action == 'accept') {
+      FlutterCallkitIncoming.endAllCalls();
+      FlutterLocalNotificationsPlugin().cancelAll();
     }
   }
 
@@ -309,7 +841,6 @@ class CallNotificationService {
 
   @pragma('vm:entry-point')
   static Future<void> handleBackgroundMessage(RemoteMessage message) async {
-    debugPrint('FCM Background Message received: ${message.data}');
     Map<String, dynamic> data = Map<String, dynamic>.from(message.data);
 
     if (data.containsKey('data') && data['data'] is String) {
@@ -329,6 +860,42 @@ class CallNotificationService {
     }
 
     final String type = (data['type'] ?? data['action'] ?? data['event'] ?? data['message_type'] ?? '').toString().toLowerCase();
+
+    final bool isCallEnd = type == 'call_hangup' ||
+        type == 'call_ended' ||
+        type == 'call_end' ||
+        type == 'call_cancel' ||
+        type == 'call_canceled' ||
+        type == 'call_cancelled' ||
+        type == 'call_disconnected' ||
+        type == 'call_disconnect' ||
+        type == 'call_rejected' ||
+        type == 'call_reject' ||
+        type == 'call_timeout' ||
+        type == 'call_missed' ||
+        type == 'missed_call';
+
+    if (isCallEnd) {
+      printCallLog(
+        stage: 'BACKGROUND FCM MESSAGE: CALL TERMINATED / CANCELLED',
+        conversationId: data['conversation_id']?.toString(),
+        payload: data,
+        note: 'Call ended/cancelled ($type). Ending all active calls & notifications in background.',
+      );
+      try {
+        await FlutterCallkitIncoming.endAllCalls();
+        final localNotifications = FlutterLocalNotificationsPlugin();
+        await localNotifications.cancelAll();
+      } catch (e, st) {
+        printCallLog(
+          stage: 'ERROR DISMISSING CALLS IN BACKGROUND FCM HANDLER',
+          exception: e,
+          stackTrace: st,
+        );
+      }
+      return;
+    }
+
     final bool isCall = type == 'call_initiate' ||
         type == 'call_incoming' ||
         type == 'incoming_call' ||
@@ -338,7 +905,7 @@ class CallNotificationService {
         data.containsKey('callType') ||
         data.containsKey('offer');
 
-    // 1. Incoming Call (CallKit VoIP + Local heads-up fallback)
+    // 1. Incoming Call (High-Priority Heads-Up Notification with Decline & Accept Buttons)
     if (isCall) {
       final Uuid uuid = const Uuid();
       final String callUuid = uuid.v4();
@@ -346,116 +913,40 @@ class CallNotificationService {
       final String callerName = callerInfo.name;
       final String profilePicUrl = callerInfo.avatar;
       final bool isVideo = data['call_type'] == 'video' || data['callType'] == 'video';
+      final bool isGroup = data['is_group'] == true ||
+          data['is_group'] == 'true' ||
+          data['isGroup'] == true ||
+          data['isGroup'] == 'true';
+      final String groupName = (data['group_name'] ?? data['groupName'] ?? '').toString().trim();
+      final String notificationTitle = (isGroup && groupName.isNotEmpty) ? groupName : callerName;
+      final String callSubtitle = isGroup && groupName.isNotEmpty
+          ? '$callerName started a group ${isVideo ? 'video' : 'voice'} call'
+          : 'Incoming ${isVideo ? 'video' : 'voice'} call';
 
       final dynamic offerParsed = _tryParseJson(data['offer']);
 
       final Map<String, dynamic> extra = {
         ...data,
+        'call_uuid': callUuid,
         'offer': offerParsed,
         'caller_name': callerName,
+        'group_name': groupName,
+        'is_group': isGroup,
         'profile_picture_url': profilePicUrl,
         'avatar': profilePicUrl,
       };
 
-      final CallKitParams params = CallKitParams(
-        id: callUuid,
-        nameCaller: callerName,
-        appName: 'sChat',
-        avatar: profilePicUrl.isNotEmpty ? profilePicUrl : null,
-        handle: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call',
-        type: isVideo ? 1 : 0,
-        duration: 35000,
-        extra: extra,
-        android: const AndroidParams(
-          isCustomNotification: false,
-          isShowLogo: false,
-          isShowCallID: true,
-          isShowFullLockedScreen: true,
-          isFullScreen: true,
-          isImportant: true,
-          ringtonePath: 'system_ringtone_default',
-          backgroundColor: '#0F3460',
-          actionColor: '#4CAF50',
-          textColor: '#FFFFFF',
-          incomingCallNotificationChannelName: 'Incoming Calls',
-          textAccept: 'Answer',
-          textDecline: 'Decline',
-        ),
-        ios: const IOSParams(
-          iconName: 'AppIcon',
-          handleType: 'generic',
-          supportsVideo: true,
-          maximumCallGroups: 1,
-          maximumCallsPerCallGroup: 1,
-          ringtonePath: 'system_ringtone_default',
-        ),
+      printCallLog(
+        stage: 'BACKGROUND FCM MESSAGE: INCOMING CALL RECEIVED',
+        callerName: notificationTitle,
+        callType: isVideo ? 'Video Call' : 'Voice Call',
+        conversationId: data['conversation_id']?.toString(),
+        availableButtons: ['Accept (Green Button)', 'Decline (Red Button)'],
+        payload: extra,
+        note: 'Showing heads-up notification with Accept & Decline buttons on lock screen / shade',
       );
 
-      try {
-        await FlutterCallkitIncoming.showCallkitIncoming(params);
-      } catch (e) {
-        debugPrint('CallNotificationService: Error showing CallKit: $e');
-      }
-
-      // Also ensure a high-priority heads-up local notification is shown as fallback
-      try {
-        final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-        const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
-        const initializationSettingsIOS = DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
-        await flutterLocalNotificationsPlugin.initialize(
-          settings: const InitializationSettings(
-            android: initializationSettingsAndroid,
-            iOS: initializationSettingsIOS,
-          ),
-        );
-
-        final androidPlugin = flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-        if (androidPlugin != null) {
-          const callChannel = AndroidNotificationChannel(
-            'schat_calls_channel',
-            'Incoming Calls',
-            description: 'Incoming video and audio calls',
-            importance: Importance.max,
-            playSound: true,
-            enableVibration: true,
-          );
-          await androidPlugin.createNotificationChannel(callChannel);
-        }
-
-        await flutterLocalNotificationsPlugin.show(
-          id: callUuid.hashCode,
-          title: callerName,
-          body: 'Incoming ${isVideo ? 'Video' : 'Audio'} Call...',
-          notificationDetails: const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'schat_calls_channel',
-              'Incoming Calls',
-              channelDescription: 'Incoming video and audio calls',
-              importance: Importance.max,
-              priority: Priority.max,
-              fullScreenIntent: true,
-              category: AndroidNotificationCategory.call,
-              playSound: true,
-              enableVibration: true,
-            ),
-            iOS: DarwinNotificationDetails(
-              presentAlert: true,
-              presentBadge: true,
-              presentSound: true,
-              presentBanner: true,
-              interruptionLevel: InterruptionLevel.critical,
-            ),
-          ),
-          payload: jsonEncode(extra),
-        );
-      } catch (e) {
-        debugPrint('CallNotificationService: Fallback notification error: $e');
-      }
+      await _showLocalCallNotification(callUuid, notificationTitle, callSubtitle, extra);
       return;
     }
 
@@ -506,7 +997,10 @@ class CallNotificationService {
         iOS: initializationSettingsIOS,
       );
 
-      await flutterLocalNotificationsPlugin.initialize(settings: initializationSettings);
+      await flutterLocalNotificationsPlugin.initialize(
+        settings: initializationSettings,
+        onDidReceiveBackgroundNotificationResponse: callNotificationTapBackground,
+      );
 
       final androidPlugin = flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
@@ -569,3 +1063,4 @@ class CallNotificationService {
     }
   }
 }
+

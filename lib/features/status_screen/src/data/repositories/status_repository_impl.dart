@@ -130,7 +130,8 @@ class StatusRepositoryImpl implements StatusRepository {
 
         final size = bytes != null ? (bytes as Uint8List).length : (fileSizeBytes ?? 1024);
         final isVideo = mimeType.toLowerCase().contains('video') || (fileName.endsWith('.mp4'));
-        final mediaType = isVideo ? 'CHAT_VIDEO' : 'CHAT_IMAGE';
+        final isAudio = mimeType.toLowerCase().contains('audio') || fileName.endsWith('.m4a') || fileName.endsWith('.mp3') || fileName.endsWith('.aac') || fileName.endsWith('.wav');
+        final mediaType = isVideo ? 'CHAT_VIDEO' : (isAudio ? 'CHAT_AUDIO' : 'CHAT_IMAGE');
 
         // Step 1: Request upload URL
         final requestData = {

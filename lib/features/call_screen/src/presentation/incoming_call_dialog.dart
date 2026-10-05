@@ -3,12 +3,10 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
-import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -16,6 +14,8 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/permission_helper.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/main.dart';
+
 
 /// Full-screen incoming call dialog shown when `call_incoming` is received.
 /// mason make widget --name incoming_call_dialog
@@ -104,15 +104,6 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
 
   bool _isDismissed = false;
 
-  void _dismissDialog() {
-    if (_isDismissed) return;
-    _isDismissed = true;
-    FlutterCallkitIncoming.endAllCalls();
-    if (mounted && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
-  }
-
   void _accept() async {
     if (_isDismissed) return;
     final bloc = context.read<CallWebRtcBloc>();
@@ -128,70 +119,21 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
     
     if (!mounted || _isDismissed) return;
     _isDismissed = true;
-    FlutterCallkitIncoming.endAllCalls();
     bloc.add(AnswerCallEvent(widget.incomingEvent));
-    final isGroup = widget.incomingEvent['is_group'] == true || widget.incomingEvent['isGroup'] == true;
-    final groupName = (widget.incomingEvent['group_name'] ?? widget.incomingEvent['groupName'])?.toString();
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => BlocProvider.value(
-          value: bloc,
-          child: widget.isVideo
-              ? VideoCallPage(
-                  conversationId: widget.conversationId,
-                  contactName: isGroup && (groupName?.isNotEmpty ?? false) ? groupName! : widget.callerName,
-                  contactColor: widget.callerColor,
-                  recipientId: widget.recipientId,
-                  isOutgoing: false,
-                  profilePictureUrl: widget.profilePictureUrl,
-                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                  isGroup: isGroup,
-                  groupName: groupName,
-                )
-              : AudioCallPage(
-                  conversationId: widget.conversationId,
-                  contactName: isGroup && (groupName?.isNotEmpty ?? false) ? groupName! : widget.callerName,
-                  contactColor: widget.callerColor,
-                  recipientId: widget.recipientId,
-                  isOutgoing: false,
-                  profilePictureUrl: widget.profilePictureUrl,
-                  myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                  isGroup: isGroup,
-                  groupName: groupName,
-                ),
-        ),
-      ),
-    );
+    bloc.navigateToCallPage(widget.incomingEvent);
   }
 
   void _decline() {
     if (_isDismissed) return;
+    _isDismissed = true;
     context
         .read<CallWebRtcBloc>()
         .add(RejectCallEvent(widget.conversationId));
-    _dismissDialog();
-  }
-
-  /// Called when the caller cancels before the callee answers.
-  void _onCallerHungUp(BuildContext context) {
-    _dismissDialog();
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<CallWebRtcBloc, CallWebRtcState>(
-      listenWhen: (previous, current) {
-        // Dismiss if call ended / errored / rejected / idle while we are still ringing
-        return current is CallEnded ||
-            current is CallError ||
-            current is CallIdle ||
-            current is CallRejected;
-      },
-      listener: (context, state) {
-        _onCallerHungUp(context);
-      },
-      child: Scaffold(
+    return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
@@ -371,9 +313,9 @@ class _IncomingCallDialogState extends State<IncomingCallDialog>
         ),
       ],
     ),
-    ),
     );
   }
+
 
   Widget _buildMainCallButton({
     required String label,

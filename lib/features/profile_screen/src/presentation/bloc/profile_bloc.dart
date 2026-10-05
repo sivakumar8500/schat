@@ -25,6 +25,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<LogoutEvent>(_onLogout);
     on<UpdateDefaultDisappearingTimerEvent>(_onUpdateDefaultDisappearingTimer);
     on<UpdateGlobalPrivacyEvent>(_onUpdateGlobalPrivacy);
+    on<DeleteAccountEvent>(_onDeleteAccount);
   }
 
   Future<void> _onUpdateAbout(UpdateAboutEvent event, Emitter<ProfileState> emit) async {
@@ -52,6 +53,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
       success: (user) {
         getIt<StorageService>().saveReadReceiptsEnabled(user.readReceiptsEnabled);
         getIt<StorageService>().saveTypingIndicatorsEnabled(user.typingIndicatorsEnabled);
+        getIt<StorageService>().saveLastSeenEnabled(user.lastSeenEnabled);
         emit(ProfileLoaded(
           username: user.username ?? '',
           imagePath: user.profilePictureUrl,
@@ -144,6 +146,20 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     }
   }
 
+  Future<void> _onDeleteAccount(DeleteAccountEvent event, Emitter<ProfileState> emit) async {
+    emit(const ProfileLoading());
+    final result = await _profileRepository.deleteAccount();
+    result.when(
+      success: (_) async {
+        try {
+          await _authRepository.logout();
+        } catch (_) {}
+        emit(const ProfileAccountDeleted());
+      },
+      failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+    );
+  }
+
   Future<void> _onUpdateDefaultDisappearingTimer(
     UpdateDefaultDisappearingTimerEvent event,
     Emitter<ProfileState> emit,
@@ -173,6 +189,9 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     if (event.typingIndicatorsEnabled != null) {
       await storage.saveTypingIndicatorsEnabled(event.typingIndicatorsEnabled!);
     }
+    if (event.lastSeenEnabled != null) {
+      await storage.saveLastSeenEnabled(event.lastSeenEnabled!);
+    }
     if (event.notificationsEnabled != null) {
       await storage.saveNotificationsEnabled(event.notificationsEnabled!);
     }
@@ -180,6 +199,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     final request = UpdateProfileRequest(
       readReceiptsEnabled: event.readReceiptsEnabled,
       typingIndicatorsEnabled: event.typingIndicatorsEnabled,
+      lastSeenEnabled: event.lastSeenEnabled,
       notificationsEnabled: event.notificationsEnabled,
     );
     final result = await _profileRepository.updateProfile(request);
@@ -187,9 +207,11 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
       success: (user) {
         final effectiveReadReceipts = event.readReceiptsEnabled ?? user.readReceiptsEnabled;
         final effectiveTyping = event.typingIndicatorsEnabled ?? user.typingIndicatorsEnabled;
+        final effectiveLastSeen = event.lastSeenEnabled ?? user.lastSeenEnabled;
         final effectiveNotifications = event.notificationsEnabled ?? user.notificationsEnabled;
         storage.saveReadReceiptsEnabled(effectiveReadReceipts);
         storage.saveTypingIndicatorsEnabled(effectiveTyping);
+        storage.saveLastSeenEnabled(effectiveLastSeen);
         storage.saveNotificationsEnabled(effectiveNotifications);
         emit(ProfileLoaded(
           username: user.displayName,
@@ -197,6 +219,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
           user: user.copyWith(
             readReceiptsEnabled: effectiveReadReceipts,
             typingIndicatorsEnabled: effectiveTyping,
+            lastSeenEnabled: effectiveLastSeen,
             notificationsEnabled: effectiveNotifications,
           ),
         ));

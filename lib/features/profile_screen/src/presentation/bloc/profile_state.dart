@@ -34,3 +34,7 @@ class ProfileFailure extends ProfileState {
 class ProfileLogoutSuccess extends ProfileState {
   const ProfileLogoutSuccess();
 }
+
+class ProfileAccountDeleted extends ProfileState {
+  const ProfileAccountDeleted();
+}

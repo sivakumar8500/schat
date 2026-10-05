@@ -18,7 +18,48 @@ import AVFoundation
     GMSServices.provideAPIKey("AIzaSyDzdftYEP9bbhXFHyjGSmydrvGKZSx6cSk")
 
     if #available(iOS 10.0, *) {
-      UNUserNotificationCenter.current().delegate = self as UNUserNotificationCenterDelegate
+      let center = UNUserNotificationCenter.current()
+      center.delegate = self as UNUserNotificationCenterDelegate
+
+      let declineAction = UNNotificationAction(
+        identifier: "decline_call",
+        title: "Decline",
+        options: [.destructive]
+      )
+      let acceptAction = UNNotificationAction(
+        identifier: "answer_call",
+        title: "Accept",
+        options: [.foreground]
+      )
+
+      let callCategories: [UNNotificationCategory] = [
+        UNNotificationCategory(
+          identifier: "CALL_CATEGORY",
+          actions: [declineAction, acceptAction],
+          intentIdentifiers: [],
+          options: [.customDismissAction]
+        ),
+        UNNotificationCategory(
+          identifier: "call_category",
+          actions: [declineAction, acceptAction],
+          intentIdentifiers: [],
+          options: [.customDismissAction]
+        ),
+        UNNotificationCategory(
+          identifier: "CALL",
+          actions: [declineAction, acceptAction],
+          intentIdentifiers: [],
+          options: [.customDismissAction]
+        ),
+        UNNotificationCategory(
+          identifier: "call",
+          actions: [declineAction, acceptAction],
+          intentIdentifiers: [],
+          options: [.customDismissAction]
+        )
+      ]
+
+      center.setNotificationCategories(Set(callCategories))
     }
     application.registerForRemoteNotifications()
 

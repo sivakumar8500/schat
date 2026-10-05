@@ -44,4 +44,15 @@ class PermissionHelper {
     final hasAll = await hasAllRequiredPermissions();
     return !hasAll;
   }
+
+  /// Automatically prompts for Notification permission if not granted
+  static Future<void> requestBackgroundCallPermissions() async {
+    if (kIsWeb) return;
+    
+    try {
+      if (!await Permission.notification.isGranted) {
+        await Permission.notification.request();
+      }
+    } catch (_) {}
+  }
 }

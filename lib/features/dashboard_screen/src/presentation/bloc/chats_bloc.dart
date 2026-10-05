@@ -144,12 +144,43 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           if (msgId == null && callMeta is Map) {
             msgId = (callMeta['message_id'] ?? callMeta['messageId'])?.toString();
           }
-          if (convId != null && msgId != null && callMeta is Map) {
+          msgId ??= 'call_${DateTime.now().millisecondsSinceEpoch}';
+          if (convId != null && callMeta is Map) {
              add(CallLogUpdated(
                conversationId: convId, 
                messageId: msgId, 
                callMeta: Map<String, dynamic>.from(callMeta),
              ));
+          }
+        } else if (type == 'call_initiated' || type == 'call_incoming') {
+          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
+          final msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString() ?? 'call_${DateTime.now().millisecondsSinceEpoch}';
+          final callType = (cleanData['call_type'] ?? cleanData['callType'])?.toString() ?? 'audio';
+          if (convId != null) {
+            add(CallLogUpdated(
+              conversationId: convId,
+              messageId: msgId,
+              callMeta: {
+                'callType': callType,
+                'status': 'calling',
+                'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
+              },
+            ));
+          }
+        } else if (type == 'call_answered' || type == 'call_hangup') {
+          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
+          final response = (cleanData['response'] ?? cleanData['status'] ?? (type == 'call_hangup' ? 'completed' : '')).toString();
+          final callType = (cleanData['call_type'] ?? cleanData['callType'])?.toString() ?? 'audio';
+          if (convId != null) {
+            add(CallLogUpdated(
+              conversationId: convId,
+              messageId: (cleanData['message_id'] ?? cleanData['messageId'])?.toString() ?? 'call_${DateTime.now().millisecondsSinceEpoch}',
+              callMeta: {
+                'callType': callType,
+                'status': response.isNotEmpty ? response : 'answered',
+                'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
+              },
+            ));
           }
         } else if (type == 'user_typing' || type == 'typing') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -171,11 +202,96 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             final int? timerSec = rawTimer != null ? int.tryParse(rawTimer.toString()) : null;
             add(UpdateDisappearingTimer(conversationId: convId, seconds: timerSec));
           }
+        } else if (type == 'screen_permission_request') {
+          final req = cleanData['request'] ?? cleanData['data'] ?? cleanData;
+          if (req is Map) {
+            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
+            final senderId = (req['senderId'] ?? req['sender_id'])?.toString() ?? '';
+            final senderName = (req['senderName'] ?? req['sender_name'])?.toString() ?? 'Contact';
+            final permType = (req['permissionType'] ?? req['permission_type'])?.toString() ?? 'screenshot';
+            final myId = _storageService.getUserId() ?? '';
+            final isMe = myId.isNotEmpty && senderId == myId;
+            final permLabel = permType == 'screen_record' ? 'screen record' : 'screenshot';
+            final count = req['allowedCount'] ?? req['allowed_count'];
+            final duration = req['durationSeconds'] ?? req['duration_seconds'];
+            final detail = permType == 'screenshot'
+                ? '${count ?? 1} screenshot${(count ?? 1) > 1 ? 's' : ''}'
+                : '${duration ?? 30}s recording';
+            final contentText = isMe
+                ? '📷 You requested $permLabel permission ($detail)'
+                : '📷 $senderName requested $permLabel permission ($detail)';
+
+            if (convId != null) {
+              final lastMsg = LastMessageModel(
+                id: (req['id'] ?? req['_id'] ?? 'perm_${DateTime.now().millisecondsSinceEpoch}').toString(),
+                conversationId: convId,
+                senderId: senderId,
+                content: contentText,
+                mediaType: 'system',
+                createdAt: DateTime.now().toIso8601String(),
+                updatedAt: DateTime.now().toIso8601String(),
+              );
+              add(NewMessageReceived(
+                conversationId: convId,
+                lastMessage: lastMsg,
+                updatedAt: DateTime.now().toIso8601String(),
+              ));
+            }
+          }
+        } else if (type == 'screen_permission_response') {
+          final req = cleanData['request'] ?? cleanData['data'] ?? cleanData;
+          final action = cleanData['action']?.toString() ?? cleanData['status']?.toString() ?? 'rejected';
+          if (req is Map) {
+            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
+            final permType = (req['permissionType'] ?? req['permission_type'])?.toString() ?? 'screenshot';
+            final permLabel = permType == 'screen_record' ? 'screen record' : 'screenshot';
+            final isAccepted = action == 'accept' || action == 'accepted';
+            final contentText = isAccepted
+                ? '✅ $permLabel permission granted'
+                : '❌ $permLabel permission rejected';
+
+            if (convId != null) {
+              final lastMsg = LastMessageModel(
+                id: (req['id'] ?? req['_id'] ?? 'perm_resp_${DateTime.now().millisecondsSinceEpoch}').toString(),
+                conversationId: convId,
+                senderId: (req['receiverId'] ?? req['receiver_id'])?.toString() ?? '',
+                content: contentText,
+                mediaType: 'system',
+                createdAt: DateTime.now().toIso8601String(),
+                updatedAt: DateTime.now().toIso8601String(),
+              );
+              add(NewMessageReceived(
+                conversationId: convId,
+                lastMessage: lastMsg,
+                updatedAt: DateTime.now().toIso8601String(),
+              ));
+            }
+          }
         }
       } catch (e) {
         // Log error
       }
     });
+  }
+
+  static DateTime _getChatActivityTime(ChatModel chat) {
+    DateTime? dt;
+    final lastMsg = chat.lastMessage;
+    if (lastMsg != null) {
+      if (lastMsg.updatedAt.isNotEmpty) {
+        dt = DateTime.tryParse(lastMsg.updatedAt);
+      }
+      if (dt == null && lastMsg.createdAt.isNotEmpty) {
+        dt = DateTime.tryParse(lastMsg.createdAt);
+      }
+    }
+    if (dt == null && chat.updatedAt.isNotEmpty) {
+      dt = DateTime.tryParse(chat.updatedAt);
+    }
+    if (dt == null && chat.createdAt.isNotEmpty) {
+      dt = DateTime.tryParse(chat.createdAt);
+    }
+    return dt ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   Future<void> _onFetchChats(FetchChats event, Emitter<ChatsState> emit) async {
@@ -189,9 +305,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       result.when(
         success: (chats) {
           debugPrint('DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}');
-          // Sort by updatedAt descending
+          // Sort by most recent message/activity time descending
           final sortedChats = List<ChatModel>.from(chats)
-            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+            ..sort((a, b) => _getChatActivityTime(b).compareTo(_getChatActivityTime(a)));
           emit(ChatsLoaded(sortedChats));
         },
         failure: (error, statusCode) {
@@ -280,29 +396,62 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onCallLogUpdated(CallLogUpdated event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
-      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId && chat.lastMessage?.id == event.messageId) {
-          final callType = event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
-          final status = (event.callMeta['status'] ?? 'completed').toString().toLowerCase();
-          final String content;
-          
-          if (status == 'missed') {
-            content = 'Missed $callType call';
-          } else if (status == 'rejected' || status == 'busy' || status == 'reject' || status == 'decline' || status == 'declined') {
-            content = 'Declined $callType call';
-          } else {
-            content = '$callType call';
-          }
-          
-          final updatedLastMessage = chat.lastMessage?.copyWith(
-            mediaType: 'call',
-            content: content,
-          );
-          return chat.copyWith(lastMessage: updatedLastMessage);
-        }
-        return chat;
-      }).toList();
-      emit(ChatsLoaded(updatedChats));
+      final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
+      final index = updatedChats.indexWhere((c) => c.id == event.conversationId);
+
+      final callType = event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
+      final status = (event.callMeta['status'] ?? 'completed').toString().toLowerCase();
+      final String content;
+
+      if (status == 'missed') {
+        content = 'Missed $callType call';
+      } else if (status == 'rejected' || status == 'busy' || status == 'reject' || status == 'decline' || status == 'declined') {
+        content = 'Declined $callType call';
+      } else if (status == 'calling') {
+        content = '$callType call';
+      } else {
+        content = '$callType call';
+      }
+
+      final nowIso = DateTime.now().toIso8601String();
+
+      if (index != -1) {
+        final chat = updatedChats.removeAt(index);
+        final currentUserId = _storageService.getUserId() ?? '';
+        final senderId = (event.callMeta['senderId'] ?? event.callMeta['sender_id'] ?? '').toString();
+        final isFromMe = senderId.isNotEmpty && senderId == currentUserId;
+        final isMissed = status == 'missed' || status == 'reject' || status == 'rejected' || status == 'decline' || status == 'declined';
+
+        final existingMsg = chat.lastMessage;
+        final updatedLastMessage = existingMsg != null
+            ? existingMsg.copyWith(
+                id: event.messageId,
+                mediaType: 'call',
+                content: content,
+                senderId: senderId.isNotEmpty ? senderId : existingMsg.senderId,
+                updatedAt: nowIso,
+              )
+            : LastMessageModel(
+                id: event.messageId,
+                conversationId: event.conversationId,
+                senderId: senderId.isNotEmpty ? senderId : currentUserId,
+                content: content,
+                mediaType: 'call',
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              );
+
+        final updatedChat = chat.copyWith(
+          lastMessage: updatedLastMessage,
+          updatedAt: nowIso,
+          unreadCount: (!isFromMe && isMissed) ? chat.unreadCount + 1 : chat.unreadCount,
+        );
+
+        updatedChats.insert(0, updatedChat);
+        emit(ChatsLoaded(updatedChats));
+      } else {
+        add(const FetchChats());
+      }
     }
   }
 

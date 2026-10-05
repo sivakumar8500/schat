@@ -9,6 +9,7 @@ class InitiateCallEvent extends CallWebRtcEvent {
   final String conversationId;
   final bool isVideo;
   final String contactName;
+  final String recipientId;
   final String? profilePictureUrl;
   final bool isGroup;
   final String? groupName;
@@ -18,6 +19,7 @@ class InitiateCallEvent extends CallWebRtcEvent {
     required this.conversationId,
     required this.isVideo,
     this.contactName = '',
+    this.recipientId = '',
     this.profilePictureUrl,
     this.isGroup = false,
     this.groupName,
@@ -49,6 +51,12 @@ class RejectCallEvent extends CallWebRtcEvent {
 class HandleIncomingCallEvent extends CallWebRtcEvent {
   final Map<String, dynamic> incomingEvent;
   const HandleIncomingCallEvent(this.incomingEvent);
+}
+
+/// User clicked notification banner — open full-screen incoming call window with Accept & Decline
+class ShowIncomingCallUiEvent extends CallWebRtcEvent {
+  final Map<String, dynamic> incomingEvent;
+  const ShowIncomingCallUiEvent(this.incomingEvent);
 }
 
 /// Socket pushed call_answered — caller finishes handshake
@@ -126,9 +134,14 @@ class HandleRemoteVideoToggleEvent extends CallWebRtcEvent {
 
 /// Remote party updated their mute status (audio or video)
 class HandleRemoteMuteUpdateEvent extends CallWebRtcEvent {
+  final String? userId;
   final bool isMuted;
   final String muteType;
-  const HandleRemoteMuteUpdateEvent({required this.isMuted, required this.muteType});
+  const HandleRemoteMuteUpdateEvent({
+    this.userId,
+    required this.isMuted,
+    required this.muteType,
+  });
 }
 
 class HandleCallErrorEvent extends CallWebRtcEvent {

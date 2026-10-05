@@ -89,6 +89,13 @@ abstract class ChatRepository {
   /// Only the original sender/owner can call this.
   Future<MessageSharesModel> getMessageShares(String messageId);
 
+  /// React to a message with an emoji (or toggle/remove)
+  Future<void> reactToMessage({
+    required String conversationId,
+    required String messageId,
+    required String emoji,
+  });
+
   /// POST /messages/scheduled to schedule a message for a future date/time.
   Future<bool> scheduleMessage(Map<String, dynamic> requestData);
 

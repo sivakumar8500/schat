@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:video_player/video_player.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
@@ -46,6 +48,15 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   String? _currentMediaUrl;
   final Set<String> _viewedStatusIds = {};
 
+  // Media Player Controllers
+  VideoPlayerController? _videoController;
+  AudioPlayer? _audioPlayer;
+  double _customProgressValue = 0.0;
+  bool _isCustomMedia = false;
+  Duration _audioPosition = Duration.zero;
+  Duration _audioDuration = Duration.zero;
+  bool _isPlayingAudio = false;
+
   void _markStatusViewed(String? statusId) {
     if (statusId == null || statusId.isEmpty || widget.isMyStatus) return;
     if (_viewedStatusIds.contains(statusId)) return;
@@ -56,7 +67,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _showStatusOptionsMenu(String? statusId) {
-    if (!_isMediaLoading) _progressController.stop();
+    _pauseCurrentPlayback();
 
     showModalBottomSheet(
       context: context,
@@ -105,12 +116,12 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         ),
       ),
     ).then((_) {
-      if (mounted && !_isMediaLoading) _progressController.forward();
+      if (mounted && !_isMediaLoading) _resumeCurrentPlayback();
     });
   }
 
   Future<void> _confirmAndDeleteStatus(String statusId) async {
-    if (!_isMediaLoading) _progressController.stop();
+    _pauseCurrentPlayback();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -144,7 +155,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     );
 
     if (confirm != true || !mounted) {
-      if (mounted && !_isMediaLoading) _progressController.forward();
+      if (mounted && !_isMediaLoading) _resumeCurrentPlayback();
       return;
     }
 
@@ -174,7 +185,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     } catch (e) {
       if (mounted) {
         context.showErrorNotification('Failed to delete status: $e');
-        if (!_isMediaLoading) _progressController.forward();
+        if (!_isMediaLoading) _resumeCurrentPlayback();
       }
     }
   }
@@ -195,38 +206,214 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     });
   }
 
+  void _cleanupMediaPlayers() {
+    try {
+      _videoController?.pause();
+      _videoController?.dispose();
+    } catch (_) {}
+    _videoController = null;
+
+    try {
+      _audioPlayer?.stop();
+      _audioPlayer?.dispose();
+    } catch (_) {}
+    _audioPlayer = null;
+
+    _isPlayingAudio = false;
+    _audioPosition = Duration.zero;
+    _audioDuration = Duration.zero;
+  }
+
+  void _pauseCurrentPlayback() {
+    if (!_isMediaLoading) {
+      _progressController.stop();
+    }
+    _videoController?.pause();
+    _audioPlayer?.pause();
+  }
+
+  void _resumeCurrentPlayback() {
+    if (_isCustomMedia) {
+      _videoController?.play();
+      _audioPlayer?.resume();
+    } else {
+      _progressController.forward();
+    }
+  }
+
   void _startProgress() {
+    _cleanupMediaPlayers();
     _progressController.stop();
     _progressController.value = 0.0;
+    _customProgressValue = 0.0;
+    _isCustomMedia = false;
 
     String? mediaUrl;
+    String? statusType;
+
     if (widget.isMyStatus) {
       final list = widget.myStatuses ?? [];
       if (list.isNotEmpty) {
         final item = list[_currentStatusIndex.clamp(0, list.length - 1)];
-        if (item.imagePath != null && item.imagePath!.isNotEmpty) {
-          mediaUrl = item.imagePath;
-        }
+        mediaUrl = item.imagePath;
+        statusType = item.statusType;
       }
     } else if (widget.contacts.isNotEmpty) {
       final contact = widget.contacts[_currentContactIndex];
       if (contact.statuses.isNotEmpty) {
         final status = contact.statuses[_currentStatusIndex.clamp(0, contact.statuses.length - 1)];
-        if (status.imagePath != null && status.imagePath!.isNotEmpty) {
-          mediaUrl = status.imagePath;
-        }
+        mediaUrl = status.imagePath;
+        statusType = status.statusType;
       }
     }
 
     _currentMediaUrl = mediaUrl;
 
-    if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync()) {
+    final lower = (mediaUrl ?? '').toLowerCase();
+    final isVideo = (statusType == 'video') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.avi') ||
+        lower.endsWith('.mkv');
+
+    final isAudio = (statusType == 'audio') ||
+        lower.endsWith('.m4a') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.aac') ||
+        lower.endsWith('.wav');
+
+    if (isVideo && mediaUrl != null && mediaUrl.isNotEmpty) {
+      _initVideoPlayer(mediaUrl);
+    } else if (isAudio && mediaUrl != null && mediaUrl.isNotEmpty) {
+      _initAudioPlayer(mediaUrl);
+    } else if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync()) {
       // Network media is loading; wait for _onMediaLoaded
       _isMediaLoading = true;
     } else {
-      // Text or local media; start immediately
+      // Text or local media; start standard 5s timer
       _isMediaLoading = false;
+      _progressController.duration = const Duration(seconds: 5);
       _progressController.forward(from: 0.0);
+    }
+  }
+
+  Future<void> _initVideoPlayer(String url) async {
+    _isCustomMedia = true;
+    _isMediaLoading = true;
+    if (mounted) setState(() {});
+
+    final isLocal = File(url).existsSync();
+    final controller = isLocal
+        ? VideoPlayerController.file(File(url))
+        : VideoPlayerController.networkUrl(Uri.parse(url));
+
+    _videoController = controller;
+
+    try {
+      await controller.initialize();
+      if (!mounted || _videoController != controller) {
+        await controller.dispose();
+        return;
+      }
+
+      final rawDuration = controller.value.duration;
+      // Cap maximum video duration to 1 minute (60 seconds)
+      final duration = (rawDuration.inSeconds > 60)
+          ? const Duration(seconds: 60)
+          : (rawDuration.inMilliseconds > 0 ? rawDuration : const Duration(seconds: 5));
+
+      controller.addListener(() {
+        if (!mounted || _videoController != controller) return;
+        final pos = controller.value.position;
+        final progress = (pos.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+        setState(() {
+          _customProgressValue = progress;
+        });
+
+        // Advance when reached end of video or 1-minute mark
+        if (pos >= duration || (!controller.value.isPlaying && pos >= duration - const Duration(milliseconds: 300))) {
+          _nextStatus();
+        }
+      });
+
+      setState(() {
+        _isMediaLoading = false;
+      });
+      await controller.play();
+    } catch (e) {
+      debugPrint('Error initializing status video player: $e');
+      if (mounted) {
+        setState(() {
+          _isMediaLoading = false;
+          _isCustomMedia = false;
+        });
+        _progressController.duration = const Duration(seconds: 5);
+        _progressController.forward(from: 0.0);
+      }
+    }
+  }
+
+  Future<void> _initAudioPlayer(String url) async {
+    _isCustomMedia = true;
+    _isMediaLoading = true;
+    if (mounted) setState(() {});
+
+    final player = AudioPlayer();
+    _audioPlayer = player;
+
+    try {
+      final isLocal = File(url).existsSync();
+      final Source source = isLocal ? DeviceFileSource(url) : UrlSource(url);
+      await player.setSource(source);
+
+      final rawDuration = await player.getDuration() ?? const Duration(seconds: 15);
+      final duration = (rawDuration.inSeconds > 60)
+          ? const Duration(seconds: 60)
+          : (rawDuration.inMilliseconds > 0 ? rawDuration : const Duration(seconds: 15));
+
+      setState(() {
+        _audioDuration = duration;
+      });
+
+      player.onPositionChanged.listen((pos) {
+        if (!mounted || _audioPlayer != player) return;
+        final progress = (pos.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+        setState(() {
+          _audioPosition = pos;
+          _customProgressValue = progress;
+        });
+        if (pos >= duration) {
+          _nextStatus();
+        }
+      });
+
+      player.onPlayerComplete.listen((_) {
+        if (!mounted || _audioPlayer != player) return;
+        _nextStatus();
+      });
+
+      player.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          setState(() {
+            _isPlayingAudio = (state == PlayerState.playing);
+          });
+        }
+      });
+
+      setState(() {
+        _isMediaLoading = false;
+      });
+      await player.resume();
+    } catch (e) {
+      debugPrint('Error initializing status audio player: $e');
+      if (mounted) {
+        setState(() {
+          _isMediaLoading = false;
+          _isCustomMedia = false;
+        });
+        _progressController.duration = const Duration(seconds: 5);
+        _progressController.forward(from: 0.0);
+      }
     }
   }
 
@@ -236,11 +423,13 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
       setState(() {
         _isMediaLoading = false;
       });
+      _progressController.duration = const Duration(seconds: 5);
       _progressController.forward(from: 0.0);
     }
   }
 
   void _nextStatus() {
+    _cleanupMediaPlayers();
     if (widget.isMyStatus) {
       final list = widget.myStatuses ?? [];
       if (list.isNotEmpty && _currentStatusIndex < list.length - 1) {
@@ -266,6 +455,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _previousStatus() {
+    _cleanupMediaPlayers();
     if (widget.isMyStatus) {
       if (_currentStatusIndex > 0) {
         setState(() {
@@ -287,6 +477,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _nextContact() {
+    _cleanupMediaPlayers();
     if (_currentContactIndex < widget.contacts.length - 1) {
       _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
     } else {
@@ -295,6 +486,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _previousContact() {
+    _cleanupMediaPlayers();
     if (_currentContactIndex > 0) {
       _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
     }
@@ -302,6 +494,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   @override
   void dispose() {
+    _cleanupMediaPlayers();
     _pageController.dispose();
     _progressController.dispose();
     super.dispose();
@@ -362,7 +555,32 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         viewCount = item.viewCount ?? item.viewers.length;
         viewers = item.viewers;
 
-        if (item.imagePath != null && item.imagePath!.isNotEmpty) {
+        final lower = (item.imagePath ?? '').toLowerCase();
+        final isVideo = (item.statusType == 'video') ||
+            lower.endsWith('.mp4') ||
+            lower.endsWith('.mov') ||
+            lower.endsWith('.avi') ||
+            lower.endsWith('.mkv');
+
+        final isAudio = (item.statusType == 'audio') ||
+            lower.endsWith('.m4a') ||
+            lower.endsWith('.mp3') ||
+            lower.endsWith('.aac') ||
+            lower.endsWith('.wav');
+
+        if (isVideo && item.imagePath != null && item.imagePath!.isNotEmpty) {
+          content = _buildVideoStatusContent(
+            videoUrl: item.imagePath!,
+            caption: item.text,
+            isMyStatus: true,
+          );
+        } else if (isAudio && item.imagePath != null && item.imagePath!.isNotEmpty) {
+          content = _buildAudioStatusContent(
+            audioUrl: item.imagePath!,
+            caption: item.text,
+            bgColor: item.parsedBackgroundColor,
+          );
+        } else if (item.imagePath != null && item.imagePath!.isNotEmpty) {
           content = _buildMediaStatusContent(
             imageUrl: item.imagePath!,
             caption: item.text,
@@ -410,7 +628,32 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
       total = contact.statuses.length;
       current = _currentStatusIndex;
 
-      if (status.imagePath != null && status.imagePath!.isNotEmpty) {
+      final lower = (status.imagePath ?? '').toLowerCase();
+      final isVideo = (status.statusType == 'video') ||
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.mov') ||
+          lower.endsWith('.avi') ||
+          lower.endsWith('.mkv');
+
+      final isAudio = (status.statusType == 'audio') ||
+          lower.endsWith('.m4a') ||
+          lower.endsWith('.mp3') ||
+          lower.endsWith('.aac') ||
+          lower.endsWith('.wav');
+
+      if (isVideo && status.imagePath != null && status.imagePath!.isNotEmpty) {
+        content = _buildVideoStatusContent(
+          videoUrl: status.imagePath!,
+          caption: status.text,
+          isMyStatus: false,
+        );
+      } else if (isAudio && status.imagePath != null && status.imagePath!.isNotEmpty) {
+        content = _buildAudioStatusContent(
+          audioUrl: status.imagePath!,
+          caption: status.text,
+          bgColor: status.parsedBackgroundColor,
+        );
+      } else if (status.imagePath != null && status.imagePath!.isNotEmpty) {
         content = _buildMediaStatusContent(
           imageUrl: status.imagePath!,
           caption: status.text,
@@ -435,7 +678,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
     return GestureDetector(
       onTapDown: (_) {
-        if (!_isMediaLoading) _progressController.stop();
+        _pauseCurrentPlayback();
       },
       onTapUp: (d) {
         final x = d.globalPosition.dx;
@@ -450,17 +693,19 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         setState(() {
           _isHolding = true;
         });
-        if (!_isMediaLoading) _progressController.stop();
+        _pauseCurrentPlayback();
       },
       onLongPressEnd: (_) {
         setState(() {
           _isHolding = false;
         });
-        if (!_isMediaLoading) _progressController.forward();
+        if (!_isMediaLoading) {
+          _resumeCurrentPlayback();
+        }
       },
       onVerticalDragEnd: (details) {
         if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
-          if (!_isMediaLoading) _progressController.stop();
+          _pauseCurrentPlayback();
           if (widget.isMyStatus) {
             _showViewersSheet(viewers, viewCount);
           } else if (contact != null) {
@@ -487,6 +732,167 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         ],
       ),
     );
+  }
+
+  Widget _buildVideoStatusContent({
+    required String videoUrl,
+    String? caption,
+    required bool isMyStatus,
+  }) {
+    final isInitialized = _videoController != null && _videoController!.value.isInitialized;
+
+    return Container(
+      color: Colors.black,
+      width: double.infinity,
+      height: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (isInitialized)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _videoController!.value.aspectRatio,
+                child: VideoPlayer(_videoController!),
+              ),
+            )
+          else
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+            ),
+          if (caption != null && caption.isNotEmpty)
+            Positioned(
+              bottom: isMyStatus ? 90 : 100,
+              left: 0,
+              right: 0,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                color: Colors.black.withValues(alpha: 0.6),
+                child: Text(
+                  caption,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAudioStatusContent({
+    required String audioUrl,
+    String? caption,
+    required Color bgColor,
+  }) {
+    final posStr = _formatAudioTimer(_audioPosition.inSeconds);
+    final durStr = _formatAudioTimer(_audioDuration.inSeconds);
+
+    return Container(
+      color: bgColor,
+      width: double.infinity,
+      height: double.infinity,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white24, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Voice Status',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        if (_isPlayingAudio) {
+                          _audioPlayer?.pause();
+                        } else {
+                          _audioPlayer?.resume();
+                        }
+                      },
+                      child: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isPlayingAudio ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          color: bgColor,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LinearProgressIndicator(
+                            value: _customProgressValue,
+                            backgroundColor: Colors.white24,
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                            minHeight: 4,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(posStr, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                              Text(durStr, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (caption != null && caption.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Text(
+              caption,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white, height: 1.3),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatAudioTimer(int totalSecs) {
+    final m = totalSecs ~/ 60;
+    final s = totalSecs % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Widget _buildMediaStatusContent({
@@ -612,7 +1018,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         child: Center(
           child: GestureDetector(
             onTap: () {
-              _progressController.stop();
+              _pauseCurrentPlayback();
               _showViewersSheet(viewers, viewCount);
             },
             child: Column(
@@ -648,135 +1054,142 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   String _formatViewedTime(String? viewedAt) {
-    if (viewedAt == null || viewedAt.isEmpty) return '';
+    if (viewedAt == null || viewedAt.isEmpty) return 'Recently';
     try {
       final dt = DateTime.parse(viewedAt).toLocal();
       final now = DateTime.now();
       final diff = now.difference(dt);
-
-      final String hour = (dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour))
-          .toString()
-          .padLeft(2, '0');
-      final String minute = dt.minute.toString().padLeft(2, '0');
-      final String period = dt.hour >= 12 ? 'PM' : 'AM';
-      final String timeStr = '$hour:$minute $period';
-
-      if (diff.inSeconds < 60 && diff.inSeconds >= 0) {
-        return 'Just now';
-      } else if (diff.inMinutes < 60 && diff.inMinutes > 0) {
-        return '${diff.inMinutes}m ago';
-      } else if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        return 'Today, $timeStr';
-      } else if (dt.year == now.year && dt.month == now.month && dt.day == now.day - 1) {
-        return 'Yesterday, $timeStr';
-      } else {
-        final List<String> monthNames = [
-          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-        ];
-        return '${monthNames[dt.month - 1]} ${dt.day}, $timeStr';
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+      if (diff.inDays < 1) {
+        final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+        final minute = dt.minute.toString().padLeft(2, '0');
+        final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+        return 'Today at $hour:$minute $ampm';
       }
+      return 'Yesterday';
     } catch (_) {
-      return '';
+      return 'Recently';
     }
   }
 
-  void _showViewersSheet(List<StatusViewerModel> viewers, int totalViews) {
+  void _showViewersSheet(List<StatusViewerModel> viewers, int count) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.45,
+          minChildSize: 0.3,
+          maxChildSize: 0.8,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-            ),
-            Row(
-              children: [
-                const Icon(Icons.remove_red_eye, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Text(
-                  'Viewed by $totalViews',
-                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const Divider(color: Colors.white24, height: 24),
-            if (viewers.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text('No views yet', style: TextStyle(color: Colors.white54, fontSize: 15)),
-                ),
-              )
-            else
-              LimitedBox(
-                maxHeight: 250,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: viewers.length,
-                  itemBuilder: (_, i) {
-                    final v = viewers[i];
-                    final vName = v.displayName ?? v.username ?? 'Contact';
-                    final timeStr = _formatViewedTime(v.viewedAt);
-                    final hasPic = v.profilePictureUrl != null && v.profilePictureUrl!.isNotEmpty;
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.purple.shade300,
-                        backgroundImage: hasPic ? NetworkImage(v.profilePictureUrl!) : null,
-                        child: !hasPic
-                            ? Text(
-                                vName.isNotEmpty ? vName[0].toUpperCase() : '?',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                              )
-                            : null,
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white30,
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      title: Text(vName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      subtitle: v.username != null ? Text('@${v.username}', style: const TextStyle(color: Colors.white54, fontSize: 12)) : null,
-                      trailing: timeStr.isNotEmpty
-                          ? Text(
-                              timeStr,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            )
-                          : null,
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.remove_red_eye, color: Colors.white70, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Viewed by $count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Colors.white12, height: 1),
+                  Expanded(
+                    child: viewers.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No views yet',
+                              style: TextStyle(color: Colors.white54, fontSize: 15),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollController,
+                            itemCount: viewers.length,
+                            separatorBuilder: (_, _) => const Divider(color: Colors.white10, height: 1, indent: 72),
+                            itemBuilder: (context, idx) {
+                              final v = viewers[idx];
+                              final viewerName = (v.displayName != null && v.displayName!.isNotEmpty)
+                                  ? v.displayName!
+                                  : (v.username != null && v.username!.isNotEmpty ? v.username! : 'Unknown User');
+                              final timeStr = _formatViewedTime(v.viewedAt);
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xFF00897B),
+                                  backgroundImage: (v.profilePictureUrl != null && v.profilePictureUrl!.isNotEmpty)
+                                      ? NetworkImage(v.profilePictureUrl!)
+                                      : null,
+                                  child: (v.profilePictureUrl == null || v.profilePictureUrl!.isEmpty)
+                                      ? Text(
+                                          viewerName.isNotEmpty ? viewerName[0].toUpperCase() : 'U',
+                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(
+                                  viewerName,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                                ),
+                                subtitle: Text(
+                                  timeStr,
+                                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     ).then((_) {
-      if (mounted && !_isMediaLoading) _progressController.forward();
+      if (mounted && !_isMediaLoading) _resumeCurrentPlayback();
     });
   }
 
   Widget _buildTopGradient() {
     return Positioned(
-      top: 0, left: 0, right: 0, height: 140,
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
-            ),
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 120,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7),
+              Colors.transparent,
+            ],
           ),
         ),
       ),
@@ -785,14 +1198,19 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   Widget _buildBottomGradient() {
     return Positioned(
-      bottom: 0, left: 0, right: 0, height: 150,
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.bottomCenter, end: Alignment.topCenter,
-              colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
-            ),
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 140,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.7),
+              Colors.transparent,
+            ],
           ),
         ),
       ),
@@ -818,7 +1236,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Segmented Progress Bars
+            // Segmented Progress Bars synced with Video/Audio player controls
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 10, right: 10, bottom: 4),
               child: Row(
@@ -831,7 +1249,11 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                       child: AnimatedBuilder(
                         animation: _progressController,
                         builder: (_, _) => LinearProgressIndicator(
-                          value: i < current ? 1.0 : (i == current ? _progressController.value : 0.0),
+                          value: i < current
+                              ? 1.0
+                              : (i == current
+                                  ? (_isCustomMedia ? _customProgressValue : _progressController.value)
+                                  : 0.0),
                           backgroundColor: Colors.white.withValues(alpha: 0.35),
                           valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                           borderRadius: BorderRadius.circular(2),
@@ -906,7 +1328,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         if (statusItem.imagePath != null && statusItem.imagePath!.isNotEmpty) {
           final caption = (statusItem.text != null && statusItem.text!.isNotEmpty)
               ? statusItem.text!
-              : 'Photo';
+              : 'Media';
           messageToSend = '📷 Status: $caption\n$text';
         } else if (statusItem.text != null && statusItem.text!.isNotEmpty) {
           messageToSend = '📝 Status: "${statusItem.text}"\n$text';
@@ -939,7 +1361,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   }
 
   void _showReplySheet(StatusContactModel contact, StatusItemModel? statusItem) {
-    _progressController.stop();
+    _pauseCurrentPlayback();
     final textController = TextEditingController();
     final emojis = ['❤️', '😂', '😮', '😢', '🙏', '👏', '🔥', '💯'];
 
@@ -949,194 +1371,142 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: const BoxDecoration(
               color: Color(0xFF1E1E1E),
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Handle
                 Center(
                   child: Container(
-                    width: 38,
+                    width: 40,
                     height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white38,
+                      color: Colors.white30,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-
-                // Title
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Reply to ${contact.name}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70, size: 20),
-                      onPressed: () => Navigator.pop(ctx),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Quick Reactions
                 SizedBox(
-                  height: 48,
+                  height: 44,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: emojis.length,
-                    separatorBuilder: (context, index) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) {
-                      final emoji = emojis[i];
-                      return InkWell(
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, idx) {
+                      final emoji = emojis[idx];
+                      return GestureDetector(
                         onTap: () {
                           Navigator.pop(ctx);
                           _sendReplyMessage(contact.contactId, contact.name, emoji, statusItem: statusItem);
                         },
-                        borderRadius: BorderRadius.circular(24),
                         child: Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 22),
+                          child: Center(
+                            child: Text(emoji, style: const TextStyle(fontSize: 22)),
                           ),
                         ),
                       );
                     },
                   ),
                 ),
-                const SizedBox(height: 14),
-
-                // Text Reply Input
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.12),
+                          color: Colors.white.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(24),
                         ),
                         child: TextField(
                           controller: textController,
                           style: const TextStyle(color: Colors.white),
                           autofocus: true,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (val) {
-                            final text = val.trim();
-                            if (text.isNotEmpty) {
-                              Navigator.pop(ctx);
-                              _sendReplyMessage(contact.contactId, contact.name, text, statusItem: statusItem);
-                            }
-                          },
-                          decoration: const InputDecoration(
-                            hintText: 'Type a reply...',
-                            hintStyle: TextStyle(color: Colors.white54, fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Reply to ${contact.name}...',
+                            hintStyle: const TextStyle(color: Colors.white54),
                             border: InputBorder.none,
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF00873C),
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                        onPressed: () {
-                          final text = textController.text.trim();
-                          if (text.isNotEmpty) {
-                            Navigator.pop(ctx);
-                            _sendReplyMessage(contact.contactId, contact.name, text, statusItem: statusItem);
-                          }
-                        },
-                      ),
+                    IconButton(
+                      icon: const Icon(Icons.send_rounded, color: Color(0xFF00897B)),
+                      onPressed: () {
+                        final text = textController.text.trim();
+                        if (text.isNotEmpty) {
+                          Navigator.pop(ctx);
+                          _sendReplyMessage(contact.contactId, contact.name, text, statusItem: statusItem);
+                        }
+                      },
                     ),
                   ],
                 ),
-                SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
+                const SizedBox(height: 8),
               ],
             ),
           ),
         );
       },
     ).then((_) {
-      if (mounted && !_isMediaLoading) _progressController.forward();
+      if (mounted && !_isMediaLoading) _resumeCurrentPlayback();
     });
   }
 
   Widget _buildReplyBox(StatusContactModel contact, StatusItemModel? statusItem) {
     return Positioned(
-      bottom: 12, left: 0, right: 0,
+      bottom: 20,
+      left: 16,
+      right: 16,
       child: SafeArea(
-        child: InkWell(
+        child: GestureDetector(
           onTap: () => _showReplySheet(contact, statusItem),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 22),
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white30),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.reply, color: Colors.white70, size: 18),
-                            SizedBox(width: 8),
-                            Text('Reply', style: TextStyle(color: Colors.white70, fontSize: 14)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Reply to ${contact.name}...',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  String _formatTime(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hr ago';
-    return 'Yesterday';
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inMinutes < 1) return "Just now";
+    if (diff.inHours < 1) return "${diff.inMinutes}m ago";
+    if (diff.inDays < 1) {
+      final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+      final minute = time.minute.toString().padLeft(2, '0');
+      final ampm = time.hour >= 12 ? 'PM' : 'AM';
+      return 'Today at $hour:$minute $ampm';
+    }
+    return "Yesterday";
   }
 }

@@ -101,9 +101,10 @@ class AuthRepositoryImpl implements AuthRepository {
       debugPrint('AuthRepositoryImpl: Error clearing encrypted data: $e');
     }
 
-    // 5. Clear stored tokens and user details
+    // 5. Clear stored tokens, preferences, and user details
     await _storageService.clearTokens();
     await _storageService.clearUser();
+    await _storageService.clearAll();
     await Future.delayed(const Duration(milliseconds: 300));
   }
 }

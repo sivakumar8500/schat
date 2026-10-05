@@ -9,6 +9,7 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/core/notifications/push_notification_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/features/call_screen/call_screen.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/features/chat_search/src/presentation/chat_search_page.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/empty_chats_view.dart';
@@ -82,7 +83,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final pushService = getIt<PushNotificationService>();
     final callService = getIt<CallNotificationService>();
     
-    // Explicitly request notification permission using permission_handler (more reliable on Android 13+)
+    // Explicitly request notification and battery optimization permissions (more reliable on Android 13+)
     if (!kIsWeb) {
       final status = await Permission.notification.status;
       if (status.isDenied) {
@@ -1330,12 +1331,48 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           )
         else
-          const Icon(
-            Icons.done_all_rounded,
-            color: Color(0xFF12B76A),
-            size: 18,
-          ),
+          _buildMessageStatusIcon(chat, isDark),
       ],
+    );
+  }
+
+  Widget _buildMessageStatusIcon(ChatModel chat, bool isDark) {
+    final lastMsg = chat.lastMessage;
+    if (lastMsg == null || lastMsg.id.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final myId = getIt.isRegistered<StorageService>() ? (getIt<StorageService>().getUserId() ?? '') : '';
+    final isMe = myId.isNotEmpty && lastMsg.senderId == myId;
+
+    // Incoming messages do not show sent status ticks
+    if (!isMe) {
+      return const SizedBox.shrink();
+    }
+
+    final greyColor = isDark ? Colors.white54 : const Color(0xFF9CA3AF);
+    const blueColor = Color(0xFF34B7F1);
+
+    if (lastMsg.isRead || lastMsg.status?.toLowerCase() == 'read') {
+      return const Icon(
+        Icons.done_all_rounded,
+        color: blueColor,
+        size: 16,
+      );
+    }
+
+    if (lastMsg.isDelivered || lastMsg.status?.toLowerCase() == 'delivered') {
+      return Icon(
+        Icons.done_all_rounded,
+        color: greyColor,
+        size: 16,
+      );
+    }
+
+    return Icon(
+      Icons.done_rounded,
+      color: greyColor,
+      size: 16,
     );
   }
 
@@ -1565,6 +1602,8 @@ class _DashboardPageState extends State<DashboardPage> {
           _currentIndex = index;
           if (index == 0) {
             context.read<ChatsBloc>().add(const FetchChats());
+          } else if (index == 2) {
+            getIt<CallHistoryCubit>().fetchCallHistory();
           } else if (index == 3) {
             _onlyShowSynced = false;
           }

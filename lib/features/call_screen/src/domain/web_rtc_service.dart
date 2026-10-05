@@ -21,6 +21,12 @@ class WebRtcService {
   MediaStream? _remoteStream;
   final List<dynamic> _remoteCandidateQueue = [];
 
+  // Multi-peer map for mesh connections in group calls
+  final Map<String, RTCPeerConnection> _peerConnections = {};
+  final Map<String, MediaStream> _remoteStreams = {};
+  final Map<String, List<RTCIceCandidate>> _peerCandidateQueues = {};
+  final Map<String, RTCVideoRenderer> _peerRenderers = {};
+
   final RTCVideoRenderer localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
 
@@ -47,6 +53,9 @@ class WebRtcService {
       {'urls': 'stun:stun3.l.google.com:19302'},
       {'urls': 'stun:stun4.l.google.com:19302'},
     ],
+    'sdpSemantics': 'unified-plan',
+    'bundlePolicy': 'max-bundle',
+    'rtcpMuxPolicy': 'require',
   };
 
   static const Map<String, dynamic> _offerConstraints = {
@@ -66,15 +75,30 @@ class WebRtcService {
       await localRenderer.initialize();
       await remoteRenderer.initialize();
       _renderersInitialized = true;
-      
-      // Set audio mode for communication
-      try {
-        // Note: setAudioMode might not be available in all plugin versions
-        // or might have been moved.
-      } catch (e) {
-        debugPrint('WebRTC: setAudioMode failed: $e');
-      }
     }
+  }
+
+  Future<RTCVideoRenderer> getOrCreatePeerRenderer(String peerId) async {
+    if (_peerRenderers.containsKey(peerId)) {
+      final existing = _peerRenderers[peerId]!;
+      final stream = _remoteStreams[peerId];
+      if (stream != null && existing.srcObject != stream) {
+        existing.srcObject = stream;
+      }
+      return existing;
+    }
+    final renderer = RTCVideoRenderer();
+    await renderer.initialize();
+    final stream = _remoteStreams[peerId];
+    if (stream != null) {
+      renderer.srcObject = stream;
+    }
+    _peerRenderers[peerId] = renderer;
+    return renderer;
+  }
+
+  RTCVideoRenderer? getPeerRenderer(String peerId) {
+    return _peerRenderers[peerId];
   }
 
   // ─────────────────────────────────────────────
@@ -86,6 +110,7 @@ class WebRtcService {
     required String conversationId,
     required bool isVideo,
     required ChatSocketRepository repository,
+    String? recipientId,
     String? callerName,
     String? profilePictureUrl,
     bool isGroup = false,
@@ -120,6 +145,8 @@ class WebRtcService {
       'type': 'call_initiate',
       'conversation_id': conversationId,
       'call_type': isVideo ? 'video' : 'audio',
+      'recipient_id': ?recipientId,
+      'recipientId': ?recipientId,
       'caller_name': callerName,
       'profile_picture_url': profilePictureUrl,
       'is_group': isGroup,
@@ -132,7 +159,7 @@ class WebRtcService {
       },
     });
 
-    debugPrint('WebRTC: call_initiate sent for conv=$conversationId (isGroup=$isGroup)');
+    debugPrint('WebRTC: call_initiate sent for conv=$conversationId (recipient=$recipientId, isGroup=$isGroup)');
   }
 
   /// Retrieves the current local SDP offer or creates a new one for newly added/reinvited participants.
@@ -205,6 +232,22 @@ class WebRtcService {
 
     await initRenderers();
     _callSignalController.add(CallSignalState.connecting);
+
+    if (_peerConnection != null) {
+      debugPrint('WebRTC: Disposing previous PeerConnection before answering new call');
+      try {
+        await _peerConnection!.close();
+        await _peerConnection!.dispose();
+      } catch (_) {}
+      _peerConnection = null;
+    }
+
+    if (_localStream != null) {
+      try {
+        await _localStream!.dispose();
+      } catch (_) {}
+      _localStream = null;
+    }
 
     // 1. Get callee's local media
     _localStream = await _getUserMedia(isVideo: callType == 'video');
@@ -299,12 +342,217 @@ class WebRtcService {
   }
 
   // ─────────────────────────────────────────────
+  // MESH PEER-TO-PEER GROUP SIGNALING
+  // ─────────────────────────────────────────────
+
+  Future<void> createOfferForPeer({
+    required String peerId,
+    required String conversationId,
+    required ChatSocketRepository repository,
+  }) async {
+    try {
+      debugPrint('WebRTC: createOfferForPeer started for peerId=$peerId');
+      if (_localStream == null) {
+        _localStream = await _getUserMedia(isVideo: false);
+      }
+
+      // Close previous connection to this specific peer if any
+      if (_peerConnections.containsKey(peerId)) {
+        try {
+          await _peerConnections[peerId]?.close();
+          await _peerConnections[peerId]?.dispose();
+        } catch (_) {}
+        _peerConnections.remove(peerId);
+      }
+
+      final pc = await createPeerConnection(_peerConfig, _offerConstraints);
+      _peerConnections[peerId] = pc;
+      
+      _localStream?.getTracks().forEach((track) {
+        pc.addTrack(track, _localStream!);
+      });
+
+      pc.onIceCandidate = (RTCIceCandidate candidate) {
+        if (candidate.candidate != null) {
+          repository.emit('message', {
+            'type': 'ice_candidate',
+            'conversation_id': conversationId,
+            'target_user_id': peerId,
+            'recipient_id': peerId,
+            'candidate': {
+              'candidate': candidate.candidate,
+              'sdpMid': candidate.sdpMid,
+              'sdpMLineIndex': candidate.sdpMLineIndex,
+            },
+          });
+        }
+      };
+
+      pc.onTrack = (RTCTrackEvent event) async {
+        debugPrint('WebRTC: onTrack from mesh peer $peerId, streams: ${event.streams.length}, track kind: ${event.track.kind}');
+        if (event.streams.isNotEmpty) {
+          final stream = event.streams.first;
+          _remoteStreams[peerId] = stream;
+          for (var track in stream.getTracks()) {
+            track.enabled = true;
+          }
+          final renderer = await getOrCreatePeerRenderer(peerId);
+          renderer.srcObject = stream;
+        }
+        event.track.enabled = true;
+        _callSignalController.add(CallSignalState.active);
+      };
+
+      final offer = await pc.createOffer(_offerConstraints);
+      await pc.setLocalDescription(offer);
+
+      repository.emit('message', {
+        'type': 'call_offer',
+        'conversation_id': conversationId,
+        'target_user_id': peerId,
+        'recipient_id': peerId,
+        'offer': {
+          'type': offer.type,
+          'sdp': offer.sdp,
+        },
+      });
+      debugPrint('WebRTC: call_offer sent to mesh peer $peerId');
+    } catch (e) {
+      debugPrint('WebRTC: Error in createOfferForPeer: $e');
+    }
+  }
+
+  Future<void> handlePeerOffer({
+    required String peerId,
+    required String conversationId,
+    required Map<String, dynamic> offerMap,
+    required ChatSocketRepository repository,
+  }) async {
+    try {
+      debugPrint('WebRTC: handlePeerOffer from peerId=$peerId');
+      if (_localStream == null) {
+        _localStream = await _getUserMedia(isVideo: false);
+      }
+
+      if (_peerConnections.containsKey(peerId)) {
+        try {
+          await _peerConnections[peerId]?.close();
+          await _peerConnections[peerId]?.dispose();
+        } catch (_) {}
+        _peerConnections.remove(peerId);
+      }
+
+      final pc = await createPeerConnection(_peerConfig, _offerConstraints);
+      _peerConnections[peerId] = pc;
+
+      _localStream?.getTracks().forEach((track) {
+        pc.addTrack(track, _localStream!);
+      });
+
+      pc.onIceCandidate = (RTCIceCandidate candidate) {
+        if (candidate.candidate != null) {
+          repository.emit('message', {
+            'type': 'ice_candidate',
+            'conversation_id': conversationId,
+            'target_user_id': peerId,
+            'recipient_id': peerId,
+            'candidate': {
+              'candidate': candidate.candidate,
+              'sdpMid': candidate.sdpMid,
+              'sdpMLineIndex': candidate.sdpMLineIndex,
+            },
+          });
+        }
+      };
+
+      pc.onTrack = (RTCTrackEvent event) async {
+        debugPrint('WebRTC: onTrack from mesh peer $peerId, streams: ${event.streams.length}, track kind: ${event.track.kind}');
+        if (event.streams.isNotEmpty) {
+          final stream = event.streams.first;
+          _remoteStreams[peerId] = stream;
+          for (var track in stream.getTracks()) {
+            track.enabled = true;
+          }
+          final renderer = await getOrCreatePeerRenderer(peerId);
+          renderer.srcObject = stream;
+        }
+        event.track.enabled = true;
+        _callSignalController.add(CallSignalState.active);
+      };
+
+      final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type'] ?? 'offer');
+      await pc.setRemoteDescription(remoteOffer);
+
+      // Process any queued candidates for this peer
+      final queued = _peerCandidateQueues[peerId];
+      if (queued != null && queued.isNotEmpty) {
+        for (final c in queued) {
+          try {
+            await pc.addCandidate(c);
+          } catch (e) {
+            debugPrint('WebRTC: Error adding queued candidate to peer $peerId: $e');
+          }
+        }
+        _peerCandidateQueues.remove(peerId);
+      }
+
+      final answer = await pc.createAnswer(_offerConstraints);
+      await pc.setLocalDescription(answer);
+
+      repository.emit('message', {
+        'type': 'call_answer',
+        'conversation_id': conversationId,
+        'target_user_id': peerId,
+        'recipient_id': peerId,
+        'answer': {
+          'type': answer.type,
+          'sdp': answer.sdp,
+        },
+      });
+      debugPrint('WebRTC: call_answer sent to mesh peer $peerId');
+    } catch (e) {
+      debugPrint('WebRTC: Error in handlePeerOffer: $e');
+    }
+  }
+
+  Future<void> handlePeerAnswer({
+    required String peerId,
+    required Map<String, dynamic> answerMap,
+  }) async {
+    try {
+      debugPrint('WebRTC: handlePeerAnswer for peerId=$peerId');
+      final pc = _peerConnections[peerId] ?? _peerConnection;
+      if (pc == null) return;
+
+      final remoteAnswer = RTCSessionDescription(answerMap['sdp'], answerMap['type'] ?? 'answer');
+      await pc.setRemoteDescription(remoteAnswer);
+
+      final queued = _peerCandidateQueues[peerId];
+      if (queued != null && queued.isNotEmpty) {
+        for (final c in queued) {
+          try {
+            await pc.addCandidate(c);
+          } catch (e) {
+            debugPrint('WebRTC: Error adding queued candidate to peer $peerId: $e');
+          }
+        }
+        _peerCandidateQueues.remove(peerId);
+      }
+      _callSignalController.add(CallSignalState.active);
+      debugPrint('WebRTC: Mesh connection with peer $peerId is ACTIVE');
+    } catch (e) {
+      debugPrint('WebRTC: Error in handlePeerAnswer: $e');
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // HANDLE REMOTE ICE CANDIDATE
   // ─────────────────────────────────────────────
 
   Future<void> handleRemoteIceCandidate(Map<String, dynamic> event) async {
     final candidateMap = event['candidate'] as Map<String, dynamic>?;
     if (candidateMap == null) return;
+    final senderId = (event['sender_id'] ?? event['senderId'] ?? '').toString();
 
     final candidate = RTCIceCandidate(
       candidateMap['candidate'] as String,
@@ -312,18 +560,26 @@ class WebRtcService {
       candidateMap['sdpMLineIndex'] as int?,
     );
 
-    if (_peerConnection == null) {
-      debugPrint('WebRTC: PeerConnection null, queuing ICE candidate');
-      _remoteCandidateQueue.add(candidate);
+    final pc = senderId.isNotEmpty ? (_peerConnections[senderId] ?? _peerConnection) : _peerConnection;
+    if (pc == null) {
+      if (senderId.isNotEmpty) {
+        _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
+      } else {
+        _remoteCandidateQueue.add(candidate);
+      }
       return;
     }
 
     try {
-      await _peerConnection!.addCandidate(candidate);
-      debugPrint('WebRTC: Remote ICE candidate added successfully');
+      await pc.addCandidate(candidate);
+      debugPrint('WebRTC: Remote ICE candidate added for peer=$senderId');
     } catch (e) {
-      debugPrint('WebRTC: Error adding remote ICE candidate, queuing: $e');
-      _remoteCandidateQueue.add(candidate);
+      debugPrint('WebRTC: Error adding remote ICE candidate for peer=$senderId: $e');
+      if (senderId.isNotEmpty) {
+        _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
+      } else {
+        _remoteCandidateQueue.add(candidate);
+      }
     }
   }
 
@@ -340,7 +596,7 @@ class WebRtcService {
         debugPrint('WebRTC: Queued ICE candidate added successfully');
       } catch (e) {
         debugPrint('WebRTC: Error adding queued ICE candidate: $e');
-        _remoteCandidateQueue.add(candidate); // Re-queue if it still fails
+        _remoteCandidateQueue.add(candidate);
       }
     }
   }
@@ -620,15 +876,40 @@ class WebRtcService {
     await _remoteStream?.dispose();
     _remoteStream = null;
 
+    for (var stream in _remoteStreams.values) {
+      stream.getTracks().forEach((track) => track.stop());
+      await stream.dispose();
+    }
+    _remoteStreams.clear();
+
+    for (var renderer in _peerRenderers.values) {
+      try {
+        renderer.srcObject = null;
+        await renderer.dispose();
+      } catch (e) {
+        debugPrint('WebRTC: Error disposing peer renderer: $e');
+      }
+    }
+    _peerRenderers.clear();
+
     await _peerConnection?.close();
+    await _peerConnection?.dispose();
     _peerConnection = null;
+
+    for (var pc in _peerConnections.values) {
+      await pc.close();
+      await pc.dispose();
+    }
+    _peerConnections.clear();
+
     _activeConversationId = null;
     _remoteCandidateQueue.clear();
+    _peerCandidateQueues.clear();
 
     _localStreamController.add(null);
     _remoteStreamController.add(null);
 
-    debugPrint('WebRTC: Cleanup complete');
+    debugPrint('WebRTC: Multi-peer cleanup complete');
   }
 
   // ─────────────────────────────────────────────
@@ -637,13 +918,21 @@ class WebRtcService {
 
   Future<MediaStream> _getUserMedia({required bool isVideo}) async {
     final constraints = <String, dynamic>{
-      'audio': true,
+      'audio': {
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+        'highpassFilter': true,
+      },
       'video': isVideo
           ? {
-              'width': {'ideal': 640},
-              'height': {'ideal': 480},
-              'frameRate': {'ideal': 30},
+              'mandatory': {
+                'minWidth': '640',
+                'minHeight': '480',
+                'minFrameRate': '30',
+              },
               'facingMode': 'user',
+              'optional': [],
             }
           : false,
     };
@@ -656,7 +945,12 @@ class WebRtcService {
         try {
           return await navigator.mediaDevices.getUserMedia({
             'audio': true,
-            'video': true,
+            'video': {
+              'width': {'ideal': 640},
+              'height': {'ideal': 480},
+              'frameRate': {'ideal': 30},
+              'facingMode': 'user',
+            },
           });
         } catch (e2) {
           debugPrint('WebRTC: Retrying getUserMedia with audio-only fallback...');

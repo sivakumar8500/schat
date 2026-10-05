@@ -152,6 +152,8 @@ class CallActive extends CallWebRtcState {
   final List<UserModel> extraParticipants;
   final Set<String> connectedParticipantIds;
   final Set<String> disconnectedParticipantIds;
+  final Set<String> mutedParticipantIds;
+  final Set<String> videoOffParticipantIds;
 
   const CallActive({
     required this.conversationId,
@@ -175,6 +177,8 @@ class CallActive extends CallWebRtcState {
     this.extraParticipants = const [],
     this.connectedParticipantIds = const {},
     this.disconnectedParticipantIds = const {},
+    this.mutedParticipantIds = const {},
+    this.videoOffParticipantIds = const {},
   });
 
   CallActive copyWith({
@@ -195,6 +199,8 @@ class CallActive extends CallWebRtcState {
     List<UserModel>? extraParticipants,
     Set<String>? connectedParticipantIds,
     Set<String>? disconnectedParticipantIds,
+    Set<String>? mutedParticipantIds,
+    Set<String>? videoOffParticipantIds,
   }) {
     return CallActive(
       conversationId: conversationId,
@@ -218,6 +224,8 @@ class CallActive extends CallWebRtcState {
       extraParticipants: extraParticipants ?? this.extraParticipants,
       connectedParticipantIds: connectedParticipantIds ?? this.connectedParticipantIds,
       disconnectedParticipantIds: disconnectedParticipantIds ?? this.disconnectedParticipantIds,
+      mutedParticipantIds: mutedParticipantIds ?? this.mutedParticipantIds,
+      videoOffParticipantIds: videoOffParticipantIds ?? this.videoOffParticipantIds,
     );
   }
 
@@ -241,6 +249,8 @@ class CallActive extends CallWebRtcState {
         extraParticipants,
         connectedParticipantIds,
         disconnectedParticipantIds,
+        mutedParticipantIds,
+        videoOffParticipantIds,
       ];
 }
 

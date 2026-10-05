@@ -327,7 +327,7 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i762.CallHistoryRepository>(
       () => _i314.CallHistoryRepositoryImpl(gh<_i374.ApiService>()),
     );
-    gh.factory<_i371.CallHistoryCubit>(
+    gh.lazySingleton<_i371.CallHistoryCubit>(
       () => _i371.CallHistoryCubit(gh<_i762.CallHistoryRepository>()),
     );
     gh.lazySingleton<_i127.GetChatsUseCase>(

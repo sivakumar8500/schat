@@ -18,6 +18,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
   final ContactsRepository _contactsRepository;
   final ChatSocketRepository _socketRepository;
   final StorageService _storageService;
+  // ignore: unused_field
   StreamSubscription? _socketSubscription;
 
   ContactsBloc(
@@ -402,6 +403,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     }
   }
 
+  // ignore: unused_element
   List<String> _extractPhoneNumbers(dynamic contacts) {
     final List<String> phoneNumbers = [];
     if (contacts == null) return phoneNumbers;

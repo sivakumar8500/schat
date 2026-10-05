@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$LastMessageModel {
 
-@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'conversation_id') String get conversationId;@JsonKey(name: 'sender_id') String get senderId; String get content;@JsonKey(name: 'media_url') String? get mediaUrl;@JsonKey(name: 'media_type') String? get mediaType;@JsonKey(name: 'is_deleted') bool get isDeleted;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt;
+@JsonKey(name: '_id', includeIfNull: false) String get id;@JsonKey(name: 'conversation_id') String get conversationId;@JsonKey(name: 'sender_id') String get senderId; String get content;@JsonKey(name: 'media_url') String? get mediaUrl;@JsonKey(name: 'media_type') String? get mediaType;@JsonKey(name: 'is_deleted') bool get isDeleted;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt;@JsonKey(name: 'is_read') bool get isRead;@JsonKey(name: 'is_delivered') bool get isDelivered;@JsonKey(name: 'status') String? get status;
 /// Create a copy of LastMessageModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $LastMessageModelCopyWith<LastMessageModel> get copyWith => _$LastMessageModelCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is LastMessageModel&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.content, content) || other.content == content)&&(identical(other.mediaUrl, mediaUrl) || other.mediaUrl == mediaUrl)&&(identical(other.mediaType, mediaType) || other.mediaType == mediaType)&&(identical(other.isDeleted, isDeleted) || other.isDeleted == isDeleted)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is LastMessageModel&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.content, content) || other.content == content)&&(identical(other.mediaUrl, mediaUrl) || other.mediaUrl == mediaUrl)&&(identical(other.mediaType, mediaType) || other.mediaType == mediaType)&&(identical(other.isDeleted, isDeleted) || other.isDeleted == isDeleted)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isRead, isRead) || other.isRead == isRead)&&(identical(other.isDelivered, isDelivered) || other.isDelivered == isDelivered)&&(identical(other.status, status) || other.status == status));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,conversationId,senderId,content,mediaUrl,mediaType,isDeleted,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,conversationId,senderId,content,mediaUrl,mediaType,isDeleted,createdAt,updatedAt,isRead,isDelivered,status);
 
 @override
 String toString() {
-  return 'LastMessageModel(id: $id, conversationId: $conversationId, senderId: $senderId, content: $content, mediaUrl: $mediaUrl, mediaType: $mediaType, isDeleted: $isDeleted, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'LastMessageModel(id: $id, conversationId: $conversationId, senderId: $senderId, content: $content, mediaUrl: $mediaUrl, mediaType: $mediaType, isDeleted: $isDeleted, createdAt: $createdAt, updatedAt: $updatedAt, isRead: $isRead, isDelivered: $isDelivered, status: $status)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $LastMessageModelCopyWith<$Res>  {
   factory $LastMessageModelCopyWith(LastMessageModel value, $Res Function(LastMessageModel) _then) = _$LastMessageModelCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'conversation_id') String conversationId,@JsonKey(name: 'sender_id') String senderId, String content,@JsonKey(name: 'media_url') String? mediaUrl,@JsonKey(name: 'media_type') String? mediaType,@JsonKey(name: 'is_deleted') bool isDeleted,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt
+@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'conversation_id') String conversationId,@JsonKey(name: 'sender_id') String senderId, String content,@JsonKey(name: 'media_url') String? mediaUrl,@JsonKey(name: 'media_type') String? mediaType,@JsonKey(name: 'is_deleted') bool isDeleted,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'is_read') bool isRead,@JsonKey(name: 'is_delivered') bool isDelivered,@JsonKey(name: 'status') String? status
 });
 
 
@@ -65,7 +65,7 @@ class _$LastMessageModelCopyWithImpl<$Res>
 
 /// Create a copy of LastMessageModel
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? conversationId = null,Object? senderId = null,Object? content = null,Object? mediaUrl = freezed,Object? mediaType = freezed,Object? isDeleted = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? conversationId = null,Object? senderId = null,Object? content = null,Object? mediaUrl = freezed,Object? mediaType = freezed,Object? isDeleted = null,Object? createdAt = null,Object? updatedAt = null,Object? isRead = null,Object? isDelivered = null,Object? status = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,conversationId: null == conversationId ? _self.conversationId : conversationId // ignore: cast_nullable_to_non_nullable
@@ -76,7 +76,10 @@ as String?,mediaType: freezed == mediaType ? _self.mediaType : mediaType // igno
 as String?,isDeleted: null == isDeleted ? _self.isDeleted : isDeleted // ignore: cast_nullable_to_non_nullable
 as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,
+as String,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
+as bool,isDelivered: null == isDelivered ? _self.isDelivered : isDelivered // ignore: cast_nullable_to_non_nullable
+as bool,status: freezed == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -161,10 +164,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'is_read')  bool isRead, @JsonKey(name: 'is_delivered')  bool isDelivered, @JsonKey(name: 'status')  String? status)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _LastMessageModel() when $default != null:
-return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt,_that.isRead,_that.isDelivered,_that.status);case _:
   return orElse();
 
 }
@@ -182,10 +185,10 @@ return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'is_read')  bool isRead, @JsonKey(name: 'is_delivered')  bool isDelivered, @JsonKey(name: 'status')  String? status)  $default,) {final _that = this;
 switch (_that) {
 case _LastMessageModel():
-return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt,_that.isRead,_that.isDelivered,_that.status);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -202,10 +205,10 @@ return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: '_id', includeIfNull: false)  String id, @JsonKey(name: 'conversation_id')  String conversationId, @JsonKey(name: 'sender_id')  String senderId,  String content, @JsonKey(name: 'media_url')  String? mediaUrl, @JsonKey(name: 'media_type')  String? mediaType, @JsonKey(name: 'is_deleted')  bool isDeleted, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt, @JsonKey(name: 'is_read')  bool isRead, @JsonKey(name: 'is_delivered')  bool isDelivered, @JsonKey(name: 'status')  String? status)?  $default,) {final _that = this;
 switch (_that) {
 case _LastMessageModel() when $default != null:
-return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that.mediaUrl,_that.mediaType,_that.isDeleted,_that.createdAt,_that.updatedAt,_that.isRead,_that.isDelivered,_that.status);case _:
   return null;
 
 }
@@ -217,7 +220,7 @@ return $default(_that.id,_that.conversationId,_that.senderId,_that.content,_that
 @JsonSerializable()
 
 class _LastMessageModel implements LastMessageModel {
-  const _LastMessageModel({@JsonKey(name: '_id', includeIfNull: false) required this.id, @JsonKey(name: 'conversation_id') required this.conversationId, @JsonKey(name: 'sender_id') required this.senderId, required this.content, @JsonKey(name: 'media_url') this.mediaUrl, @JsonKey(name: 'media_type') this.mediaType, @JsonKey(name: 'is_deleted') this.isDeleted = false, @JsonKey(name: 'created_at') required this.createdAt, @JsonKey(name: 'updated_at') required this.updatedAt});
+  const _LastMessageModel({@JsonKey(name: '_id', includeIfNull: false) required this.id, @JsonKey(name: 'conversation_id') required this.conversationId, @JsonKey(name: 'sender_id') required this.senderId, required this.content, @JsonKey(name: 'media_url') this.mediaUrl, @JsonKey(name: 'media_type') this.mediaType, @JsonKey(name: 'is_deleted') this.isDeleted = false, @JsonKey(name: 'created_at') required this.createdAt, @JsonKey(name: 'updated_at') required this.updatedAt, @JsonKey(name: 'is_read') this.isRead = false, @JsonKey(name: 'is_delivered') this.isDelivered = false, @JsonKey(name: 'status') this.status});
   factory _LastMessageModel.fromJson(Map<String, dynamic> json) => _$LastMessageModelFromJson(json);
 
 @override@JsonKey(name: '_id', includeIfNull: false) final  String id;
@@ -229,6 +232,9 @@ class _LastMessageModel implements LastMessageModel {
 @override@JsonKey(name: 'is_deleted') final  bool isDeleted;
 @override@JsonKey(name: 'created_at') final  String createdAt;
 @override@JsonKey(name: 'updated_at') final  String updatedAt;
+@override@JsonKey(name: 'is_read') final  bool isRead;
+@override@JsonKey(name: 'is_delivered') final  bool isDelivered;
+@override@JsonKey(name: 'status') final  String? status;
 
 /// Create a copy of LastMessageModel
 /// with the given fields replaced by the non-null parameter values.
@@ -243,16 +249,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LastMessageModel&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.content, content) || other.content == content)&&(identical(other.mediaUrl, mediaUrl) || other.mediaUrl == mediaUrl)&&(identical(other.mediaType, mediaType) || other.mediaType == mediaType)&&(identical(other.isDeleted, isDeleted) || other.isDeleted == isDeleted)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _LastMessageModel&&(identical(other.id, id) || other.id == id)&&(identical(other.conversationId, conversationId) || other.conversationId == conversationId)&&(identical(other.senderId, senderId) || other.senderId == senderId)&&(identical(other.content, content) || other.content == content)&&(identical(other.mediaUrl, mediaUrl) || other.mediaUrl == mediaUrl)&&(identical(other.mediaType, mediaType) || other.mediaType == mediaType)&&(identical(other.isDeleted, isDeleted) || other.isDeleted == isDeleted)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isRead, isRead) || other.isRead == isRead)&&(identical(other.isDelivered, isDelivered) || other.isDelivered == isDelivered)&&(identical(other.status, status) || other.status == status));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,conversationId,senderId,content,mediaUrl,mediaType,isDeleted,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,conversationId,senderId,content,mediaUrl,mediaType,isDeleted,createdAt,updatedAt,isRead,isDelivered,status);
 
 @override
 String toString() {
-  return 'LastMessageModel(id: $id, conversationId: $conversationId, senderId: $senderId, content: $content, mediaUrl: $mediaUrl, mediaType: $mediaType, isDeleted: $isDeleted, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'LastMessageModel(id: $id, conversationId: $conversationId, senderId: $senderId, content: $content, mediaUrl: $mediaUrl, mediaType: $mediaType, isDeleted: $isDeleted, createdAt: $createdAt, updatedAt: $updatedAt, isRead: $isRead, isDelivered: $isDelivered, status: $status)';
 }
 
 
@@ -263,7 +269,7 @@ abstract mixin class _$LastMessageModelCopyWith<$Res> implements $LastMessageMod
   factory _$LastMessageModelCopyWith(_LastMessageModel value, $Res Function(_LastMessageModel) _then) = __$LastMessageModelCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'conversation_id') String conversationId,@JsonKey(name: 'sender_id') String senderId, String content,@JsonKey(name: 'media_url') String? mediaUrl,@JsonKey(name: 'media_type') String? mediaType,@JsonKey(name: 'is_deleted') bool isDeleted,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt
+@JsonKey(name: '_id', includeIfNull: false) String id,@JsonKey(name: 'conversation_id') String conversationId,@JsonKey(name: 'sender_id') String senderId, String content,@JsonKey(name: 'media_url') String? mediaUrl,@JsonKey(name: 'media_type') String? mediaType,@JsonKey(name: 'is_deleted') bool isDeleted,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt,@JsonKey(name: 'is_read') bool isRead,@JsonKey(name: 'is_delivered') bool isDelivered,@JsonKey(name: 'status') String? status
 });
 
 
@@ -280,7 +286,7 @@ class __$LastMessageModelCopyWithImpl<$Res>
 
 /// Create a copy of LastMessageModel
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? conversationId = null,Object? senderId = null,Object? content = null,Object? mediaUrl = freezed,Object? mediaType = freezed,Object? isDeleted = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? conversationId = null,Object? senderId = null,Object? content = null,Object? mediaUrl = freezed,Object? mediaType = freezed,Object? isDeleted = null,Object? createdAt = null,Object? updatedAt = null,Object? isRead = null,Object? isDelivered = null,Object? status = freezed,}) {
   return _then(_LastMessageModel(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,conversationId: null == conversationId ? _self.conversationId : conversationId // ignore: cast_nullable_to_non_nullable
@@ -291,7 +297,10 @@ as String?,mediaType: freezed == mediaType ? _self.mediaType : mediaType // igno
 as String?,isDeleted: null == isDeleted ? _self.isDeleted : isDeleted // ignore: cast_nullable_to_non_nullable
 as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,
+as String,isRead: null == isRead ? _self.isRead : isRead // ignore: cast_nullable_to_non_nullable
+as bool,isDelivered: null == isDelivered ? _self.isDelivered : isDelivered // ignore: cast_nullable_to_non_nullable
+as bool,status: freezed == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 

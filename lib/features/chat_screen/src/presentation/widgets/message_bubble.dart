@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart';
+import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
@@ -86,6 +87,9 @@ class MessageBubble extends StatefulWidget {
   final String? senderName;
   final String? senderProfilePictureUrl;
   final List<MessageModel>? groupedImages;
+  final List<MessageReaction> reactions;
+  final void Function(String emoji)? onReactionTap;
+  final String? searchQuery;
 
   const MessageBubble({
     super.key,
@@ -137,7 +141,10 @@ class MessageBubble extends StatefulWidget {
     this.senderName,
     this.senderProfilePictureUrl,
     this.groupedImages,
+    this.reactions = const [],
+    this.onReactionTap,
     this.onMentionTap,
+    this.searchQuery,
   });
 
   final void Function(String mention)? onMentionTap;
@@ -173,6 +180,63 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get isFailed => widget.isFailed;
   VoidCallback? get onResendPressed => widget.onResendPressed;
   bool get isGroup => widget.isGroup;
+  String? get searchQuery => widget.searchQuery;
+
+  List<InlineSpan> _buildHighlightedSpans(
+    String text,
+    String? query,
+    TextStyle baseStyle, {
+    Color? highlightBgColor,
+    Color? highlightTextColor,
+  }) {
+    if (query == null || query.trim().isEmpty || text.isEmpty) {
+      return [TextSpan(text: text, style: baseStyle)];
+    }
+
+    final cleanQuery = query.trim();
+    final matches = RegExp(RegExp.escape(cleanQuery), caseSensitive: false).allMatches(text);
+    if (matches.isEmpty) {
+      return [TextSpan(text: text, style: baseStyle)];
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final defaultBg = isDark
+        ? const Color(0xFFFFD54F).withValues(alpha: 0.45)
+        : const Color(0xFFFFEB3B).withValues(alpha: 0.65);
+    final defaultText = isDark ? const Color(0xFFFFE082) : const Color(0xFF3E2723);
+
+    final highlightStyle = baseStyle.copyWith(
+      backgroundColor: highlightBgColor ?? defaultBg,
+      color: highlightTextColor ?? defaultText,
+      fontWeight: FontWeight.bold,
+    );
+
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: baseStyle,
+        ));
+      }
+      spans.add(TextSpan(
+        text: text.substring(match.start, match.end),
+        style: highlightStyle,
+      ));
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: baseStyle,
+      ));
+    }
+
+    return spans;
+  }
   bool get allowShare => widget.allowShare;
   bool get allowDownload => widget.allowDownload;
   bool get allowView => widget.allowView;
@@ -204,6 +268,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get locationTitle => widget.locationTitle;
   int? get expiry => widget.expiry;
   String? get senderName => widget.senderName;
+  List<MessageReaction> get reactions => widget.reactions;
   bool _isDownloading = false;
   double? _downloadProgress;
 
@@ -232,7 +297,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   bool get _isMediaMessage {
     if (isDeleted) return false;
-    if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'document') return true;
+    if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'document' || type == 'call') return true;
     if ((attachmentPath != null || attachmentBytes != null) &&
         type != 'call' &&
         type != 'location' &&
@@ -330,10 +395,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    if (type == 'call') {
-      return _buildCenteredCallBanner(context);
-    }
-
     final isMedia = _isMediaMessage;
 
     return AnimatedContainer(
@@ -400,303 +461,454 @@ class _MessageBubbleState extends State<MessageBubble> {
                 constraints: BoxConstraints(
                   maxWidth: isViewOnce ? MediaQuery.of(context).size.width * 0.72 : (isMedia ? 256 : MediaQuery.of(context).size.width * 0.72),
                 ),
-                child: Container(
-                  width: (isMedia && !isViewOnce) ? 256 : null,
-                  padding: (isMedia && !isViewOnce)
-                      ? const EdgeInsets.all(8)
-                      : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? (isMedia && !isViewOnce
-                            ? (Theme.of(context).brightness == Brightness.dark
-                                ? const Color(0xFF132B25)
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: (isMedia && !isViewOnce && type != 'call') ? 256 : null,
+                      padding: (isMedia && !isViewOnce && type != 'call')
+                          ? const EdgeInsets.all(8)
+                          : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isMe
+                            ? (isMedia && !isViewOnce && type != 'call'
+                                ? (Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF132B25)
+                                    : context.colors.sentBubble)
                                 : context.colors.sentBubble)
-                            : context.colors.sentBubble)
-                        : (isMedia && !isViewOnce
-                            ? (Theme.of(context).brightness == Brightness.dark
-                                ? const Color(0xFF1E2B33)
-                                : context.colors.lightBackground)
-                            : context.colors.lightBackground),
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(18),
-                      topRight: const Radius.circular(18),
-                      bottomLeft: isMe ? const Radius.circular(18) : const Radius.circular(4),
-                      bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(18),
-                    ),
-                    border: (isMedia && !isViewOnce)
-                        ? Border.all(
-                            color: const Color(0xFF00D084).withValues(alpha: 0.15),
-                            width: 0.8,
-                          )
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: context.colors.textPrimary.withValues(alpha: 0.05),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
+                            : (isMedia && !isViewOnce && type != 'call'
+                                ? (Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF1E2B33)
+                                    : context.colors.lightBackground)
+                                : context.colors.lightBackground),
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(18),
+                          topRight: const Radius.circular(18),
+                          bottomLeft: isMe ? const Radius.circular(18) : const Radius.circular(4),
+                          bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(18),
+                        ),
+                        border: (isMedia && !isViewOnce && type != 'call')
+                            ? Border.all(
+                                color: const Color(0xFF00D084).withValues(alpha: 0.15),
+                                width: 0.8,
+                              )
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: context.colors.textPrimary.withValues(alpha: 0.05),
+                            blurRadius: 5,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                    children: [
-                      if (isGroup && !isMe && senderName != null && senderName!.trim().isNotEmpty && !isDeleted)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            left: (isMedia && !isViewOnce) ? 4.0 : 0.0,
-                            right: (isMedia && !isViewOnce) ? 4.0 : 0.0,
-                            bottom: 6.0,
-                          ),
-                          child: Text(
-                            senderName!.trim(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.bodyMedium.copyWith(
-                              color: _getSenderColor(senderName!.trim()),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
+                      child: Column(
+                        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          if (isGroup && !isMe && senderName != null && senderName!.trim().isNotEmpty && !isDeleted)
+                            Padding(
+                              padding: EdgeInsets.only(
+                                left: (isMedia && !isViewOnce) ? 4.0 : 0.0,
+                                right: (isMedia && !isViewOnce) ? 4.0 : 0.0,
+                                bottom: 6.0,
+                              ),
+                              child: Text(
+                                senderName!.trim(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.bodyMedium.copyWith(
+                                  color: _getSenderColor(senderName!.trim()),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      if (isReply && replyMessageBody != null && !isDeleted)
-                        GestureDetector(
-                          onTap: onReplyTap,
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isMe
-                                  ? context.colors.sentBubble.withValues(alpha: 0.5)
-                                  : context.colors.lightBackground.withValues(alpha: 0.8),
-                              border: Border(
-                                left: BorderSide(
+                          if (isReply && replyMessageBody != null && !isDeleted)
+                            GestureDetector(
+                              onTap: onReplyTap,
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
                                   color: isMe
-                                      ? context.colors.primary
-                                      : (isGroup && replyMessageSenderName != null
-                                          ? _getSenderColor(replyMessageSenderName!)
-                                          : context.colors.primary),
-                                  width: 4,
-                                ),
-                              ),
-                              borderRadius: const BorderRadius.only(
-                                topRight: Radius.circular(8),
-                                bottomRight: Radius.circular(8),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  replyMessageSenderName ?? (isMe ? 'You' : 'Recipient'),
-                                  style: context.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: isMe
-                                        ? context.colors.textPrimary
-                                        : (isGroup && replyMessageSenderName != null
-                                            ? _getSenderColor(replyMessageSenderName!)
-                                            : context.colors.primary),
-                                  ),
-                                ),
-                                CommonSpaces.h4,
-                                Text(
-                                  replyMessageBody!,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: context.bodySmall.copyWith(
-                                    fontSize: 12,
-                                    color: isMe
-                                        ? context.colors.textSecondary
-                                        : context.colors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (isViewOnce && !isDeleted) ...[
-                        _buildViewOnceContent(context),
-                      ] else if (isMedia) ...[
-                        if (!isDeleted) _buildAttachment(context),
-                        if (message.isNotEmpty && message != '[View Restricted]' && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted && (!(!allowView && !isMe)))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
-                            child: _buildMessageText(
-                              context,
-                              context.bodyLarge.copyWith(
-                                fontSize: 14,
-                                color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
-                              ),
-                              message,
-                            ),
-                          ),
-                        if (!isDeleted) _buildMediaActionBar(context),
-                        if (isUploading && !isDeleted)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        SizedBox(
-                                          width: 10,
-                                          height: 10,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 1.5,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              isMe ? context.colors.primary : const Color(0xFF00D084),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          'Sending...',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: isMe ? context.colors.primary : const Color(0xFF00D084),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    minHeight: 3.5,
-                                    backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      isMe ? context.colors.primary : const Color(0xFF00D084),
+                                      ? context.colors.sentBubble.withValues(alpha: 0.5)
+                                      : context.colors.lightBackground.withValues(alpha: 0.8),
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: isMe
+                                          ? context.colors.primary
+                                          : (isGroup && replyMessageSenderName != null
+                                              ? _getSenderColor(replyMessageSenderName!)
+                                              : context.colors.primary),
+                                      width: 4,
                                     ),
                                   ),
+                                  borderRadius: const BorderRadius.only(
+                                    topRight: Radius.circular(8),
+                                    bottomRight: Radius.circular(8),
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        if (_isDownloading)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      'Downloading...',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF00D084),
+                                      replyMessageSenderName ?? (isMe ? 'You' : 'Recipient'),
+                                      style: context.bodyMedium.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: isMe
+                                            ? context.colors.textPrimary
+                                            : (isGroup && replyMessageSenderName != null
+                                                ? _getSenderColor(replyMessageSenderName!)
+                                                : context.colors.primary),
                                       ),
                                     ),
-                                    if (_downloadProgress != null && _downloadProgress! > 0)
-                                      Text(
-                                        '${(_downloadProgress! * 100).toInt()}%',
-                                        style: const TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF00D084),
-                                        ),
+                                    CommonSpaces.h4,
+                                    Text(
+                                      replyMessageBody!,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: context.bodySmall.copyWith(
+                                        fontSize: 12,
+                                        color: isMe
+                                            ? context.colors.textSecondary
+                                            : context.colors.textSecondary,
                                       ),
+                                    ),
                                   ],
                                 ),
-                                const SizedBox(height: 3),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: _downloadProgress,
-                                    minHeight: 3.5,
-                                    backgroundColor: const Color(0xFF00D084).withValues(alpha: 0.2),
-                                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00D084)),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
-                        if (!isDeleted) _buildMediaFooter(context),
-                      ] else ...[
-                        if (!isDeleted) _buildAttachment(context),
-                        if (!isDeleted) _buildPermissionControls(context),
-                        if (isUploading && !isDeleted)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 4.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          if (isViewOnce && !isDeleted) ...[
+                            _buildViewOnceContent(context),
+                          ] else if (isMedia) ...[
+                            if (!isDeleted) _buildAttachment(context),
+                            if (message.isNotEmpty && message != '[View Restricted]' && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted && (!(!allowView && !isMe)))
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+                                child: _buildMessageText(
+                                  context,
+                                  context.bodyLarge.copyWith(
+                                    fontSize: 14,
+                                    color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                  ),
+                                  message,
+                                ),
+                              ),
+                            if (!isDeleted) _buildMediaActionBar(context),
+                            if (isUploading && !isDeleted)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Row(
-                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        SizedBox(
-                                          width: 10,
-                                          height: 10,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 1.5,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              isMe ? context.colors.primary : const Color(0xFF00D084),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 10,
+                                              height: 10,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 1.5,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                  isMe ? context.colors.primary : const Color(0xFF00D084),
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          'Sending...',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: isMe ? context.colors.primary : const Color(0xFF00D084),
-                                          ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              'Sending...',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isMe ? context.colors.primary : const Color(0xFF00D084),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
+                                    const SizedBox(height: 3),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 3.5,
+                                        backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                          isMe ? context.colors.primary : const Color(0xFF00D084),
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
-                                const SizedBox(height: 3),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    minHeight: 3.5,
-                                    backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      isMe ? context.colors.primary : const Color(0xFF00D084),
+                              ),
+                            if (_isDownloading)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Downloading...',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: const Color(0xFF00D084),
+                                          ),
+                                        ),
+                                        if (_downloadProgress != null && _downloadProgress! > 0)
+                                          Text(
+                                            '${(_downloadProgress! * 100).toInt()}%',
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF00D084),
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                  ),
+                                    const SizedBox(height: 3),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: _downloadProgress,
+                                        minHeight: 3.5,
+                                        backgroundColor: const Color(0xFF00D084).withValues(alpha: 0.2),
+                                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00D084)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
+                            if (!isDeleted) _buildMediaFooter(context),
+                          ] else ...[
+                            if (!isDeleted) _buildAttachment(context),
+                            if (!isDeleted) _buildPermissionControls(context),
+                            if (isUploading && !isDeleted)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 4.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 10,
+                                              height: 10,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 1.5,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                  isMe ? context.colors.primary : const Color(0xFF00D084),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              'Sending...',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: isMe ? context.colors.primary : const Color(0xFF00D084),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 3.5,
+                                        backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                          isMe ? context.colors.primary : const Color(0xFF00D084),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            _buildMessageText(
+                              context,
+                              context.bodyLarge.copyWith(
+                                fontSize: 16,
+                                color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                              ),
+                              (type == 'location' || type == 'call') ? '' : message,
                             ),
-                          ),
-                        _buildMessageText(
-                          context,
-                          context.bodyLarge.copyWith(
-                            fontSize: 16,
-                            color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
-                          ),
-                          type == 'location' ? '' : message,
-                        ),
-                        if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && !isDeleted) CommonSpaces.h6,
-                        _buildDefaultTimestampRow(context),
-                      ],
-                    ],
-                  ),
+                            if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted) CommonSpaces.h6,
+                            _buildDefaultTimestampRow(context),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (reactions.isNotEmpty && !isDeleted) _buildReactionsBadge(context),
+                  ],
                 ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildReactionsBadge(BuildContext context) {
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    // Group reactions by emoji
+    final Map<String, int> counts = {};
+    for (final r in reactions) {
+      if (r.emoji.isNotEmpty) {
+        counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
+      }
+    }
+    if (counts.isEmpty) return const SizedBox.shrink();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final badgeBg = isDark ? const Color(0xFF233038) : Colors.white;
+    final borderColor = isDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.1);
+
+    return Positioned(
+      bottom: -11,
+      right: isMe ? 8 : null,
+      left: !isMe ? 8 : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _showReactionDetails(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: badgeBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 4,
+                offset: const Offset(0, 1.5),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...counts.keys.take(3).map((emoji) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                child: Text(emoji, style: const TextStyle(fontSize: 12.5)),
+              )),
+              if (reactions.length > 1) ...[
+                const SizedBox(width: 3),
+                Text(
+                  '${reactions.length}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showReactionDetails(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E262C) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Reactions (${reactions.length})',
+                  style: context.titleMedium.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.4,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: reactions.length,
+                    itemBuilder: (ctx, i) {
+                      final r = reactions[i];
+                      final myId = (context.read<ChatBloc>().state is ChatLoaded)
+                          ? (context.read<ChatBloc>().state as ChatLoaded).myId
+                          : '';
+                      final name = (r.userName != null && r.userName!.isNotEmpty)
+                          ? r.userName!
+                          : (r.userId == myId ? 'You' : 'User');
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6.0),
+                        child: Row(
+                          children: [
+                            Text(r.emoji, style: const TextStyle(fontSize: 22)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                name,
+                                style: context.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: context.colors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -762,7 +974,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildMediaActionBar(BuildContext context) {
-    if (isGroup) {
+    if (isGroup || type == 'call') {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
@@ -1014,6 +1226,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildMediaFooter(BuildContext context) {
+    if (type == 'call') {
+      return const SizedBox.shrink();
+    }
     const accentGreen = Color(0xFF00D084);
     final bool showShareDetails = isMe && !isGroup && _isMediaMessage;
 
@@ -1103,22 +1318,19 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-    Widget _buildDeliveryStatus(BuildContext context) {
-    final isPending = messageId.startsWith('temp_') ||
-        isUploading ||
-        (!isDelivered && !isRead && !isFailed);
-    if (isPending && !isFailed) {
-      return Icon(
-        CommonIcons.done,
+  Widget _buildDeliveryStatus(BuildContext context) {
+    if (isFailed) {
+      return const Icon(
+        Icons.error_outline_rounded,
         size: 14,
-        color: context.colors.textSecondary,
+        color: Colors.redAccent,
       );
     }
     if (isRead) {
       return const Icon(
         CommonIcons.doneAll,
         size: 14,
-        color: Color(0xFF2196F3),
+        color: Color(0xFF34B7F1),
       );
     }
     if (isDelivered) {
@@ -1654,6 +1866,8 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         ),
       );
+    } else if (type == 'call') {
+      result = _buildCallBubbleCard(context);
     } else {
       return const SizedBox.shrink();
     }
@@ -1661,7 +1875,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     return result;
   }
 
-  Widget _buildCenteredCallBanner(BuildContext context) {
+  Widget _buildCallBubbleCard(BuildContext context) {
     final statusLower = callMeta?.status.toLowerCase() ?? '';
     final msgLower = message.toLowerCase();
     final isMissed = statusLower == 'missed' || msgLower.contains('missed');
@@ -1678,107 +1892,101 @@ class _MessageBubbleState extends State<MessageBubble> {
     final duration = callMeta?.duration ?? (widget.duration?.toInt() ?? 0);
 
     String title;
+    String? subtitle;
     if (isMissed) {
-      title = isVideo ? 'Missed Video Call' : 'Missed Voice Call';
+      title = isVideo ? 'Missed video call' : 'Missed voice call';
+      subtitle = isMe ? 'No answer' : 'Missed';
     } else if (isDeclined) {
-      title = isVideo ? 'Video Call Declined' : 'Voice Call Declined';
+      title = isVideo ? 'Video call declined' : 'Voice call declined';
+      subtitle = 'Declined';
     } else if (duration > 0) {
-      title = '${isVideo ? 'Video Call' : 'Voice Call'} (${_formatCallDuration(duration)})';
+      title = isVideo ? 'Video call' : 'Voice call';
+      subtitle = _formatCallDuration(duration);
     } else {
-      title = isVideo ? 'Video Call' : 'Voice Call';
+      title = isVideo ? 'Video call' : 'Voice call';
+      subtitle = isMe ? 'Outgoing' : 'Incoming';
     }
 
-    final displayTime = time.trim();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final errorColor = const Color(0xFFFF5252);
+    final successColor = const Color(0xFF00873C);
+
+    final iconColor = isErrorState
+        ? errorColor
+        : (isDark ? const Color(0xFF00D084) : successColor);
+    final iconBgColor = isErrorState
+        ? errorColor.withValues(alpha: 0.15)
+        : (isDark
+            ? const Color(0xFF00D084).withValues(alpha: 0.18)
+            : successColor.withValues(alpha: 0.12));
+
+    IconData callIcon;
+    if (isVideo) {
+      callIcon = isErrorState ? Icons.missed_video_call_rounded : Icons.videocam_rounded;
+    } else {
+      if (isErrorState) {
+        callIcon = Icons.phone_missed_rounded;
+      } else if (isMe) {
+        callIcon = Icons.call_made_rounded;
+      } else {
+        callIcon = Icons.call_received_rounded;
+      }
+    }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
-            child: Divider(
-              color: context.colors.border.withValues(alpha: 0.35),
-              thickness: 0.8,
-              endIndent: 10,
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              callIcon,
+              color: iconColor,
+              size: 20,
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
-            ),
-            decoration: BoxDecoration(
-              color: context.colors.isDark
-                  ? const Color(0xFF1E2428).withValues(alpha: 0.95)
-                  : const Color(0xFFF0F4F8).withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(14.0),
-              border: Border.all(
-                color: isErrorState
-                    ? context.colors.error.withValues(alpha: 0.3)
-                    : context.colors.border.withValues(alpha: 0.35),
-                width: 0.6,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Row(
+          CommonSpaces.w12,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  isVideo
-                      ? (isErrorState ? CommonIcons.missedVideoCall : CommonIcons.videocam)
-                      : (isErrorState ? CommonIcons.phoneMissed : CommonIcons.phone),
-                  color: isErrorState ? context.colors.error : context.colors.primary,
-                  size: 15,
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: isErrorState
+                        ? errorColor
+                        : context.colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                CommonSpaces.w8,
-                Flexible(
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: title,
-                          style: TextStyle(
-                            color: isErrorState
-                                ? context.colors.error
-                                : context.colors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12.5,
-                            height: 1.2,
-                          ),
-                        ),
-                        if (displayTime.isNotEmpty) ...[
-                          TextSpan(
-                            text: '  •  $displayTime',
-                            style: TextStyle(
-                              color: context.colors.textSecondary,
-                              fontWeight: FontWeight.w400,
-                              fontSize: 11.0,
-                            ),
-                          ),
-                        ],
-                      ],
+                if (subtitle.isNotEmpty) ...[
+                  CommonSpaces.h2,
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
+                ],
               ],
             ),
           ),
-          Expanded(
-            child: Divider(
-              color: context.colors.border.withValues(alpha: 0.35),
-              thickness: 0.8,
-              indent: 10,
-            ),
-          ),
+          const SizedBox(width: 8),
         ],
       ),
     );
@@ -2560,18 +2768,30 @@ class _MessageBubbleState extends State<MessageBubble> {
     Widget contentWidget;
 
     if (matches.isEmpty) {
-      contentWidget = Text(
-        text,
-        style: baseStyle,
-      );
+      final spans = _buildHighlightedSpans(text, searchQuery, baseStyle);
+      if (spans.length == 1 && spans.first is TextSpan && (spans.first as TextSpan).style == baseStyle) {
+        contentWidget = Text(
+          text,
+          style: baseStyle,
+        );
+      } else {
+        contentWidget = RichText(
+          text: TextSpan(
+            style: baseStyle,
+            children: spans,
+          ),
+        );
+      }
     } else {
       final List<InlineSpan> spans = [];
       int lastEnd = 0;
 
       for (final match in matches) {
         if (match.start > lastEnd) {
-          spans.add(TextSpan(
-            text: text.substring(lastEnd, match.start),
+          spans.addAll(_buildHighlightedSpans(
+            text.substring(lastEnd, match.start),
+            searchQuery,
+            baseStyle,
           ));
         }
 
@@ -2596,7 +2816,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           ));
 
           if (trailingPunctuation.isNotEmpty) {
-            spans.add(TextSpan(text: trailingPunctuation));
+            spans.addAll(_buildHighlightedSpans(trailingPunctuation, searchQuery, baseStyle));
           }
         } else {
           // URL token
@@ -2638,7 +2858,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           ));
 
           if (trailingPunctuation.isNotEmpty) {
-            spans.add(TextSpan(text: trailingPunctuation));
+            spans.addAll(_buildHighlightedSpans(trailingPunctuation, searchQuery, baseStyle));
           }
         }
 
@@ -2646,8 +2866,10 @@ class _MessageBubbleState extends State<MessageBubble> {
       }
 
       if (lastEnd < text.length) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd),
+        spans.addAll(_buildHighlightedSpans(
+          text.substring(lastEnd),
+          searchQuery,
+          baseStyle,
         ));
       }
 

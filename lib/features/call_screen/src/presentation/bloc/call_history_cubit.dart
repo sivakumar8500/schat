@@ -3,7 +3,7 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/features/call_screen/src/domain/repositories/call_history_repository.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_state.dart';
 
-@injectable
+@lazySingleton
 class CallHistoryCubit extends Cubit<CallHistoryState> {
   final CallHistoryRepository _repository;
 

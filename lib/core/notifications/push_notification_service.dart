@@ -15,6 +15,7 @@ import 'package:schat/main.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
+import 'package:schat/core/notifications/call_notification_service.dart';
 
 @lazySingleton
 class PushNotificationService {
@@ -100,15 +101,10 @@ class PushNotificationService {
     try {
       final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
       if (launchDetails != null && launchDetails.didNotificationLaunchApp) {
-        final payload = launchDetails.notificationResponse?.payload;
-        debugPrint('PushNotificationService: App opened from cold-boot local notification payload: $payload');
-        if (payload != null && payload.isNotEmpty) {
-          final decoded = jsonDecode(payload);
-          if (decoded is Map<String, dynamic>) {
-            _queueOrExecuteNotification(decoded);
-          } else if (decoded is Map) {
-            _queueOrExecuteNotification(Map<String, dynamic>.from(decoded));
-          }
+        final response = launchDetails.notificationResponse;
+        debugPrint('PushNotificationService: App opened from cold-boot local notification: actionId=${response?.actionId}, payload=${response?.payload}');
+        if (response != null) {
+          _onNotificationTap(response);
         }
       }
     } catch (e) {
@@ -230,7 +226,7 @@ class PushNotificationService {
     if (isCall) {
       try {
         final webrtcBloc = getIt<CallWebRtcBloc>();
-        if (webrtcBloc.state is CallIdle) {
+        if (webrtcBloc.state is! CallActive && webrtcBloc.state is! CallConnecting) {
           webrtcBloc.add(HandleIncomingCallEvent(data));
         }
       } catch (_) {}
@@ -279,14 +275,34 @@ class PushNotificationService {
   }
 
   void _onNotificationTap(NotificationResponse response) {
-    debugPrint('PushNotificationService: Local notification tapped: ${response.payload}');
+    debugPrint('PushNotificationService: Local notification tapped: ${response.payload}, actionId=${response.actionId}');
+    final action = (response.actionId ?? '').toLowerCase();
+    if (action == 'decline_call' || action == 'decline' || action == 'reject' ||
+        action == 'answer_call' || action == 'accept_call' || action == 'accept') {
+      CallNotificationService.onLocalNotificationResponse(response);
+      return;
+    }
+
     if (response.payload != null && response.payload!.isNotEmpty) {
       try {
         final data = jsonDecode(response.payload!);
-        if (data is Map<String, dynamic>) {
-          _queueOrExecuteNotification(data);
-        } else if (data is Map) {
-          _queueOrExecuteNotification(Map<String, dynamic>.from(data));
+        final mapData = data is Map<String, dynamic> ? data : (data is Map ? Map<String, dynamic>.from(data) : null);
+        if (mapData != null) {
+          final type = (mapData['type'] ?? mapData['action'] ?? mapData['event'] ?? '').toString().toLowerCase();
+          final bool isCall = type == 'call_initiate' ||
+              type == 'call_incoming' ||
+              type == 'incoming_call' ||
+              type == 'call' ||
+              type == 'call_offer' ||
+              mapData.containsKey('call_type') ||
+              mapData.containsKey('callType') ||
+              mapData.containsKey('offer');
+
+          if (isCall) {
+            CallNotificationService.onLocalNotificationResponse(response);
+            return;
+          }
+          _queueOrExecuteNotification(mapData);
         }
       } catch (e) {
         debugPrint('PushNotificationService: Failed to parse notification payload: $e');
@@ -338,9 +354,7 @@ class PushNotificationService {
     if (isCall) {
       try {
         final webrtcBloc = getIt<CallWebRtcBloc>();
-        if (webrtcBloc.state is CallIdle) {
-          webrtcBloc.add(HandleIncomingCallEvent(data));
-        }
+        webrtcBloc.add(ShowIncomingCallUiEvent(data));
       } catch (e) {
         debugPrint('PushNotificationService: Error triggering call event: $e');
       }
@@ -428,31 +442,51 @@ class PushNotificationService {
     String title = notification?.title ?? '';
     String body = notification?.body ?? '';
 
-    if (title.isEmpty) {
-      title = (message.data['title'] ??
-              message.data['sender_name'] ??
-              message.data['senderName'] ??
-              message.data['contact_name'] ??
-              message.data['contactName'] ??
-              message.data['group_name'] ??
-              message.data['groupName'] ??
-              message.data['name'] ??
-              message.data['username'] ??
-              'New Message')
-          .toString();
-    }
+    final convId = (message.data['conversationId'] ?? message.data['conversation_id'])?.toString();
+    final storage = getIt<StorageService>();
 
-    if (body.isEmpty) {
-      final content = message.data['body'] ??
-          message.data['message'] ??
-          message.data['content'] ??
-          message.data['text'];
-      if (content is Map) {
-        body = (content['text'] ?? 'New message received').toString();
-      } else if (content is String && content.isNotEmpty) {
-        body = content;
-      } else {
-        body = 'New message received';
+    final bool isLocked = message.data['is_locked'] == 'true' ||
+        message.data['is_locked'] == true ||
+        message.data['isLocked'] == 'true' ||
+        message.data['isLocked'] == true ||
+        (convId != null && storage.isChatLocked(convId));
+
+    final bool isHidden = message.data['is_hidden'] == 'true' ||
+        message.data['is_hidden'] == true ||
+        message.data['isHidden'] == 'true' ||
+        message.data['isHidden'] == true ||
+        (convId != null && storage.isChatHidden(convId));
+
+    if (isLocked || isHidden) {
+      title = 'sChat';
+      body = 'New message';
+    } else {
+      if (title.isEmpty) {
+        title = (message.data['title'] ??
+                message.data['sender_name'] ??
+                message.data['senderName'] ??
+                message.data['contact_name'] ??
+                message.data['contactName'] ??
+                message.data['group_name'] ??
+                message.data['groupName'] ??
+                message.data['name'] ??
+                message.data['username'] ??
+                'New Message')
+            .toString();
+      }
+
+      if (body.isEmpty) {
+        final content = message.data['body'] ??
+            message.data['message'] ??
+            message.data['content'] ??
+            message.data['text'];
+        if (content is Map) {
+          body = (content['text'] ?? 'New message received').toString();
+        } else if (content is String && content.isNotEmpty) {
+          body = content;
+        } else {
+          body = 'New message received';
+        }
       }
     }
 
@@ -492,16 +526,27 @@ class PushNotificationService {
         message.messageId?.hashCode ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
     final payloadMap = Map<String, dynamic>.from(message.data);
-    if (!payloadMap.containsKey('title') || payloadMap['title'] == null) {
-      payloadMap['title'] = title;
-    }
-    if (!payloadMap.containsKey('sender_name') || payloadMap['sender_name'] == null) {
-      payloadMap['sender_name'] = title;
-      payloadMap['senderName'] = title;
-    }
-    if (!payloadMap.containsKey('contact_name') || payloadMap['contact_name'] == null) {
-      payloadMap['contact_name'] = title;
-      payloadMap['contactName'] = title;
+    if (isLocked || isHidden) {
+      payloadMap['title'] = 'sChat';
+      payloadMap['sender_name'] = 'sChat';
+      payloadMap['senderName'] = 'sChat';
+      payloadMap['contact_name'] = 'sChat';
+      payloadMap['contactName'] = 'sChat';
+      payloadMap['body'] = 'New message';
+      payloadMap['is_locked'] = isLocked ? 'true' : 'false';
+      payloadMap['is_hidden'] = isHidden ? 'true' : 'false';
+    } else {
+      if (!payloadMap.containsKey('title') || payloadMap['title'] == null) {
+        payloadMap['title'] = title;
+      }
+      if (!payloadMap.containsKey('sender_name') || payloadMap['sender_name'] == null) {
+        payloadMap['sender_name'] = title;
+        payloadMap['senderName'] = title;
+      }
+      if (!payloadMap.containsKey('contact_name') || payloadMap['contact_name'] == null) {
+        payloadMap['contact_name'] = title;
+        payloadMap['contactName'] = title;
+      }
     }
 
     await _localNotifications.show(

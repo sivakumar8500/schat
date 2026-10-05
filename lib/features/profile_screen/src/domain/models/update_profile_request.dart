@@ -14,6 +14,7 @@ abstract class UpdateProfileRequest with _$UpdateProfileRequest {
     @JsonKey(name: 'default_disappearing_timer') int? defaultDisappearingTimer,
     @JsonKey(name: 'read_receipts_enabled') bool? readReceiptsEnabled,
     @JsonKey(name: 'typing_indicators_enabled') bool? typingIndicatorsEnabled,
+    @JsonKey(name: 'last_seen_enabled') bool? lastSeenEnabled,
     @JsonKey(name: 'notifications_enabled') bool? notificationsEnabled,
   }) = _UpdateProfileRequest;
 

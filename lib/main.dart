@@ -8,10 +8,6 @@ import 'package:schat/common/widgets/internet_connection_popup_widget.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_bloc.dart';
 import 'package:schat/features/connectivity/src/presentation/bloc/connectivity_event.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
-import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
-import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
-import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
-import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_state.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -20,8 +16,11 @@ import 'package:schat/firebase_options.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/core/notifications/push_notification_service.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
-
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/call_screen/call_screen.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/pip_call_view.dart';
 
@@ -38,11 +37,25 @@ final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  CallNotificationService.printCallLog(
+    stage: 'FCM TOP-LEVEL BACKGROUND HANDLER STARTED',
+    payload: message.data,
+    note: 'Message ID: ${message.messageId} | Has Notification Payload: ${message.notification != null}',
+  );
+
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-  } catch (_) {}
+  } catch (e, st) {
+    CallNotificationService.printCallLog(
+      stage: 'FIREBASE BACKGROUND INITIALIZATION EXCEPTION',
+      exception: e,
+      stackTrace: st,
+    );
+  }
+
   await CallNotificationService.handleBackgroundMessage(message);
 }
 
@@ -71,6 +84,9 @@ Future<void> main() async {
     // Initialize CallNotificationService
     await getIt<CallNotificationService>().initialize();
     
+    // Initialize CallWebRtcBloc to start listening for call events
+    getIt<CallWebRtcBloc>();
+
     // Initialize InAppNotificationService
     getIt<InAppNotificationService>().initialize();
 
@@ -80,9 +96,6 @@ Future<void> main() async {
 
     // Initialize ScreenProtectionService
     await getIt<ScreenProtectionService>().initialize();
-    
-    // Initialize CallWebRtcBloc to start listening for call events
-    getIt<CallWebRtcBloc>();
 
     runApp(const MyApp());
   } catch (e, stackTrace) {
@@ -123,18 +136,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
       repo.onAppResumed();
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      try {
-        final callBloc = getIt<CallWebRtcBloc>();
-        if (callBloc.state is CallActive || callBloc.state is CallConnecting) {
-          debugPrint('MyApp: App backgrounded during call — enabling minimized floating overlay');
-          callBloc.add(const SetCallMinimizedEvent(true));
-        }
-      } catch (e) {
-        debugPrint('MyApp: Error updating call state on background: $e');
-      }
     }
   }
 
@@ -162,6 +163,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             ),
             BlocProvider<CallWebRtcBloc>(
               create: (context) => getIt<CallWebRtcBloc>(),
+            ),
+            BlocProvider.value(
+              value: getIt<CallHistoryCubit>()..fetchCallHistory(),
             ),
             BlocProvider.value(
               value: getIt<ChatsBloc>()..add(const FetchChats()),
@@ -247,6 +251,80 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                         else ...[
                           const InternetConnectionPopup(),
                           const MinimizedCallOverlay(),
+                          if (callState is CallRinging)
+                            Positioned.fill(
+                              child: IncomingCallDialog(
+                                incomingEvent: callState.incomingEvent,
+                                callerName: callState.callerName,
+                                callerColor: Colors.blue,
+                                isVideo: callState.isVideo,
+                                conversationId: (callState.incomingEvent['conversation_id'] ?? callState.incomingEvent['conversationId'])?.toString() ?? '',
+                                recipientId: callState.recipientId,
+                                profilePictureUrl: callState.profilePictureUrl,
+                              ),
+                            ),
+                          if (((callState is CallActive && !callState.isMinimized) ||
+                                  (callState is CallConnecting && !callState.isMinimized)) &&
+                              !CallWebRtcBloc.isCallScreenMounted)
+                            Positioned.fill(
+                              child: Material(
+                                child: (callState is CallActive
+                                        ? callState.isVideo
+                                        : (callState as CallConnecting).isVideo)
+                                    ? VideoCallPage(
+                                        conversationId: callState is CallActive
+                                            ? callState.conversationId
+                                            : (callState as CallConnecting).conversationId,
+                                        contactName: callState is CallActive
+                                            ? callState.contactName
+                                            : (callState as CallConnecting).contactName,
+                                        contactColor: Colors.blue,
+                                        recipientId: callState is CallActive
+                                            ? callState.recipientId
+                                            : (callState as CallConnecting).recipientId,
+                                        isOutgoing: false,
+                                        profilePictureUrl: callState is CallActive
+                                            ? callState.profilePictureUrl
+                                            : (callState as CallConnecting).profilePictureUrl,
+                                        myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                                        isGroup: callState is CallActive
+                                            ? callState.isGroup
+                                            : (callState as CallConnecting).isGroup,
+                                        groupName: callState is CallActive
+                                            ? callState.groupName
+                                            : (callState as CallConnecting).groupName,
+                                        extraParticipants: callState is CallActive
+                                            ? callState.extraParticipants
+                                            : (callState as CallConnecting).extraParticipants,
+                                      )
+                                    : AudioCallPage(
+                                        conversationId: callState is CallActive
+                                            ? callState.conversationId
+                                            : (callState as CallConnecting).conversationId,
+                                        contactName: callState is CallActive
+                                            ? callState.contactName
+                                            : (callState as CallConnecting).contactName,
+                                        contactColor: Colors.blue,
+                                        recipientId: callState is CallActive
+                                            ? callState.recipientId
+                                            : (callState as CallConnecting).recipientId,
+                                        isOutgoing: false,
+                                        profilePictureUrl: callState is CallActive
+                                            ? callState.profilePictureUrl
+                                            : (callState as CallConnecting).profilePictureUrl,
+                                        myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                                        isGroup: callState is CallActive
+                                            ? callState.isGroup
+                                            : (callState as CallConnecting).isGroup,
+                                        groupName: callState is CallActive
+                                            ? callState.groupName
+                                            : (callState as CallConnecting).groupName,
+                                        extraParticipants: callState is CallActive
+                                            ? callState.extraParticipants
+                                            : (callState as CallConnecting).extraParticipants,
+                                      ),
+                              ),
+                            ),
                         ],
                       ],
                     ),

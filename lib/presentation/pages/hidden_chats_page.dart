@@ -738,12 +738,48 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
             ),
           )
         else
-          const Icon(
-            Icons.done_all_rounded,
-            color: Color(0xFF12B76A),
-            size: 18,
-          ),
+          _buildMessageStatusIcon(chat, isDark),
       ],
+    );
+  }
+
+  Widget _buildMessageStatusIcon(ChatModel chat, bool isDark) {
+    final lastMsg = chat.lastMessage;
+    if (lastMsg == null || lastMsg.id.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final myId = getIt.isRegistered<StorageService>() ? (getIt<StorageService>().getUserId() ?? '') : '';
+    final isMe = myId.isNotEmpty && lastMsg.senderId == myId;
+
+    // Incoming messages do not show sent status ticks
+    if (!isMe) {
+      return const SizedBox.shrink();
+    }
+
+    final greyColor = isDark ? Colors.white54 : const Color(0xFF9CA3AF);
+    const blueColor = Color(0xFF34B7F1);
+
+    if (lastMsg.isRead || lastMsg.status?.toLowerCase() == 'read') {
+      return const Icon(
+        Icons.done_all_rounded,
+        color: blueColor,
+        size: 16,
+      );
+    }
+
+    if (lastMsg.isDelivered || lastMsg.status?.toLowerCase() == 'delivered') {
+      return Icon(
+        Icons.done_all_rounded,
+        color: greyColor,
+        size: 16,
+      );
+    }
+
+    return Icon(
+      Icons.done_rounded,
+      color: greyColor,
+      size: 16,
     );
   }
 }

@@ -38,11 +38,14 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_b
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/last_message_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
+import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
 import 'widgets/chat_lock_bottom_sheet.dart';
 import 'package:collection/collection.dart';
@@ -112,7 +115,12 @@ class ChatPage extends StatefulWidget {
     this.initialReadReceiptsEnabled,
     this.initialTypingIndicatorsEnabled,
     this.initialIsLocked = false,
+    this.initialTargetMessageId,
+    this.initialSearchQuery,
   });
+
+  final String? initialTargetMessageId;
+  final String? initialSearchQuery;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -134,9 +142,15 @@ class _ChatPageState extends State<ChatPage> {
   StreamSubscription? _callSocketSubscription;
   StreamSubscription? _screenshotSubscription;
   Timer? _screenRecordTimer;
+  Timer? _screenRecordCountdownTimer;
+  bool _isScreenRecordingActive = false;
+  int _screenRecordRemainingSeconds = 0;
   String? _activeScreenRecordPermissionId;
   Timer? _screenshotAutoExpireTimer;
   String? _activeScreenshotPermissionId;
+  String? _highlightedMessageId;
+  Timer? _highlightTimer;
+  bool _hasScrolledToInitialTarget = false;
 
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
@@ -223,6 +237,13 @@ class _ChatPageState extends State<ChatPage> {
       initialTypingIndicatorsEnabled: widget.initialTypingIndicatorsEnabled,
       initialIsLocked: widget.initialIsLocked,
     ));
+
+    // Pre-populate with search query if provided (highlight word without replacing top AppBar with search bar)
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
+      _searchQuery = widget.initialSearchQuery!;
+      _searchController.text = widget.initialSearchQuery!;
+      _isSearching = false;
+    }
 
     // Pre-populate with shared text if provided
     if (widget.initialSharedText != null && widget.initialSharedText!.isNotEmpty) {
@@ -415,7 +436,7 @@ class _ChatPageState extends State<ChatPage> {
     return [];
   }
 
-  void _scrollToMessage(String messageId) {
+  void _scrollToMessage(String messageId, {bool highlight = true}) {
     if (_chatBloc.state is! ChatLoaded) return;
     final state = _chatBloc.state as ChatLoaded;
 
@@ -429,15 +450,28 @@ class _ChatPageState extends State<ChatPage> {
 
     final indexInList = displayedMessages.indexWhere((m) => m.id == messageId);
     if (indexInList != -1) {
+      if (highlight) {
+        _highlightTimer?.cancel();
+        setState(() {
+          _highlightedMessageId = messageId;
+        });
+        _highlightTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            setState(() {
+              _highlightedMessageId = null;
+            });
+          }
+        });
+      }
+
       // In a reverse ListView, index 0 is at the bottom (newest).
       // Our displayedMessages list is oldest-to-newest.
-      // So the builder index for the message at indexInList is:
       final builderIndex = displayedMessages.length - 1 - indexInList;
-
-      // Estimate offset. Standard approach without ScrollablePositionedList
-      // We can jump roughly to the area.
-      const double estimatedItemHeight = 120.0;
-      final targetOffset = builderIndex * estimatedItemHeight;
+      const double estimatedItemHeight = 110.0;
+      final targetOffset = (builderIndex * estimatedItemHeight).clamp(
+        0.0,
+        _scrollController.hasClients ? _scrollController.position.maxScrollExtent : 10000.0,
+      );
 
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -449,6 +483,226 @@ class _ChatPageState extends State<ChatPage> {
     } else {
       context.showInfoNotification('Message not found in current view');
     }
+  }
+
+  Widget _buildOngoingCallBanner() {
+    return BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
+      bloc: _callWebRtcBloc,
+      builder: (context, callState) {
+        final bool isCurrentInCall = (callState is CallActive && callState.conversationId == widget.conversationId) ||
+            (callState is CallConnecting && callState.conversationId == widget.conversationId);
+
+        final ongoingGroupCall = _callWebRtcBloc.ongoingGroupCalls[widget.conversationId];
+        final bool hasOngoingGroupCall = widget.isGroup &&
+            ongoingGroupCall != null &&
+            (ongoingGroupCall.connectedParticipantIds.isNotEmpty || ongoingGroupCall.participants.isNotEmpty);
+
+        if ((!isCurrentInCall && !hasOngoingGroupCall) || CallWebRtcBloc.isCallScreenMounted) {
+          return const SizedBox.shrink();
+        }
+
+        final bool isVideo = isCurrentInCall
+            ? (callState is CallActive ? callState.isVideo : (callState as CallConnecting).isVideo)
+            : (ongoingGroupCall?.isVideo ?? false);
+
+        final String contactName = isCurrentInCall
+            ? (callState is CallActive ? callState.contactName : (callState as CallConnecting).contactName)
+            : (ongoingGroupCall?.groupName ?? widget.contactName);
+
+        final String? profilePic = isCurrentInCall
+            ? (callState is CallActive ? callState.profilePictureUrl : (callState as CallConnecting).profilePictureUrl)
+            : (ongoingGroupCall?.profilePictureUrl ?? widget.profilePictureUrl);
+
+        final bool isGroup = isCurrentInCall
+            ? (callState is CallActive ? callState.isGroup : (callState as CallConnecting).isGroup)
+            : true;
+
+        final String? groupName = isCurrentInCall
+            ? (callState is CallActive ? callState.groupName : (callState as CallConnecting).groupName)
+            : (ongoingGroupCall?.groupName ?? widget.contactName);
+
+        final String recipientId = isCurrentInCall
+            ? (callState is CallActive ? callState.recipientId : (callState as CallConnecting).recipientId)
+            : widget.recipientId;
+
+        final List<UserModel> extraParticipants = isCurrentInCall
+            ? (callState is CallActive ? callState.extraParticipants : (callState as CallConnecting).extraParticipants)
+            : (ongoingGroupCall?.participants ?? <UserModel>[]);
+
+        final int activeParticipantCount = hasOngoingGroupCall
+            ? (ongoingGroupCall!.connectedParticipantIds.isNotEmpty
+                ? ongoingGroupCall.connectedParticipantIds.length
+                : (ongoingGroupCall.participants.isNotEmpty ? ongoingGroupCall.participants.length : 1))
+            : (extraParticipants.length + 1);
+
+        final String bannerTitle = isCurrentInCall
+            ? 'Ongoing ${isVideo ? 'Video' : 'Voice'} Call'
+            : 'Group ${isVideo ? 'Video' : 'Voice'} Call in Progress';
+
+        final String bannerSubtitle = isCurrentInCall
+            ? (callState is CallActive ? 'Tap to return to call' : 'Connecting...')
+            : '$activeParticipantCount in call • Tap to join';
+
+        final String actionButtonText = isCurrentInCall ? 'Return' : 'Rejoin';
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF007A33), Color(0xFF004D21)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+            border: Border.all(
+              color: const Color(0xFF00E676).withValues(alpha: 0.5),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Icon(
+                      isVideo ? Icons.videocam_rounded : Icons.phone_in_talk_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    Positioned(
+                      top: 3,
+                      right: 3,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00E676),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xFF00E676),
+                              blurRadius: 4,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      bannerTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      bannerSubtitle,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final hasPermission = await PermissionHelper.checkCallPermissions(isVideo: isVideo);
+                  if (!context.mounted || !hasPermission) return;
+
+                  _callWebRtcBloc.add(const SetCallMinimizedEvent(false));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BlocProvider.value(
+                        value: _callWebRtcBloc,
+                        child: isVideo
+                            ? VideoCallPage(
+                                conversationId: widget.conversationId,
+                                contactName: contactName.isNotEmpty ? contactName : widget.contactName,
+                                contactColor: widget.contactColor,
+                                recipientId: recipientId.isNotEmpty ? recipientId : widget.recipientId,
+                                isOutgoing: !isCurrentInCall,
+                                profilePictureUrl: profilePic ?? widget.profilePictureUrl,
+                                myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                                isGroup: isGroup,
+                                groupName: groupName ?? widget.contactName,
+                                extraParticipants: extraParticipants,
+                              )
+                            : AudioCallPage(
+                                conversationId: widget.conversationId,
+                                contactName: contactName.isNotEmpty ? contactName : widget.contactName,
+                                contactColor: widget.contactColor,
+                                recipientId: recipientId.isNotEmpty ? recipientId : widget.recipientId,
+                                isOutgoing: !isCurrentInCall,
+                                profilePictureUrl: profilePic ?? widget.profilePictureUrl,
+                                myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
+                                isGroup: isGroup,
+                                groupName: groupName ?? widget.contactName,
+                                extraParticipants: extraParticipants,
+                              ),
+                      ),
+                    ),
+                  );
+                },
+                icon: Icon(
+                  isCurrentInCall
+                      ? Icons.open_in_full_rounded
+                      : (isVideo ? Icons.videocam_rounded : Icons.call_rounded),
+                  size: 15,
+                  color: const Color(0xFF005A24),
+                ),
+                label: Text(
+                  actionButtonText,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF005A24),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  elevation: 2,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildPinnedMessageBanner(ChatState state) {
@@ -927,6 +1181,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildBottomSection(BuildContext context) {
+    if (_isSearching) {
+      return const SizedBox.shrink();
+    }
+
     // Voice preview state takes priority
     if (_recordedBytes != null) {
       return Column(
@@ -937,10 +1195,19 @@ class _ChatPageState extends State<ChatPage> {
         ],
       );
     }
+
+    if (!_isRecording && _showUnknownContactBanner) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildUnknownContactBanner(context),
+        ],
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!_isRecording && _showUnknownContactBanner) _buildUnknownContactBanner(context),
         if (_isRecording) _buildRecordingBanner(),
         if (!_isRecording && _replyingToMessage != null) _buildReplyPreview(),
         if (!_isRecording && _editingMessage != null) _buildEditPreview(),
@@ -964,6 +1231,7 @@ class _ChatPageState extends State<ChatPage> {
     );
 
     final isText = msg.mediaType == null || msg.mediaType == 'text';
+    final myId = _chatBloc.state is ChatLoaded ? (_chatBloc.state as ChatLoaded).myId : '';
 
     final result = await showMenu<String>(
       context: context,
@@ -976,11 +1244,26 @@ class _ChatPageState extends State<ChatPage> {
           msg: msg,
           isMe: isMe,
           isText: isText,
+          myId: myId,
         ),
       ],
     );
 
     if (result == null || !context.mounted) return;
+
+    if (result.startsWith('react:')) {
+      final emoji = result.substring(6);
+      if (emoji == 'more') {
+        _showEmojiReactionPicker(context, msg);
+      } else {
+        _chatBloc.add(ToggleMessageReactionEvent(
+          conversationId: widget.conversationId,
+          messageId: msg.id,
+          emoji: emoji,
+        ));
+      }
+      return;
+    }
 
     if (result == 'Reply') {
       setState(() {
@@ -1015,6 +1298,105 @@ class _ChatPageState extends State<ChatPage> {
     } else if (result == 'Delete') {
       _showDeleteDialog(context, [msg]);
     }
+  }
+
+  void _showEmojiReactionPicker(BuildContext context, MessageModel msg) {
+    const List<String> allEmojis = [
+      '👍', '👎', '❤️', '🔥', '🎉', '👏', '😂', '🥰', '😍', '🤩',
+      '😘', '😊', '🥳', '🥺', '💖', '💯', '✨', '⚡', '🌟', '👀',
+      '💪', '🚀', '🎯', '💡', '🏆', '💔', '😴', '🤔', '🤨', '😐',
+      '🤐', '🙄', '😬', '🥱', '😢', '😭', '😤', '😡', '🤬', '🤯',
+      '🙏', '🤝', '🙌', '🍕', '☕', '🍻', '🎈', '🎁', '🌹', '💐',
+      '🕊️', '🎶', '🎵', '💤', '👻', '💀', '🤡', '👽', '🤖', '👑',
+      '💎', '🔑', '🌈', '☀️', '🌙', '⭐', '❌', '❓', '❗', '✅'
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return Container(
+          height: 380,
+          decoration: BoxDecoration(
+            color: context.colors.cardBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'React to message',
+                      style: context.titleMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: context.colors.textSecondary, size: 20),
+                      onPressed: () => Navigator.of(bottomSheetContext).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.0,
+                  ),
+                  itemCount: allEmojis.length,
+                  itemBuilder: (context, index) {
+                    final emoji = allEmojis[index];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(24),
+                      onTap: () {
+                        Navigator.of(bottomSheetContext).pop();
+                        _chatBloc.add(ToggleMessageReactionEvent(
+                          conversationId: widget.conversationId,
+                          messageId: msg.id,
+                          emoji: emoji,
+                        ));
+                      },
+                      child: Center(
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 26),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildMemberStatusTile(BuildContext context, UserModel user, String timeStr, Color checkmarkColor) {
@@ -2154,8 +2536,12 @@ class _ChatPageState extends State<ChatPage> {
     _screenshotSubscription?.cancel();
     _screenRecordTimer?.cancel();
     _screenRecordTimer = null;
+    _screenRecordCountdownTimer?.cancel();
+    _screenRecordCountdownTimer = null;
+    _isScreenRecordingActive = false;
     _screenshotAutoExpireTimer?.cancel();
     _screenshotAutoExpireTimer = null;
+    _highlightTimer?.cancel();
     getIt<ScreenProtectionService>().enableProtection();
     _stopTypingTimer();
     _messageController.dispose();
@@ -3254,7 +3640,16 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return BlocProvider<ChatBloc>.value(
       value: _chatBloc,
-      child: BlocConsumer<ChatBloc, ChatState>(
+      child: BlocListener<CallWebRtcBloc, CallWebRtcState>(
+        bloc: _callWebRtcBloc,
+        listener: (context, callState) {
+          if (callState is CallEnded || callState is CallRejected || callState is CallIdle) {
+            _chatBloc.add(ReceiveCallLogUpdateEvent(callLogData: {
+              'conversation_id': widget.conversationId,
+            }));
+          }
+        },
+        child: BlocConsumer<ChatBloc, ChatState>(
         listener: (context, state) {
           if (state is ChatError) {
             context.showErrorNotification(state.errorMessage);
@@ -3279,42 +3674,39 @@ class _ChatPageState extends State<ChatPage> {
                 !activePerm.isRejected &&
                 activePerm.durationSeconds != null;
 
-            if (isScreenshotAllowed || isScreenRecordAllowed) {
+            if (isScreenshotAllowed) {
               getIt<ScreenProtectionService>().disableProtection();
 
               // Handle screenshot permission safety auto-lock timer (60s)
-              if (isScreenshotAllowed) {
-                if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != activePerm.id) {
-                  _screenshotAutoExpireTimer?.cancel();
-                  _activeScreenshotPermissionId = activePerm.id;
-                  _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
-                    if (mounted) {
-                      getIt<ScreenProtectionService>().enableProtection();
-                      context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
-                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
-                    }
-                  });
-                }
+              if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != activePerm.id) {
+                _screenshotAutoExpireTimer?.cancel();
+                _activeScreenshotPermissionId = activePerm.id;
+                _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
+                  if (mounted) {
+                    getIt<ScreenProtectionService>().enableProtection();
+                    context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
+                    _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                  }
+                });
               }
-
-              // Handle screen record timer auto turn off
-              if (isScreenRecordAllowed && activePerm.durationSeconds != null) {
-                if (_screenRecordTimer == null || _activeScreenRecordPermissionId != activePerm.id) {
-                  _screenRecordTimer?.cancel();
-                  _activeScreenRecordPermissionId = activePerm.id;
-                  final duration = activePerm.durationSeconds!;
-                  _screenRecordTimer = Timer(Duration(seconds: duration), () {
-                    if (mounted) {
-                      getIt<ScreenProtectionService>().enableProtection();
-                      context.showInfoNotification('Screen recording permission duration (${duration}s) expired. Protection re-enabled.');
-                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
-                    }
-                  });
-                }
+            } else if (isScreenRecordAllowed) {
+              // Screen recording requires user to tap "Start" button explicitly.
+              // Keep protection enabled until user taps Start.
+              if (!_isScreenRecordingActive) {
+                _screenshotAutoExpireTimer?.cancel();
+                _screenshotAutoExpireTimer = null;
+                _activeScreenshotPermissionId = null;
+                getIt<ScreenProtectionService>().enableProtection();
               }
             } else {
+              // No active permission
+              if (_isScreenRecordingActive) {
+                _stopScreenRecording(_activeScreenRecordPermissionId ?? '', completedByTimer: false);
+              }
               _screenRecordTimer?.cancel();
               _screenRecordTimer = null;
+              _screenRecordCountdownTimer?.cancel();
+              _screenRecordCountdownTimer = null;
               _activeScreenRecordPermissionId = null;
               _screenshotAutoExpireTimer?.cancel();
               _screenshotAutoExpireTimer = null;
@@ -3323,10 +3715,13 @@ class _ChatPageState extends State<ChatPage> {
             }
           }
 
-          if (state is ChatLoaded && state.incomingScreenPermissionRequest != null) {
-            final incomingReq = state.incomingScreenPermissionRequest!;
-            _chatBloc.add(const DismissIncomingScreenPermissionRequestEvent());
-            getIt<InAppNotificationService>().showIncomingScreenPermissionBottomSheet(incomingReq);
+          if (state is ChatLoaded && !_hasScrolledToInitialTarget && widget.initialTargetMessageId != null) {
+            _hasScrolledToInitialTarget = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _scrollToMessage(widget.initialTargetMessageId!, highlight: true);
+              }
+            });
           }
         },
         builder: (context, state) {
@@ -3377,11 +3772,11 @@ class _ChatPageState extends State<ChatPage> {
               );
             }
           }
-          if (bgDecorationImage == null && customBgColor == null) {
+          if (bgDecorationImage == null) {
             bgDecorationImage = DecorationImage(
               image: const AssetImage('assets/images/chat_bg.png'),
               fit: BoxFit.cover,
-              opacity: context.colors.isDark ? 0.05 : 0.08,
+              opacity: context.colors.isDark ? 0.08 : 0.42,
               colorFilter: context.colors.isDark
                   ? const ColorFilter.matrix(<double>[
                       -1.0, 0.0, 0.0, 0.0, 255.0, // red
@@ -3393,8 +3788,12 @@ class _ChatPageState extends State<ChatPage> {
             );
           }
 
+          final defaultChatBgColor = context.colors.isDark
+              ? const Color(0xFF0C1317)
+              : const Color(0xFFEFEAE2);
+
           return Scaffold(
-            backgroundColor: customBgColor ?? context.colors.scaffoldBackground,
+            backgroundColor: customBgColor ?? defaultChatBgColor,
             appBar: _buildAppBar(context, state),
             body: Container(
               decoration: BoxDecoration(
@@ -3407,7 +3806,9 @@ class _ChatPageState extends State<ChatPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _buildOngoingCallBanner(),
                         _buildPinnedMessageBanner(state),
+                        _buildIncomingScreenPermissionBanner(state),
                         _buildActiveScreenPermissionBanner(state),
                       ],
                     ),
@@ -3582,6 +3983,8 @@ class _ChatPageState extends State<ChatPage> {
                                           isEdited: msg.isEdited,
                                           isPinned: msg.isPinned,
                                           isSelected: isSelected,
+                                          isHighlighted: isSelected || (msg.id == _highlightedMessageId),
+                                          searchQuery: (_isSearching && _searchQuery.isNotEmpty) ? _searchQuery : (widget.initialSearchQuery ?? ''),
                                           isUploading: msg.isUploading,
                                           isFailed: msg.isFailed,
                                           onResendPressed: () => _resendMessage(msg),
@@ -3598,6 +4001,14 @@ class _ChatPageState extends State<ChatPage> {
                                           fileSize: msg.fileSize,
                                           callMeta: msg.callMeta,
                                           expiry: msg.expiry,
+                                          reactions: msg.reactions,
+                                          onReactionTap: (emoji) {
+                                            _chatBloc.add(ToggleMessageReactionEvent(
+                                              conversationId: widget.conversationId,
+                                              messageId: msg.id,
+                                              emoji: emoji,
+                                            ));
+                                          },
                                           isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
                                           onMentionTap: (mention) => _handleMentionTap(context, mention),
                                         ),
@@ -3632,6 +4043,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
           );
         },
+      ),
       ),
     );
   }
@@ -4162,7 +4574,7 @@ class _ChatPageState extends State<ChatPage> {
               final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
               
               if (!mounted) return;
-              Navigator.push(
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => BlocProvider.value(
@@ -4182,6 +4594,11 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
               );
+              if (mounted) {
+                _chatBloc.add(ReceiveCallLogUpdateEvent(callLogData: {
+                  'conversation_id': widget.conversationId,
+                }));
+              }
             },
           ),
         if (!widget.isReadOnly)
@@ -4205,7 +4622,7 @@ class _ChatPageState extends State<ChatPage> {
               final isAlreadyInCall = _callWebRtcBloc.isCallActiveFor(widget.conversationId);
 
               if (!mounted) return;
-              Navigator.push(
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => BlocProvider.value(
@@ -4225,6 +4642,11 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
               );
+              if (mounted) {
+                _chatBloc.add(ReceiveCallLogUpdateEvent(callLogData: {
+                  'conversation_id': widget.conversationId,
+                }));
+              }
             },
           ),
         PopupMenuButton<String>(
@@ -4714,6 +5136,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildInputBar(BuildContext context) {
+    if (_isSearching || _showUnknownContactBanner) {
+      return const SizedBox.shrink();
+    }
     final chatState = context.read<ChatBloc>().state;
     if (chatState is ChatLoaded && chatState.isBlocked) {
       final isBlockedByMe = chatState.isBlockedByMe;
@@ -6475,7 +6900,10 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _showRequestScreenPermissionBottomSheet(BuildContext context) {
+  void _showRequestScreenPermissionBottomSheet(BuildContext context, {int initialTabIndex = 0}) {
+    final state = _chatBloc.state;
+    final incomingReq = state is ChatLoaded ? state.incomingScreenPermissionRequest : null;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -6483,8 +6911,246 @@ class _ChatPageState extends State<ChatPage> {
       builder: (dialogCtx) => RequestScreenPermissionBottomSheet(
         conversationId: widget.conversationId,
         contactName: widget.contactName,
+        initialTabIndex: incomingReq != null ? 1 : initialTabIndex,
+        incomingRequest: incomingReq,
+        onRequestSent: (model) {
+          _chatBloc.add(ReceiveScreenPermissionRequestEvent(requestData: model.toJson()));
+          final permLabel = model.permissionType == 'screen_record' ? 'screen record' : 'screenshot';
+          final count = model.allowedCount ?? 1;
+          final duration = model.durationSeconds ?? 30;
+          final detail = model.isScreenshot
+              ? '$count screenshot${count > 1 ? 's' : ''}'
+              : '${duration}s recording';
+          final contentText = '📷 You requested $permLabel permission ($detail)';
+
+          final lastMsg = LastMessageModel(
+            id: 'perm_${model.id}',
+            conversationId: widget.conversationId,
+            senderId: model.senderId,
+            content: contentText,
+            mediaType: 'system',
+            createdAt: DateTime.now().toIso8601String(),
+            updatedAt: DateTime.now().toIso8601String(),
+          );
+          try {
+            context.read<ChatsBloc>().add(NewMessageReceived(
+              conversationId: widget.conversationId,
+              lastMessage: lastMsg,
+              updatedAt: DateTime.now().toIso8601String(),
+            ));
+          } catch (_) {}
+        },
+        onResponded: (updated) {
+          _chatBloc.add(const DismissIncomingScreenPermissionRequestEvent());
+        },
       ),
     );
+  }
+
+  Widget _buildIncomingScreenPermissionBanner(ChatState state) {
+    if (state is! ChatLoaded || state.incomingScreenPermissionRequest == null) {
+      return const SizedBox.shrink();
+    }
+    final req = state.incomingScreenPermissionRequest!;
+    if (!req.isPending) return const SizedBox.shrink();
+
+    final colors = context.colors;
+    final isScreenshot = req.isScreenshot;
+    final senderName = req.senderName ?? widget.contactName;
+    final detailText = isScreenshot
+        ? '${req.allowedCount ?? 1} screenshot${(req.allowedCount ?? 1) > 1 ? 's' : ''}'
+        : '${req.durationSeconds ?? 30}s screen recording';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isScreenshot ? Icons.camera_alt_rounded : Icons.videocam_rounded,
+                  color: colors.primary,
+                  size: 20,
+                ),
+              ),
+              CommonSpaces.w10,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Capture Permission Request',
+                      style: context.bodyMedium.copyWith(
+                        color: colors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '$senderName requested $detailText',
+                      style: context.bodySmall.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.open_in_new_rounded, size: 18, color: colors.textSecondary),
+                tooltip: 'View Details',
+                onPressed: () => _showRequestScreenPermissionBottomSheet(context, initialTabIndex: 1),
+              ),
+            ],
+          ),
+          CommonSpaces.h10,
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      _chatBloc.add(RespondScreenPermissionEvent(requestId: req.id, action: 'reject'));
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.redAccent,
+                      side: const BorderSide(color: Colors.redAccent),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Reject',
+                      style: context.bodySmall.copyWith(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              CommonSpaces.w10,
+              Expanded(
+                child: SizedBox(
+                  height: 36,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      _chatBloc.add(RespondScreenPermissionEvent(requestId: req.id, action: 'accept'));
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colors.primary,
+                      foregroundColor: colors.textLight,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Accept',
+                      style: context.bodySmall.copyWith(
+                        color: colors.textLight,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startScreenRecording(ScreenPermissionModel perm) async {
+    final duration = perm.durationSeconds ?? 30;
+    _screenRecordTimer?.cancel();
+    _screenRecordCountdownTimer?.cancel();
+
+    setState(() {
+      _isScreenRecordingActive = true;
+      _screenRecordRemainingSeconds = duration;
+      _activeScreenRecordPermissionId = perm.id;
+    });
+
+    // Disable screen protection so recording is allowed
+    await getIt<ScreenProtectionService>().disableProtection();
+
+    if (mounted) {
+      context.showSuccessNotification(
+        'Screen recording active for ${duration}s. You can start recording now.',
+      );
+    }
+
+    _screenRecordCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_screenRecordRemainingSeconds <= 1) {
+        timer.cancel();
+        _stopScreenRecording(perm.id, completedByTimer: true);
+      } else {
+        setState(() {
+          _screenRecordRemainingSeconds--;
+        });
+      }
+    });
+  }
+
+  void _stopScreenRecording(String permId, {bool completedByTimer = false}) async {
+    _screenRecordTimer?.cancel();
+    _screenRecordCountdownTimer?.cancel();
+    _screenRecordTimer = null;
+    _screenRecordCountdownTimer = null;
+
+    if (mounted) {
+      setState(() {
+        _isScreenRecordingActive = false;
+        _screenRecordRemainingSeconds = 0;
+        _activeScreenRecordPermissionId = null;
+      });
+    } else {
+      _isScreenRecordingActive = false;
+      _screenRecordRemainingSeconds = 0;
+      _activeScreenRecordPermissionId = null;
+    }
+
+    // Immediately re-enable protection
+    await getIt<ScreenProtectionService>().enableProtection();
+
+    if (mounted) {
+      if (completedByTimer) {
+        context.showInfoNotification('Screen recording duration completed. Protection re-enabled.');
+      } else {
+        context.showInfoNotification('Screen recording stopped. Protection re-enabled.');
+      }
+    }
+
+    if (permId.isNotEmpty) {
+      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: permId));
+    }
   }
 
   Widget _buildActiveScreenPermissionBanner(ChatState state) {
@@ -6495,66 +7161,234 @@ class _ChatPageState extends State<ChatPage> {
     final isScreenshot = perm.isScreenshot;
     final remaining = perm.remainingCount ?? perm.allowedCount ?? 1;
 
-    if (remaining <= 0 || perm.isCompleted || perm.isRejected) {
+    if (perm.isCompleted || perm.isRejected) {
+      return const SizedBox.shrink();
+    }
+    if (isScreenshot && remaining <= 0) {
       return const SizedBox.shrink();
     }
 
+    final colors = context.colors;
+
+    // ── Screen Recording Banner ──
+    if (!isScreenshot) {
+      final totalDuration = perm.durationSeconds ?? 30;
+
+      if (_isScreenRecordingActive) {
+        // Active recording UI with live countdown and Stop button
+        final progress = totalDuration > 0 ? (_screenRecordRemainingSeconds / totalDuration) : 0.0;
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.redAccent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  CommonSpaces.w10,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Screen Recording Active',
+                          style: context.bodyMedium.copyWith(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${_screenRecordRemainingSeconds}s remaining',
+                          style: context.bodySmall.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    height: 34,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _stopScreenRecording(perm.id, completedByTimer: false),
+                      icon: const Icon(Icons.stop_rounded, size: 16, color: Colors.white),
+                      label: Text(
+                        'Stop',
+                        style: context.bodySmall.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              CommonSpaces.h8,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                  minHeight: 4,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      // Approved, waiting for user to click "Start"
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.primary.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colors.primary.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.videocam_rounded,
+                color: colors.primary,
+                size: 20,
+              ),
+            ),
+            CommonSpaces.w12,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Screen Record Approved',
+                    style: context.bodyMedium.copyWith(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Duration: ${totalDuration}s • Tap Start to begin',
+                    style: context.bodySmall.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            CommonSpaces.w8,
+            SizedBox(
+              height: 36,
+              child: ElevatedButton.icon(
+                onPressed: () => _startScreenRecording(perm),
+                icon: const Icon(Icons.fiber_manual_record, size: 14, color: Colors.white),
+                label: Text(
+                  'Start',
+                  style: context.bodySmall.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── Screenshot Banner ──
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: context.colors.primary.withValues(alpha: 0.15),
+        color: colors.primary.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.colors.primary.withValues(alpha: 0.4)),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
           Icon(
-            isScreenshot ? Icons.camera_alt_rounded : Icons.videocam_rounded,
-            color: context.colors.primary,
+            Icons.camera_alt_rounded,
+            color: colors.primary,
             size: 20,
           ),
           CommonSpaces.w10,
           Expanded(
             child: Text(
-              isScreenshot
-                  ? 'Screenshot allowed: $remaining remaining'
-                  : 'Screen recording allowed: ${perm.durationSeconds ?? 30}s',
+              'Screenshot allowed: $remaining remaining',
               style: context.bodySmall.copyWith(
-                color: context.colors.textPrimary,
+                color: colors.textPrimary,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (isScreenshot)
-            InkWell(
-              onTap: () {
-                final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
-                final newRemaining = currentRemaining - 1;
-                if (newRemaining <= 0) {
-                  getIt<ScreenProtectionService>().enableProtection();
-                  context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
-                } else {
-                  context.showSuccessNotification('Screenshot used ($newRemaining remaining)');
-                }
-                _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.colors.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Use 1',
-                  style: context.bodySmall.copyWith(
-                    color: context.colors.textLight,
-                    fontWeight: FontWeight.bold,
-                  ),
+          InkWell(
+            onTap: () {
+              final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+              final newRemaining = currentRemaining - 1;
+              if (newRemaining <= 0) {
+                getIt<ScreenProtectionService>().enableProtection();
+                context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
+              } else {
+                context.showSuccessNotification('Screenshot used ($newRemaining remaining)');
+              }
+              _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Use 1',
+                style: context.bodySmall.copyWith(
+                  color: colors.textLight,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -7452,15 +8286,17 @@ class _HorizontalActionMenuEntry extends PopupMenuEntry<String> {
   final MessageModel msg;
   final bool isMe;
   final bool isText;
+  final String myId;
 
   const _HorizontalActionMenuEntry({
     required this.msg,
     required this.isMe,
     required this.isText,
+    this.myId = '',
   });
 
   @override
-  double get height => 48;
+  double get height => 102;
 
   @override
   bool represents(String? value) => false;
@@ -7470,6 +8306,56 @@ class _HorizontalActionMenuEntry extends PopupMenuEntry<String> {
 }
 
 class _HorizontalActionMenuEntryState extends State<_HorizontalActionMenuEntry> {
+  static const List<String> _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  Widget _buildEmojiButton(BuildContext context, String emoji) {
+    final hasReacted = widget.myId.isNotEmpty &&
+        widget.msg.reactions.any((r) => r.userId == widget.myId && r.emoji == emoji);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.of(context).pop('react:$emoji'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            color: hasReacted
+                ? context.colors.primary.withValues(alpha: 0.2)
+                : Colors.transparent,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            emoji,
+            style: const TextStyle(fontSize: 22),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMoreEmojiButton(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => Navigator.of(context).pop('react:more'),
+        child: Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: context.colors.textSecondary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.add_rounded,
+            size: 20,
+            color: context.colors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildIconButton(
     BuildContext context, {
     required String action,
@@ -7511,51 +8397,73 @@ class _HorizontalActionMenuEntryState extends State<_HorizontalActionMenuEntry> 
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildIconButton(
-            context,
-            action: 'Reply',
-            icon: Icons.reply_rounded,
-          ),
-          if (isText && msg.content.isNotEmpty)
-            _buildIconButton(
-              context,
-              action: 'Copy',
-              icon: Icons.content_copy_rounded,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ..._quickReactions.map((emoji) => _buildEmojiButton(context, emoji)),
+                const SizedBox(width: 4),
+                _buildMoreEmojiButton(context),
+              ],
             ),
-          _buildIconButton(
-            context,
-            action: msg.isPinned ? 'Unpin' : 'Pin',
-            icon: msg.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-            isActive: msg.isPinned,
           ),
-          if (isMe || msg.allowShare)
-            _buildIconButton(
-              context,
-              action: 'Forward',
-              icon: Icons.reply_rounded,
-              isFlipped: true,
-            ),
-          _buildIconButton(
-            context,
-            action: 'Info',
-            icon: Icons.info_outline_rounded,
+          Divider(
+            height: 6,
+            thickness: 0.5,
+            color: context.colors.divider.withValues(alpha: 0.5),
           ),
-          _buildIconButton(
-            context,
-            action: 'Select',
-            icon: Icons.checklist_rounded,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildIconButton(
+                context,
+                action: 'Reply',
+                icon: Icons.reply_rounded,
+              ),
+              if (isText && msg.content.isNotEmpty)
+                _buildIconButton(
+                  context,
+                  action: 'Copy',
+                  icon: Icons.content_copy_rounded,
+                ),
+              _buildIconButton(
+                context,
+                action: msg.isPinned ? 'Unpin' : 'Pin',
+                icon: msg.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                isActive: msg.isPinned,
+              ),
+              if (isMe || msg.allowShare)
+                _buildIconButton(
+                  context,
+                  action: 'Forward',
+                  icon: Icons.reply_rounded,
+                  isFlipped: true,
+                ),
+              _buildIconButton(
+                context,
+                action: 'Info',
+                icon: Icons.info_outline_rounded,
+              ),
+              _buildIconButton(
+                context,
+                action: 'Select',
+                icon: Icons.checklist_rounded,
+              ),
+              if (isMe)
+                _buildIconButton(
+                  context,
+                  action: 'Delete',
+                  icon: Icons.delete_outline_rounded,
+                  isDestructive: true,
+                ),
+            ],
           ),
-          if (isMe)
-            _buildIconButton(
-              context,
-              action: 'Delete',
-              icon: Icons.delete_outline_rounded,
-              isDestructive: true,
-            ),
         ],
       ),
     );

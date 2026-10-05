@@ -26,6 +26,7 @@ _RecipientModel _$RecipientModelFromJson(Map<String, dynamic> json) =>
       isBlocked: json['is_blocked'] as bool? ?? false,
       isBlockedByMe: json['is_blocked_by_me'] as bool? ?? false,
       isBlockedByOther: json['is_blocked_by_other'] as bool? ?? false,
+      lastSeenEnabled: json['last_seen_enabled'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$RecipientModelToJson(_RecipientModel instance) =>
@@ -48,4 +49,5 @@ Map<String, dynamic> _$RecipientModelToJson(_RecipientModel instance) =>
       'is_blocked': instance.isBlocked,
       'is_blocked_by_me': instance.isBlockedByMe,
       'is_blocked_by_other': instance.isBlockedByOther,
+      'last_seen_enabled': instance.lastSeenEnabled,
     };

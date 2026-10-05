@@ -17,6 +17,9 @@ abstract class LastMessageModel with _$LastMessageModel {
     @JsonKey(name: 'is_deleted') @Default(false) bool isDeleted,
     @JsonKey(name: 'created_at') required String createdAt,
     @JsonKey(name: 'updated_at') required String updatedAt,
+    @JsonKey(name: 'is_read') @Default(false) bool isRead,
+    @JsonKey(name: 'is_delivered') @Default(false) bool isDelivered,
+    @JsonKey(name: 'status') String? status,
   }) = _LastMessageModel;
 
   factory LastMessageModel.fromJson(Map<String, dynamic> json) => _$LastMessageModelFromJson(_normalizeLastMessage(json));
@@ -65,6 +68,24 @@ Map<String, dynamic> _normalizeLastMessage(Map<String, dynamic> json) {
     contentText = '📍 Location';
   }
 
+  // Parse delivery status
+  bool isRead = false;
+  final legacyIsRead = json['is_read'] ?? json['isRead'];
+  if (legacyIsRead is bool) {
+    isRead = legacyIsRead;
+  } else if ((json['status'] as String?)?.toLowerCase() == 'read') {
+    isRead = true;
+  }
+
+  bool isDelivered = false;
+  final legacyIsDelivered = json['is_delivered'] ?? json['isDelivered'];
+  if (legacyIsDelivered is bool) {
+    isDelivered = legacyIsDelivered;
+  } else {
+    final statusStr = (json['status'] as String?)?.toLowerCase();
+    isDelivered = statusStr == 'delivered' || statusStr == 'read';
+  }
+
   // Create a normalized map for the generated factory
   final normalizedJson = Map<String, dynamic>.from(json);
   normalizedJson['content'] = contentText;
@@ -85,6 +106,9 @@ Map<String, dynamic> _normalizeLastMessage(Map<String, dynamic> json) {
   final String? currentUserId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
   final bool isDeletedForMe = currentUserId != null && deletedForList.contains(currentUserId);
   normalizedJson['is_deleted'] = ((json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false) || isDeletedForMe;
+  normalizedJson['is_read'] = isRead;
+  normalizedJson['is_delivered'] = isDelivered;
+  normalizedJson['status'] = json['status']?.toString();
   normalizedJson['created_at'] = (json['createdAt'] ?? json['created_at'])?.toString() ?? '';
   normalizedJson['updated_at'] = (json['updatedAt'] ?? json['updated_at'])?.toString() ?? '';
 

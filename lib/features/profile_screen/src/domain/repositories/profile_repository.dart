@@ -31,5 +31,6 @@ abstract class ProfileRepository {
   Future<ApiResult<PersonalContact>> addEmergencyContact(AddEmergencyContactRequest request);
   Future<ApiResult<PersonalContact>> updateEmergencyContact(String contactId, String contactName);
   Future<ApiResult<void>> deleteEmergencyContact(String contactId);
+  Future<ApiResult<void>> deleteAccount();
 }
 

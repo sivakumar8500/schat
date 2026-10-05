@@ -41,11 +41,17 @@ class UpdateDefaultDisappearingTimerEvent extends ProfileEvent {
 class UpdateGlobalPrivacyEvent extends ProfileEvent {
   final bool? readReceiptsEnabled;
   final bool? typingIndicatorsEnabled;
+  final bool? lastSeenEnabled;
   final bool? notificationsEnabled;
 
   const UpdateGlobalPrivacyEvent({
     this.readReceiptsEnabled,
     this.typingIndicatorsEnabled,
+    this.lastSeenEnabled,
     this.notificationsEnabled,
   });
+}
+
+class DeleteAccountEvent extends ProfileEvent {
+  const DeleteAccountEvent();
 }

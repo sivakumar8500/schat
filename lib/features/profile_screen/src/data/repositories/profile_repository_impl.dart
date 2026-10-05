@@ -282,4 +282,20 @@ class ProfileRepositoryImpl implements ProfileRepository {
       mapper: (_) {},
     );
   }
+
+  @override
+  Future<ApiResult<void>> deleteAccount() async {
+    final result = await _apiService.delete<void>(
+      CommonEndpoints.deleteAccount,
+      mapper: (_) {},
+    );
+    return result.when(
+      success: (_) async {
+        await _storageService.clearTokens();
+        await _storageService.clearUser();
+        return ApiResult.success(null);
+      },
+      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+    );
+  }
 }

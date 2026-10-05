@@ -416,6 +416,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           return _buildQueryMessageItem(
             chat: chat,
             conversationTitle: msg.conversationName.isNotEmpty ? msg.conversationName : (chat.isGroup ? (chat.groupName ?? 'Group') : chat.recipient.displayName),
+            messageId: msg.id,
             senderName: msg.senderName,
             senderId: msg.senderId,
             myId: myId,
@@ -457,6 +458,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         return _buildQueryMessageItem(
           chat: chat,
           conversationTitle: name,
+          messageId: chat.lastMessage?.id,
           senderName: chat.recipient.displayName,
           senderId: chat.lastMessage?.senderId ?? '',
           myId: myId,
@@ -477,6 +479,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   Widget _buildQueryMessageItem({
     required ChatModel chat,
     required String conversationTitle,
+    String? messageId,
     required String? senderName,
     required String senderId,
     required String myId,
@@ -512,7 +515,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         mediaUrl.isNotEmpty;
 
     return InkWell(
-      onTap: () => _openChat(chat, conversationTitle),
+      onTap: () => _openChat(chat, conversationTitle, targetMessageId: messageId),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -572,7 +575,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                         height: 1.35,
                       ),
                       highlightStyle: TextStyle(
-                        color: isDark ? Colors.white : Colors.black,
+                        backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
+                        color: const Color(0xFF111827),
                         fontWeight: FontWeight.w900,
                         fontSize: 14,
                         height: 1.35,
@@ -614,7 +618,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   height: 1.35,
                 ),
                 highlightStyle: TextStyle(
-                  color: isDark ? Colors.white : Colors.black,
+                  backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
+                  color: const Color(0xFF111827),
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
                   height: 1.35,
@@ -702,7 +707,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     required String text,
     required String query,
     required TextStyle baseStyle,
-    required TextStyle highlightStyle,
+    TextStyle? highlightStyle,
     int maxLines = 3,
   }) {
     if (query.isEmpty) {
@@ -714,6 +719,13 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       return Text(text, style: baseStyle, maxLines: maxLines, overflow: TextOverflow.ellipsis);
     }
 
+    final effectiveHighlightStyle = highlightStyle ??
+        baseStyle.copyWith(
+          backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
+          color: const Color(0xFF111827),
+          fontWeight: FontWeight.w800,
+        );
+
     final List<TextSpan> spans = [];
     int lastEnd = 0;
 
@@ -721,7 +733,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       if (match.start > lastEnd) {
         spans.add(TextSpan(text: text.substring(lastEnd, match.start), style: baseStyle));
       }
-      spans.add(TextSpan(text: text.substring(match.start, match.end), style: highlightStyle));
+      spans.add(TextSpan(text: text.substring(match.start, match.end), style: effectiveHighlightStyle));
       lastEnd = match.end;
     }
 
@@ -927,7 +939,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     required bool isDark,
   }) {
     return InkWell(
-      onTap: () => _openChat(chat, name),
+      onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
       child: Container(
         color: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -940,16 +952,16 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                  _buildHighlightedText(
+                    text: name,
+                    query: _searchQuery,
+                    baseStyle: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                       color: context.colors.textPrimary,
                       letterSpacing: -0.2,
                     ),
+                    maxLines: 1,
                   ),
                   const SizedBox(height: 5),
                   Row(
@@ -966,11 +978,10 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                           ),
                         ),
                       Expanded(
-                        child: Text(
-                          message,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                        child: _buildHighlightedText(
+                          text: message,
+                          query: _searchQuery,
+                          baseStyle: TextStyle(
                             color: chat.isTyping
                                 ? (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C))
                                 : (isDark ? Colors.white54 : const Color(0xFF6B7280)),
@@ -980,6 +991,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                                 : (chat.unreadCount > 0 ? FontWeight.w600 : FontWeight.w400),
                             fontStyle: chat.isTyping ? FontStyle.italic : FontStyle.normal,
                           ),
+                          maxLines: 1,
                         ),
                       ),
                     ],
@@ -995,7 +1007,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     );
   }
 
-  void _openChat(ChatModel chat, String name) async {
+  void _openChat(ChatModel chat, String name, {String? targetMessageId}) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -1011,6 +1023,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           initialDisappearingTimer: chat.disappearingTimer,
           initialReadReceiptsEnabled: chat.readReceiptsEnabled,
           initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
+          initialTargetMessageId: targetMessageId,
+          initialSearchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
         ),
       ),
     );
@@ -1208,8 +1222,50 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-          ),
+          )
+        else
+          _buildMessageStatusIcon(chat, isDark),
       ],
+    );
+  }
+
+  Widget _buildMessageStatusIcon(ChatModel chat, bool isDark) {
+    final lastMsg = chat.lastMessage;
+    if (lastMsg == null || lastMsg.id.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final myId = getIt.isRegistered<StorageService>() ? (getIt<StorageService>().getUserId() ?? '') : '';
+    final isMe = myId.isNotEmpty && lastMsg.senderId == myId;
+
+    // Incoming messages do not show sent status ticks
+    if (!isMe) {
+      return const SizedBox.shrink();
+    }
+
+    final greyColor = isDark ? Colors.white54 : const Color(0xFF9CA3AF);
+    const blueColor = Color(0xFF34B7F1);
+
+    if (lastMsg.isRead || lastMsg.status?.toLowerCase() == 'read') {
+      return const Icon(
+        Icons.done_all_rounded,
+        color: blueColor,
+        size: 16,
+      );
+    }
+
+    if (lastMsg.isDelivered || lastMsg.status?.toLowerCase() == 'delivered') {
+      return Icon(
+        Icons.done_all_rounded,
+        color: greyColor,
+        size: 16,
+      );
+    }
+
+    return Icon(
+      Icons.done_rounded,
+      color: greyColor,
+      size: 16,
     );
   }
 
@@ -1284,7 +1340,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openChat(chat, name),
+        onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
         child: Container(
           decoration: BoxDecoration(
             color: cardBg,
@@ -1373,7 +1429,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openChat(chat, name),
+        onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
         child: Container(
           decoration: BoxDecoration(
             color: cardBg,
@@ -1468,7 +1524,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openChat(chat, name),
+        onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1565,7 +1621,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _openChat(chat, name),
+        onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -1662,7 +1718,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _openChat(chat, name),
+        onTap: () => _openChat(chat, name, targetMessageId: chat.lastMessage?.id),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -1981,6 +2037,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           recipientId: item.id,
           isGroup: item.isGroup,
           initialIsLocked: true,
+          initialSearchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
         ),
       ),
     );

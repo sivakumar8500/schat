@@ -435,4 +435,36 @@ class DismissIncomingScreenPermissionRequestEvent extends ChatEvent {
   const DismissIncomingScreenPermissionRequestEvent();
 }
 
+class RespondScreenPermissionEvent extends ChatEvent {
+  final String requestId;
+  final String action;
+  const RespondScreenPermissionEvent({required this.requestId, required this.action});
+}
+
+class ToggleMessageReactionEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final String emoji;
+  const ToggleMessageReactionEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.emoji,
+  });
+}
+
+class ReceiveMessageReactionEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final String emoji;
+  final String userId;
+  final String? userName;
+  const ReceiveMessageReactionEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.emoji,
+    required this.userId,
+    this.userName,
+  });
+}
+
 

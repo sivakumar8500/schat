@@ -34,6 +34,36 @@ class CallMeta {
   };
 }
 
+class MessageReaction {
+  final String emoji;
+  final String userId;
+  final String? userName;
+  final String? createdAt;
+
+  const MessageReaction({
+    required this.emoji,
+    required this.userId,
+    this.userName,
+    this.createdAt,
+  });
+
+  factory MessageReaction.fromJson(Map<String, dynamic> json) {
+    return MessageReaction(
+      emoji: (json['emoji'] ?? json['reaction'] ?? '').toString(),
+      userId: (json['userId'] ?? json['user_id'] ?? json['user'] ?? '').toString(),
+      userName: (json['userName'] ?? json['user_name'] ?? json['username'] ?? json['displayName'] ?? json['display_name'])?.toString(),
+      createdAt: (json['createdAt'] ?? json['created_at'])?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'emoji': emoji,
+    'userId': userId,
+    if (userName != null) 'userName': userName,
+    if (createdAt != null) 'createdAt': createdAt,
+  };
+}
+
 class MessageModel {
   final String id;
   final String conversationId;
@@ -93,6 +123,9 @@ class MessageModel {
   final double? duration;
   final List<String> deletedFor;
 
+  // Message reactions
+  final List<MessageReaction> reactions;
+
   // Disappearing messages
   final int? expiry;
 
@@ -146,6 +179,7 @@ class MessageModel {
     this.callMeta,
     this.duration,
     this.deletedFor = const [],
+    this.reactions = const [],
     this.expiry,
     this.senderName,
     this.senderProfilePictureUrl,
@@ -457,6 +491,31 @@ class MessageModel {
       }
     }
 
+    final List<MessageReaction> reactionsList = [];
+    final dynamic rawReactions = json['reactions'] ?? json['reaction_list'] ?? json['message_reactions'];
+    if (rawReactions is List) {
+      for (var r in rawReactions) {
+        if (r is Map) {
+          reactionsList.add(MessageReaction.fromJson(Map<String, dynamic>.from(r)));
+        } else if (r is String && r.isNotEmpty) {
+          reactionsList.add(MessageReaction(emoji: r, userId: ''));
+        }
+      }
+    } else if (rawReactions is Map) {
+      rawReactions.forEach((key, val) {
+        if (val is List) {
+          for (var u in val) {
+            reactionsList.add(MessageReaction(
+              emoji: key.toString(),
+              userId: u is Map ? (u['userId'] ?? u['user_id'] ?? '').toString() : u.toString(),
+            ));
+          }
+        } else {
+          reactionsList.add(MessageReaction.fromJson(Map<String, dynamic>.from(rawReactions)));
+        }
+      });
+    }
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
@@ -505,6 +564,7 @@ class MessageModel {
       callMeta: callMeta,
       duration: duration,
       deletedFor: deletedForList,
+      reactions: reactionsList,
       senderName: parsedSenderName,
       senderProfilePictureUrl: parsedSenderProfilePic,
       expiry: () {
@@ -616,6 +676,7 @@ class MessageModel {
       'isFileShared': isFileShared,
     },
     'deletedFor': deletedFor,
+    'reactions': reactions.map((r) => r.toJson()).toList(),
     if (userView != null) 'userView': userView,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
     if (expiry != null) 'expiry': expiry,
@@ -660,6 +721,7 @@ class MessageModel {
     CallMeta? callMeta,
     double? duration,
     List<String>? deletedFor,
+    List<MessageReaction>? reactions,
     int? expiry,
     String? senderName,
     String? senderProfilePictureUrl,
@@ -707,6 +769,7 @@ class MessageModel {
       callMeta: callMeta ?? this.callMeta,
       duration: duration ?? this.duration,
       deletedFor: deletedFor ?? this.deletedFor,
+      reactions: reactions ?? this.reactions,
       expiry: expiry ?? this.expiry,
       senderName: senderName ?? this.senderName,
       senderProfilePictureUrl: senderProfilePictureUrl ?? this.senderProfilePictureUrl,

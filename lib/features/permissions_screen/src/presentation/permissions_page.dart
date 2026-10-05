@@ -8,6 +8,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/utils/permission_helper.dart';
 
 class PermissionsPage extends StatefulWidget {
   const PermissionsPage({super.key});
@@ -73,6 +74,9 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
   }
 
   Future<void> _onContinue() async {
+    // Automatically prompt background call & battery optimization permissions
+    await PermissionHelper.requestBackgroundCallPermissions();
+
     // Set permission seen flag to true
     final storage = getIt<StorageService>();
     await storage.setHasSeenPermissions(true);

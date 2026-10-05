@@ -29,6 +29,7 @@ _UserModel _$UserModelFromJson(Map<String, dynamic> json) => _UserModel(
   isBlockedByOther: json['is_blocked_by_other'] as bool? ?? false,
   readReceiptsEnabled: json['read_receipts_enabled'] as bool? ?? true,
   typingIndicatorsEnabled: json['typing_indicators_enabled'] as bool? ?? true,
+  lastSeenEnabled: json['last_seen_enabled'] as bool? ?? true,
   notificationsEnabled: json['notifications_enabled'] as bool? ?? true,
 );
 
@@ -55,5 +56,6 @@ Map<String, dynamic> _$UserModelToJson(_UserModel instance) =>
       'is_blocked_by_other': instance.isBlockedByOther,
       'read_receipts_enabled': instance.readReceiptsEnabled,
       'typing_indicators_enabled': instance.typingIndicatorsEnabled,
+      'last_seen_enabled': instance.lastSeenEnabled,
       'notifications_enabled': instance.notificationsEnabled,
     };

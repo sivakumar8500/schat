@@ -17,6 +17,9 @@ _LastMessageModel _$LastMessageModelFromJson(Map<String, dynamic> json) =>
       isDeleted: json['is_deleted'] as bool? ?? false,
       createdAt: json['created_at'] as String,
       updatedAt: json['updated_at'] as String,
+      isRead: json['is_read'] as bool? ?? false,
+      isDelivered: json['is_delivered'] as bool? ?? false,
+      status: json['status'] as String?,
     );
 
 Map<String, dynamic> _$LastMessageModelToJson(_LastMessageModel instance) =>
@@ -30,4 +33,7 @@ Map<String, dynamic> _$LastMessageModelToJson(_LastMessageModel instance) =>
       'is_deleted': instance.isDeleted,
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
+      'is_read': instance.isRead,
+      'is_delivered': instance.isDelivered,
+      'status': instance.status,
     };

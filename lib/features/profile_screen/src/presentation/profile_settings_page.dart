@@ -75,6 +75,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   String _messageToneName = "Schat Pop (Default)";
   bool _readReceiptsEnabled = true;
   bool _typingIndicatorsEnabled = true;
+  bool _lastSeenEnabled = true;
   bool _notificationsEnabled = true;
 
   @override
@@ -86,6 +87,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     _defaultDisappearingTimer = null;
     _readReceiptsEnabled = getIt<StorageService>().getReadReceiptsEnabled();
     _typingIndicatorsEnabled = getIt<StorageService>().getTypingIndicatorsEnabled();
+    _lastSeenEnabled = getIt<StorageService>().getLastSeenEnabled();
     _notificationsEnabled = getIt<StorageService>().getNotificationsEnabled();
 
     final cachedCallTone = getIt<StorageService>().getCallRingtoneName();
@@ -357,10 +359,18 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             if (state.user != null) {
               _readReceiptsEnabled = state.user!.readReceiptsEnabled;
               _typingIndicatorsEnabled = state.user!.typingIndicatorsEnabled;
+              _lastSeenEnabled = state.user!.lastSeenEnabled;
               _notificationsEnabled = state.user!.notificationsEnabled;
             }
           });
         } else if (state is ProfileLogoutSuccess) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const IntroPage()),
+            (Route<dynamic> route) => false,
+          );
+        } else if (state is ProfileAccountDeleted) {
+          context.showSuccessNotification('Your account has been deleted successfully');
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const IntroPage()),
@@ -488,6 +498,27 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                                   getIt<StorageService>().saveTypingIndicatorsEnabled(val);
                                   context.read<ProfileBloc>().add(
                                     UpdateGlobalPrivacyEvent(typingIndicatorsEnabled: val),
+                                  );
+                                },
+                              ),
+                            ),
+                            _buildSettingRow(
+                              context: context,
+                              icon: Icons.access_time_rounded,
+                              title: 'Last Seen',
+                              subtitle: _lastSeenEnabled
+                                  ? 'Others can see when you were last active'
+                                  : 'Your last seen timestamp is hidden from everyone',
+                              trailing: Switch.adaptive(
+                                value: _lastSeenEnabled,
+                                activeThumbColor: const Color(0xFF00873C),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _lastSeenEnabled = val;
+                                  });
+                                  getIt<StorageService>().saveLastSeenEnabled(val);
+                                  context.read<ProfileBloc>().add(
+                                    UpdateGlobalPrivacyEvent(lastSeenEnabled: val),
                                   );
                                 },
                               ),
@@ -641,7 +672,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                         ),
                         const SizedBox(height: 18),
 
-                        // Section 5: Logout Action
+                        // Section 5: Account Actions (Logout & Delete Account)
                         Container(
                           decoration: BoxDecoration(
                             color: isDark ? context.colors.cardBackground : Colors.white,
@@ -657,41 +688,88 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                               ),
                             ],
                           ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            leading: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFEBEE),
-                                borderRadius: BorderRadius.circular(12),
+                          child: Column(
+                            children: [
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                leading: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEBEE),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.logout_rounded,
+                                    color: Color(0xFFE53935),
+                                    size: 20,
+                                  ),
+                                ),
+                                title: const Text(
+                                  'Logout',
+                                  style: TextStyle(
+                                    color: Color(0xFFE53935),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Sign out of your account on this device',
+                                  style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Color(0xFFE53935),
+                                ),
+                                onTap: () => _showLogoutBottomSheet(context),
                               ),
-                              child: const Icon(
-                                Icons.logout_rounded,
-                                color: Color(0xFFE53935),
-                                size: 20,
+                              Divider(
+                                height: 1,
+                                thickness: 0.6,
+                                color: context.colors.divider.withValues(alpha: 0.3),
+                                indent: 16,
+                                endIndent: 16,
                               ),
-                            ),
-                            title: const Text(
-                              'Logout',
-                              style: TextStyle(
-                                color: Color(0xFFE53935),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                leading: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEBEE),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_forever_rounded,
+                                    color: Color(0xFFD92D20),
+                                    size: 22,
+                                  ),
+                                ),
+                                title: const Text(
+                                  'Delete Account',
+                                  style: TextStyle(
+                                    color: Color(0xFFD92D20),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Permanently erase your account, messages & data',
+                                  style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Color(0xFFD92D20),
+                                ),
+                                onTap: () => _showDeleteAccountBottomSheet(context),
                               ),
-                            ),
-                            subtitle: Text(
-                              'Sign out of your account on this device',
-                              style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                            trailing: const Icon(
-                              Icons.chevron_right_rounded,
-                              color: Color(0xFFE53935),
-                            ),
-                            onTap: () => _showLogoutBottomSheet(context),
+                            ],
                           ),
                         ),
                       ],
@@ -1249,6 +1327,185 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
           ),
         ),
       ),
+    );
+  }
+
+  void _showDeleteAccountBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
+        ),
+        decoration: BoxDecoration(
+          color: sheetCtx.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE4E2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.delete_forever_rounded,
+                        color: Color(0xFFD92D20),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Delete Account',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: sheetCtx.colors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Are you sure you want to delete your account? This action is permanent and cannot be undone.',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                    color: sheetCtx.colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF2C1618) : const Color(0xFFFFF1F0),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFFFA39E).withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildDeletionWarningPoint('Your phone number registration and profile will be permanently deleted.'),
+                      const SizedBox(height: 8),
+                      _buildDeletionWarningPoint('All 1-on-1 chats, chat histories, and shared media files will be erased.'),
+                      const SizedBox(height: 8),
+                      _buildDeletionWarningPoint('You will be removed from all group chats.'),
+                      const SizedBox(height: 8),
+                      _buildDeletionWarningPoint('Your contacts sync, backups, and security settings will be deleted.'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetCtx),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: BorderSide(color: sheetCtx.colors.border.withValues(alpha: 0.4)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: sheetCtx.colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(sheetCtx);
+                          context.read<ProfileBloc>().add(const DeleteAccountEvent());
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: const Color(0xFFD92D20),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text(
+                          'Delete Account',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeletionWarningPoint(String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Icon(
+            Icons.circle,
+            size: 6,
+            color: Color(0xFFCF1322),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Color(0xFFD92D20),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
