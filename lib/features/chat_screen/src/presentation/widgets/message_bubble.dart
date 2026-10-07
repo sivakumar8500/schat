@@ -40,6 +40,9 @@ import 'dart:async' show StreamSubscription;
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
+import 'package:schat/features/status_screen/src/presentation/status_view_page.dart';
+import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
+import 'package:schat/features/status_screen/src/domain/status_model.dart';
 
 class MessageBubble extends StatefulWidget {
   final String messageId;
@@ -89,6 +92,7 @@ class MessageBubble extends StatefulWidget {
   final int? expiry;
   final String? senderName;
   final String? senderProfilePictureUrl;
+  final String? recipientId;
   final List<MessageModel>? groupedImages;
   final List<MessageReaction> reactions;
   final void Function(String emoji)? onReactionTap;
@@ -112,6 +116,7 @@ class MessageBubble extends StatefulWidget {
     this.replyMessageId,
     this.replyMessageBody,
     this.replyMessageSenderName,
+    this.recipientId,
     this.isEdited = false,
     this.isPinned = false,
     this.isSelected = false,
@@ -271,6 +276,210 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get locationTitle => widget.locationTitle;
   int? get expiry => widget.expiry;
   String? get senderName => widget.senderName;
+  bool get _isStatusReply {
+    if (isDeleted) return false;
+    final trimmed = message.trim();
+    return trimmed.startsWith('📷 Status:') ||
+        trimmed.startsWith('📝 Status:') ||
+        trimmed.startsWith('Status:');
+  }
+
+  String get _statusQuoteText {
+    final lines = message.split('\n');
+    return lines.isNotEmpty ? lines.first : message;
+  }
+
+  String get _statusReplyText {
+    final lines = message.split('\n');
+    if (lines.length > 1) {
+      return lines.sublist(1).join('\n').trim();
+    }
+    return '';
+  }
+
+  bool _isOnlyEmojis(String text) {
+    if (text.trim().isEmpty) return false;
+    final emojiRegex = RegExp(
+      r'^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])+$',
+    );
+    return emojiRegex.hasMatch(text.trim().replaceAll(' ', ''));
+  }
+
+  Widget _buildStatusQuoteBox(BuildContext context) {
+    final quoteText = _statusQuoteText;
+    final isImage = quoteText.startsWith('📷') ||
+        quoteText.toLowerCase().contains('media') ||
+        quoteText.toLowerCase().contains('photo');
+
+    String statusTitle = 'Status';
+    String statusPreview =
+        quoteText.replaceFirst(RegExp(r'^(📷|📝)?\s*Status:\s*'), '').trim();
+    if (statusPreview.isEmpty) statusPreview = 'Status update';
+
+    return GestureDetector(
+      onTap: () => _handleStatusTap(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: isMe
+              ? context.colors.sentBubble.withValues(alpha: 0.55)
+              : context.colors.lightBackground.withValues(alpha: 0.85),
+          border: Border(
+            left: BorderSide(
+              color: isMe ? context.colors.primary : const Color(0xFF00A884),
+              width: 3.5,
+            ),
+          ),
+          borderRadius: const BorderRadius.only(
+            topRight: Radius.circular(8),
+            bottomRight: Radius.circular(8),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isImage ? Icons.camera_alt_rounded : Icons.menu_book_rounded,
+                        size: 13,
+                        color: isMe ? context.colors.primary : const Color(0xFF00A884),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        statusTitle,
+                        style: context.bodyMedium.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: isMe ? context.colors.primary : const Color(0xFF00A884),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    statusPreview,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.bodySmall.copyWith(
+                      fontSize: 11.5,
+                      color: context.colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: (isMe ? context.colors.primary : const Color(0xFF00A884)).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 10,
+                color: isMe ? context.colors.primary : const Color(0xFF00A884),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleStatusTap(BuildContext context) async {
+    try {
+      final statusRepo = getIt<StatusRepository>();
+      final results = await Future.wait([
+        statusRepo.getRecentUpdates().catchError((_) => <StatusContactModel>[]),
+        statusRepo.getViewedUpdates().catchError((_) => <StatusContactModel>[]),
+        statusRepo.getMutedUpdates().catchError((_) => <StatusContactModel>[]),
+        statusRepo.getMyStatuses().catchError((_) => <StatusItemModel>[]),
+      ]);
+
+      final List<StatusContactModel> allContacts = [
+        ...results[0] as List<StatusContactModel>,
+        ...results[1] as List<StatusContactModel>,
+        ...results[2] as List<StatusContactModel>,
+      ];
+      final List<StatusItemModel> myStatuses = results[3] as List<StatusItemModel>;
+
+      final targetId = widget.recipientId;
+
+      // 1. Search for recipient's status in allContacts
+      int contactIndex = -1;
+      if (targetId != null && targetId.isNotEmpty) {
+        contactIndex = allContacts.indexWhere((c) => c.contactId.toLowerCase() == targetId.toLowerCase());
+      }
+
+      // If not found by recipientId, search by senderName
+      if (contactIndex == -1 && widget.senderName != null && widget.senderName!.isNotEmpty) {
+        contactIndex = allContacts.indexWhere((c) =>
+            c.name.toLowerCase() == widget.senderName!.toLowerCase() ||
+            (c.username != null && c.username!.toLowerCase() == widget.senderName!.toLowerCase()));
+      }
+
+      if (contactIndex != -1) {
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StatusViewPage(
+                contacts: allContacts,
+                initialIndex: contactIndex,
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 2. If it is my own status
+      if (isMe && myStatuses.isNotEmpty) {
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StatusViewPage(
+                contacts: const [],
+                isMyStatus: true,
+                myStatuses: myStatuses,
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 3. If there are any other contacts with status updates
+      if (allContacts.isNotEmpty) {
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StatusViewPage(
+                contacts: allContacts,
+                initialIndex: 0,
+              ),
+            ),
+          );
+        }
+      } else if (context.mounted) {
+        context.showInfoNotification('Status has expired or is no longer available');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        context.showErrorNotification('Failed to open status: $e');
+      }
+    }
+  }
+
   List<MessageReaction> get reactions => widget.reactions;
   bool _isDownloading = false;
   double? _downloadProgress;
@@ -770,16 +979,32 @@ class _MessageBubbleState extends State<MessageBubble> {
                                   ],
                                 ),
                               ),
-                            _buildMessageText(
-                              context,
-                              context.bodyLarge.copyWith(
-                                fontSize: 16,
-                                color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                            if (_isStatusReply && !isDeleted) ...[
+                              _buildStatusQuoteBox(context),
+                              if (_statusReplyText.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                _buildMessageText(
+                                  context,
+                                  context.bodyLarge.copyWith(
+                                    fontSize: _isOnlyEmojis(_statusReplyText) ? 26 : 16,
+                                    color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                  ),
+                                  _statusReplyText,
+                                ),
+                              ],
+                              _buildDefaultTimestampRow(context),
+                            ] else ...[
+                              _buildMessageText(
+                                context,
+                                context.bodyLarge.copyWith(
+                                  fontSize: 16,
+                                  color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                ),
+                                (type == 'location' || type == 'call') ? '' : message,
                               ),
-                              (type == 'location' || type == 'call') ? '' : message,
-                            ),
-                            if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted) CommonSpaces.h6,
-                            _buildDefaultTimestampRow(context),
+                              if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted) CommonSpaces.h6,
+                              _buildDefaultTimestampRow(context),
+                            ],
                           ],
                         ],
                       ),

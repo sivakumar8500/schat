@@ -4176,6 +4176,7 @@ class _ChatPageState extends State<ChatPage> {
                                           isDelivered: msg.isDelivered,
                                           isDeleted: msg.isDeleted,
                                           isGroup: widget.isGroup,
+                                          recipientId: widget.recipientId.isNotEmpty ? widget.recipientId : (isMe ? null : msg.senderId),
                                           senderName: widget.isGroup && !isMe ? _resolveSenderName(msg.senderId, msg.senderName) : null,
                                           senderProfilePictureUrl: widget.isGroup && !isMe ? _resolveSenderProfilePic(msg.senderId, msg.senderProfilePictureUrl) : null,
                                           type: (msg.messageType == 'system' || msg.messageType == 'group_event' || msg.messageType == 'notification') ? msg.messageType : (msg.mediaType ?? 'text'),
