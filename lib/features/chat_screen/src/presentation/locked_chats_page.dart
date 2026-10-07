@@ -23,7 +23,7 @@ class LockedChatsPage extends StatefulWidget {
 }
 
 class _LockedChatsPageState extends State<LockedChatsPage> {
-  List<dynamic> _lockedChats = [];
+  List<SearchChatItem> _lockedChats = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -31,7 +31,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
   void initState() {
     super.initState();
     if (widget.initialLockedChats != null && widget.initialLockedChats!.isNotEmpty) {
-      _lockedChats = widget.initialLockedChats!;
+      _lockedChats = List.from(widget.initialLockedChats!);
     }
     _fetchLockedChats();
   }
@@ -47,7 +47,12 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
       final list = await repo.getLockedChats();
       if (mounted) {
         setState(() {
-          _lockedChats = list;
+          _lockedChats = list.map((e) {
+            if (e is SearchChatItem) return e;
+            if (e is Map<String, dynamic>) return SearchChatItem.fromJson(e);
+            if (e is Map) return SearchChatItem.fromJson(Map<String, dynamic>.from(e));
+            return null;
+          }).whereType<SearchChatItem>().toList();
           _isLoading = false;
         });
       }
@@ -61,40 +66,24 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
     }
   }
 
-  void _openChat(dynamic item) {
-    String conversationId = '';
-    String recipientId = '';
-    String contactName = 'Chat';
-    String? profilePic;
-    bool isGroup = false;
+  void _openChat(SearchChatItem item) {
+    if (item.id.isEmpty) return;
 
-    if (item is SearchChatItem) {
-      conversationId = item.id;
-      recipientId = item.id;
-      contactName = item.name.isNotEmpty ? item.name : 'Chat';
-      profilePic = item.pictureUrl;
-      isGroup = item.isGroup;
-    } else if (item is Map) {
-      conversationId = (item['conversationId'] ?? item['conversation_id'] ?? item['id'] ?? item['_id'])?.toString() ?? '';
-      recipientId = (item['recipientId'] ?? item['recipient_id'] ?? item['recipient']?['id'] ?? item['recipient']?['_id'] ?? conversationId).toString();
-      contactName = (item['conversationName'] ?? item['conversation_name'] ?? item['name'] ?? item['contactName'] ?? item['displayName'] ?? item['recipient']?['displayName'])?.toString() ?? 'Chat';
-      profilePic = (item['profilePictureUrl'] ?? item['profile_picture_url'] ?? item['pictureUrl'] ?? item['picture_url'] ?? item['avatarUrl'] ?? item['recipient']?['profilePictureUrl'])?.toString();
-      isGroup = item['isGroup'] == true || item['is_group'] == true;
-    }
-
-    if (conversationId.isEmpty) return;
+    final recId = (item.recipientId != null && item.recipientId!.isNotEmpty)
+        ? item.recipientId!
+        : item.id;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatPage(
-          conversationId: conversationId,
-          recipientId: recipientId.isNotEmpty ? recipientId : conversationId,
-          contactName: contactName,
+          conversationId: item.id,
+          recipientId: recId,
+          contactName: item.name.isNotEmpty ? item.name : 'Chat',
           contactColor: Colors.transparent,
           isOnline: false,
-          profilePictureUrl: profilePic,
-          isGroup: isGroup,
+          profilePictureUrl: item.pictureUrl,
+          isGroup: item.isGroup,
         ),
       ),
     ).then((_) => _fetchLockedChats());
@@ -287,31 +276,19 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
     );
   }
 
-  Widget _buildChatItem(dynamic item, dynamic colors, Color primaryColor, bool isDark) {
-    String name = 'Chat';
-    String lastMsg = 'Locked conversation';
-    String? profilePic;
-    String time = '';
+  Widget _buildChatItem(SearchChatItem item, dynamic colors, Color primaryColor, bool isDark) {
+    final name = item.name.isNotEmpty ? item.name : 'Chat';
+    final lastMsg = (item.lastMessageSnippet != null && item.lastMessageSnippet!.isNotEmpty)
+        ? item.lastMessageSnippet!
+        : 'Locked conversation';
+    final profilePic = item.pictureUrl;
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-    if (item is SearchChatItem) {
-      name = item.name.isNotEmpty ? item.name : 'Chat';
-      lastMsg = (item.lastMessageSnippet != null && item.lastMessageSnippet!.isNotEmpty)
-          ? item.lastMessageSnippet!
-          : 'Locked conversation';
-      profilePic = item.pictureUrl;
-      if (item.lastMessageTimestamp != null && item.lastMessageTimestamp! > 0) {
-        time = _formatTime(DateTime.fromMillisecondsSinceEpoch(item.lastMessageTimestamp!).toLocal());
-      } else if (item.updatedAt != null && item.updatedAt! > 0) {
-        time = _formatTime(DateTime.fromMillisecondsSinceEpoch(item.updatedAt!).toLocal());
-      }
-    } else if (item is Map) {
-      name = (item['conversationName'] ?? item['conversation_name'] ?? item['name'] ?? item['contactName'] ?? item['displayName'] ?? item['recipient']?['displayName'])?.toString() ?? 'Chat';
-      lastMsg = (item['lastMessage']?['content'] ?? item['lastMessageSnippet'] ?? item['last_message']?['content'] ?? item['last_message_snippet'] ?? 'Locked conversation').toString();
-      profilePic = (item['profilePictureUrl'] ?? item['profile_picture_url'] ?? item['pictureUrl'] ?? item['picture_url'] ?? item['avatarUrl'] ?? item['recipient']?['profilePictureUrl'])?.toString();
-      final dateStr = (item['lastMessageAt'] ?? item['last_message_at'] ?? item['updatedAt'] ?? item['updated_at'])?.toString();
-      if (dateStr != null && DateTime.tryParse(dateStr) != null) {
-        time = _formatTime(DateTime.parse(dateStr).toLocal());
-      }
+    String time = '';
+    if (item.lastMessageTimestamp != null && item.lastMessageTimestamp! > 0) {
+      time = _formatTime(DateTime.fromMillisecondsSinceEpoch(item.lastMessageTimestamp!).toLocal());
+    } else if (item.updatedAt != null && item.updatedAt! > 0) {
+      time = _formatTime(DateTime.fromMillisecondsSinceEpoch(item.updatedAt!).toLocal());
     }
 
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
@@ -348,7 +325,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
                             ),
                             errorWidget: (_, _, _) => Center(
                               child: Text(
-                                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                initial,
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700,
@@ -360,7 +337,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
                         )
                       : Center(
                           child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            initial,
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,

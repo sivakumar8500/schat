@@ -56,6 +56,7 @@ class GlobalSearchResponse {
 
 class SearchChatItem {
   final String id;
+  final String? recipientId;
   final bool isGroup;
   final String name;
   final String? phoneNumber;
@@ -68,6 +69,7 @@ class SearchChatItem {
 
   const SearchChatItem({
     required this.id,
+    this.recipientId,
     this.isGroup = false,
     required this.name,
     this.phoneNumber,
@@ -96,8 +98,11 @@ class SearchChatItem {
         json['groupPictureUrl']?.toString() ??
         json['group_picture_url']?.toString();
 
+    String? resolvedRecipientId = json['recipientId']?.toString() ?? json['recipient_id']?.toString();
+
     final recipient = json['recipient'];
     if (recipient is Map) {
+      resolvedRecipientId ??= recipient['id']?.toString() ?? recipient['_id']?.toString();
       resolvedName ??= recipient['contactName']?.toString() ??
           recipient['contact_name']?.toString() ??
           recipient['name']?.toString() ??
@@ -120,8 +125,12 @@ class SearchChatItem {
         final content = lm['content'];
         if (content is Map) {
           snippet = content['text']?.toString() ??
+              content['caption']?.toString() ??
               content['fileName']?.toString() ??
-              content['caption']?.toString();
+              content['message']?.toString();
+          if ((snippet == null || snippet.isEmpty) && content['mediaType'] != null) {
+            snippet = '[${content['mediaType'].toString().toUpperCase()}]';
+          }
         } else if (content is String) {
           snippet = content;
         } else if (lm['text'] != null) {
@@ -132,8 +141,44 @@ class SearchChatItem {
       }
     }
 
+    // Clean any raw map string patterns e.g. "{text: Hello}"
+    if (snippet != null && snippet.trim().startsWith('{') && snippet.contains('text:')) {
+      final match = RegExp(r'text:\s*([^,}]+)').firstMatch(snippet);
+      if (match != null) {
+        snippet = match.group(1)?.trim();
+      }
+    }
+
+    int? timestamp;
+    final rawTs = json['lastMessageTimestamp'] ??
+        json['last_message_timestamp'] ??
+        json['lastMessageAt'] ??
+        json['last_message_at'] ??
+        json['updated_at'] ??
+        json['updatedAt'];
+    if (rawTs is num) {
+      timestamp = rawTs.toInt();
+    } else if (rawTs is String && rawTs.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawTs);
+      if (parsed != null) {
+        timestamp = parsed.millisecondsSinceEpoch;
+      }
+    }
+
+    int? updatedTs;
+    final rawUpdated = json['updatedAt'] ?? json['updated_at'];
+    if (rawUpdated is num) {
+      updatedTs = rawUpdated.toInt();
+    } else if (rawUpdated is String && rawUpdated.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawUpdated);
+      if (parsed != null) {
+        updatedTs = parsed.millisecondsSinceEpoch;
+      }
+    }
+
     return SearchChatItem(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
+      recipientId: resolvedRecipientId,
       isGroup: json['isGroup'] == true || json['is_group'] == true,
       name: (resolvedName != null && resolvedName.isNotEmpty)
           ? resolvedName
@@ -144,10 +189,8 @@ class SearchChatItem {
           ? (json['unreadCount'] ?? json['unread_count'] ?? 0).toInt()
           : 0,
       lastMessageSnippet: snippet,
-      lastMessageTimestamp: json['lastMessageTimestamp'] is num
-          ? (json['lastMessageTimestamp'] as num).toInt()
-          : (json['last_message_timestamp'] is num ? (json['last_message_timestamp'] as num).toInt() : null),
-      updatedAt: json['updatedAt'] is num ? (json['updatedAt'] as num).toInt() : null,
+      lastMessageTimestamp: timestamp,
+      updatedAt: updatedTs,
       isLocked: json['isLocked'] == true || json['is_locked'] == true,
     );
   }
