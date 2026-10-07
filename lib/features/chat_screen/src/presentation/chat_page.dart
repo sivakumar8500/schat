@@ -1490,6 +1490,9 @@ class _ChatPageState extends State<ChatPage> {
           messageId: msg.id,
           emoji: emoji,
         ));
+        setState(() {
+          _selectedMessageIds.clear();
+        });
       }
       return;
     }
@@ -1576,6 +1579,11 @@ class _ChatPageState extends State<ChatPage> {
                           messageId: msg.id,
                           emoji: emoji,
                         ));
+                        if (mounted) {
+                          setState(() {
+                            _selectedMessageIds.clear();
+                          });
+                        }
                       },
                       child: Center(
                         child: Text(
