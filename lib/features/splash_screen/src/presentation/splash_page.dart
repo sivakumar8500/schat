@@ -14,6 +14,7 @@ import 'package:schat/features/auth_screen/auth_screen.dart';
 import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/features/permissions_screen/permissions_screen.dart';
 import 'package:schat/utils/permission_helper.dart';
+import 'package:schat/common/widgets/animated_tagline.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -234,7 +235,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                 ),
                 CommonSpaces.h32,
                 Text(
-                  'Schat',
+                  'S-CHAT',
                   style: context.h1.copyWith(
                     fontSize: 42,
                     fontWeight: FontWeight.w800,
@@ -242,14 +243,14 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                     color: Colors.white,
                   ),
                 ),
-                CommonSpaces.h8,
-                Text(
-                  'Secure & Private Messaging',
-                  style: context.bodyMedium.copyWith(
-                    fontSize: 16,
-                    color: Colors.white60,
-                    letterSpacing: 0.5,
-                  ),
+                CommonSpaces.h12,
+                const AnimatedTagline(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                  baseColor: Colors.white70,
+                  highlightColor: Color(0xFF00FF87),
+                  showShieldIcon: true,
                 ),
 
               ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
+import 'package:schat/utils/common_notifications.dart';
 
 class TextStatusCreatorPage extends StatefulWidget {
   const TextStatusCreatorPage({super.key});
@@ -44,6 +45,7 @@ class _TextStatusCreatorPageState extends State<TextStatusCreatorPage> {
     if (text.isEmpty) return;
 
     final hexColor = _colorToHex(_currentColor);
+    context.showInfoNotification('Uploading status...');
     context.read<StatusBloc>().add(
           UploadTextStatusEvent(
             text: text,

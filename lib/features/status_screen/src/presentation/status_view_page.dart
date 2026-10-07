@@ -56,6 +56,8 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   Duration _audioPosition = Duration.zero;
   Duration _audioDuration = Duration.zero;
   bool _isPlayingAudio = false;
+  bool _videoError = false;
+  bool _isAdvancing = false;
 
   void _markStatusViewed(String? statusId) {
     if (statusId == null || statusId.isEmpty || widget.isMyStatus) return;
@@ -222,6 +224,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     _isPlayingAudio = false;
     _audioPosition = Duration.zero;
     _audioDuration = Duration.zero;
+    _videoError = false;
   }
 
   void _pauseCurrentPlayback() {
@@ -243,6 +246,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
   void _startProgress() {
     _cleanupMediaPlayers();
+    _isAdvancing = false;
     _progressController.stop();
     _progressController.value = 0.0;
     _customProgressValue = 0.0;
@@ -257,6 +261,12 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         final item = list[_currentStatusIndex.clamp(0, list.length - 1)];
         mediaUrl = item.imagePath;
         statusType = item.statusType;
+      } else if (widget.myPath != null) {
+        mediaUrl = widget.myPath;
+        final lower = (widget.myPath ?? '').toLowerCase();
+        if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi') || lower.endsWith('.mkv')) {
+          statusType = 'video';
+        }
       }
     } else if (widget.contacts.isNotEmpty) {
       final contact = widget.contacts[_currentContactIndex];
@@ -286,7 +296,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
       _initVideoPlayer(mediaUrl);
     } else if (isAudio && mediaUrl != null && mediaUrl.isNotEmpty) {
       _initAudioPlayer(mediaUrl);
-    } else if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync()) {
+    } else if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync() && !mediaUrl.startsWith('http')) {
       // Network media is loading; wait for _onMediaLoaded
       _isMediaLoading = true;
     } else {
@@ -300,17 +310,19 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   Future<void> _initVideoPlayer(String url) async {
     _isCustomMedia = true;
     _isMediaLoading = true;
+    _videoError = false;
     if (mounted) setState(() {});
 
-    final isLocal = File(url).existsSync();
+    final isLocal = url.startsWith('file://') || (!url.startsWith('http') && File(url).existsSync());
+    final effectivePath = url.replaceFirst('file://', '');
     final controller = isLocal
-        ? VideoPlayerController.file(File(url))
+        ? VideoPlayerController.file(File(effectivePath))
         : VideoPlayerController.networkUrl(Uri.parse(url));
 
     _videoController = controller;
 
     try {
-      await controller.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 15));
       if (!mounted || _videoController != controller) {
         await controller.dispose();
         return;
@@ -324,28 +336,42 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
 
       controller.addListener(() {
         if (!mounted || _videoController != controller) return;
-        final pos = controller.value.position;
-        final progress = (pos.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
-        setState(() {
-          _customProgressValue = progress;
-        });
+        final val = controller.value;
+        if (!val.isInitialized) return;
+
+        final pos = val.position;
+        final progress = (duration.inMilliseconds > 0)
+            ? (pos.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+            : 1.0;
+
+        if (mounted) {
+          setState(() {
+            _customProgressValue = progress;
+          });
+        }
+
+        final isEnded = val.isCompleted ||
+            pos >= duration ||
+            (!val.isPlaying && pos.inMilliseconds > 500 && pos >= duration - const Duration(milliseconds: 300));
 
         // Advance when reached end of video or 1-minute mark
-        if (pos >= duration || (!controller.value.isPlaying && pos >= duration - const Duration(milliseconds: 300))) {
+        if (!_isAdvancing && isEnded) {
+          _isAdvancing = true;
           _nextStatus();
         }
       });
 
       setState(() {
         _isMediaLoading = false;
+        _videoError = false;
       });
       await controller.play();
     } catch (e) {
-      debugPrint('Error initializing status video player: $e');
+      debugPrint('Error initializing status video player ($url): $e');
       if (mounted) {
         setState(() {
           _isMediaLoading = false;
-          _isCustomMedia = false;
+          _videoError = true;
         });
         _progressController.duration = const Duration(seconds: 5);
         _progressController.forward(from: 0.0);
@@ -382,13 +408,15 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
           _audioPosition = pos;
           _customProgressValue = progress;
         });
-        if (pos >= duration) {
+        if (!_isAdvancing && pos >= duration) {
+          _isAdvancing = true;
           _nextStatus();
         }
       });
 
       player.onPlayerComplete.listen((_) {
-        if (!mounted || _audioPlayer != player) return;
+        if (!mounted || _audioPlayer != player || _isAdvancing) return;
+        _isAdvancing = true;
         _nextStatus();
       });
 
@@ -438,12 +466,21 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         });
         _startProgress();
       } else {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+      return;
+    }
+
+    if (widget.contacts.isEmpty) {
+      if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context);
       }
       return;
     }
 
-    final contact = widget.contacts[_currentContactIndex];
+    final contact = widget.contacts[_currentContactIndex.clamp(0, widget.contacts.length - 1)];
     if (_currentStatusIndex < contact.statuses.length - 1) {
       setState(() {
         _currentStatusIndex++;
@@ -479,16 +516,36 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
   void _nextContact() {
     _cleanupMediaPlayers();
     if (_currentContactIndex < widget.contacts.length - 1) {
-      _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      setState(() {
+        _currentContactIndex++;
+        _currentStatusIndex = 0;
+      });
+      _pageController.animateToPage(
+        _currentContactIndex,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      _startProgress();
     } else {
-      Navigator.pop(context);
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
     }
   }
 
   void _previousContact() {
     _cleanupMediaPlayers();
     if (_currentContactIndex > 0) {
-      _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      setState(() {
+        _currentContactIndex--;
+        _currentStatusIndex = 0;
+      });
+      _pageController.animateToPage(
+        _currentContactIndex,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      _startProgress();
     }
   }
 
@@ -515,11 +572,13 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
         controller: _pageController,
         itemCount: widget.contacts.length,
         onPageChanged: (index) {
-          setState(() {
-            _currentContactIndex = index;
-            _currentStatusIndex = 0;
-          });
-          _startProgress();
+          if (_currentContactIndex != index) {
+            setState(() {
+              _currentContactIndex = index;
+              _currentStatusIndex = 0;
+            });
+            _startProgress();
+          }
         },
         itemBuilder: (context, index) {
           final contact = widget.contacts[index];
@@ -597,6 +656,22 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
             color: Colors.black,
             alignment: Alignment.center,
             child: const Icon(Icons.photo, size: 80, color: Colors.white54),
+          );
+        }
+      } else if (widget.myPath != null) {
+        final lower = widget.myPath!.toLowerCase();
+        final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi') || lower.endsWith('.mkv');
+        if (isVid) {
+          content = _buildVideoStatusContent(
+            videoUrl: widget.myPath!,
+            caption: null,
+            isMyStatus: true,
+          );
+        } else {
+          content = _buildMediaStatusContent(
+            imageUrl: widget.myPath!,
+            caption: null,
+            isMyStatus: true,
           );
         }
       } else if (widget.myBytes != null) {
@@ -753,6 +828,31 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
               child: AspectRatio(
                 aspectRatio: _videoController!.value.aspectRatio,
                 child: VideoPlayer(_videoController!),
+              ),
+            )
+          else if (_videoError)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 48),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Failed to load video',
+                    style: TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    onPressed: () => _initVideoPlayer(videoUrl),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00873C),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                  ),
+                ],
               ),
             )
           else

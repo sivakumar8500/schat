@@ -27,8 +27,9 @@ class SecureAttachmentService {
         ));
 
   /// Resolve relative paths into full S3 or MinIO URLs.
-  String _resolveFullUrl(String path) {
-    final cleanPath = path.replaceAll('file://', '');
+  static String resolveFullUrl(String path) {
+    if (path.isEmpty) return '';
+    var cleanPath = path.replaceAll('file://', '').trim();
     if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
       var resolved = cleanPath;
       try {
@@ -65,8 +66,17 @@ class SecureAttachmentService {
     } catch (_) {
       s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
     }
-    return '$s3BaseUrl$path';
+
+    while (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
+    }
+    if (cleanPath.startsWith('qlyncs-docs/')) {
+      cleanPath = cleanPath.replaceFirst('qlyncs-docs/', '');
+    }
+    return '$s3BaseUrl$cleanPath';
   }
+
+  String _resolveFullUrl(String path) => resolveFullUrl(path);
 
   /// Derive 256-bit (32-byte) AES key based on user and device identity.
   enc.Key _getEncryptionKey() {

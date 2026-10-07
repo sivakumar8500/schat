@@ -107,6 +107,10 @@ class CommonEndpoints {
   // User Lookup
   static const String lookupUser = '/users/lookup';
 
+  // Reports
+  static const String reportUser = '/users/report';
+  static const String reportChat = '/chats/report';
+
   // User Blocking
   static String blockUser(String targetUserId) => '/users/block/$targetUserId';
   static String unblockUser(String targetUserId) => '/users/unblock/$targetUserId';

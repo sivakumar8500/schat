@@ -52,6 +52,7 @@ class _StatusContactPickerSheetState extends State<StatusContactPickerSheet> {
     if (contacts.isEmpty) {
       contacts = await repository.getCachedContacts();
     }
+    contacts.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
     if (mounted) {
       setState(() {
@@ -72,7 +73,8 @@ class _StatusContactPickerSheetState extends State<StatusContactPickerSheet> {
           final name = c.displayName.toLowerCase();
           final phone = c.phoneNumber.toLowerCase();
           return name.contains(query) || phone.contains(query);
-        }).toList();
+        }).toList()
+          ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
       }
     });
   }

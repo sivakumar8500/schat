@@ -72,3 +72,8 @@ class UpdateStatusPrivacyEvent extends StatusEvent {
   });
 }
 
+class UpdateUploadProgressEvent extends StatusEvent {
+  final double progress;
+  const UpdateUploadProgressEvent(this.progress);
+}
+

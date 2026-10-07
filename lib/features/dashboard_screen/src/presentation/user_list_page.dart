@@ -50,7 +50,7 @@ class _UserListPageState extends State<UserListPage> {
   bool _isSyncInProgress = false;
 
   final String _appLink = 'https://schat.app';
-  final String _inviteTitle = 'Join Schat - Secure Messaging';
+  final String _inviteTitle = 'Join S-CHAT - Secure Messaging';
 
   void _triggerSync() {
     setState(() {
@@ -86,7 +86,7 @@ class _UserListPageState extends State<UserListPage> {
 
   void _showInviteBottomSheet(String name, String phone) {
     final String baseMessage =
-        'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
+        'Hey $name! I\'m using S-CHAT for secure and private conversations. Join me there! 🔒\n\nDownload S-CHAT at: $_appLink';
 
     showModalBottomSheet(
       context: context,
@@ -487,7 +487,7 @@ class _UserListPageState extends State<UserListPage> {
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
         dividerColor: Colors.transparent,
         tabs: const [
-          Tab(text: 'Schat Users'),
+          Tab(text: 'S-CHAT Users'),
           Tab(text: 'All Contacts'),
         ],
       ),
@@ -558,7 +558,8 @@ class _UserListPageState extends State<UserListPage> {
         final name = user.displayName.toLowerCase();
         final phone = user.phoneNumber.toLowerCase();
         return name.contains(query) || phone.contains(query);
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
       if (syncedUsers.isEmpty) {
         return _buildEmptyState(context, isSchatOnly: true);
@@ -604,7 +605,8 @@ class _UserListPageState extends State<UserListPage> {
         final name = contact.displayName.toLowerCase();
         final phones = contact.phones.map((p) => p.number.toLowerCase()).join(' ');
         return name.contains(query) || phones.contains(query);
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
       if (inviteContacts.isEmpty) {
         if (state is ContactsPermissionDenied) {
@@ -652,7 +654,7 @@ class _UserListPageState extends State<UserListPage> {
             ),
             CommonSpaces.h8,
             Text(
-              'Allow Schat to access your contacts to see friends and start chats seamlessly.',
+              'Allow S-CHAT to access your contacts to see friends and start chats seamlessly.',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
             ),
@@ -702,50 +704,30 @@ class _UserListPageState extends State<UserListPage> {
             ),
             CommonSpaces.h20,
             Text(
-              isSchatOnly ? 'No Schat users found' : 'No contacts found',
+              isSchatOnly ? 'No S-CHAT users found' : 'No contacts found',
               style: context.titleLarge.copyWith(fontWeight: FontWeight.bold),
             ),
             CommonSpaces.h8,
             Text(
               isSchatOnly
-                  ? 'Sync your contacts to see which of your friends are currently on Schat.'
+                  ? 'Sync your contacts to see which of your friends are currently on S-CHAT.'
                   : 'Grant contacts permission to view your address book and invite friends.',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14, height: 1.4),
             ),
             CommonSpaces.h24,
             if (isSchatOnly)
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _contactsBloc.add(const DiscoverContactsEvent());
-                    },
-                    icon: const Icon(Icons.explore_rounded, size: 18),
-                    label: const Text('Explore All Users'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00873C),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      elevation: 2,
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _triggerSync,
-                    icon: const Icon(Icons.sync_rounded, size: 18),
-                    label: const Text('Sync Contacts'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF00873C),
-                      side: const BorderSide(color: Color(0xFF00873C)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    ),
-                  ),
-                ],
+              ElevatedButton.icon(
+                onPressed: _triggerSync,
+                icon: const Icon(Icons.sync_rounded, size: 18),
+                label: const Text('Sync Contacts'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00873C),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  elevation: 2,
+                ),
               ),
           ],
         ),
@@ -854,7 +836,7 @@ class _UserListPageState extends State<UserListPage> {
                   Text(
                     isBlockMode && user.phoneNumber.isNotEmpty
                         ? user.phoneNumber
-                        : (user.about ?? 'Hey there! I am using Schat.'),
+                        : (user.about ?? 'Hey there! I am using S-CHAT.'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

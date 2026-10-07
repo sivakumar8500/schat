@@ -180,12 +180,14 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         return;
       }
 
+      final resolvedUrl = SecureAttachmentService.resolveFullUrl(widget.url);
+
       // 1. If local file exists, use it directly
-      final isLocal = File(widget.url).existsSync();
+      final isLocal = File(resolvedUrl).existsSync();
       if (isLocal) {
         if (mounted) {
           setState(() {
-            _decryptedTempFile = File(widget.url);
+            _decryptedTempFile = File(resolvedUrl);
             _isLoading = false;
           });
         }
@@ -195,7 +197,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       // 2. Fetch and decrypt securely
       final secureService = getIt<SecureAttachmentService>();
       final tempFile = await secureService.getDecryptedTempFileForViewing(
-        url: widget.url,
+        url: resolvedUrl,
         fileName: widget.fileName,
       );
 
@@ -334,7 +336,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         ),
       );
     } else {
-      final activePath = _decryptedTempFile?.path ?? widget.url;
+      final activePath = _decryptedTempFile?.path ?? SecureAttachmentService.resolveFullUrl(widget.url);
 
       if (widget.type == 'image') {
         final isLocal = !kIsWeb && File(activePath).existsSync();
@@ -423,6 +425,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       } else {
         // Document / other files
         final isPdf = widget.fileName.toLowerCase().endsWith('.pdf') || activePath.toLowerCase().endsWith('.pdf');
+        final isLocalFile = !kIsWeb && File(activePath).existsSync();
         if (kIsWeb) {
           viewerWidget = Container(
             padding: const EdgeInsets.all(16),
@@ -431,7 +434,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
               child: createWebDocView(activePath),
             ),
           );
-        } else if (isPdf) {
+        } else if (isPdf && isLocalFile) {
           viewerWidget = _InAppPdfViewer(
             filePath: activePath,
             fileName: widget.fileName,

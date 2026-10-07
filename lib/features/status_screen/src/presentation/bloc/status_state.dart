@@ -27,6 +27,13 @@ class StatusLoaded extends StatusState {
   // Privacy
   final StatusPrivacyModel? privacyModel;
 
+  // Upload indicators
+  final bool isUploading;
+  final double? uploadProgress;
+  final String? uploadStatusMessage;
+  final String? uploadSuccessMessage;
+  final String? uploadError;
+
   const StatusLoaded({
     required this.recentUpdates,
     required this.mutedUpdates,
@@ -36,6 +43,11 @@ class StatusLoaded extends StatusState {
     this.myStatusText,
     this.myStatusTime,
     this.privacyModel,
+    this.isUploading = false,
+    this.uploadProgress,
+    this.uploadStatusMessage,
+    this.uploadSuccessMessage,
+    this.uploadError,
   });
 
   StatusLoaded copyWith({
@@ -47,6 +59,11 @@ class StatusLoaded extends StatusState {
     String? Function()? myStatusText,
     DateTime? Function()? myStatusTime,
     StatusPrivacyModel? privacyModel,
+    bool? isUploading,
+    double? Function()? uploadProgress,
+    String? Function()? uploadStatusMessage,
+    String? Function()? uploadSuccessMessage,
+    String? Function()? uploadError,
   }) {
     return StatusLoaded(
       recentUpdates: recentUpdates ?? this.recentUpdates,
@@ -57,6 +74,11 @@ class StatusLoaded extends StatusState {
       myStatusText: myStatusText != null ? myStatusText() : this.myStatusText,
       myStatusTime: myStatusTime != null ? myStatusTime() : this.myStatusTime,
       privacyModel: privacyModel ?? this.privacyModel,
+      isUploading: isUploading ?? this.isUploading,
+      uploadProgress: uploadProgress != null ? uploadProgress() : this.uploadProgress,
+      uploadStatusMessage: uploadStatusMessage != null ? uploadStatusMessage() : this.uploadStatusMessage,
+      uploadSuccessMessage: uploadSuccessMessage != null ? uploadSuccessMessage() : this.uploadSuccessMessage,
+      uploadError: uploadError != null ? uploadError() : this.uploadError,
     );
   }
 }

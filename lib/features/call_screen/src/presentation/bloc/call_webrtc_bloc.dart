@@ -27,7 +27,13 @@ import 'call_webrtc_state.dart';
 @lazySingleton
 class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   static const MethodChannel _pipChannel = MethodChannel('com.sdpi.schat/pip');
-  static bool isCallScreenMounted = false;
+  static final ValueNotifier<bool> isCallScreenMountedNotifier = ValueNotifier<bool>(false);
+  static bool get isCallScreenMounted => isCallScreenMountedNotifier.value;
+  static set isCallScreenMounted(bool value) {
+    if (isCallScreenMountedNotifier.value != value) {
+      isCallScreenMountedNotifier.value = value;
+    }
+  }
   final WebRtcService _webRtcService;
   final ChatSocketRepository _repository;
   final CallSoundService _soundService = getIt<CallSoundService>();
@@ -191,7 +197,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
                 groupName: groupName.isNotEmpty ? groupName : existing.groupName,
                 isVideo: isVideo,
                 profilePictureUrl: profilePic ?? existing.profilePictureUrl,
-                participants: [...existing.participants, ...extractedParts].toSet().toList(),
+                participants: {...existing.participants, ...extractedParts}.toList(),
                 connectedParticipantIds: {...existing.connectedParticipantIds, ...connectedIds},
               );
             } else {
@@ -231,8 +237,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           break;
         case 'call_offer':
         case 'peer_offer':
-          final offerSenderId = (data['sender_id'] ?? data['senderId'])?.toString() ?? '';
-          final targetUserId = (data['target_user_id'] ?? data['targetUserId'] ?? data['recipient_id'])?.toString() ?? '';
+          final offerSenderId = (data['sender_id'] ?? data['senderId'] ?? data['from'] ?? data['user_id'] ?? data['caller_id'])?.toString() ?? '';
+          final targetUserId = (data['target_user_id'] ?? data['targetUserId'] ?? data['recipient_id'] ?? data['recipientId'])?.toString() ?? '';
           final currentMyId = getIt<StorageService>().getUserId()?.toString() ?? '';
           final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final offerMap = data['offer'];
@@ -247,8 +253,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           break;
         case 'call_answer':
         case 'peer_answer':
-          final answerSenderId = (data['sender_id'] ?? data['senderId'])?.toString() ?? '';
-          final answerTargetUserId = (data['target_user_id'] ?? data['targetUserId'] ?? data['recipient_id'])?.toString() ?? '';
+          final answerSenderId = (data['sender_id'] ?? data['senderId'] ?? data['from'] ?? data['user_id'])?.toString() ?? '';
+          final answerTargetUserId = (data['target_user_id'] ?? data['targetUserId'] ?? data['recipient_id'] ?? data['recipientId'])?.toString() ?? '';
           final mySelfId = getIt<StorageService>().getUserId()?.toString() ?? '';
           final answerMap = data['answer'];
           if (answerSenderId.isNotEmpty && answerSenderId != mySelfId && (answerTargetUserId.isEmpty || answerTargetUserId == mySelfId) && answerMap is Map) {
@@ -375,6 +381,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   void navigateToCallPage(Map<String, dynamic> extra) => _navigateToCallPage(extra);
 
   void _navigateToCallPage(Map<String, dynamic> extra) async {
+    add(const SetCallMinimizedEvent(false));
     if (CallWebRtcBloc.isCallScreenMounted) {
       debugPrint('CallWebRtcBloc: Call screen is already mounted, skipping navigation');
       return;
@@ -699,6 +706,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           'user_id': myId,
           'participant_id': myId,
           'sender_id': myId,
+          'senderId': myId,
           'user': {
             'id': myId,
             'name': myName,
@@ -709,15 +717,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           'isGroup': true,
         });
 
-        for (final p in extraParticipants) {
-          if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
-            _webRtcService.createOfferForPeer(
-              peerId: p.id,
-              conversationId: convoId,
-              repository: _repository,
-            );
+        // Fallback: If existing peers do not initiate an offer within 2.5s, initiate offer to ensure connection
+        Future.delayed(const Duration(milliseconds: 2500), () {
+          if (state is CallActive) {
+            for (final p in extraParticipants) {
+              if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
+                _webRtcService.createOfferForPeer(
+                  peerId: p.id,
+                  conversationId: convoId,
+                  repository: _repository,
+                );
+              }
+            }
           }
-        }
+        });
       }
 
       try {
@@ -764,15 +777,19 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final remainingConnected = connected.where((id) => id != myId).toSet();
       
       // Update ongoing group call record so user can rejoin anytime under Calls tab
-      _ongoingGroupCalls[convoId] = OngoingGroupCall(
-        conversationId: convoId,
-        groupName: gName,
-        isVideo: isVid,
-        profilePictureUrl: pPic,
-        participants: parts,
-        connectedParticipantIds: remainingConnected,
-        startedAt: (currentState is CallActive ? currentState.startedAt : null) ?? DateTime.now(),
-      );
+      if (remainingConnected.isNotEmpty) {
+        _ongoingGroupCalls[convoId] = OngoingGroupCall(
+          conversationId: convoId,
+          groupName: gName,
+          isVideo: isVid,
+          profilePictureUrl: pPic,
+          participants: parts,
+          connectedParticipantIds: remainingConnected,
+          startedAt: (currentState is CallActive ? currentState.startedAt : null) ?? DateTime.now(),
+        );
+      } else {
+        _ongoingGroupCalls.remove(convoId);
+      }
 
       // Inform other group members that only this participant has left
       _repository.emit('message', {
@@ -1251,26 +1268,31 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         connectedParticipantIds: {},
         startedAt: DateTime.now(),
       );
+      final validUser = user;
       final updatedOngoingParts = currentOngoing.participants.map((u) {
-        if (user != null && u.id.toLowerCase() == user.id.toLowerCase()) {
+        if (u.id.toLowerCase() == validUser.id.toLowerCase()) {
           return u.copyWith(
             profilePictureUrl: (u.profilePictureUrl != null && u.profilePictureUrl!.isNotEmpty)
                 ? u.profilePictureUrl
-                : user.profilePictureUrl,
-            contactName: u.displayName.isNotEmpty ? u.displayName : user.displayName,
+                : validUser.profilePictureUrl,
+            contactName: u.displayName.isNotEmpty ? u.displayName : validUser.displayName,
           );
         }
         return u;
       }).toList();
-      if (user != null && !currentOngoing.participants.any((u) => u.id.toLowerCase() == user!.id.toLowerCase())) {
-        updatedOngoingParts.add(user);
+      if (!currentOngoing.participants.any((u) => u.id.toLowerCase() == validUser.id.toLowerCase())) {
+        updatedOngoingParts.add(validUser);
       }
       for (final m in moreExtra) {
         if (!updatedOngoingParts.any((u) => u.id.toLowerCase() == m.id.toLowerCase())) {
           updatedOngoingParts.add(m);
         }
       }
-      final updatedOngoingConnected = {...currentOngoing.connectedParticipantIds, if (user != null) user.id, ...extraConnected};
+      final updatedOngoingConnected = {
+        ...currentOngoing.connectedParticipantIds,
+        validUser.id,
+        ...extraConnected,
+      };
       _ongoingGroupCalls[convoId] = currentOngoing.copyWith(
         participants: updatedOngoingParts,
         connectedParticipantIds: updatedOngoingConnected,
@@ -1350,7 +1372,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         recipientId: current.recipientId,
         isVideo: current.isVideo,
         isSpeakerOn: current.isSpeakerOn,
-        isMinimized: current.isMinimized,
+        isMinimized: isCallScreenMounted ? false : current.isMinimized,
         isGroup: true,
         groupName: current.groupName,
         extraParticipants: updatedList,
@@ -1401,6 +1423,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     if (userId == null || userId.isEmpty) return;
 
     _participantTimeoutTimers[userId]?.cancel();
+    _webRtcService.removePeer(userId);
     final convoId = (event.event['conversation_id'] ?? event.event['conversationId'])?.toString() ?? '';
     if (convoId.isNotEmpty && _ongoingGroupCalls.containsKey(convoId)) {
       final currentOngoing = _ongoingGroupCalls[convoId]!;
@@ -1439,8 +1462,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           .toSet();
       final updatedDisconnected = {...current.disconnectedParticipantIds, userId};
 
-      if (updatedConnected.isEmpty && (current.extraParticipants.isEmpty || current.extraParticipants.every((p) => updatedDisconnected.contains(p.id)))) {
-        debugPrint('CallWebRtcBloc: All participants left, auto-cutting call for ${current.conversationId}');
+      if (updatedConnected.isEmpty) {
+        debugPrint('CallWebRtcBloc: All remote participants left, auto-cutting call for ${current.conversationId}');
+        _ongoingGroupCalls.remove(current.conversationId);
         add(HangUpCallEvent(current.conversationId));
         return;
       }
@@ -1455,8 +1479,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           .where((id) => id.toLowerCase() != userId.toLowerCase())
           .toSet();
       final updatedDisconnected = {...current.disconnectedParticipantIds, userId};
-      if (updatedConnected.isEmpty && current.extraParticipants.isNotEmpty && current.extraParticipants.every((p) => updatedDisconnected.contains(p.id))) {
+      if (updatedConnected.isEmpty && (current.extraParticipants.isEmpty || current.extraParticipants.every((p) => updatedDisconnected.contains(p.id)))) {
         debugPrint('CallWebRtcBloc: All participants left/rejected during CallConnecting, ending call');
+        _ongoingGroupCalls.remove(current.conversationId);
         add(HangUpCallEvent(current.conversationId));
         return;
       }

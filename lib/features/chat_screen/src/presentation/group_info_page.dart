@@ -586,7 +586,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                           ? user.phoneNumber 
                                           : (user.about != null && user.about!.isNotEmpty 
                                               ? user.about! 
-                                              : 'Hey there! I am using Schat.')),
+                                              : 'Hey there! I am using S-CHAT.')),
                                   style: context.bodySmall.copyWith(
                                     color: isAdminParticipant ? context.colors.primary : context.colors.textSecondary,
                                     fontWeight: isAdminParticipant ? FontWeight.w500 : null,

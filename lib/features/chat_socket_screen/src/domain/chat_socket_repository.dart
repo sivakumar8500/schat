@@ -539,14 +539,25 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     required String messageId,
     required String emoji,
   }) {
+    final myId = _storageService.getUserId() ?? '';
+    final myName = _storageService.getUsername() ?? 'User';
     final Map<String, dynamic> payload = {
       "type": "message_reaction",
+      "action": "reaction",
+      "event": "message_reaction",
       "conversationId": conversationId,
       "conversation_id": conversationId,
       "messageId": messageId,
       "message_id": messageId,
+      "id": messageId,
       "emoji": emoji,
       "reaction": emoji,
+      "userId": myId,
+      "user_id": myId,
+      "senderId": myId,
+      "sender_id": myId,
+      "userName": myName,
+      "user_name": myName,
     };
     emit('message', payload);
   }

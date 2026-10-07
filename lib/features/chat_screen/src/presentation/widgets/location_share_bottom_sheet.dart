@@ -12,7 +12,7 @@ import 'package:schat/utils/common_spaces.dart';
 const String _kGoogleApiKey = 'AIzaSyDQ5sYBkse3w-n-QyrlvdTOCIQM86nQVKI';
 
 class LocationShareBottomSheet extends StatefulWidget {
-  final Function(double lat, double lng) onSendLocation;
+  final Function(double lat, double lng, [String? address]) onSendLocation;
 
   const LocationShareBottomSheet({
     super.key,
@@ -347,9 +347,26 @@ class _LocationShareBottomSheetState extends State<LocationShareBottomSheet> {
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        widget.onSendLocation(_selectedPosition!.latitude, _selectedPosition!.longitude);
-                        Navigator.pop(context);
+                      onPressed: () async {
+                        final lat = _selectedPosition!.latitude;
+                        final lng = _selectedPosition!.longitude;
+                        String? address = _searchController.text.trim();
+                        if (address.isEmpty) {
+                          try {
+                            final url = Uri.parse(
+                              'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_kGoogleApiKey',
+                            );
+                            final response = await http.get(url).timeout(const Duration(seconds: 3));
+                            if (response.statusCode == 200) {
+                              final data = json.decode(response.body);
+                              if (data['results'] != null && (data['results'] as List).isNotEmpty) {
+                                address = data['results'][0]['formatted_address'] as String?;
+                              }
+                            }
+                          } catch (_) {}
+                        }
+                        widget.onSendLocation(lat, lng, address);
+                        if (context.mounted) Navigator.pop(context);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: context.colors.primary,

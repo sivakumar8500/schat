@@ -22,6 +22,7 @@ abstract class ChatRepository {
     Uint8List? fileBytes,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
+  Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);
   Future<Map<String, dynamic>> getGroupDetails(String groupId);
   
   // New Backend APIs
@@ -167,6 +168,17 @@ abstract class ChatRepository {
   Future<bool> verifyChatLockPassword(String password);
   Future<bool> toggleChatLock(String conversationId, {required bool isLocked, String? password});
   Future<List<dynamic>> getLockedChats();
+
+  /// Report Conversation & User with last 5 messages snapshot
+  Future<bool> reportConversation({
+    required String conversationId,
+    required String reportedUserId,
+    String? reportedUserName,
+    String? reason,
+    String? description,
+    List<Map<String, dynamic>>? recentMessages,
+    bool blockUser = false,
+  });
 }
 
 class ChatLockStatusModel {

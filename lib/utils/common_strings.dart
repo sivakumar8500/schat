@@ -2,7 +2,8 @@ class CommonStrings {
   CommonStrings._();
 
   // App Level
-  static const String appName = 'Schat';
+  static const String appName = 'S-CHAT';
+  static const String appTagline = 'Secure today - Safe Tomorrow';
   
   // Auth Screen
   static const String enterMobile = 'Enter your mobile number';
@@ -20,7 +21,7 @@ class CommonStrings {
 
   // Subscription Screen
   static const String choosePlan = 'Choose a Plan';
-  static const String unlockPotential = 'Unlock the full potential of Schat!';
+  static const String unlockPotential = 'Unlock the full potential of S-CHAT!';
   static const String selectSubscription = 'Select a subscription plan that fits your needs.';
   static const String continueToPayment = 'Continue to Payment';
 

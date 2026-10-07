@@ -190,7 +190,7 @@ class MessageModel {
     String contentText = '';
     String? mediaUrl;
     final String rawType = (json['type'] ?? json['message_type'] ?? json['messageType'] ?? json['media_type'] ?? json['mediaType'] as String?)?.toLowerCase() ?? 'text';
-    final String messageType = rawType;
+    String messageType = rawType;
     String? mediaType = rawType == 'system' ? null : rawType;
 
     dynamic contentData = json['content'];
@@ -205,25 +205,44 @@ class MessageModel {
     double? duration;
     if (contentData is Map) {
       contentText = (contentData['text'] ?? contentData['caption'] ?? '')?.toString() ?? '';
-      mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url'] ?? contentData['mediaUrl'] ?? contentData['media_url'] ?? contentData['path'] ?? contentData['filePath'] ?? contentData['file_url'] ?? contentData['file'] ?? contentData['document'] ?? contentData['video'] ?? contentData['audio']) as String?;
+      mediaUrl = (contentData['fileKey'] ?? contentData['file_key'] ?? contentData['url'] ?? contentData['mediaUrl'] ?? contentData['media_url'] ?? contentData['path'] ?? contentData['filePath'] ?? contentData['file_url'] ?? contentData['file'] ?? contentData['document'] ?? contentData['video'] ?? contentData['audio'])?.toString();
       final rawDuration = contentData['duration'] ?? json['duration'];
       if (rawDuration != null) {
         duration = double.tryParse(rawDuration.toString());
       }
     } else if (contentData is String) {
       contentText = contentData;
-      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document'])?.toString();
       final rawDuration = json['duration'];
       if (rawDuration != null) {
         duration = double.tryParse(rawDuration.toString());
       }
     } else {
-      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['file_url'] ?? json['file'] ?? json['document'])?.toString();
     }
 
     if (mediaUrl == null || mediaUrl.isEmpty) {
-      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['attachmentPath'] ?? json['mediaPath'] ?? json['file_path'] ?? json['file_url'] ?? json['file'] ?? json['document']) as String?;
+      // Check nested media object
+      final mediaObj = json['media'] ?? json['attachment'];
+      if (mediaObj is Map) {
+        mediaUrl = (mediaObj['fileKey'] ?? mediaObj['file_key'] ?? mediaObj['url'] ?? mediaObj['mediaUrl'] ?? mediaObj['media_url'] ?? mediaObj['path'] ?? mediaObj['filePath'] ?? mediaObj['key'])?.toString();
+      } else if (mediaObj is String && mediaObj.isNotEmpty) {
+        mediaUrl = mediaObj;
+      }
     }
+
+    if (mediaUrl == null || mediaUrl.isEmpty) {
+      final attachmentsList = json['attachments'];
+      if (attachmentsList is List && attachmentsList.isNotEmpty && attachmentsList.first is Map) {
+        final firstAtt = attachmentsList.first as Map;
+        mediaUrl = (firstAtt['fileKey'] ?? firstAtt['file_key'] ?? firstAtt['url'] ?? firstAtt['path'])?.toString();
+      }
+    }
+
+    if (mediaUrl == null || mediaUrl.isEmpty) {
+      mediaUrl = (json['media_url'] ?? json['mediaUrl'] ?? json['url'] ?? json['fileKey'] ?? json['file_key'] ?? json['path'] ?? json['filePath'] ?? json['attachmentPath'] ?? json['mediaPath'] ?? json['file_path'] ?? json['file_url'] ?? json['file'] ?? json['document'] ?? json['s3Url'] ?? json['s3_url'])?.toString();
+    }
+
     if ((mediaUrl == null || mediaUrl.isEmpty) && contentText.isNotEmpty && (messageType == 'image' || messageType == 'video' || messageType == 'file' || messageType == 'audio' || messageType == 'document' || messageType == 'voice')) {
       if (contentText.startsWith('http') || contentText.startsWith('/') || contentText.startsWith('file:') || contentText.contains('.')) {
         mediaUrl = contentText;
@@ -231,16 +250,29 @@ class MessageModel {
     }
 
     // Auto-detect mediaType if it defaulted to text but mediaUrl/extension is present
-    if (mediaType == 'text' && mediaUrl != null && mediaUrl.isNotEmpty) {
-      final lowerUrl = mediaUrl.toLowerCase();
-      if (lowerUrl.endsWith('.mp4') || lowerUrl.endsWith('.mov') || lowerUrl.endsWith('.avi') || lowerUrl.endsWith('.mkv') || lowerUrl.endsWith('.3gp')) {
+    if ((mediaType == 'text' || mediaType == null || mediaType.isEmpty) && mediaUrl != null && mediaUrl.isNotEmpty) {
+      final lowerUrl = mediaUrl.toLowerCase().split('?').first;
+      if (lowerUrl.endsWith('.mp4') || lowerUrl.endsWith('.mov') || lowerUrl.endsWith('.avi') || lowerUrl.endsWith('.mkv') || lowerUrl.endsWith('.3gp') || lowerUrl.endsWith('.webm')) {
         mediaType = 'video';
-      } else if (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp') || lowerUrl.endsWith('.gif')) {
+        if (messageType == 'text') messageType = 'video';
+      } else if (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp') || lowerUrl.endsWith('.gif') || lowerUrl.endsWith('.bmp') || lowerUrl.endsWith('.heic')) {
         mediaType = 'image';
-      } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.m4a') || lowerUrl.endsWith('.wav') || lowerUrl.endsWith('.aac') || lowerUrl.endsWith('.ogg')) {
+        if (messageType == 'text') messageType = 'image';
+      } else if (lowerUrl.endsWith('.mp3') || lowerUrl.endsWith('.m4a') || lowerUrl.endsWith('.wav') || lowerUrl.endsWith('.aac') || lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.opus')) {
         mediaType = 'audio';
-      } else if (lowerUrl.endsWith('.pdf') || lowerUrl.endsWith('.doc') || lowerUrl.endsWith('.docx') || lowerUrl.endsWith('.xls') || lowerUrl.endsWith('.xlsx') || lowerUrl.endsWith('.txt') || lowerUrl.endsWith('.zip') || lowerUrl.endsWith('.csv')) {
+        if (messageType == 'text') messageType = 'audio';
+      } else if (lowerUrl.endsWith('.pdf') || lowerUrl.endsWith('.doc') || lowerUrl.endsWith('.docx') || lowerUrl.endsWith('.xls') || lowerUrl.endsWith('.xlsx') || lowerUrl.endsWith('.txt') || lowerUrl.endsWith('.zip') || lowerUrl.endsWith('.csv') || lowerUrl.endsWith('.ppt') || lowerUrl.endsWith('.pptx')) {
         mediaType = 'file';
+        if (messageType == 'text') messageType = 'file';
+      } else {
+        // If mediaUrl exists but extension is unknown, check rawType or default to image
+        if (rawType != 'text' && rawType != 'system') {
+          mediaType = rawType;
+          messageType = rawType;
+        } else {
+          mediaType = 'image';
+          messageType = 'image';
+        }
       }
     }
 
@@ -633,7 +665,14 @@ class MessageModel {
       if (address != null) 'address': address,
       if (locationTitle != null) 'title': locationTitle,
     },
-    'type': messageType != 'text' ? messageType : mediaType,
+    'mediaUrl': mediaUrl,
+    'media_url': mediaUrl,
+    'fileKey': mediaUrl,
+    'file_key': mediaUrl,
+    'mediaType': mediaType,
+    'media_type': mediaType,
+    'messageType': messageType,
+    'type': (mediaType != null && mediaType!.isNotEmpty && mediaType != 'text') ? mediaType : (messageType != 'text' ? messageType : 'text'),
     'isDeleted': isDeleted,
     'isDeletedForMe': isDeletedForMe,
     'isRead': isRead,
@@ -649,6 +688,7 @@ class MessageModel {
     'pinnedAt': pinnedAt,
     'attachmentName': attachmentName,
     'fileSize': fileSize,
+    'duration': duration,
     'isFailed': isFailed,
     'isFileViewed': isFileViewed,
     'isFileDownloaded': isFileDownloaded,
@@ -656,6 +696,9 @@ class MessageModel {
     'isViewOnce': isViewOnce,
     'maxViews': maxViews,
     'isViewOnceOpened': isViewOnceOpened,
+    'allowShare': allowShare,
+    'allowDownload': allowDownload,
+    'allowView': allowView,
     'security': {
       'allowShare': allowShare,
       'allowDownload': allowDownload,
@@ -681,6 +724,7 @@ class MessageModel {
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
     if (expiry != null) 'expiry': expiry,
     if (senderName != null) 'senderName': senderName,
+    if (senderProfilePictureUrl != null) 'senderProfilePictureUrl': senderProfilePictureUrl,
   };
 
   MessageModel copyWith({

@@ -9,6 +9,7 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/features/dashboard_screen/src/domain/models/recipient_model.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
+import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/features/chat_search/src/domain/models/global_search_model.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
@@ -104,6 +105,26 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       result.when(
         success: (response) {
           if (mounted && _searchQuery == query) {
+            if (response.isSecretCodeMatch || response.lockedChats.isNotEmpty) {
+              // Immediately clear search bar so password is not visible after opening chats
+              _searchController.clear();
+              setState(() {
+                _searchQuery = '';
+                _serverSearchResponse = null;
+                _isSearchingServer = false;
+              });
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LockedChatsPage(
+                    initialLockedChats: response.lockedChats,
+                  ),
+                ),
+              );
+              return;
+            }
+
             setState(() {
               _serverSearchResponse = response;
               _isSearchingServer = false;
@@ -364,6 +385,112 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     );
   }
 
+  bool _isSystemMessageText(String text, String? messageType) {
+    final lowerType = (messageType ?? '').toLowerCase();
+    if (lowerType == 'system' ||
+        lowerType == 'group_event' ||
+        lowerType == 'notification' ||
+        lowerType == 'timer' ||
+        lowerType == 'event') {
+      return true;
+    }
+    final lower = text.toLowerCase().trim();
+    if (lower.isEmpty) return false;
+    if (lower.contains('disappearing messages') ||
+        lower.contains('messages will disappear') ||
+        lower.contains('updated the disappearing') ||
+        lower.contains('turned on disappearing') ||
+        lower.contains('turned off disappearing') ||
+        lower.contains('changed the group name') ||
+        lower.contains('changed group name') ||
+        lower.contains('changed the group description') ||
+        lower.contains('created the group') ||
+        lower.contains('created this group') ||
+        lower.contains('left the group') ||
+        lower.contains('joined the group') ||
+        lower.contains('removed from the group') ||
+        lower.contains('security code changed') ||
+        lower.contains('screenshot') ||
+        lower.contains('screen recording') ||
+        lower.contains('waiting for this message')) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isRawMediaFileName(String text) {
+    final lower = text.toLowerCase().trim();
+    return lower.startsWith('image_picker_') ||
+        lower.startsWith('scaled_image_picker') ||
+        lower.startsWith('temp_') ||
+        lower.startsWith('vid_') ||
+        lower.startsWith('img_') ||
+        RegExp(r'^\d{4,}\.(mp4|mov|jpg|jpeg|png|webp|m4a|mp3)$', caseSensitive: false).hasMatch(lower) ||
+        RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', caseSensitive: false).hasMatch(lower);
+  }
+
+  String _formatDisplayContent(String rawContent, String mediaType, {String? fileName}) {
+    final type = mediaType.toLowerCase();
+    final trimmed = rawContent.trim();
+
+    if (trimmed.contains(' · ')) {
+      final parts = trimmed.split(' · ');
+      final filePart = parts[0].trim();
+      final captionPart = parts.sublist(1).join(' · ').trim();
+
+      if (_isRawMediaFileName(filePart)) {
+        if (captionPart.isNotEmpty) {
+          if (type == 'image' || type == 'photo') return '📷 $captionPart';
+          if (type == 'video') return '🎥 $captionPart';
+          if (type == 'audio' || type == 'voice') return '🎵 $captionPart';
+          if (type == 'document' || type == 'file' || type == 'pdf') return '📄 $captionPart';
+          return captionPart;
+        }
+      }
+    }
+
+    if (_isRawMediaFileName(trimmed)) {
+      if (type == 'image' || type == 'photo') return '📷 Photo';
+      if (type == 'video') return '🎥 Video';
+      if (type == 'audio' || type == 'voice') return '🎵 Audio';
+      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(fileName ?? 'Document');
+      return 'Attachment';
+    }
+
+    if (trimmed.isEmpty) {
+      if (type == 'image' || type == 'photo') return '📷 Photo';
+      if (type == 'video') return '🎥 Video';
+      if (type == 'audio' || type == 'voice') return '🎵 Audio';
+      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(fileName ?? 'Document');
+    }
+
+    return trimmed;
+  }
+
+  String _formatDisplayFileName(String rawName) {
+    final trimmed = rawName.trim();
+    if (_isRawMediaFileName(trimmed)) {
+      if (trimmed.toLowerCase().endsWith('.pdf')) return 'Document.pdf';
+      return 'Document';
+    }
+    return trimmed;
+  }
+
+  bool _matchesQuery(String text, String query) {
+    if (query.isEmpty) return false;
+    final cleanQuery = query.toLowerCase().trim();
+    final cleanText = text.toLowerCase();
+
+    if (cleanQuery.length < 3) {
+      // For short 1-2 character queries, match words that start with the query
+      // (e.g. "he" matches "hello", "hey", "help", "he", but not "the" or "father")
+      final words = cleanText.split(RegExp(r'[\s,.:;!?/\\-_#@()\[\]]+'));
+      return words.any((w) => w.startsWith(cleanQuery));
+    } else {
+      return cleanText.contains(cleanQuery);
+    }
+  }
+
   // ==========================================
   // QUERY-BASED SEARCH RESULTS VIEW (MATCHING SCREENSHOT)
   // ==========================================
@@ -379,15 +506,44 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     }
 
     // Merge server search results or local filtered items
-    final serverMessages = _serverSearchResponse?.messages ?? [];
+    final rawServerMessages = _serverSearchResponse?.messages ?? [];
+
+    // Filter server messages to remove system messages, internal URLs/hashes, and require genuine match
+    final serverMessages = rawServerMessages.where((msg) {
+      if (_isSystemMessageText(msg.contentText, msg.messageType)) return false;
+
+      final convTitle = msg.conversationName;
+      final sender = msg.senderName ?? '';
+      final formatted = _formatDisplayContent(msg.contentText, msg.messageType, fileName: msg.fileName);
+      final file = msg.fileName ?? '';
+
+      // Match conversation title / sender name
+      if (convTitle.toLowerCase().contains(query) || sender.toLowerCase().contains(query)) {
+        return true;
+      }
+
+      // Match formatted readable message, caption, or file name
+      return _matchesQuery(formatted, query) || _matchesQuery(file, query);
+    }).toList();
 
     // Local matched chat last messages
     final localMatches = chatList.where((chat) {
       final name = (chat.isGroup ? (chat.groupName ?? '') : chat.recipient.displayName).toLowerCase();
       final phone = chat.recipient.phoneNumber.toLowerCase();
-      final lastMsg = (chat.lastMessage?.content ?? '').toLowerCase();
-      final mediaUrl = (chat.lastMessage?.mediaUrl ?? '').toLowerCase();
-      return name.contains(query) || phone.contains(query) || lastMsg.contains(query) || mediaUrl.contains(query);
+      final username = (chat.recipient.username ?? '').toLowerCase();
+
+      if (name.contains(query) || phone.contains(query) || username.contains(query)) {
+        return true;
+      }
+
+      final rawMsg = chat.lastMessage?.content ?? '';
+      final msgType = chat.lastMessage?.mediaType ?? '';
+      if (_isSystemMessageText(rawMsg, msgType)) {
+        return false;
+      }
+
+      final formatted = _formatDisplayContent(rawMsg, msgType);
+      return _matchesQuery(formatted, query);
     }).toList();
 
     // If server has returned messages, show server results + local chats
@@ -504,6 +660,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       prefix = '~ $senderName: ';
     }
 
+    final displayContent = _formatDisplayContent(contentText, mediaType, fileName: fileName);
+
     final isPdfOrDoc = mediaType == 'pdf' ||
         mediaType == 'document' ||
         mediaType == 'file' ||
@@ -556,7 +714,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             // Content Row
             if (isPdfOrDoc)
               _buildDocumentQueryCard(
-                fileName: fileName ?? contentText,
+                fileName: _formatDisplayFileName(fileName ?? contentText),
                 fileSize: fileSize ?? '193 kB',
                 query: query,
                 isDark: isDark,
@@ -567,7 +725,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 children: [
                   Expanded(
                     child: _buildHighlightedText(
-                      text: '$prefix$contentText',
+                      text: '$prefix$displayContent',
                       query: query,
                       baseStyle: TextStyle(
                         color: isDark ? Colors.white70 : const Color(0xFF4B5563),
@@ -610,7 +768,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               )
             else
               _buildHighlightedText(
-                text: '$prefix$contentText',
+                text: '$prefix$displayContent',
                 query: query,
                 baseStyle: TextStyle(
                   color: isDark ? Colors.white70 : const Color(0xFF4B5563),
@@ -911,16 +1069,23 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
 
-        final String message;
+        final String rawMessage;
         if (chat.isTyping) {
-          message = 'typing...';
+          rawMessage = 'typing...';
         } else if (chat.lastMessage != null && chat.lastMessage!.isDeleted) {
           final myId = getIt<StorageService>().getUserId() ?? '';
           final isMe = chat.lastMessage!.senderId == myId;
-          message = isMe ? 'You deleted this message' : 'This message was deleted';
+          rawMessage = isMe ? 'You deleted this message' : 'This message was deleted';
         } else {
-          message = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
+          rawMessage = chat.lastMessage?.content ?? chat.groupDescription ?? 'No messages yet';
         }
+
+        final message = chat.isTyping
+            ? 'typing...'
+            : _formatDisplayContent(
+                rawMessage,
+                chat.lastMessage?.mediaType ?? '',
+              );
 
         return _buildChatTile(
           chat: chat,
@@ -1713,6 +1878,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
     final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
     final timeStr = _formatMessageTime(timestamp);
+    final displayFileName = _formatDisplayFileName(rawContent);
 
     return Material(
       color: Colors.transparent,
@@ -1751,7 +1917,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      rawContent,
+                      displayFileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

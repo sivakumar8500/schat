@@ -19,6 +19,7 @@ abstract class StatusRepository {
     dynamic fileBytes, // Uint8List
     String? privacyType,
     List<String>? privacyUserIds,
+    void Function(double progress)? onProgress,
   });
 
   Future<List<StatusItemModel>> getMyStatuses();

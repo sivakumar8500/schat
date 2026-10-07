@@ -32,6 +32,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUserId(user.id);
         _storageService.saveUsername(user.username);
         _storageService.saveProfilePic(user.profilePictureUrl);
+        _storageService.saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
         return ApiResult.success(user);
       },
       failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
@@ -67,6 +68,7 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUserId(user.id);
         _storageService.saveUsername(user.username);
         _storageService.saveProfilePic(user.profilePictureUrl);
+        _storageService.saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
         if (request.readReceiptsEnabled != null) {
           _storageService.saveReadReceiptsEnabled(request.readReceiptsEnabled!);
         }

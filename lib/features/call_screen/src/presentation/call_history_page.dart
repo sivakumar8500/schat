@@ -352,7 +352,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
             final ongoingCalls = getIt<CallWebRtcBloc>()
                 .ongoingGroupCalls
                 .values
-                .where((c) => !isCurrentlyInCall || (callState is CallActive && callState.conversationId != c.conversationId))
+                .where((c) => c.connectedParticipantIds.isNotEmpty && (!isCurrentlyInCall || (callState is CallActive && callState.conversationId != c.conversationId)))
                 .toList();
 
             if (!isCurrentlyInCall && ongoingCalls.isEmpty) {
@@ -406,9 +406,9 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                       case CallFilter.missed:
                         return call.isMissed;
                       case CallFilter.incoming:
-                        return call.isIncoming || call.isMissed;
+                        return call.isIncoming && !call.isMissed;
                       case CallFilter.outgoing:
-                        return !call.isIncoming && !call.isMissed;
+                        return !call.isIncoming;
                     }
                   }).toList();
 

@@ -1,6 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:schat/utils/common_endpoints.dart';
+
 part 'status_model.freezed.dart';
 part 'status_model.g.dart';
 
@@ -43,9 +45,16 @@ Map<String, dynamic> _normalizeStatusItemJson(Map<String, dynamic> json) {
   map['id'] = (json['id'] ?? json['_id'] ?? json['status_id'])?.toString() ?? '';
   map['textContent'] = json['textContent'] ?? json['text_content'] ?? json['text'];
 
-  final rawMedia = json['mediaUrl'] ?? json['media_url'];
-  if (rawMedia != null && rawMedia.toString().startsWith('http')) {
-    map['mediaUrl'] = rawMedia.toString();
+  dynamic rawMedia = json['mediaUrl'] ?? json['media_url'] ?? json['media'] ?? json['fileUrl'] ?? json['file_url'] ?? json['url'];
+  if (rawMedia is Map) {
+    rawMedia = rawMedia['url'] ?? rawMedia['mediaUrl'] ?? rawMedia['media_url'];
+  }
+  if (rawMedia != null && rawMedia.toString().isNotEmpty) {
+    String mediaStr = rawMedia.toString();
+    if (mediaStr.startsWith('/')) {
+      mediaStr = '${CommonEndpoints.baseUrl}$mediaStr';
+    }
+    map['mediaUrl'] = mediaStr;
   } else {
     map['mediaUrl'] = null;
   }

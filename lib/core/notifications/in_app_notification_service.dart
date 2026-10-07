@@ -81,10 +81,26 @@ class InAppNotificationService {
     debugPrint('InAppNotificationService: Initialized socket listener for in-app message notifications & screen permissions');
   }
 
+  void markScreenPermissionHandled(String requestId) {
+    _shownScreenPermissionRequestIds.add(requestId);
+  }
+
   void _handleSocketMessage(dynamic data) {
     if (data is! Map) return;
 
     final type = data['type']?.toString();
+
+    // Handle screen permission response/respond (mark handled)
+    if (type == 'screen_permission_response' || type == 'screen_permission_respond') {
+      final reqMap = data['request'] ?? data['data'] ?? data;
+      if (reqMap is Map) {
+        final id = (reqMap['id'] ?? reqMap['_id'] ?? reqMap['requestId'] ?? reqMap['request_id'])?.toString();
+        if (id != null && id.isNotEmpty) {
+          _shownScreenPermissionRequestIds.add(id);
+        }
+      }
+      return;
+    }
 
     // Handle screen permission request popup
     if (type == 'screen_permission_request') {

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:schat/utils/common_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/splash_screen/splash_screen.dart';
@@ -30,6 +29,8 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
+import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
+import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -173,53 +174,71 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             BlocProvider.value(
               value: getIt<ContactsBloc>()..add(const LoadContacts()),
             ),
+            BlocProvider<StatusBloc>(
+              create: (context) => StatusBloc()..add(const LoadStatusUpdatesEvent()),
+            ),
           ],
           child: MaterialApp(
-            title: 'sChat',
+            title: 'S-CHAT',
             navigatorKey: navigatorKey,
             navigatorObservers: [routeObserver],
             themeMode: getIt<ThemeController>().themeMode,
             theme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
-                seedColor: context.colors.primary,
+                seedColor: const Color(0xFF00873C),
                 brightness: Brightness.light,
-                surface: context.colors.scaffoldBackground,
+                surface: Colors.white,
+                onSurface: Colors.black87,
               ),
-              scaffoldBackgroundColor: context.colors.scaffoldBackground,
+              scaffoldBackgroundColor: Colors.white,
               useMaterial3: true,
               fontFamily: CommonFonts.primaryFont,
+              textSelectionTheme: TextSelectionThemeData(
+                cursorColor: const Color(0xFF00873C),
+                selectionColor: const Color(0xFF00873C).withValues(alpha: 0.3),
+                selectionHandleColor: const Color(0xFF00873C),
+              ),
               inputDecorationTheme: InputDecorationTheme(
                 hintStyle: TextStyle(
                   fontFamily: CommonFonts.primaryFont,
-                  fontSize: 18,
-                  color: context.colors.textHint,
+                  fontSize: 16,
+                  color: Colors.grey,
                 ),
                 labelStyle: TextStyle(
                   fontFamily: CommonFonts.primaryFont,
-                  fontSize: 18,
-                  color: context.colors.textSecondary,
+                  fontSize: 16,
+                  color: Colors.black54,
                 ),
               ),
             ),
             darkTheme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
-                seedColor: context.colors.primary,
+                seedColor: const Color(0xFF00FF87),
                 brightness: Brightness.dark,
-                surface: context.colors.scaffoldBackground,
+                surface: const Color(0xFF1A241F),
+                onSurface: Colors.white,
+                surfaceContainer: const Color(0xFF222F29),
+                surfaceContainerHigh: const Color(0xFF2A3A33),
               ),
-              scaffoldBackgroundColor: context.colors.scaffoldBackground,
+              scaffoldBackgroundColor: const Color(0xFF0F1411),
+              cardColor: const Color(0xFF1E2B22),
               useMaterial3: true,
               fontFamily: CommonFonts.primaryFont,
+              textSelectionTheme: TextSelectionThemeData(
+                cursorColor: const Color(0xFF00FF87),
+                selectionColor: const Color(0xFF00FF87).withValues(alpha: 0.35),
+                selectionHandleColor: const Color(0xFF00FF87),
+              ),
               inputDecorationTheme: InputDecorationTheme(
                 hintStyle: TextStyle(
                   fontFamily: CommonFonts.primaryFont,
-                  fontSize: 18,
-                  color: context.colors.textHint,
+                  fontSize: 16,
+                  color: Colors.grey,
                 ),
                 labelStyle: TextStyle(
                   fontFamily: CommonFonts.primaryFont,
-                  fontSize: 18,
-                  color: context.colors.textSecondary,
+                  fontSize: 16,
+                  color: Colors.white70,
                 ),
               ),
             ),

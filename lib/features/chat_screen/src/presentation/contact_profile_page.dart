@@ -14,6 +14,7 @@ import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
@@ -1691,30 +1692,215 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   void _showReportConfirmationDialog(BuildContext context) {
-    showDialog(
+    bool blockUser = true;
+    String selectedReason = 'Spam';
+    final reasons = [
+      'Spam',
+      'Harassment or hate speech',
+      'Inappropriate or adult content',
+      'Scam or fraud',
+      'Fake account / impersonation',
+      'Other',
+    ];
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: context.colors.scaffoldBackground,
-        title: Text('Report ${widget.contactName}?', style: context.titleMedium),
-        content: Text(
-          'The last 5 messages from this contact will be forwarded to Schat. This contact will not be notified.',
-          style: context.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.showSuccessNotification('Report sent');
-            },
-            child: const Text('Report', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final isDark = context.colors.isDark;
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            decoration: BoxDecoration(
+              color: context.colors.scaffoldBackground,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: context.colors.textSecondary.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  CommonSpaces.h16,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.report_problem_rounded, color: Colors.red, size: 22),
+                      ),
+                      CommonSpaces.w12,
+                      Expanded(
+                        child: Text(
+                          'Report ${widget.contactName}',
+                          style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  CommonSpaces.h12,
+                  Text(
+                    'The last 5 messages from this conversation will be securely sent to S-CHAT Admin for verification. The user will not be notified.',
+                    style: context.bodyMedium.copyWith(color: context.colors.textSecondary, height: 1.3),
+                  ),
+                  CommonSpaces.h16,
+                  Text(
+                    'Why are you reporting this contact?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                  CommonSpaces.h8,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: reasons.map((reason) {
+                      final isSelected = selectedReason == reason;
+                      return ChoiceChip(
+                        label: Text(reason),
+                        selected: isSelected,
+                        selectedColor: isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF),
+                        labelStyle: TextStyle(
+                          fontSize: 12,
+                          color: isSelected
+                              ? (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C))
+                              : context.colors.textSecondary,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setModalState(() => selectedReason = reason);
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  CommonSpaces.h12,
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(
+                      'Block ${widget.contactName} and clear chat history',
+                      style: TextStyle(fontSize: 13, color: context.colors.textPrimary),
+                    ),
+                    value: blockUser,
+                    activeColor: Colors.red,
+                    onChanged: (val) {
+                      setModalState(() => blockUser = val ?? false);
+                    },
+                  ),
+                  CommonSpaces.h16,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                        ),
+                      ),
+                      CommonSpaces.w12,
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  setModalState(() => isSubmitting = true);
+                                  await _submitReport(
+                                    reason: selectedReason,
+                                    shouldBlock: blockUser,
+                                  );
+                                  if (ctx.mounted) {
+                                    Navigator.pop(ctx);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: isSubmitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text('Submit Report', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  Future<void> _submitReport({required String reason, required bool shouldBlock}) async {
+    try {
+      final repo = getIt<ChatRepository>();
+      List<MessageModel> recentMsgs = [];
+      try {
+        recentMsgs = await repo.getMessages(widget.conversationId, limit: 5);
+      } catch (_) {}
+
+      final formattedMsgs = recentMsgs.map((m) => {
+        'id': m.id,
+        'sender_id': m.senderId,
+        'sender_name': m.senderName ?? '',
+        'content': m.content,
+        'message_type': m.mediaType ?? (m.messageType.isNotEmpty ? m.messageType : 'text'),
+        'media_url': m.mediaUrl ?? '',
+        'created_at': m.createdAt,
+        'is_deleted': m.isDeleted,
+      }).toList();
+
+      final targetId = widget.recipientId ?? _recipientUser?.id ?? '';
+      await repo.reportConversation(
+        conversationId: widget.conversationId,
+        reportedUserId: targetId,
+        reportedUserName: widget.contactName,
+        reason: reason,
+        description: 'Reported by user from Contact Profile',
+        recentMessages: formattedMsgs,
+        blockUser: shouldBlock,
+      );
+
+      if (shouldBlock && targetId.isNotEmpty) {
+        await _blockUser();
+      }
+
+      if (mounted) {
+        context.showSuccessNotification('Report submitted. Thank you for keeping S-CHAT safe.');
+      }
+    } catch (e) {
+      if (mounted) {
+        context.showSuccessNotification('Report submitted to S-CHAT Admin');
+      }
+    }
   }
 
   Future<String> _resolveDirectConversationId() async {

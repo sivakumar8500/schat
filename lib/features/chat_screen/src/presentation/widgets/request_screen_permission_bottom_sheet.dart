@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -133,6 +134,10 @@ class _RequestScreenPermissionBottomSheetState
         requestId: request.id,
         action: action,
       );
+
+      try {
+        getIt<InAppNotificationService>().markScreenPermissionHandled(request.id);
+      } catch (_) {}
 
       if (mounted) {
         setState(() {

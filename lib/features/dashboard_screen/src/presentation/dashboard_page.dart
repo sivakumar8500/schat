@@ -24,6 +24,9 @@ import 'package:schat/features/profile_screen/src/domain/repositories/profile_re
 import 'package:schat/features/profile_screen/src/presentation/profile_settings_page.dart';
 import 'package:schat/features/chat_transfer_screen/src/presentation/chat_transfer_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_page.dart';
+import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
+import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
+import 'package:schat/features/status_screen/src/presentation/bloc/status_state.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -38,6 +41,7 @@ import 'package:schat/utils/theme_controller.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
+import 'package:schat/common/widgets/animated_tagline.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -766,13 +770,13 @@ class _DashboardPageState extends State<DashboardPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        Text(
-                          "How are you today?",
-                          style: TextStyle(
-                            color: isDark ? Colors.white60 : const Color(0xFF6B7280),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        const SizedBox(height: 2),
+                        const AnimatedTagline(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          showShieldIcon: false,
                         ),
                       ],
                     ),
@@ -1536,50 +1540,58 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildBottomNavigationBar() {
     final isDark = context.colors.isDark;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.colors.scaffoldBackground,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
+    return BlocBuilder<StatusBloc, StatusState>(
+      builder: (context, statusState) {
+        final bool hasUnviewedStatus = statusState is StatusLoaded &&
+            statusState.recentUpdates.any((c) => !c.allViewed);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBackground,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
+              ),
+            ],
           ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildNavItem(
-              index: 0,
-              icon: Icons.chat_bubble_outline_rounded,
-              activeIcon: Icons.chat_bubble_rounded,
-              label: 'Messages',
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: SafeArea(
+            top: false,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(
+                  index: 0,
+                  icon: Icons.chat_bubble_outline_rounded,
+                  activeIcon: Icons.chat_bubble_rounded,
+                  label: 'Messages',
+                ),
+                _buildNavItem(
+                  index: 1,
+                  icon: Icons.motion_photos_on_outlined,
+                  activeIcon: Icons.motion_photos_on_rounded,
+                  label: 'Status',
+                  showDot: hasUnviewedStatus,
+                ),
+                _buildNavItem(
+                  index: 2,
+                  icon: Icons.call_outlined,
+                  activeIcon: Icons.phone_rounded,
+                  label: 'Calls',
+                ),
+                _buildNavItem(
+                  index: 3,
+                  icon: Icons.person_add_outlined,
+                  activeIcon: Icons.person_add_alt_1_rounded,
+                  label: 'New Chat',
+                ),
+              ],
             ),
-            _buildNavItem(
-              index: 1,
-              icon: Icons.motion_photos_on_outlined,
-              activeIcon: Icons.motion_photos_on_rounded,
-              label: 'Status',
-            ),
-            _buildNavItem(
-              index: 2,
-              icon: Icons.call_outlined,
-              activeIcon: Icons.phone_rounded,
-              label: 'Calls',
-            ),
-            _buildNavItem(
-              index: 3,
-              icon: Icons.person_add_outlined,
-              activeIcon: Icons.person_add_alt_1_rounded,
-              label: 'New Chat',
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1588,6 +1600,7 @@ class _DashboardPageState extends State<DashboardPage> {
     required IconData icon,
     required IconData activeIcon,
     required String label,
+    bool showDot = false,
   }) {
     final isActive = _currentIndex == index;
     final isDark = context.colors.isDark;
@@ -1602,6 +1615,8 @@ class _DashboardPageState extends State<DashboardPage> {
           _currentIndex = index;
           if (index == 0) {
             context.read<ChatsBloc>().add(const FetchChats());
+          } else if (index == 1) {
+            context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
           } else if (index == 2) {
             getIt<CallHistoryCubit>().fetchCallHistory();
           } else if (index == 3) {
@@ -1620,12 +1635,41 @@ class _DashboardPageState extends State<DashboardPage> {
               color: isActive ? activePillColor : Colors.transparent,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(
-              isActive ? activeIcon : icon,
-              size: 22,
-              color: isActive
-                  ? primaryColor
-                  : (isDark ? Colors.white60 : const Color(0xFF6B7280)),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isActive ? activeIcon : icon,
+                  size: 22,
+                  color: isActive
+                      ? primaryColor
+                      : (isDark ? Colors.white60 : const Color(0xFF6B7280)),
+                ),
+                if (showDot)
+                  Positioned(
+                    top: -2,
+                    right: -4,
+                    child: Container(
+                      width: 8.5,
+                      height: 8.5,
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.4),
+                            blurRadius: 4,
+                            spreadRadius: 0.5,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 4),

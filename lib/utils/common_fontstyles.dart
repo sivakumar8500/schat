@@ -6,7 +6,7 @@ class CommonFontStyles {
   CommonFontStyles._();
 
   static TextStyle h1(BuildContext context) => TextStyle(
-        fontSize: 38,
+        fontSize: 36,
         fontWeight: FontWeight.w900,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
@@ -15,75 +15,75 @@ class CommonFontStyles {
       );
 
   static TextStyle h1Italic(BuildContext context) => TextStyle(
-        fontSize: 32,
+        fontSize: 30,
         fontStyle: FontStyle.italic,
         fontFamily: CommonFonts.accentFont,
         color: context.colors.primaryAccent,
       );
 
   static TextStyle h2(BuildContext context) => TextStyle(
-        fontSize: 28,
+        fontSize: 26,
         fontWeight: FontWeight.bold,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle h3(BuildContext context) => TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.bold,
-        fontFamily: CommonFonts.primaryFont,
-        color: context.colors.textPrimary,
-      );
-
-  static TextStyle titleLarge(BuildContext context) => TextStyle(
         fontSize: 20,
         fontWeight: FontWeight.bold,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
-  static TextStyle titleMedium(BuildContext context) => TextStyle(
+  static TextStyle titleLarge(BuildContext context) => TextStyle(
         fontSize: 18,
+        fontWeight: FontWeight.bold,
+        fontFamily: CommonFonts.primaryFont,
+        color: context.colors.textPrimary,
+      );
+
+  static TextStyle titleMedium(BuildContext context) => TextStyle(
+        fontSize: 16,
         fontWeight: FontWeight.bold,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle titleSmall(BuildContext context) => TextStyle(
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: FontWeight.w700,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle bodyLarge(BuildContext context) => TextStyle(
-        fontSize: 18,
+        fontSize: 16,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textPrimary,
       );
 
   static TextStyle bodyMedium(BuildContext context) => TextStyle(
-        fontSize: 16.5,
+        fontSize: 14.5,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
         height: 1.4,
       );
 
   static TextStyle bodySmall(BuildContext context) => TextStyle(
-        fontSize: 14,
+        fontSize: 12,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );
 
   static TextStyle buttonText(BuildContext context) => TextStyle(
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: FontWeight.bold,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.pureWhite,
       );
 
   static TextStyle caption(BuildContext context) => TextStyle(
-        fontSize: 14,
+        fontSize: 12,
         fontFamily: CommonFonts.primaryFont,
         color: context.colors.textSecondary,
       );

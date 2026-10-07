@@ -15,6 +15,7 @@ abstract class ContactsRepository {
   Future<ApiResult<UserModel?>> lookupUser(String phoneNumber);
   Future<List<UserModel>> getCachedContacts();
   Future<void> cacheContacts(List<UserModel> contacts);
+  Future<void> clearCachedContacts();
   Future<void> removeContactFromCache(String userId);
   Future<void> hidePhoneNumber(String phoneNumber);
   Future<List<String>> getHiddenPhoneNumbers();
@@ -29,10 +30,17 @@ class ContactsRepositoryImpl implements ContactsRepository {
 
   ContactsRepositoryImpl(this._apiService);
 
+  List<UserModel> _sortUsers(List<UserModel> users) {
+    users.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
+    return users;
+  }
+
   @override
   Future<List<Contact>> getContacts() async {
     try {
-      return await FastContacts.getAllContacts();
+      final list = await FastContacts.getAllContacts();
+      list.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
+      return list;
     } catch (e, stack) {
       print('Schat Error fetching contacts: $e');
       print(stack);
@@ -47,7 +55,8 @@ class ContactsRepositoryImpl implements ContactsRepository {
       data: {'contacts': contacts},
       mapper: (data) {
         if (data is List) {
-          return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          final list = data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          return _sortUsers(list);
         }
         return [];
       },
@@ -66,7 +75,8 @@ class ContactsRepositoryImpl implements ContactsRepository {
       CommonEndpoints.getContacts,
       mapper: (data) {
         if (data is List) {
-          return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          final list = data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          return _sortUsers(list);
         }
         return [];
       },
@@ -86,18 +96,14 @@ class ContactsRepositoryImpl implements ContactsRepository {
       endpoint,
       mapper: (data) {
         if (data is List) {
-          return data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          final list = data.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+          return _sortUsers(list);
         }
         return [];
       },
     );
 
-    if (result is Success<List<UserModel>> && (query == null || query.isEmpty)) {
-      if (result.data.isNotEmpty) {
-        await cacheContacts(result.data);
-      }
-    }
-
+    // Note: Do NOT cache global search / discovered users into local contacts cache
     return result;
   }
 
@@ -122,7 +128,8 @@ class ContactsRepositoryImpl implements ContactsRepository {
       final String? jsonString = box.get(_contactsKey);
       if (jsonString != null) {
         final List<dynamic> decoded = jsonDecode(jsonString);
-        return decoded.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+        final list = decoded.map((e) => UserModel.fromJson(e as Map<String, dynamic>)).toList();
+        return _sortUsers(list);
       }
     } catch (e) {
       // Log error or handle
@@ -136,6 +143,16 @@ class ContactsRepositoryImpl implements ContactsRepository {
       final box = await Hive.openBox(_contactsBox);
       final String jsonString = jsonEncode(contacts.map((e) => e.toJson()).toList());
       await box.put(_contactsKey, jsonString);
+    } catch (e) {
+      // Log error or handle
+    }
+  }
+
+  @override
+  Future<void> clearCachedContacts() async {
+    try {
+      final box = await Hive.openBox(_contactsBox);
+      await box.delete(_contactsKey);
     } catch (e) {
       // Log error or handle
     }

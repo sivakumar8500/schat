@@ -152,7 +152,8 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
           recipientId: user.id,
           userModel: user,
         );
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.name.trim().toLowerCase().compareTo(b.name.trim().toLowerCase()));
 
       if (mounted) {
         setState(() {

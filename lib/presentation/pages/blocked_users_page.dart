@@ -395,7 +395,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
             ),
             CommonSpaces.h8,
             Text(
-              'Contacts you block will appear here. They will not be able to message or call you on Schat.',
+              'Contacts you block will appear here. They will not be able to message or call you on S-CHAT.',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14, height: 1.4),
             ),

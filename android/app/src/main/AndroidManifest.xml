@@ -31,7 +31,7 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
-        android:label="schat"
+        android:label="S-CHAT"
         android:name=".MainApplication"
         android:icon="@mipmap/launcher_icon"
         android:allowBackup="false"

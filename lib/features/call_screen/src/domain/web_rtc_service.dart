@@ -7,6 +7,7 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/core/network/connectivity_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 
 /// Represents the signaling state of the WebRTC call.
@@ -32,6 +33,9 @@ class WebRtcService {
 
   String? _activeConversationId;
   bool _renderersInitialized = false;
+  bool _isCleaningUp = false;
+  bool _isSwitchingCamera = false;
+  bool _isTogglingSpeaker = false;
   Timer? _reconnectTimer;
   StreamSubscription? _connectivitySubscription;
 
@@ -102,7 +106,6 @@ class WebRtcService {
   }
 
   // ─────────────────────────────────────────────
-  // ─────────────────────────────────────────────
   // MAKE CALL (Caller side)
   // ─────────────────────────────────────────────
 
@@ -140,6 +143,8 @@ class WebRtcService {
     final offer = await _peerConnection!.createOffer(_offerConstraints);
     await _peerConnection!.setLocalDescription(offer);
 
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+
     // 4. Send call_initiate over WebSocket signaling
     repository.emit('message', {
       'type': 'call_initiate',
@@ -147,6 +152,8 @@ class WebRtcService {
       'call_type': isVideo ? 'video' : 'audio',
       'recipient_id': ?recipientId,
       'recipientId': ?recipientId,
+      'sender_id': myId,
+      'senderId': myId,
       'caller_name': callerName,
       'profile_picture_url': profilePictureUrl,
       'is_group': isGroup,
@@ -159,7 +166,7 @@ class WebRtcService {
       },
     });
 
-    debugPrint('WebRTC: call_initiate sent for conv=$conversationId (recipient=$recipientId, isGroup=$isGroup)');
+    debugPrint('WebRTC: call_initiate sent for conv=$conversationId (recipient=$recipientId, isGroup=$isGroup, sender=$myId)');
   }
 
   /// Retrieves the current local SDP offer or creates a new one for newly added/reinvited participants.
@@ -283,16 +290,20 @@ class WebRtcService {
       };
     }
 
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+
     // 5. Send call_response with accept over WebSocket
     repository.emit('message', {
       'type': 'call_response',
       'conversation_id': conversationId,
       'message_id': messageId,
+      'sender_id': myId,
+      'senderId': myId,
       'response': 'accept',
       'answer': answerData,
     });
 
-    debugPrint('WebRTC: call_response (accept) sent for conv=$conversationId');
+    debugPrint('WebRTC: call_response (accept) sent for conv=$conversationId from $myId');
   }
 
   // ─────────────────────────────────────────────
@@ -305,10 +316,13 @@ class WebRtcService {
     required ChatSocketRepository repository,
     String reason = 'reject',
   }) async {
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
     repository.emit('message', {
       'type': 'call_response',
       'conversation_id': conversationId,
       'message_id': messageId,
+      'sender_id': myId,
+      'senderId': myId,
       'response': reason,
       'answer': null,
     });
@@ -352,9 +366,8 @@ class WebRtcService {
   }) async {
     try {
       debugPrint('WebRTC: createOfferForPeer started for peerId=$peerId');
-      if (_localStream == null) {
-        _localStream = await _getUserMedia(isVideo: false);
-      }
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+      _localStream ??= await _getUserMedia(isVideo: false);
 
       // Close previous connection to this specific peer if any
       if (_peerConnections.containsKey(peerId)) {
@@ -379,6 +392,10 @@ class WebRtcService {
             'conversation_id': conversationId,
             'target_user_id': peerId,
             'recipient_id': peerId,
+            'sender_id': myId,
+            'senderId': myId,
+            'from': myId,
+            'user_id': myId,
             'candidate': {
               'candidate': candidate.candidate,
               'sdpMid': candidate.sdpMid,
@@ -388,8 +405,21 @@ class WebRtcService {
         }
       };
 
+      pc.onIceConnectionState = (RTCIceConnectionState state) {
+        debugPrint('WebRTC ICE State for peer $peerId: $state');
+        if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+            state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+          try {
+            pc.restartIce();
+          } catch (e) {
+            debugPrint('WebRTC: restartIce failed for peer $peerId: $e');
+          }
+        }
+      };
+
       pc.onTrack = (RTCTrackEvent event) async {
         debugPrint('WebRTC: onTrack from mesh peer $peerId, streams: ${event.streams.length}, track kind: ${event.track.kind}');
+        event.track.enabled = true;
         if (event.streams.isNotEmpty) {
           final stream = event.streams.first;
           _remoteStreams[peerId] = stream;
@@ -399,7 +429,6 @@ class WebRtcService {
           final renderer = await getOrCreatePeerRenderer(peerId);
           renderer.srcObject = stream;
         }
-        event.track.enabled = true;
         _callSignalController.add(CallSignalState.active);
       };
 
@@ -411,12 +440,16 @@ class WebRtcService {
         'conversation_id': conversationId,
         'target_user_id': peerId,
         'recipient_id': peerId,
+        'sender_id': myId,
+        'senderId': myId,
+        'from': myId,
+        'user_id': myId,
         'offer': {
           'type': offer.type,
           'sdp': offer.sdp,
         },
       });
-      debugPrint('WebRTC: call_offer sent to mesh peer $peerId');
+      debugPrint('WebRTC: call_offer sent to mesh peer $peerId from $myId');
     } catch (e) {
       debugPrint('WebRTC: Error in createOfferForPeer: $e');
     }
@@ -430,9 +463,8 @@ class WebRtcService {
   }) async {
     try {
       debugPrint('WebRTC: handlePeerOffer from peerId=$peerId');
-      if (_localStream == null) {
-        _localStream = await _getUserMedia(isVideo: false);
-      }
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+      _localStream ??= await _getUserMedia(isVideo: false);
 
       if (_peerConnections.containsKey(peerId)) {
         try {
@@ -456,6 +488,10 @@ class WebRtcService {
             'conversation_id': conversationId,
             'target_user_id': peerId,
             'recipient_id': peerId,
+            'sender_id': myId,
+            'senderId': myId,
+            'from': myId,
+            'user_id': myId,
             'candidate': {
               'candidate': candidate.candidate,
               'sdpMid': candidate.sdpMid,
@@ -465,8 +501,21 @@ class WebRtcService {
         }
       };
 
+      pc.onIceConnectionState = (RTCIceConnectionState state) {
+        debugPrint('WebRTC ICE State for peer $peerId: $state');
+        if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+            state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+          try {
+            pc.restartIce();
+          } catch (e) {
+            debugPrint('WebRTC: restartIce failed for peer $peerId: $e');
+          }
+        }
+      };
+
       pc.onTrack = (RTCTrackEvent event) async {
         debugPrint('WebRTC: onTrack from mesh peer $peerId, streams: ${event.streams.length}, track kind: ${event.track.kind}');
+        event.track.enabled = true;
         if (event.streams.isNotEmpty) {
           final stream = event.streams.first;
           _remoteStreams[peerId] = stream;
@@ -476,7 +525,6 @@ class WebRtcService {
           final renderer = await getOrCreatePeerRenderer(peerId);
           renderer.srcObject = stream;
         }
-        event.track.enabled = true;
         _callSignalController.add(CallSignalState.active);
       };
 
@@ -504,12 +552,16 @@ class WebRtcService {
         'conversation_id': conversationId,
         'target_user_id': peerId,
         'recipient_id': peerId,
+        'sender_id': myId,
+        'senderId': myId,
+        'from': myId,
+        'user_id': myId,
         'answer': {
           'type': answer.type,
           'sdp': answer.sdp,
         },
       });
-      debugPrint('WebRTC: call_answer sent to mesh peer $peerId');
+      debugPrint('WebRTC: call_answer sent to mesh peer $peerId from $myId');
     } catch (e) {
       debugPrint('WebRTC: Error in handlePeerOffer: $e');
     }
@@ -545,6 +597,34 @@ class WebRtcService {
     }
   }
 
+  Future<void> removePeer(String peerId) async {
+    try {
+      if (_peerConnections.containsKey(peerId)) {
+        await _peerConnections[peerId]?.close();
+        await _peerConnections[peerId]?.dispose();
+        _peerConnections.remove(peerId);
+      }
+      if (_remoteStreams.containsKey(peerId)) {
+        _remoteStreams[peerId]?.getTracks().forEach((t) {
+          try {
+            t.stop();
+          } catch (_) {}
+        });
+        await _remoteStreams[peerId]?.dispose();
+        _remoteStreams.remove(peerId);
+      }
+      if (_peerRenderers.containsKey(peerId)) {
+        _peerRenderers[peerId]?.srcObject = null;
+        await _peerRenderers[peerId]?.dispose();
+        _peerRenderers.remove(peerId);
+      }
+      _peerCandidateQueues.remove(peerId);
+      debugPrint('WebRTC: Successfully removed mesh peer $peerId');
+    } catch (e) {
+      debugPrint('WebRTC: Error removing peer $peerId: $e');
+    }
+  }
+
   // ─────────────────────────────────────────────
   // HANDLE REMOTE ICE CANDIDATE
   // ─────────────────────────────────────────────
@@ -552,7 +632,7 @@ class WebRtcService {
   Future<void> handleRemoteIceCandidate(Map<String, dynamic> event) async {
     final candidateMap = event['candidate'] as Map<String, dynamic>?;
     if (candidateMap == null) return;
-    final senderId = (event['sender_id'] ?? event['senderId'] ?? '').toString();
+    final senderId = (event['sender_id'] ?? event['senderId'] ?? event['from'] ?? event['user_id'])?.toString() ?? '';
 
     final candidate = RTCIceCandidate(
       candidateMap['candidate'] as String,
@@ -610,10 +690,14 @@ class WebRtcService {
     String? messageId,
     required ChatSocketRepository repository,
   }) async {
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
     repository.emit('message', {
       'type': 'call_hangup',
       'conversation_id': conversationId,
       'message_id': messageId,
+      'sender_id': myId,
+      'senderId': myId,
+      'user_id': myId,
     });
     _callSignalController.add(CallSignalState.ended);
     await cleanup();
@@ -645,6 +729,11 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   Future<void> switchCamera() async {
+    if (_isSwitchingCamera) {
+      debugPrint('WebRTC: switchCamera skipped, already switching');
+      return;
+    }
+    _isSwitchingCamera = true;
     try {
       final videoTrack = _localStream?.getVideoTracks().firstOrNull;
       if (videoTrack != null) {
@@ -652,6 +741,8 @@ class WebRtcService {
       }
     } catch (e) {
       debugPrint('WebRTC: switchCamera failed: $e');
+    } finally {
+      _isSwitchingCamera = false;
     }
   }
 
@@ -660,13 +751,18 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   Future<void> toggleSpeaker(bool speakerOn) async {
+    if (_isTogglingSpeaker) {
+      debugPrint('WebRTC: toggleSpeaker skipped, already toggling');
+      return;
+    }
+    _isTogglingSpeaker = true;
     try {
-      // Ensure we are in communication mode before toggling speaker
-      // Note: setAudioMode is being handled by the plugin or not available in this version
       await Helper.setSpeakerphoneOn(speakerOn);
       debugPrint('WebRTC: Speakerphone set to $speakerOn');
     } catch (e) {
       debugPrint('WebRTC: toggleSpeaker failed: $e');
+    } finally {
+      _isTogglingSpeaker = false;
     }
   }
 
@@ -855,61 +951,92 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   Future<void> cleanup() async {
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription = null;
-    if (_renderersInitialized) {
-      try {
-        localRenderer.srcObject = null;
-        remoteRenderer.srcObject = null;
-      } catch (e) {
-        debugPrint('WebRTC: Error resetting renderers during cleanup: $e');
+    if (_isCleaningUp) {
+      debugPrint('WebRTC: cleanup already in progress, skipping duplicate call');
+      return;
+    }
+    _isCleaningUp = true;
+    try {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _connectivitySubscription?.cancel();
+      _connectivitySubscription = null;
+      if (_renderersInitialized) {
+        try {
+          localRenderer.srcObject = null;
+          remoteRenderer.srcObject = null;
+        } catch (e) {
+          debugPrint('WebRTC: Error resetting renderers during cleanup: $e');
+        }
       }
-    }
 
-    _localStream?.getTracks().forEach((track) => track.stop());
-    await _localStream?.dispose();
-    _localStream = null;
-
-    _remoteStream?.getTracks().forEach((track) => track.stop());
-    await _remoteStream?.dispose();
-    _remoteStream = null;
-
-    for (var stream in _remoteStreams.values) {
-      stream.getTracks().forEach((track) => track.stop());
-      await stream.dispose();
-    }
-    _remoteStreams.clear();
-
-    for (var renderer in _peerRenderers.values) {
+      _localStream?.getTracks().forEach((track) {
+        try {
+          track.stop();
+        } catch (_) {}
+      });
       try {
-        renderer.srcObject = null;
-        await renderer.dispose();
-      } catch (e) {
-        debugPrint('WebRTC: Error disposing peer renderer: $e');
+        await _localStream?.dispose();
+      } catch (_) {}
+      _localStream = null;
+
+      _remoteStream?.getTracks().forEach((track) {
+        try {
+          track.stop();
+        } catch (_) {}
+      });
+      try {
+        await _remoteStream?.dispose();
+      } catch (_) {}
+      _remoteStream = null;
+
+      for (var stream in _remoteStreams.values) {
+        stream.getTracks().forEach((track) {
+          try {
+            track.stop();
+          } catch (_) {}
+        });
+        try {
+          await stream.dispose();
+        } catch (_) {}
       }
+      _remoteStreams.clear();
+
+      for (var renderer in _peerRenderers.values) {
+        try {
+          renderer.srcObject = null;
+          await renderer.dispose();
+        } catch (e) {
+          debugPrint('WebRTC: Error disposing peer renderer: $e');
+        }
+      }
+      _peerRenderers.clear();
+
+      try {
+        await _peerConnection?.close();
+        await _peerConnection?.dispose();
+      } catch (_) {}
+      _peerConnection = null;
+
+      for (var pc in _peerConnections.values) {
+        try {
+          await pc.close();
+          await pc.dispose();
+        } catch (_) {}
+      }
+      _peerConnections.clear();
+
+      _activeConversationId = null;
+      _remoteCandidateQueue.clear();
+      _peerCandidateQueues.clear();
+
+      _localStreamController.add(null);
+      _remoteStreamController.add(null);
+
+      debugPrint('WebRTC: Multi-peer cleanup complete');
+    } finally {
+      _isCleaningUp = false;
     }
-    _peerRenderers.clear();
-
-    await _peerConnection?.close();
-    await _peerConnection?.dispose();
-    _peerConnection = null;
-
-    for (var pc in _peerConnections.values) {
-      await pc.close();
-      await pc.dispose();
-    }
-    _peerConnections.clear();
-
-    _activeConversationId = null;
-    _remoteCandidateQueue.clear();
-    _peerCandidateQueues.clear();
-
-    _localStreamController.add(null);
-    _remoteStreamController.add(null);
-
-    debugPrint('WebRTC: Multi-peer cleanup complete');
   }
 
   // ─────────────────────────────────────────────
@@ -971,12 +1098,17 @@ class WebRtcService {
   }
 
   void _setupConnectionCallbacks(ChatSocketRepository repository) {
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
     // Send ICE candidates to the other peer via signaling
     _peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
       if (candidate.candidate != null) {
         repository.emit('message', {
           'type': 'ice_candidate',
           'conversation_id': _activeConversationId,
+          'sender_id': myId,
+          'senderId': myId,
+          'from': myId,
+          'user_id': myId,
           'candidate': {
             'candidate': candidate.candidate,
             'sdpMid': candidate.sdpMid,
@@ -1009,6 +1141,11 @@ class WebRtcService {
       debugPrint('WebRTC ICE State: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+        try {
+          _peerConnection?.restartIce();
+        } catch (e) {
+          debugPrint('WebRTC: restartIce failed: $e');
+        }
         if (_reconnectTimer == null) {
           debugPrint('WebRTC: Connection disrupted. Starting 30-second reconnection timer.');
           _reconnectTimer = Timer(const Duration(seconds: 30), () {

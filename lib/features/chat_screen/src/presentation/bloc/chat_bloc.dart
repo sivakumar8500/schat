@@ -10,6 +10,7 @@ import 'package:schat/features/chat_screen/src/domain/repositories/chat_reposito
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 
@@ -151,6 +152,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  int? _resolveEffectiveTimer(int? chatTimer) {
+    if (chatTimer != null && chatTimer != 0) {
+      return chatTimer;
+    }
+    final defaultTimer = getIt<StorageService>().getDefaultDisappearingTimer();
+    return (defaultTimer != null && defaultTimer != 0) ? defaultTimer : null;
+  }
+
   List<MessageModel> _filterExpiredMessages(List<MessageModel> messages) {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return messages.where((msg) {
@@ -228,7 +237,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       
       if (data is Map) {
         final cleanData = _cleanMap(data);
-        final type = cleanData['type']?.toString();
+        final type = (cleanData['type'] ?? cleanData['action'] ?? cleanData['event'])?.toString().toLowerCase();
         
         if (type == 'new_message' || type == 'message') {
           final message = cleanData['message'] ?? (cleanData.containsKey('id') ? cleanData : null);
@@ -591,11 +600,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             }
           }
         } else if (type == 'message_reaction' || type == 'reaction' || type == 'message_reacted' || type == 'reaction_added' || type == 'reaction_removed') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          final emoji = (cleanData['emoji'] ?? cleanData['reaction'] ?? '').toString();
-          final userId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['senderId'] ?? cleanData['sender_id'] ?? '').toString();
-          final userName = (cleanData['userName'] ?? cleanData['user_name'] ?? cleanData['username'] ?? cleanData['senderName'])?.toString();
+          final payload = (cleanData['data'] is Map)
+              ? Map<String, dynamic>.from(cleanData['data'] as Map)
+              : ((cleanData['payload'] is Map)
+                  ? Map<String, dynamic>.from(cleanData['payload'] as Map)
+                  : cleanData);
+          final convId = (payload['conversationId'] ?? payload['conversation_id'] ?? cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (payload['messageId'] ?? payload['message_id'] ?? payload['id'] ?? cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final emoji = (payload['emoji'] ?? payload['reaction'] ?? cleanData['emoji'] ?? cleanData['reaction'] ?? '').toString();
+          final userId = (payload['userId'] ?? payload['user_id'] ?? payload['senderId'] ?? payload['sender_id'] ?? cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['senderId'] ?? cleanData['sender_id'] ?? '').toString();
+          final userName = (payload['userName'] ?? payload['user_name'] ?? payload['username'] ?? payload['senderName'] ?? cleanData['userName'] ?? cleanData['user_name'] ?? cleanData['username'] ?? cleanData['senderName'])?.toString();
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(ReceiveMessageReactionEvent(
               messageId: msgId,
@@ -702,9 +716,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final msgBox = await Hive.openBox('cached_messages');
       final List<dynamic>? cachedList = msgBox.get(event.conversationId);
       if (cachedList != null) {
-        cachedMessages = cachedList
+        final rawCached = cachedList
             .map((item) => MessageModel.fromJson(Map<String, dynamic>.from(item as Map)))
             .toList();
+        final cacheMap = <String, MessageModel>{};
+        for (final m in rawCached) {
+          if (m.id.isNotEmpty) cacheMap[m.id] = m;
+        }
+        cachedMessages = cacheMap.values.toList()
+          ..sort((a, b) {
+            final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final cmp = dtA.compareTo(dtB);
+            if (cmp != 0) return cmp;
+            return a.id.compareTo(b.id);
+          });
       }
 
       final bgBox = await Hive.openBox('chat_backgrounds');
@@ -734,24 +760,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       debugPrint('Error loading cached messages or theme: $e');
     }
 
-    int? disappearingTimer = event.initialDisappearingTimer;
+    int? chatSpecificTimer = event.initialDisappearingTimer;
     try {
       final timerBox = await Hive.openBox('disappearing_timers_box');
-      if (disappearingTimer != null) {
-        if (disappearingTimer == 0) {
+      if (chatSpecificTimer != null) {
+        if (chatSpecificTimer == 0) {
           await timerBox.delete(event.conversationId);
+          chatSpecificTimer = null;
         } else {
-          await timerBox.put(event.conversationId, disappearingTimer);
+          await timerBox.put(event.conversationId, chatSpecificTimer);
         }
       } else {
         final dynamic cachedTimer = timerBox.get(event.conversationId);
-        if (cachedTimer is int) {
-          disappearingTimer = cachedTimer;
+        if (cachedTimer is int && cachedTimer != 0) {
+          chatSpecificTimer = cachedTimer;
         }
       }
     } catch (e) {
       debugPrint('Error loading cached disappearing timer: $e');
     }
+
+    final int? disappearingTimer = _resolveEffectiveTimer(chatSpecificTimer);
 
     final bool isBlocked = event.initialIsBlocked ?? false;
     final bool isBlockedByMe = event.initialIsBlockedByMe ?? false;
@@ -782,6 +811,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     try {
       var messages = await _chatRepository.getMessages(event.conversationId, limit: 50, skip: 0);
       messages = _applyPersistentViewOnceStates(messages, cachedMessages);
+
+      final freshMap = <String, MessageModel>{};
+      for (final m in messages) {
+        if (m.id.isNotEmpty) freshMap[m.id] = m;
+      }
+      // Preserve pending local sending messages
+      for (final m in cachedMessages) {
+        if (m.id.startsWith('temp_') && !freshMap.containsKey(m.id)) {
+          freshMap[m.id] = m;
+        }
+      }
+
+      messages = freshMap.values.toList()
+        ..sort((a, b) {
+          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final cmp = dtA.compareTo(dtB);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        });
+
       _messagesSkip = messages.length;
       if (messages.length < 50) {
         _hasReachedMax = true;
@@ -870,8 +920,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           pinnedMessages: pinnedMessages,
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
-          activeScreenPermission: activeScreenPermission ?? currentState.activeScreenPermission,
-          incomingScreenPermissionRequest: incomingScreenPermissionRequest ?? currentState.incomingScreenPermissionRequest,
+          activeScreenPermission: activeScreenPermission,
+          clearActiveScreenPermission: activeScreenPermission == null,
+          incomingScreenPermissionRequest: incomingScreenPermissionRequest,
+          clearIncomingScreenPermissionRequest: incomingScreenPermissionRequest == null,
           readReceiptsEnabled: event.initialReadReceiptsEnabled ?? currentState.readReceiptsEnabled,
           typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled ?? currentState.typingIndicatorsEnabled,
           isBlocked: isBlocked || currentState.isBlocked,
@@ -959,15 +1011,41 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return;
       }
 
+      // Check how many brand new messages were returned
+      final existingIds = currentState.messages.map((m) => m.id).toSet();
+      final brandNewMessages = moreMessages.where((m) => !existingIds.contains(m.id)).toList();
+
+      if (brandNewMessages.isEmpty) {
+        // Backend didn't return any new older messages; reached the beginning of history
+        _hasReachedMax = true;
+        _isFetchingMore = false;
+        return;
+      }
+
       _messagesSkip += moreMessages.length;
       if (moreMessages.length < 50) {
         _hasReachedMax = true;
       }
 
-      // Prepend the older messages to the existing list.
-      var filteredMore = _filterExpiredMessages(moreMessages);
+      var filteredMore = _filterExpiredMessages(brandNewMessages);
       filteredMore = _applyPersistentViewOnceStates(filteredMore, currentState.messages);
-      final updatedMessages = List<MessageModel>.from(filteredMore)..addAll(currentState.messages);
+
+      final messageMap = <String, MessageModel>{};
+      for (final m in currentState.messages) {
+        messageMap[m.id] = m;
+      }
+      for (final m in filteredMore) {
+        messageMap[m.id] = m;
+      }
+
+      final updatedMessages = messageMap.values.toList()
+        ..sort((a, b) {
+          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final cmp = dtA.compareTo(dtB);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        });
 
       emit(currentState.copyWith(messages: updatedMessages));
       _isFetchingMore = false;
@@ -1055,22 +1133,52 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           debugPrint('DEBUG: Message is from me (userView=$userView), updating temp message with real ID');
           final updatedMessages = List<MessageModel>.from(currentState.messages);
 
-          // The server-confirmed message is at least "delivered" (it was acknowledged)
-          final confirmedMessage = (newMessage.isDelivered || newMessage.isRead)
-              ? newMessage
-              : newMessage.copyWith(isDelivered: true);
-
           int index = updatedMessages.lastIndexWhere((msg) =>
-              msg.id.startsWith('temp_') && msg.content == newMessage.content);
+              msg.id.startsWith('temp_') &&
+              (msg.content == newMessage.content ||
+               (msg.mediaUrl != null && newMessage.mediaUrl != null && msg.mediaUrl == newMessage.mediaUrl) ||
+               (msg.attachmentName != null && newMessage.attachmentName != null && msg.attachmentName == newMessage.attachmentName)));
+          if (index == -1) {
+            index = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
+          }
+
           if (index != -1) {
+            final oldTemp = updatedMessages[index];
+            final confirmedMessage = newMessage.copyWith(
+              attachmentBytes: oldTemp.attachmentBytes,
+              attachmentName: newMessage.attachmentName ?? oldTemp.attachmentName,
+              mediaUrl: (newMessage.mediaUrl != null && newMessage.mediaUrl!.isNotEmpty)
+                  ? newMessage.mediaUrl
+                  : oldTemp.mediaUrl,
+              mediaType: (newMessage.mediaType != null && newMessage.mediaType != 'text') ? newMessage.mediaType : oldTemp.mediaType,
+              messageType: (newMessage.messageType != 'text' ? newMessage.messageType : oldTemp.messageType),
+              allowView: newMessage.allowView,
+              allowDownload: newMessage.allowDownload,
+              allowShare: newMessage.allowShare,
+              isUploading: false,
+            );
             updatedMessages[index] = confirmedMessage;
             final filtered = _filterExpiredMessages(updatedMessages);
             emit(currentState.copyWith(messages: filtered));
             _saveToCache(_conversationId!, filtered);
           } else {
-            int lastTempIndex = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
-            if (lastTempIndex != -1) {
-              updatedMessages[lastTempIndex] = confirmedMessage;
+            final existingIndex = updatedMessages.indexWhere((msg) => msg.id == newMessage.id);
+            if (existingIndex == -1) {
+              updatedMessages.add(newMessage);
+              final filtered = _filterExpiredMessages(updatedMessages);
+              emit(currentState.copyWith(messages: filtered));
+              _saveToCache(_conversationId!, filtered);
+            } else {
+              // Message exists: merge updated reactions / fields
+              final existing = updatedMessages[existingIndex];
+              updatedMessages[existingIndex] = existing.copyWith(
+                reactions: newMessage.reactions.isNotEmpty ? newMessage.reactions : existing.reactions,
+                content: newMessage.content.isNotEmpty ? newMessage.content : existing.content,
+                isEdited: newMessage.isEdited || existing.isEdited,
+                editedAt: newMessage.editedAt ?? existing.editedAt,
+                isRead: newMessage.isRead || existing.isRead,
+                isDelivered: newMessage.isDelivered || existing.isDelivered,
+              );
               final filtered = _filterExpiredMessages(updatedMessages);
               emit(currentState.copyWith(messages: filtered));
               _saveToCache(_conversationId!, filtered);
@@ -1079,7 +1187,22 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           return;
         }
 
-        final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));
+        final existingIdx = currentState.messages.indexWhere((m) => m.id == newMessage.id);
+        List<MessageModel> updatedMessages;
+        if (existingIdx != -1) {
+          updatedMessages = List<MessageModel>.from(currentState.messages);
+          updatedMessages[existingIdx] = newMessage;
+        } else {
+          updatedMessages = List<MessageModel>.from(currentState.messages)..add(newMessage);
+        }
+        updatedMessages = _filterExpiredMessages(updatedMessages)
+          ..sort((a, b) {
+            final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final cmp = dtA.compareTo(dtB);
+            if (cmp != 0) return cmp;
+            return a.id.compareTo(b.id);
+          });
         _currentIsTyping = false;
         
         // Send read receipt back to sender via socket if enabled
@@ -1149,9 +1272,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).catchError((_) {});
 
       _chatRepository.setDisappearingTimer(conversationId: convId, seconds: seconds);
+      final effectiveTimer = _resolveEffectiveTimer(seconds);
       emit(currentState.copyWith(
-        disappearingTimer: seconds,
-        clearDisappearingTimer: seconds == null || seconds == 0,
+        disappearingTimer: effectiveTimer,
+        clearDisappearingTimer: effectiveTimer == null,
       ));
     }
   }
@@ -1171,9 +1295,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }).catchError((_) {});
       }
 
+      final effectiveTimer = _resolveEffectiveTimer(seconds);
       emit(currentState.copyWith(
-        disappearingTimer: seconds,
-        clearDisappearingTimer: seconds == null || seconds == 0,
+        disappearingTimer: effectiveTimer,
+        clearDisappearingTimer: effectiveTimer == null,
       ));
     }
   }
@@ -2058,7 +2183,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       emit(currentState.copyWith(
         messages: updatedMessages,
-        incomingScreenPermissionRequest: model,
+        incomingScreenPermissionRequest: isMe ? null : model,
+        clearIncomingScreenPermissionRequest: isMe,
       ));
       if (_conversationId != null) {
         _saveToCache(_conversationId!, updatedMessages);
@@ -2111,6 +2237,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           updatedMessages.add(systemMsg);
         }
 
+        try {
+          getIt<InAppNotificationService>().markScreenPermissionHandled(event.requestId);
+        } catch (_) {}
+
         emit(currentState.copyWith(
           messages: updatedMessages,
           clearIncomingScreenPermissionRequest: true,
@@ -2123,6 +2253,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       } catch (e) {
         debugPrint('Error responding to screen permission: $e');
+        try {
+          getIt<InAppNotificationService>().markScreenPermissionHandled(event.requestId);
+        } catch (_) {}
         emit(currentState.copyWith(
           clearIncomingScreenPermissionRequest: true,
         ));
@@ -2137,6 +2270,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
       final model = ScreenPermissionModel.fromJson(event.requestData);
+      try {
+        getIt<InAppNotificationService>().markScreenPermissionHandled(model.id);
+      } catch (_) {}
       final isAccepted = event.action.toLowerCase() == 'accept' || model.status == 'accepted';
       final receiverName = model.receiverName ?? 'Contact';
       final permText = model.isScreenshot
@@ -2166,12 +2302,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(currentState.copyWith(
           messages: updatedMessages,
           activeScreenPermission: model,
+          clearIncomingScreenPermissionRequest: true,
           notificationMessage: '$receiverName accepted your request for $permText!',
         ));
       } else {
         emit(currentState.copyWith(
           messages: updatedMessages,
           clearActiveScreenPermission: true,
+          clearIncomingScreenPermissionRequest: true,
           notificationMessage: '$receiverName rejected your request for $permText.',
         ));
       }
@@ -2326,10 +2464,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onReceiveMessageReaction(ReceiveMessageReactionEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final effectiveUserId = event.userId.isNotEmpty ? event.userId : (_recipientId ?? 'other_user');
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
           final existing = List<MessageReaction>.from(msg.reactions);
-          final existingIdx = existing.indexWhere((r) => r.userId == event.userId && (r.userId.isNotEmpty || r.emoji == event.emoji));
+          final existingIdx = existing.indexWhere((r) =>
+              (effectiveUserId.isNotEmpty && r.userId.isNotEmpty && r.userId == effectiveUserId) ||
+              (r.userId.isEmpty && r.emoji == event.emoji) ||
+              (r.userId == effectiveUserId));
+
           if (event.emoji.isEmpty) {
             if (existingIdx != -1) {
               existing.removeAt(existingIdx);
@@ -2338,14 +2481,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             if (existingIdx != -1) {
               existing[existingIdx] = MessageReaction(
                 emoji: event.emoji,
-                userId: event.userId,
+                userId: effectiveUserId,
                 userName: event.userName ?? existing[existingIdx].userName,
                 createdAt: DateTime.now().toIso8601String(),
               );
             } else {
               existing.add(MessageReaction(
                 emoji: event.emoji,
-                userId: event.userId,
+                userId: effectiveUserId,
                 userName: event.userName,
                 createdAt: DateTime.now().toIso8601String(),
               ));

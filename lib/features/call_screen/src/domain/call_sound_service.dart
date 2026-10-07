@@ -14,6 +14,68 @@ class CallSoundService {
     _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
     _backRingPlayer.setReleaseMode(ReleaseMode.loop);
     _messageTonePlayer.setReleaseMode(ReleaseMode.stop);
+
+    _configureAudioContexts();
+  }
+
+  void _configureAudioContexts() {
+    try {
+      // Ringtone AudioContext: Strictly follows system ringer mode (Silent/Vibrate/Normal)
+      // On Android: notificationRingtone usage uses STREAM_RING which is automatically silenced in mute/vibrate mode.
+      // On iOS: ambient category honors the hardware mute switch.
+      final ringtoneContext = AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: true,
+          stayAwake: true,
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.notificationRingtone,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioMode: AndroidAudioMode.ringtone,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.ambient,
+          options: const {},
+        ),
+      );
+
+      // Message Tone AudioContext: Uses notification stream (silenced in mute/vibrate)
+      final messageToneContext = AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: true,
+          stayAwake: false,
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.notification,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioMode: AndroidAudioMode.normal,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.ambient,
+          options: const {},
+        ),
+      );
+
+      // Back ring (outgoing call ringing): In-communication stream
+      final backRingContext = AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: false,
+          stayAwake: true,
+          contentType: AndroidContentType.sonification,
+          usageType: AndroidUsageType.voiceCommunication,
+          audioFocus: AndroidAudioFocus.gainTransient,
+          audioMode: AndroidAudioMode.inCommunication,
+        ),
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.ambient,
+          options: const {},
+        ),
+      );
+
+      _ringtonePlayer.setAudioContext(ringtoneContext);
+      _messageTonePlayer.setAudioContext(messageToneContext);
+      _backRingPlayer.setAudioContext(backRingContext);
+    } catch (e) {
+      debugPrint('CallSoundService: Error setting AudioContext: $e');
+    }
   }
 
   /// Play ringtone (for callee/receiver)

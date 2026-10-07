@@ -67,7 +67,8 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
       final cachedContacts = await repo.getCachedContacts();
       final validCached = cachedContacts
           .where((u) => u.id.isNotEmpty && u.id != myId)
-          .toList();
+          .toList()
+        ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
       if (mounted && validCached.isNotEmpty) {
         setState(() {
@@ -85,7 +86,8 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
         success: (data) {
           final validContacts = data
               .where((u) => u.id.isNotEmpty && u.id != myId)
-              .toList();
+              .toList()
+            ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
           if (mounted) {
             setState(() {
               _allContacts = validContacts;

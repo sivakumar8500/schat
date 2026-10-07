@@ -68,6 +68,14 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   double? _pipX;
   double? _pipY;
+  int _lastButtonTap = 0;
+
+  void _safeTap(VoidCallback onTap) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastButtonTap < 400) return;
+    _lastButtonTap = now;
+    onTap();
+  }
 
   @override
   void initState() {
@@ -603,7 +611,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     required VoidCallback onTap,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => _safeTap(onTap),
       child: Container(
         width: 44,
         height: 44,
@@ -846,7 +854,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     double size = 48,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => _safeTap(onTap),
       child: Container(
         width: size,
         height: size,

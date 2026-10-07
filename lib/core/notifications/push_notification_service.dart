@@ -269,8 +269,18 @@ class PushNotificationService {
     _showLocalNotification(message);
   }
 
+  Future<void> clearAllNotifications() async {
+    try {
+      await _localNotifications.cancelAll();
+      debugPrint('PushNotificationService: Cleared all app notifications from system notification bar');
+    } catch (e) {
+      debugPrint('PushNotificationService: Error clearing all notifications: $e');
+    }
+  }
+
   void _handleMessageOpenedApp(RemoteMessage message) {
     debugPrint('PushNotificationService: Message opened app: ${message.messageId}, data: ${message.data}');
+    clearAllNotifications();
     _queueOrExecuteNotification(message.data);
   }
 
@@ -282,6 +292,8 @@ class PushNotificationService {
       CallNotificationService.onLocalNotificationResponse(response);
       return;
     }
+
+    clearAllNotifications();
 
     if (response.payload != null && response.payload!.isNotEmpty) {
       try {
@@ -416,6 +428,7 @@ class PushNotificationService {
       resolvedName = '';
     }
 
+    clearAllNotifications();
     debugPrint('PushNotificationService: Navigating to ChatPage convId=$convId contact=$resolvedName recipient=$recipientId isGroup=$isGroup');
     navState.push(
       MaterialPageRoute(

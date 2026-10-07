@@ -58,11 +58,11 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
   }
 
   final String _appLink = 'https://schat.app';
-  final String _inviteTitle = 'Join Schat - Secure Messaging';
+  final String _inviteTitle = 'Join S-CHAT - Secure Messaging';
 
   void _showInviteBottomSheet(String name, String phone) {
     final String baseMessage =
-        'Hey $name! I\'m using Schat for secure and private conversations. Join me there! 🔒\n\nDownload Schat at: $_appLink';
+        'Hey $name! I\'m using S-CHAT for secure and private conversations. Join me there! 🔒\n\nDownload S-CHAT at: $_appLink';
 
     showModalBottomSheet(
       context: context,
@@ -376,7 +376,8 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
         final name = user.displayName.toLowerCase();
         final phone = user.phoneNumber.toLowerCase();
         return name.contains(_searchQuery) || phone.contains(_searchQuery);
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
       final allContacts = state.contacts;
       final hiddenPhones = state.hiddenPhoneNumbers;
@@ -406,7 +407,8 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
         final name = contact.displayName.toLowerCase();
         final phones = contact.phones.map((p) => p.number.toLowerCase()).join(' ');
         return name.contains(_searchQuery) || phones.contains(_searchQuery);
-      }).toList();
+      }).toList()
+        ..sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
 
       if (syncedUsers.isEmpty && inviteContacts.isEmpty) {
         return _buildEmptyState(context);
@@ -425,7 +427,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
               const Padding(
                 padding: EdgeInsets.only(left: 8, bottom: 8, top: 4),
                 child: Text(
-                  'Contacts on Schat',
+                  'Contacts on S-CHAT',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -441,7 +443,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
               const Padding(
                 padding: EdgeInsets.only(left: 8, bottom: 8, top: 4),
                 child: Text(
-                  'Invite to Schat',
+                  'Invite to S-CHAT',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -538,7 +540,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
           ),
         ),
         subtitle: Text(
-          user.about ?? 'Hey there! I am using Schat.',
+          user.about ?? 'Hey there! I am using S-CHAT.',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
@@ -673,39 +675,19 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14, height: 1.4),
             ),
             CommonSpaces.h24,
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              alignment: WrapAlignment.center,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () {
-                    getIt<ContactsBloc>().add(const DiscoverContactsEvent());
-                  },
-                  icon: const Icon(Icons.explore_rounded, size: 18),
-                  label: const Text('Explore All Users'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00873C),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    elevation: 2,
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    getIt<ContactsBloc>().add(const SyncContactsEvent());
-                  },
-                  icon: const Icon(Icons.sync_rounded, size: 18),
-                  label: const Text('Sync Contacts'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF00873C),
-                    side: const BorderSide(color: Color(0xFF00873C)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  ),
-                ),
-              ],
+            ElevatedButton.icon(
+              onPressed: () {
+                getIt<ContactsBloc>().add(const SyncContactsEvent());
+              },
+              icon: const Icon(Icons.sync_rounded, size: 18),
+              label: const Text('Sync Contacts'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00873C),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                elevation: 2,
+              ),
             ),
           ],
         ),
@@ -736,7 +718,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
             ),
             CommonSpaces.h8,
             Text(
-              'Allow Schat to access your contacts to start new conversations.',
+              'Allow S-CHAT to access your contacts to start new conversations.',
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
             ),

@@ -6,29 +6,37 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_state.dart';
+import 'package:schat/features/status_screen/src/presentation/widgets/image_status_editor_page.dart';
 import 'package:schat/features/status_screen/src/presentation/widgets/status_privacy_sheet.dart';
 import 'package:schat/features/status_screen/src/presentation/widgets/text_status_creator_page.dart';
 import 'package:schat/features/status_screen/src/presentation/widgets/voice_status_creator_page.dart';
+import 'package:schat/features/status_screen/src/presentation/widgets/video_status_trimmer_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_view_page.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_sizes.dart';
 
 class StatusPage extends StatelessWidget {
-
   const StatusPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider<StatusBloc>(
-      create: (context) => StatusBloc()..add(const LoadStatusUpdatesEvent()),
-      child: const StatusPageContent(),
-    );
+    try {
+      context.read<StatusBloc>();
+      return const StatusPageContent();
+    } catch (_) {
+      return BlocProvider<StatusBloc>(
+        create: (context) => StatusBloc()..add(const LoadStatusUpdatesEvent()),
+        child: const StatusPageContent(),
+      );
+    }
   }
 }
 
@@ -44,7 +52,19 @@ class StatusPageContent extends StatelessWidget {
     final path = kIsWeb ? null : image.path;
 
     if (context.mounted) {
-      _showStatusTextDialog(context, bytes: bytes, path: path, statusType: 'image');
+      final bloc = context.read<StatusBloc>();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: bloc,
+            child: ImageStatusEditorPage(
+              imagePath: path,
+              imageBytes: bytes,
+            ),
+          ),
+        ),
+      );
     }
   }
 
@@ -52,43 +72,45 @@ class StatusPageContent extends StatelessWidget {
     final picker = ImagePicker();
     final XFile? video = await picker.pickVideo(
       source: source,
-      maxDuration: const Duration(seconds: 60),
     );
     if (video == null) return;
 
     final path = video.path;
     final bytes = kIsWeb ? await video.readAsBytes() : null;
 
-    // Check video duration (restrict to max 1 minute / 60 seconds)
+    Duration videoDuration = const Duration(seconds: 0);
+
+    // Inspect video duration
     if (!kIsWeb && path.isNotEmpty) {
       try {
         final videoController = VideoPlayerController.file(File(path));
         await videoController.initialize();
-        final duration = videoController.value.duration;
+        videoDuration = videoController.value.duration;
         await videoController.dispose();
-
-        if (duration.inSeconds > 60) {
-          if (context.mounted) {
-            context.showErrorNotification(
-              'Video duration (${duration.inSeconds}s) exceeds 1 minute limit (60s). Please select a shorter video.',
-            );
-          }
-          return;
-        }
       } catch (e) {
         debugPrint('Error inspecting video duration: $e');
       }
     }
 
-    if (context.mounted) {
-      _showStatusTextDialog(
-        context,
-        bytes: bytes,
-        path: path,
-        statusType: 'video',
-        title: 'Add Video Caption',
-      );
-    }
+    if (!context.mounted) return;
+
+    final bloc = context.read<StatusBloc>();
+    final exceedsLimit = videoDuration.inSeconds > 60;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: VideoStatusTrimmerPage(
+            videoPath: path,
+            videoBytes: bytes,
+            totalDuration: videoDuration,
+            exceedsLimit: exceedsLimit,
+          ),
+        ),
+      ),
+    );
   }
 
   void _addVoiceStatus(BuildContext context) {
@@ -117,71 +139,6 @@ class StatusPageContent extends StatelessWidget {
     );
   }
 
-  void _showStatusTextDialog(
-    BuildContext context, {
-    Uint8List? bytes,
-    String? path,
-    String statusType = 'image',
-    String title = 'Add Caption',
-  }) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: ctx.colors.cardBackground,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(title, style: TextStyle(color: ctx.colors.textPrimary)),
-          content: TextField(
-            controller: controller,
-            style: TextStyle(color: ctx.colors.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'Add a caption... (optional)',
-              hintStyle: TextStyle(color: ctx.colors.textHint),
-              filled: true,
-              fillColor: ctx.colors.scaffoldBackground,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                context.showInfoNotification('Uploading status...');
-                context.read<StatusBloc>().add(UploadMediaStatusEvent(
-                  path: path,
-                  bytes: bytes,
-                  caption: null,
-                  statusType: statusType,
-                ));
-              },
-              child: Text('Skip', style: TextStyle(color: ctx.colors.textHint)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final caption = controller.text.trim();
-                Navigator.pop(ctx);
-                context.showInfoNotification('Uploading status...');
-                context.read<StatusBloc>().add(UploadMediaStatusEvent(
-                  path: path,
-                  bytes: bytes,
-                  caption: caption.isNotEmpty ? caption : null,
-                  statusType: statusType,
-                ));
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ctx.colors.primary,
-                foregroundColor: ctx.colors.textLight,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Post'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _pickStatusCamera(BuildContext context) async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
@@ -191,7 +148,19 @@ class StatusPageContent extends StatelessWidget {
     final path = kIsWeb ? null : image.path;
 
     if (context.mounted) {
-      _showStatusTextDialog(context, bytes: bytes, path: path, statusType: 'image');
+      final bloc = context.read<StatusBloc>();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BlocProvider.value(
+            value: bloc,
+            child: ImageStatusEditorPage(
+              imagePath: path,
+              imageBytes: bytes,
+            ),
+          ),
+        ),
+      );
     }
   }
 
@@ -507,9 +476,26 @@ class StatusPageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<StatusBloc, StatusState>(
+    return BlocConsumer<StatusBloc, StatusState>(
+      listener: (context, state) {
+        if (state is StatusLoaded) {
+          if (state.uploadSuccessMessage != null && state.uploadSuccessMessage!.isNotEmpty) {
+            context.showSuccessNotification(state.uploadSuccessMessage!);
+          }
+          if (state.uploadError != null && state.uploadError!.isNotEmpty) {
+            context.showErrorNotification(state.uploadError!);
+          }
+        } else if (state is StatusFailure) {
+          context.showErrorNotification(state.errorMessage);
+        }
+      },
       builder: (context, state) {
         final isLoading = state is StatusLoading || state is StatusInitial;
+        final isUploading = state is StatusLoaded && state.isUploading;
+        final uploadProgress = state is StatusLoaded ? state.uploadProgress : null;
+        final percentInt = uploadProgress != null ? (uploadProgress * 100).clamp(0, 100).toInt() : null;
+        final percentText = percentInt != null ? '$percentInt%' : null;
+        final uploadStatusMessage = state is StatusLoaded ? state.uploadStatusMessage : null;
         final recentStatuses = state is StatusLoaded ? state.recentUpdates : <StatusContactModel>[];
         final mutedStatuses = state is StatusLoaded ? state.mutedUpdates : <StatusContactModel>[];
         final myStatuses = state is StatusLoaded ? state.myStatuses : <StatusItemModel>[];
@@ -521,7 +507,13 @@ class StatusPageContent extends StatelessWidget {
         final hasMyStatus = myStatuses.isNotEmpty || myStatusBytes != null || myStatusPath != null || myStatusText != null;
 
         String myStatusSubtitle = 'Tap to add photo, video or text';
-        if (myStatuses.isNotEmpty) {
+        if (isUploading) {
+          if (percentText != null) {
+            myStatusSubtitle = '$percentText • ${uploadStatusMessage ?? 'Sending status update...'}';
+          } else {
+            myStatusSubtitle = uploadStatusMessage ?? 'Sending status update...';
+          }
+        } else if (myStatuses.isNotEmpty) {
           myStatusSubtitle = _formatTime(myStatuses.last.timestamp);
         } else if (myStatusTime != null) {
           myStatusSubtitle = _formatTime(myStatusTime);
@@ -532,7 +524,7 @@ class StatusPageContent extends StatelessWidget {
         final isDark = context.colors.isDark;
 
         return Scaffold(
-          backgroundColor: Colors.transparent,
+          backgroundColor: context.colors.scaffoldBackground,
           body: RefreshIndicator(
             onRefresh: () async {
               context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
@@ -542,7 +534,7 @@ class StatusPageContent extends StatelessWidget {
                 // App Bar
                 SliverAppBar(
                   floating: true,
-                  backgroundColor: Colors.transparent,
+                  backgroundColor: context.colors.scaffoldBackground,
                   elevation: 0,
                   title: Text(
                     'Status',
@@ -630,104 +622,18 @@ class StatusPageContent extends StatelessWidget {
                             children: [
                               GestureDetector(
                                 onTap: () => _viewMyStatus(context, myStatuses, myStatusBytes, myStatusPath, myStatusText),
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: const Color(0xFFE8F5E9),
-                                        border: hasMyStatus
-                                            ? Border.all(color: const Color(0xFF00873C), width: 2.2)
-                                            : null,
-                                      ),
-                                      child: ClipOval(
-                                        child: myStatuses.isNotEmpty
-                                            ? (myStatuses.last.imagePath != null && myStatuses.last.imagePath!.isNotEmpty
-                                                ? Image.network(
-                                                    myStatuses.last.imagePath!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (_, _, _) => const Icon(
-                                                      Icons.person,
-                                                      color: Color(0xFF48A476),
-                                                      size: 26,
-                                                    ),
-                                                  )
-                                                : Container(
-                                                    color: myStatuses.last.parsedBackgroundColor,
-                                                    child: Center(
-                                                      child: Text(
-                                                        myStatuses.last.text != null && myStatuses.last.text!.isNotEmpty
-                                                            ? myStatuses.last.text![0].toUpperCase()
-                                                            : 'T',
-                                                        style: TextStyle(
-                                                          fontSize: 19,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: context.colors.textLight,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ))
-                                            : hasMyStatus && myStatusBytes != null
-                                                ? Image.memory(myStatusBytes, fit: BoxFit.cover)
-                                                : hasMyStatus && myStatusPath != null && !kIsWeb
-                                                    ? Image.asset(
-                                                        myStatusPath,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (_, _, _) => const Icon(
-                                                          Icons.person,
-                                                          color: Color(0xFF48A476),
-                                                          size: 26,
-                                                        ),
-                                                      )
-                                                    : hasMyStatus && myStatusText != null
-                                                        ? Container(
-                                                            color: const Color(0xFF00873C),
-                                                            child: Center(
-                                                              child: Text(
-                                                                'T',
-                                                                style: TextStyle(
-                                                                  fontSize: 19,
-                                                                  fontWeight: FontWeight.bold,
-                                                                  color: context.colors.textLight,
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          )
-                                                        : const Icon(
-                                                            Icons.person,
-                                                            color: Color(0xFF48A476),
-                                                            size: 26,
-                                                          ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      right: -2,
-                                      bottom: -2,
-                                      child: GestureDetector(
-                                        onTap: () => _showUploadOptions(context),
-                                        child: Container(
-                                          width: 20,
-                                          height: 20,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF00873C),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                                              width: 2,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.add,
-                                            size: 12,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                child: _buildMyStatusAvatar(
+                                  context: context,
+                                  hasStatus: hasMyStatus,
+                                  count: myStatuses.isNotEmpty ? myStatuses.length : (hasMyStatus ? 1 : 0),
+                                  myStatuses: myStatuses,
+                                  myStatusBytes: myStatusBytes,
+                                  myStatusPath: myStatusPath,
+                                  myStatusText: myStatusText,
+                                  isUploading: isUploading,
+                                  uploadProgress: uploadProgress,
+                                  percentInt: percentInt,
+                                  isDark: isDark,
                                 ),
                               ),
                               // Vertical Line between avatar and text
@@ -743,20 +649,25 @@ class StatusPageContent extends StatelessWidget {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      hasMyStatus ? 'My Status' : 'Add to my status',
+                                      isUploading
+                                          ? 'Sending Status Update'
+                                          : (hasMyStatus ? 'My Status' : 'Add to my status'),
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14.5,
-                                        color: context.colors.textPrimary,
+                                        color: isUploading ? const Color(0xFF00873C) : context.colors.textPrimary,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       myStatusSubtitle,
                                       style: TextStyle(
-                                        color: context.colors.textSecondary,
+                                        color: isUploading ? const Color(0xFF00873C) : context.colors.textSecondary,
                                         fontSize: 12.5,
+                                        fontWeight: isUploading ? FontWeight.w600 : FontWeight.normal,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -776,7 +687,7 @@ class StatusPageContent extends StatelessWidget {
                                     size: 20,
                                   ),
                                   tooltip: 'Add Status',
-                                  onPressed: () => _showUploadOptions(context),
+                                  onPressed: isUploading ? null : () => _showUploadOptions(context),
                                 ),
                               ),
                             ],
@@ -974,6 +885,238 @@ class StatusPageContent extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProfileFallback(String? profilePicUrl, String initial) {
+    if (profilePicUrl != null && profilePicUrl.trim().isNotEmpty) {
+      return Image.network(
+        profilePicUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Center(
+          child: Text(
+            initial,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00873C)),
+          ),
+        ),
+      );
+    }
+    return Center(
+      child: Text(
+        initial,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00873C)),
+      ),
+    );
+  }
+
+  Widget _buildMyStatusAvatar({
+    required BuildContext context,
+    required bool hasStatus,
+    required int count,
+    required List<StatusItemModel> myStatuses,
+    required Uint8List? myStatusBytes,
+    required String? myStatusPath,
+    required String? myStatusText,
+    required bool isUploading,
+    required double? uploadProgress,
+    required int? percentInt,
+    required bool isDark,
+  }) {
+    final profilePicUrl = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getProfilePic() : null;
+    final username = getIt.isRegistered<StorageService>() ? (getIt<StorageService>().getUsername() ?? '') : '';
+    final initial = username.isNotEmpty ? username[0].toUpperCase() : 'M';
+
+    Widget innerContent;
+    if (myStatuses.isNotEmpty) {
+      final lastItem = myStatuses.last;
+      final path = lastItem.imagePath ?? '';
+      final lower = path.toLowerCase();
+      final isVid = lastItem.statusType == 'video' ||
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.mov') ||
+          lower.endsWith('.avi') ||
+          lower.endsWith('.mkv');
+      final isAud = lastItem.statusType == 'audio' ||
+          lower.endsWith('.m4a') ||
+          lower.endsWith('.mp3') ||
+          lower.endsWith('.aac') ||
+          lower.endsWith('.wav');
+
+      if (isVid) {
+        innerContent = Container(
+          color: const Color(0xFF00873C),
+          child: const Center(
+            child: Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
+          ),
+        );
+      } else if (isAud) {
+        innerContent = Container(
+          color: lastItem.parsedBackgroundColor,
+          child: const Center(
+            child: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
+          ),
+        );
+      } else if (path.isNotEmpty) {
+        innerContent = Image.network(
+          path,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _buildProfileFallback(profilePicUrl, initial),
+        );
+      } else if (lastItem.text != null && lastItem.text!.isNotEmpty) {
+        innerContent = Container(
+          color: lastItem.parsedBackgroundColor,
+          child: Center(
+            child: Text(
+              lastItem.text![0].toUpperCase(),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        );
+      } else {
+        innerContent = _buildProfileFallback(profilePicUrl, initial);
+      }
+    } else if (myStatusBytes != null) {
+      innerContent = Image.memory(myStatusBytes, fit: BoxFit.cover);
+    } else if (myStatusPath != null && !kIsWeb) {
+      final lower = myStatusPath.toLowerCase();
+      final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov');
+      if (isVid) {
+        innerContent = Container(
+          color: const Color(0xFF00873C),
+          child: const Center(
+            child: Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
+          ),
+        );
+      } else {
+        innerContent = Image.file(
+          File(myStatusPath),
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _buildProfileFallback(profilePicUrl, initial),
+        );
+      }
+    } else if (myStatusText != null) {
+      innerContent = Container(
+        color: const Color(0xFF00873C),
+        child: Center(
+          child: Text(
+            myStatusText.isNotEmpty ? myStatusText[0].toUpperCase() : 'T',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    } else {
+      innerContent = _buildProfileFallback(profilePicUrl, initial);
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        if (hasStatus)
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: CustomPaint(
+              painter: _StatusRingPainter(
+                color: const Color(0xFF00873C),
+                segmentCount: count,
+                viewed: false,
+              ),
+              child: Center(
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFE8F5E9),
+                  ),
+                  child: ClipOval(child: innerContent),
+                ),
+              ),
+            ),
+          )
+        else
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFFE8F5E9),
+            ),
+            child: ClipOval(child: innerContent),
+          ),
+
+        // Uploading Indicator Overlay
+        if (isUploading)
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black54,
+              ),
+              child: Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: CircularProgressIndicator(
+                        value: uploadProgress,
+                        strokeWidth: 2.8,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF48A476)),
+                      ),
+                    ),
+                    if (percentInt != null)
+                      Text(
+                        '$percentInt%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        // Add (+) Badge when user has no status
+        if (!hasStatus && !isUploading)
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: GestureDetector(
+              onTap: () => _showUploadOptions(context),
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00873C),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.add,
+                  size: 12,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

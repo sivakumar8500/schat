@@ -11,6 +11,7 @@ class StorageService {
   static const String _profilePicKey = 'profile_pic_url';
   static const String _hasSyncedContactsKey = 'has_synced_contacts';
   static const String _emailKey = 'email';
+  static const String _phoneKey = 'phone_number';
   static const String _deviceIdKey = 'device_id';
   static const String _hasSeenPermissionsKey = 'has_seen_permissions';
   static const String _callRingtoneNameKey = 'call_ringtone_name';
@@ -21,6 +22,7 @@ class StorageService {
   static const String _typingIndicatorsEnabledKey = 'typing_indicators_enabled';
   static const String _lastSeenEnabledKey = 'last_seen_enabled';
   static const String _notificationsEnabledKey = 'notifications_enabled';
+  static const String _defaultDisappearingTimerKey = 'default_disappearing_timer';
   static const String _mutedChatsKey = 'muted_chats_list';
   static const String _lockedChatsKey = 'locked_chats_list';
   static const String _hiddenChatsKey = 'hidden_chats_list';
@@ -61,6 +63,18 @@ class StorageService {
     }
   }
 
+  Future<void> savePhoneNumber(String? phone) async {
+    if (phone != null && phone.isNotEmpty) {
+      await _prefs.setString(_phoneKey, phone);
+    } else {
+      await _prefs.remove(_phoneKey);
+    }
+  }
+
+  String? getPhoneNumber() {
+    return _prefs.getString(_phoneKey);
+  }
+
   String? getUsername() {
     return _prefs.getString(_usernameKey);
   }
@@ -89,6 +103,7 @@ class StorageService {
     await _prefs.remove(_profilePicKey);
     await _prefs.remove(_emailKey);
     await _prefs.remove(_hasSyncedContactsKey);
+    await _prefs.remove(_defaultDisappearingTimerKey);
   }
 
   bool hasToken() {
@@ -116,6 +131,8 @@ class StorageService {
     }
     return deviceId;
   }
+
+  String getDeviceId() => getOrGenerateDeviceId();
 
   Future<void> setHasSeenPermissions(bool value) async {
     await _prefs.setBool(_hasSeenPermissionsKey, value);
@@ -181,6 +198,20 @@ class StorageService {
 
   bool getNotificationsEnabled() {
     return _prefs.getBool(_notificationsEnabledKey) ?? true;
+  }
+
+  // --- Disappearing Messages Preference ---
+  Future<void> saveDefaultDisappearingTimer(int? seconds) async {
+    if (seconds != null && seconds != 0) {
+      await _prefs.setInt(_defaultDisappearingTimerKey, seconds);
+    } else {
+      await _prefs.remove(_defaultDisappearingTimerKey);
+    }
+  }
+
+  int? getDefaultDisappearingTimer() {
+    final timer = _prefs.getInt(_defaultDisappearingTimerKey);
+    return (timer == null || timer == 0) ? null : timer;
   }
 
   Future<void> saveChatMuted(String conversationId, bool isMuted) async {

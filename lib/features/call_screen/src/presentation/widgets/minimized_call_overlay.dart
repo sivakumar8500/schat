@@ -30,34 +30,41 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<CallWebRtcBloc, CallWebRtcState>(
-      listenWhen: (previous, current) =>
-          current is CallEnded || current is CallError || current is CallIdle,
-      listener: (context, state) async {
-        if (!kIsWeb) {
-          try {
-            await FlutterCallkitIncoming.endAllCalls();
-          } catch (e) {
-            debugPrint('MinimizedCallOverlay: endAllCalls failed: $e');
-          }
+    return ValueListenableBuilder<bool>(
+      valueListenable: CallWebRtcBloc.isCallScreenMountedNotifier,
+      builder: (context, isCallScreenMounted, _) {
+        if (isCallScreenMounted) {
+          return const SizedBox.shrink();
         }
-      },
-      child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
-        builder: (context, state) {
-          final bool isCallActiveOrConnecting = state is CallActive || state is CallConnecting;
-          bool isSystemPip = false;
-          bool isMinimized = false;
-          if (state is CallActive) {
-            isSystemPip = state.isSystemPip;
-            isMinimized = state.isMinimized;
-          } else if (state is CallConnecting) {
-            isSystemPip = state.isSystemPip;
-            isMinimized = state.isMinimized;
-          }
 
-          if (!isCallActiveOrConnecting || isSystemPip || !isMinimized || CallWebRtcBloc.isCallScreenMounted) {
-            return const SizedBox.shrink();
-          }
+        return BlocListener<CallWebRtcBloc, CallWebRtcState>(
+          listenWhen: (previous, current) =>
+              current is CallEnded || current is CallError || current is CallIdle,
+          listener: (context, state) async {
+            if (!kIsWeb) {
+              try {
+                await FlutterCallkitIncoming.endAllCalls();
+              } catch (e) {
+                debugPrint('MinimizedCallOverlay: endAllCalls failed: $e');
+              }
+            }
+          },
+          child: BlocBuilder<CallWebRtcBloc, CallWebRtcState>(
+            builder: (context, state) {
+              final bool isCallActiveOrConnecting = state is CallActive || state is CallConnecting;
+              bool isSystemPip = false;
+              bool isMinimized = false;
+              if (state is CallActive) {
+                isSystemPip = state.isSystemPip;
+                isMinimized = state.isMinimized;
+              } else if (state is CallConnecting) {
+                isSystemPip = state.isSystemPip;
+                isMinimized = state.isMinimized;
+              }
+
+              if (!isCallActiveOrConnecting || isSystemPip || !isMinimized || isCallScreenMounted) {
+                return const SizedBox.shrink();
+              }
 
           final bool isVideo = state is CallActive
               ? state.isVideo
@@ -342,7 +349,9 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
         },
       ),
     );
-  }
+  },
+);
+}
 }
 
 class _CallTimerText extends StatefulWidget {

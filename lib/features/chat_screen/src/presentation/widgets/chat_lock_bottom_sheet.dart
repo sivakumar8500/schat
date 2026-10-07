@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -45,14 +46,24 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
   final TextEditingController _confirmPasswordController = TextEditingController();
   final TextEditingController _oldPasswordController = TextEditingController();
 
+  final FocusNode _passwordFocus = FocusNode();
+  final FocusNode _confirmPasswordFocus = FocusNode();
+  final FocusNode _oldPasswordFocus = FocusNode();
+
   bool _isLoadingStatus = true;
   bool _isActionProcessing = false;
   bool _hasPassword = false;
-  bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
-  bool _obscureOldPassword = true;
+  bool _obscurePassword = false;
+  bool _obscureConfirmPassword = false;
+  bool _obscureOldPassword = false;
   bool _isChangingPassword = false;
   String? _errorMessage;
+
+  static const List<String> _popularEmojis = [
+    '🔒', '🔑', '🔐', '🤫', '❤️', '🔥', '⭐', '😎',
+    '🤐', '🛡️', '💎', '🚀', '⚡', '🍀', '🎯', '👑',
+    '✨', '🌸', '🐱', '🦋', '🌙', '🪄', '💎', '🦄',
+  ];
 
   @override
   void initState() {
@@ -65,7 +76,34 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _oldPasswordController.dispose();
+    _passwordFocus.dispose();
+    _confirmPasswordFocus.dispose();
+    _oldPasswordFocus.dispose();
     super.dispose();
+  }
+
+  void _insertEmoji(String emoji) {
+    TextEditingController target;
+    if (_confirmPasswordFocus.hasFocus) {
+      target = _confirmPasswordController;
+    } else if (_oldPasswordFocus.hasFocus) {
+      target = _oldPasswordController;
+    } else {
+      target = _passwordController;
+    }
+
+    final text = target.text;
+    final sel = target.selection;
+    if (sel.start >= 0 && sel.end >= 0) {
+      final newText = text.replaceRange(sel.start, sel.end, emoji);
+      target.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: sel.start + emoji.length),
+      );
+    } else {
+      target.text = text + emoji;
+      target.selection = TextSelection.collapsed(offset: target.text.length);
+    }
   }
 
   Future<void> _checkLockStatus() async {
@@ -312,6 +350,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                 if (_isChangingPassword) ...[
                   _buildTextField(
                     controller: _oldPasswordController,
+                    focusNode: _oldPasswordFocus,
                     hintText: 'Current Secret Code',
                     prefixIcon: Icons.lock_clock_outlined,
                     obscureText: _obscureOldPassword,
@@ -324,6 +363,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                 // Main Secret Code field
                 _buildTextField(
                   controller: _passwordController,
+                  focusNode: _passwordFocus,
                   hintText: _isChangingPassword
                       ? 'New Secret Code (e.g. 🔒Secret@123🍕)'
                       : !_hasPassword
@@ -340,6 +380,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   CommonSpaces.h16,
                   _buildTextField(
                     controller: _confirmPasswordController,
+                    focusNode: _confirmPasswordFocus,
                     hintText: 'Confirm Secret Code',
                     prefixIcon: Icons.check_circle_outline_rounded,
                     obscureText: _obscureConfirmPassword,
@@ -347,6 +388,51 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                     isDark: isDark,
                   ),
                 ],
+
+                CommonSpaces.h12,
+
+                // Quick Emoji Selector
+                Row(
+                  children: [
+                    Icon(Icons.emoji_emotions_outlined, size: 16, color: context.colors.primary),
+                    CommonSpaces.w6,
+                    Text(
+                      'Tap to insert emoji into passcode:',
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+                CommonSpaces.h6,
+                SizedBox(
+                  height: 36,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _popularEmojis.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 6),
+                    itemBuilder: (context, idx) {
+                      final emoji = _popularEmojis[idx];
+                      return InkWell(
+                        onTap: () => _insertEmoji(emoji),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: context.colors.primary.withValues(alpha: 0.15)),
+                          ),
+                          child: Center(
+                            child: Text(emoji, style: const TextStyle(fontSize: 17)),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
 
                 // Error message display
                 if (_errorMessage != null) ...[
@@ -372,7 +458,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   ),
                 ],
 
-                CommonSpaces.h24,
+                CommonSpaces.h20,
 
                 // Action Buttons
                 SizedBox(
@@ -417,29 +503,56 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   ),
                 ),
 
-                // Toggle Change Password option if user already has password set
-                if (_hasPassword && !widget.isCurrentlyLocked) ...[
-                  CommonSpaces.h12,
-                  TextButton(
-                    onPressed: _isActionProcessing
-                        ? null
-                        : () {
-                            setState(() {
-                              _isChangingPassword = !_isChangingPassword;
-                              _errorMessage = null;
-                              _passwordController.clear();
-                              _confirmPasswordController.clear();
-                              _oldPasswordController.clear();
-                            });
-                          },
-                    child: Text(
-                      _isChangingPassword ? 'Cancel Change Code' : 'Change Secret Code',
-                      style: TextStyle(
-                        color: context.colors.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                // Forgot Password & Change Password Options
+                if (_hasPassword) ...[
+                  CommonSpaces.h10,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _isActionProcessing
+                            ? null
+                            : () {
+                                Navigator.pop(context);
+                                ForgotChatLockBottomSheet.show(
+                                  context,
+                                  onPasswordReset: () {
+                                    context.showSuccessNotification('Passcode reset. You can now use your new passcode.');
+                                  },
+                                );
+                              },
+                        icon: const Icon(Icons.lock_reset_rounded, size: 16),
+                        label: const Text('Forgot Secret Code?'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
                       ),
-                    ),
+                      if (!widget.isCurrentlyLocked) ...[
+                        const Text(' • ', style: TextStyle(color: Colors.grey)),
+                        TextButton(
+                          onPressed: _isActionProcessing
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _isChangingPassword = !_isChangingPassword;
+                                    _errorMessage = null;
+                                    _passwordController.clear();
+                                    _confirmPasswordController.clear();
+                                    _oldPasswordController.clear();
+                                  });
+                                },
+                          child: Text(
+                            _isChangingPassword ? 'Cancel Change' : 'Change Code',
+                            style: TextStyle(
+                              color: context.colors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ],
@@ -452,6 +565,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
 
   Widget _buildTextField({
     required TextEditingController controller,
+    FocusNode? focusNode,
     required String hintText,
     required IconData prefixIcon,
     required bool obscureText,
@@ -469,6 +583,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
       ),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         obscureText: obscureText,
         keyboardType: TextInputType.text,
         textInputAction: TextInputAction.done,

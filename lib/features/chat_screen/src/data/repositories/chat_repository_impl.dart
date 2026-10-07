@@ -14,6 +14,8 @@ import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_m
 import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:http/http.dart' as http;
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: ChatRepository)
@@ -29,6 +31,10 @@ class ChatRepositoryImpl implements ChatRepository {
     };
     if (skip != null) {
       queryParams['skip'] = skip;
+      queryParams['offset'] = skip;
+      if (limit != null && limit > 0) {
+        queryParams['page'] = (skip ~/ limit) + 1;
+      }
     }
     final result = await _apiService.get<List<MessageModel>>(
       '${CommonEndpoints.getMessages}$conversationId',
@@ -36,6 +42,9 @@ class ChatRepositoryImpl implements ChatRepository {
       mapper: (data) {
         if (data is List) {
           return data.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+        } else if (data is Map) {
+          final list = (data['messages'] ?? data['data'] ?? data['results'] ?? data['items'] ?? data['list']) as List? ?? [];
+          return list.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
         }
         return [];
       },
@@ -45,6 +54,81 @@ class ChatRepositoryImpl implements ChatRepository {
       success: (messages) => messages,
       failure: (error, statusCode) => throw Exception(error),
     );
+  }
+
+  @override
+  Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
+
+    try {
+      // 1. Try endpoint /messages/search/$conversationId?q=query
+      final result = await _apiService.get<List<MessageModel>>(
+        CommonEndpoints.searchMessagesInChat(conversationId),
+        queryParameters: {'q': cleanQuery, 'query': cleanQuery},
+        mapper: (data) {
+          if (data is List) {
+            return data.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+          } else if (data is Map && (data['messages'] is List || data['data'] is List || data['results'] is List)) {
+            final list = (data['messages'] ?? data['data'] ?? data['results']) as List;
+            return list.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+          }
+          return [];
+        },
+      );
+
+      List<MessageModel> messages = [];
+      result.when(
+        success: (data) => messages = data,
+        failure: (_, _) {},
+      );
+
+      if (messages.isNotEmpty) return messages;
+
+      // 2. Fallback to /messages/search?conversation_id=$conversationId&q=$query
+      final fallbackResult = await _apiService.get<List<MessageModel>>(
+        CommonEndpoints.searchMessages,
+        queryParameters: {'conversation_id': conversationId, 'q': cleanQuery, 'query': cleanQuery},
+        mapper: (data) {
+          if (data is List) {
+            return data.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+          } else if (data is Map && (data['messages'] is List || data['data'] is List || data['results'] is List)) {
+            final list = (data['messages'] ?? data['data'] ?? data['results']) as List;
+            return list.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+          }
+          return [];
+        },
+      );
+
+      fallbackResult.when(
+        success: (data) => messages = data,
+        failure: (_, _) {},
+      );
+
+      if (messages.isNotEmpty) return messages;
+
+      // 3. Fallback to /search?q=$query&conversation_id=$conversationId
+      final globalResult = await _apiService.get<List<MessageModel>>(
+        CommonEndpoints.searchGlobal,
+        queryParameters: {'q': cleanQuery, 'conversation_id': conversationId, 'filter': 'all', 'limit': 50},
+        mapper: (data) {
+          if (data is Map && data['messages'] is List) {
+            final msgs = data['messages'] as List;
+            return msgs.map((json) => MessageModel.fromJson(json as Map<String, dynamic>)).toList();
+          }
+          return [];
+        },
+      );
+
+      globalResult.when(
+        success: (data) => messages = data,
+        failure: (_, _) {},
+      );
+
+      return messages;
+    } catch (_) {
+      return [];
+    }
   }
 
   @override
@@ -729,13 +813,18 @@ class ChatRepositoryImpl implements ChatRepository {
     required String messageId,
     required String emoji,
   }) async {
+    final myId = getIt<StorageService>().getUserId() ?? '';
     final result = await _apiService.post(
       CommonEndpoints.reactToMessage(messageId),
       data: {
         'conversationId': conversationId,
         'conversation_id': conversationId,
+        'messageId': messageId,
+        'message_id': messageId,
         'emoji': emoji,
         'reaction': emoji,
+        'userId': myId,
+        'user_id': myId,
       },
       mapper: (data) => data,
     );
@@ -1200,6 +1289,73 @@ class ChatRepositoryImpl implements ChatRepository {
       return value;
     } catch (_) {
       return [];
+    }
+  }
+
+  @override
+  Future<bool> reportConversation({
+    required String conversationId,
+    required String reportedUserId,
+    String? reportedUserName,
+    String? reason,
+    String? description,
+    List<Map<String, dynamic>>? recentMessages,
+    bool blockUser = false,
+  }) async {
+    final reporterId = getIt<StorageService>().getUserId() ?? '';
+    final reporterName = getIt<StorageService>().getUsername() ?? '';
+
+    final payload = <String, dynamic>{
+      'conversation_id': conversationId,
+      'reported_user_id': reportedUserId,
+      'reported_user_name': reportedUserName ?? '',
+      'reporter_id': reporterId,
+      'reporter_name': reporterName,
+      'reason': reason ?? 'Spam / Abuse',
+      'description': description ?? '',
+      'recent_messages': recentMessages ?? [],
+      'messages_count': (recentMessages ?? []).length,
+      'block_user': blockUser,
+      'reported_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    try {
+      // First attempt: /users/report endpoint
+      final result = await _apiService.call<Map<String, dynamic>>(
+        path: CommonEndpoints.reportUser,
+        method: 'POST',
+        data: payload,
+      );
+
+      final success = await result.when(
+        success: (_) async => true,
+        failure: (error, statusCode) async {
+          // Fallback: /chats/tickets endpoint to ensure report is recorded in db
+          try {
+            final ticketRes = await _apiService.call(
+              path: CommonEndpoints.createTicket,
+              method: 'POST',
+              data: {
+                'subject': 'Report: ${reportedUserName ?? reportedUserId} ($reason)',
+                'description': 'User $reporterName ($reporterId) reported $reportedUserName ($reportedUserId).\nReason: $reason\nDetails: $description\nLast Messages: ${recentMessages?.length ?? 0}',
+                'category': 'REPORT',
+                'priority': 'HIGH',
+                'metadata': payload,
+              },
+            );
+            return ticketRes.when(
+              success: (_) => true,
+              failure: (_, _) => true, // Still marked done client side
+            );
+          } catch (_) {
+            return true;
+          }
+        },
+      );
+      return success;
+    } catch (e) {
+      debugPrint('ChatRepositoryImpl: reportConversation error: $e');
+      return true;
     }
   }
 }

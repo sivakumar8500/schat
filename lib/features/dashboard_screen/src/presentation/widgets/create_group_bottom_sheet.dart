@@ -44,6 +44,7 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
     try {
       final repository = getIt<ContactsRepository>();
       final users = await repository.getCachedContacts();
+      users.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
       setState(() {
         _cachedUsers = users;
         _isLoadingContacts = false;

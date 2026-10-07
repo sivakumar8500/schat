@@ -21,6 +21,7 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     on<LoadStatusUpdatesEvent>(_onLoadStatusUpdates);
     on<UploadTextStatusEvent>(_onUploadTextStatus);
     on<UploadMediaStatusEvent>(_onUploadMediaStatus);
+    on<UpdateUploadProgressEvent>(_onUpdateUploadProgress);
     on<MuteContactEvent>(_onMuteContact);
     on<DeleteMyStatusEvent>(_onDeleteMyStatus);
     on<FetchStatusPrivacyEvent>(_onFetchStatusPrivacy);
@@ -41,6 +42,15 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         }
       }
     });
+  }
+
+  void _onUpdateUploadProgress(UpdateUploadProgressEvent event, Emitter<StatusState> emit) {
+    final currentState = state;
+    if (currentState is StatusLoaded) {
+      emit(currentState.copyWith(
+        uploadProgress: () => event.progress,
+      ));
+    }
   }
 
   @override
@@ -110,7 +120,79 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
 
 
 
+  Future<void> _reloadUpdatesAfterUpload(Emitter<StatusState> emit, String successMsg) async {
+    try {
+      final results = await Future.wait([
+        _repository.getRecentUpdates(),
+        _repository.getMyStatuses(),
+        _repository.getMutedUpdates(),
+        _repository.getStatusPrivacy(),
+      ]);
+
+      final recent = results[0] as List<StatusContactModel>;
+      final myStatuses = results[1] as List<StatusItemModel>;
+      final muted = results[2] as List<StatusContactModel>;
+      final privacy = results[3] as StatusPrivacyModel;
+
+      String? myText;
+      String? myPath;
+      DateTime? myTime;
+      if (myStatuses.isNotEmpty) {
+        final latest = myStatuses.first;
+        myText = latest.text;
+        myPath = latest.imagePath;
+        myTime = latest.timestamp;
+      }
+
+      final currentState = state;
+      if (currentState is StatusLoaded) {
+        emit(currentState.copyWith(
+          recentUpdates: recent,
+          mutedUpdates: muted,
+          myStatuses: myStatuses,
+          myStatusText: () => myText,
+          myStatusPath: () => myPath,
+          myStatusTime: () => myTime,
+          privacyModel: privacy,
+          isUploading: false,
+          uploadProgress: () => null,
+          uploadSuccessMessage: () => successMsg,
+          uploadError: () => null,
+          uploadStatusMessage: () => null,
+        ));
+      } else {
+        emit(StatusLoaded(
+          recentUpdates: recent,
+          mutedUpdates: muted,
+          myStatuses: myStatuses,
+          myStatusText: myText,
+          myStatusPath: myPath,
+          myStatusTime: myTime,
+          privacyModel: privacy,
+          isUploading: false,
+          uploadProgress: null,
+          uploadSuccessMessage: successMsg,
+          uploadError: null,
+          uploadStatusMessage: null,
+        ));
+      }
+    } catch (_) {
+      add(const LoadStatusUpdatesEvent());
+    }
+  }
+
   Future<void> _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) async {
+    final currentState = state;
+    if (currentState is StatusLoaded) {
+      emit(currentState.copyWith(
+        isUploading: true,
+        uploadProgress: () => 0.1,
+        uploadStatusMessage: () => 'Uploading text status...',
+        uploadError: () => null,
+        uploadSuccessMessage: () => null,
+      ));
+    }
+
     try {
       await _repository.createStatus(
         statusType: 'text',
@@ -118,15 +200,46 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         textColor: event.textColor,
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
+        onProgress: (p) => add(UpdateUploadProgressEvent(p)),
       );
+      await _reloadUpdatesAfterUpload(emit, 'Status uploaded successfully');
     } catch (e) {
-      // Log and continue to reload
+      final errorStr = e.toString().replaceAll('Exception: ', '');
+      if (state is StatusLoaded) {
+        emit((state as StatusLoaded).copyWith(
+          isUploading: false,
+          uploadProgress: () => null,
+          uploadError: () => 'Failed to upload status: $errorStr',
+          uploadSuccessMessage: () => null,
+          uploadStatusMessage: () => null,
+        ));
+      } else {
+        emit(StatusFailure(errorMessage: errorStr));
+      }
     }
-    add(const LoadStatusUpdatesEvent());
   }
 
-
   Future<void> _onUploadMediaStatus(UploadMediaStatusEvent event, Emitter<StatusState> emit) async {
+    String uploadMsg = 'Uploading status...';
+    if (event.statusType == 'video') {
+      uploadMsg = 'Uploading video status...';
+    } else if (event.statusType == 'audio') {
+      uploadMsg = 'Uploading voice status...';
+    } else if (event.statusType == 'image') {
+      uploadMsg = 'Uploading photo status...';
+    }
+
+    final currentState = state;
+    if (currentState is StatusLoaded) {
+      emit(currentState.copyWith(
+        isUploading: true,
+        uploadProgress: () => 0.05,
+        uploadStatusMessage: () => uploadMsg,
+        uploadError: () => null,
+        uploadSuccessMessage: () => null,
+      ));
+    }
+
     try {
       final fileName = event.path != null ? event.path!.split('/').last : 'media.jpg';
       String inferredType = event.statusType ?? 'image';
@@ -153,11 +266,23 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         fileSizeBytes: event.bytes?.length ?? 1024,
         privacyType: event.privacyType,
         privacyUserIds: event.privacyUserIds,
+        onProgress: (p) => add(UpdateUploadProgressEvent(p)),
       );
+      await _reloadUpdatesAfterUpload(emit, 'Status uploaded successfully');
     } catch (e) {
-      // Log and continue to reload
+      final errorStr = e.toString().replaceAll('Exception: ', '');
+      if (state is StatusLoaded) {
+        emit((state as StatusLoaded).copyWith(
+          isUploading: false,
+          uploadProgress: () => null,
+          uploadError: () => 'Failed to upload status: $errorStr',
+          uploadSuccessMessage: () => null,
+          uploadStatusMessage: () => null,
+        ));
+      } else {
+        emit(StatusFailure(errorMessage: errorStr));
+      }
     }
-    add(const LoadStatusUpdatesEvent());
   }
 
   Future<void> _onMuteContact(MuteContactEvent event, Emitter<StatusState> emit) async {

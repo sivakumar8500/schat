@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
@@ -18,6 +20,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/multi_image_grid_bubble.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
@@ -272,6 +275,33 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool _isDownloading = false;
   double? _downloadProgress;
 
+  static const String _kGoogleMapsApiKey = 'AIzaSyDQ5sYBkse3w-n-QyrlvdTOCIQM86nQVKI';
+  static final Map<String, String> _locationAddressCache = {};
+
+  Future<String?> _resolveLocationAddress(double lat, double lng) async {
+    final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+    if (_locationAddressCache.containsKey(key)) {
+      return _locationAddressCache[key];
+    }
+    try {
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_kGoogleMapsApiKey',
+      );
+      final response = await http.get(url).timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['results'] != null && (data['results'] as List).isNotEmpty) {
+          final formatted = data['results'][0]['formatted_address'] as String?;
+          if (formatted != null && formatted.isNotEmpty) {
+            _locationAddressCache[key] = formatted;
+            return formatted;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Color _getSenderColor(String name) {
     const palette = [
       Color(0xFF1EBE71), // WhatsApp Green
@@ -297,13 +327,11 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   bool get _isMediaMessage {
     if (isDeleted) return false;
-    if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'document' || type == 'call') return true;
-    if ((attachmentPath != null || attachmentBytes != null) &&
-        type != 'call' &&
-        type != 'location' &&
-        type != 'contact' &&
-        type != 'text') {
-      return true;
+    if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'voice_note' || type == 'document' || type == 'call') return true;
+    if ((attachmentPath != null && attachmentPath!.isNotEmpty) || attachmentBytes != null) {
+      if (type != 'call' && type != 'location' && type != 'contact') {
+        return true;
+      }
     }
     return false;
   }
@@ -340,7 +368,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (isSystemMessage) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
         child: Row(
           children: [
             Expanded(
@@ -351,7 +379,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.72,
               ),
@@ -359,7 +387,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 color: context.colors.isDark
                     ? const Color(0xFF1E2428).withValues(alpha: 0.95)
                     : const Color(0xFFF0F4F8).withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(14.0),
+                borderRadius: BorderRadius.circular(12.0),
                 border: Border.all(
                   color: context.colors.border.withValues(alpha: 0.35),
                   width: 0.6,
@@ -367,7 +395,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 4,
+                    blurRadius: 3,
                     offset: const Offset(0, 1),
                   ),
                 ],
@@ -378,8 +406,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                 style: TextStyle(
                   color: context.colors.textSecondary,
                   fontWeight: FontWeight.w500,
-                  fontSize: 12.5,
-                  height: 1.3,
+                  fontSize: 10.5,
+                  height: 1.2,
                 ),
               ),
             ),
@@ -949,7 +977,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 12.5,
                   fontWeight: opened ? FontWeight.normal : FontWeight.w600,
                   fontStyle: opened ? FontStyle.italic : FontStyle.normal,
                   color: opened
@@ -958,14 +986,14 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             ViewOnceIconWidget(
               count: 1,
               isActive: !opened,
               isOpened: opened,
-              size: 24,
+              size: 20,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             _buildDefaultTimestampRow(context),
           ],
         ),
@@ -1014,14 +1042,14 @@ class _MessageBubbleState extends State<MessageBubble> {
               _openInAppViewer(context);
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     isViewActive ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    size: 15,
+                    size: 13.5,
                     color: iconColor,
                   ),
                   const SizedBox(width: 3),
@@ -1034,7 +1062,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         style: context.bodySmall.copyWith(
                           color: labelColor,
                           fontWeight: FontWeight.w600,
-                          fontSize: 11.5,
+                          fontSize: 10.0,
                           decoration: (!isViewActive && isMe) ? TextDecoration.lineThrough : null,
                           decorationColor: disabledRed,
                         ),
@@ -1085,24 +1113,24 @@ class _MessageBubbleState extends State<MessageBubble> {
               _triggerDownload(context);
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (_isDownloading)
                     const SizedBox(
-                      width: 14,
-                      height: 14,
+                      width: 12,
+                      height: 12,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                        strokeWidth: 1.8,
                         color: accentGreen,
                       ),
                     )
                   else
                     Icon(
                       isDownloadActive ? Icons.file_download_outlined : Icons.file_download_off_outlined,
-                      size: 15,
+                      size: 13.5,
                       color: iconColor,
                     ),
                   const SizedBox(width: 3),
@@ -1115,7 +1143,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         style: context.bodySmall.copyWith(
                           color: _isDownloading ? accentGreen : labelColor,
                           fontWeight: FontWeight.w600,
-                          fontSize: 11.5,
+                          fontSize: 10.0,
                           decoration: (!isDownloadActive && isMe) ? TextDecoration.lineThrough : null,
                           decorationColor: disabledRed,
                         ),
@@ -1160,14 +1188,14 @@ class _MessageBubbleState extends State<MessageBubble> {
               _triggerShare(context);
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     isShareActive ? Icons.share_outlined : Icons.block_outlined,
-                    size: 14,
+                    size: 13,
                     color: iconColor,
                   ),
                   const SizedBox(width: 3),
@@ -1180,7 +1208,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         style: context.bodySmall.copyWith(
                           color: labelColor,
                           fontWeight: FontWeight.w600,
-                          fontSize: 11.5,
+                          fontSize: 10.0,
                           decoration: (!isShareActive && isMe) ? TextDecoration.lineThrough : null,
                           decorationColor: disabledRed,
                         ),
@@ -1197,16 +1225,16 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (actionButtons.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+        padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline, size: 13, color: isDark ? Colors.white60 : Colors.black54),
-            const SizedBox(width: 5),
+            Icon(Icons.lock_outline, size: 12, color: isDark ? Colors.white60 : Colors.black54),
+            const SizedBox(width: 4),
             Text(
               'Access restricted by sender',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 9.5,
                 fontStyle: FontStyle.italic,
                 color: isDark ? Colors.white60 : Colors.black54,
               ),
@@ -1261,7 +1289,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                           overflow: TextOverflow.ellipsis,
                           style: context.bodySmall.copyWith(
                             color: accentGreen,
-                            fontSize: 11,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -1419,7 +1447,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
 
     Widget result;
-    if (type == 'image') {
+    if (type == 'image' || (type == 'text' && (effectivePath != null || attachmentBytes != null))) {
       Widget imageWidget;
       if (attachmentBytes != null) {
         imageWidget = Image.memory(
@@ -1429,31 +1457,38 @@ class _MessageBubbleState extends State<MessageBubble> {
           fit: BoxFit.cover,
         );
       } else if (effectivePath != null) {
-        String displayUrl = effectivePath;
-        if (displayUrl.contains('minio')) {
-          try {
-            final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-            final host = serverUri.host;
-            if (host.isNotEmpty) {
-              displayUrl = displayUrl.replaceAll('minio', host);
-            }
-          } catch (_) {}
-        }
-
-        final isLocalFile = !kIsWeb && File(displayUrl).existsSync();
-        if (displayUrl.startsWith('http') ||
-            displayUrl.startsWith('https')) {
+        final resolvedUrl = SecureAttachmentService.resolveFullUrl(effectivePath);
+        final isLocalFile = !kIsWeb && File(resolvedUrl).existsSync();
+        if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
           imageWidget = Image.network(
-            displayUrl,
+            resolvedUrl,
             height: 220,
             width: double.infinity,
             fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                height: 220,
+                width: double.infinity,
+                color: context.colors.pureBlack.withValues(alpha: 0.1),
+                child: Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+                    ),
+                  ),
+                ),
+              );
+            },
             errorBuilder: (_, _, _) =>
                 _fileChip(context, CommonIcons.brokenImage, 'Image error'),
           );
         } else if (isLocalFile) {
           imageWidget = Image.file(
-            File(displayUrl),
+            File(resolvedUrl),
             height: 220,
             width: double.infinity,
             fit: BoxFit.cover,
@@ -1464,30 +1499,29 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
           );
         } else {
-          String s3BaseUrl;
-          try {
-            final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-            final host = serverUri.host;
-            if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-              s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-            } else {
-              s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-            }
-          } catch (_) {
-            s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-          }
-          if (displayUrl.startsWith('/')) {
-            displayUrl = displayUrl.substring(1);
-          }
-          if (displayUrl.startsWith('qlyncs-docs/')) {
-            displayUrl = displayUrl.replaceFirst('qlyncs-docs/', '');
-          }
-          final s3Url = '$s3BaseUrl$displayUrl';
           imageWidget = Image.network(
-            s3Url,
+            resolvedUrl,
             height: 220,
             width: double.infinity,
             fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                height: 220,
+                width: double.infinity,
+                color: context.colors.pureBlack.withValues(alpha: 0.1),
+                child: Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+                    ),
+                  ),
+                ),
+              );
+            },
             errorBuilder: (_, _, _) =>
                 _fileChip(context, CommonIcons.brokenImage, 'Image error'),
           );
@@ -1605,100 +1639,142 @@ class _MessageBubbleState extends State<MessageBubble> {
         }
       }
 
+      final String coordKey = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+      String? displayAddress = (address != null && address!.isNotEmpty) ? address : locationTitle;
+      if (displayAddress == null || displayAddress.isEmpty || displayAddress == 'Location' || displayAddress == 'My Location') {
+        if (_locationAddressCache.containsKey(coordKey)) {
+          displayAddress = _locationAddressCache[coordKey];
+        } else if (lat != 0.0 && lng != 0.0) {
+          _resolveLocationAddress(lat, lng).then((addr) {
+            if (addr != null && mounted) {
+              setState(() {});
+            }
+          });
+        }
+      }
+
+      Future<void> openMap() async {
+        if (lat != 0.0 && lng != 0.0) {
+          final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+          try {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          } catch (e) {
+            if (context.mounted) {
+              context.showErrorNotification('Could not open Maps');
+            }
+          }
+        }
+      }
+
       result = Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: GestureDetector(
-          onTap: () async {
-            if (lat != 0.0 && lng != 0.0) {
-              final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
-              try {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              } catch (e) {
-                if (context.mounted) {
-                  context.showErrorNotification('Could not open Maps');
-                }
-              }
-            }
-          },
+          behavior: HitTestBehavior.opaque,
+          onTap: openMap,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              height: 180,
               width: 260,
-              color: isMe
-                  ? context.colors.pureWhite.withValues(alpha: 0.15)
-                  : context.colors.lightBackground,
-              child: Stack(
-                alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isMe
+                    ? context.colors.pureWhite.withValues(alpha: 0.15)
+                    : context.colors.lightBackground,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (lat != 0.0 && lng != 0.0)
-                    GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(lat, lng),
-                        zoom: 15,
-                      ),
-                      liteModeEnabled: true,
-                      zoomControlsEnabled: false,
-                      myLocationButtonEnabled: false,
-                      mapToolbarEnabled: false,
-                      markers: {
-                        Marker(
-                          markerId: const MarkerId('loc'),
-                          position: LatLng(lat, lng),
-                        ),
-                      },
-                    )
-                  else
-                    Container(
-                      color: context.colors.lightBackground,
-                    ),
-                  if (lat == 0.0 && lng == 0.0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: context.colors.scaffoldBackground.withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            CommonIcons.location,
-                            color: context.colors.error,
-                            size: 36,
+                  SizedBox(
+                    height: 140,
+                    width: 260,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (lat != 0.0 && lng != 0.0)
+                          AbsorbPointer(
+                            child: GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: LatLng(lat, lng),
+                                zoom: 15,
+                              ),
+                              liteModeEnabled: true,
+                              zoomControlsEnabled: false,
+                              myLocationButtonEnabled: false,
+                              mapToolbarEnabled: false,
+                              markers: {
+                                Marker(
+                                  markerId: const MarkerId('loc'),
+                                  position: LatLng(lat, lng),
+                                ),
+                              },
+                            ),
+                          )
+                        else
+                          Container(
+                            color: context.colors.lightBackground,
                           ),
-                          CommonSpaces.h8,
-                          Text(
-                            'Location',
-                            style: context.bodySmall.copyWith(
-                              fontSize: 11,
-                              color: context.colors.textPrimary,
+                        if (lat == 0.0 && lng == 0.0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: context.colors.scaffoldBackground.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  CommonIcons.location,
+                                  color: context.colors.error,
+                                  size: 36,
+                                ),
+                                CommonSpaces.h8,
+                                Text(
+                                  'Location',
+                                  style: context.bodySmall.copyWith(
+                                    fontSize: 11,
+                                    color: context.colors.textPrimary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
-                  
-                  // Coordinate overlay
-                  if (lat != 0.0 && lng != 0.0)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                        color: Colors.black.withValues(alpha: 0.6),
-                        child: Text(
-                          'Lat: $lat, Lng: $lng',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
+                  ),
+                  // Address Banner at the bottom of the card
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                    color: isMe
+                        ? Colors.black.withValues(alpha: 0.25)
+                        : context.colors.scaffoldBackground.withValues(alpha: 0.95),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          CommonIcons.location,
+                          size: 16,
+                          color: context.colors.primary,
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            (displayAddress != null && displayAddress.isNotEmpty)
+                                ? displayAddress
+                                : (lat != 0.0 ? 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}' : 'Location'),
+                            style: TextStyle(
+                              color: isMe ? Colors.white : context.colors.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
@@ -1994,13 +2070,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildLockedAttachmentCard(BuildContext context, {required String type, required String label}) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         color: isMe
             ? context.colors.pureWhite.withValues(alpha: 0.1)
             : context.colors.textHint.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: context.colors.textHint.withValues(alpha: 0.2),
         ),
@@ -2008,7 +2084,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: context.colors.textHint.withValues(alpha: 0.15),
               shape: BoxShape.circle,
@@ -2016,10 +2092,10 @@ class _MessageBubbleState extends State<MessageBubble> {
             child: Icon(
               CommonIcons.lockOutline,
               color: isMe ? context.colors.pureWhite : context.colors.textSecondary,
-              size: 20,
+              size: 16,
             ),
           ),
-          CommonSpaces.w12,
+          CommonSpaces.w10,
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2029,7 +2105,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   label,
                   style: context.bodyMedium.copyWith(
                     fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                    fontSize: 11.0,
                     color: context.colors.textPrimary,
                   ),
                 ),
@@ -2039,7 +2115,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: context.bodySmall.copyWith(
-                    fontSize: 11,
+                    fontSize: 9.0,
                     color: context.colors.textSecondary,
                   ),
                 ),
@@ -2172,33 +2248,33 @@ class _MessageBubbleState extends State<MessageBubble> {
     Color? borderColor,
   }) {
     return Container(
-      margin: const EdgeInsets.only(right: 6.0, top: 4.0, bottom: 4.0),
+      margin: const EdgeInsets.only(right: 5.0, top: 3.0, bottom: 3.0),
       child: Material(
         color: context.colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: backgroundColor,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: borderColor ?? context.colors.transparent,
-                width: 1,
+                width: 0.8,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 14, color: textColor),
+                Icon(icon, size: 12, color: textColor),
                 if (label.isNotEmpty) ...[
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   Text(
                     label,
                     style: context.bodySmall.copyWith(
                       color: textColor,
-                      fontSize: 11,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -2268,35 +2344,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       debugPrint('Cannot open viewer: attachmentPath, message and attachmentBytes are all empty');
       return;
     }
-    String url = path;
-
-    if (url.contains('minio')) {
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty) {
-          url = url.replaceAll('minio', host);
-        }
-      } catch (_) {}
-    }
-
+    final String url = SecureAttachmentService.resolveFullUrl(path);
     final bool isLocalFile = !kIsWeb && File(url).existsSync();
-
-    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      url = '$s3BaseUrl$url';
-    }
 
     InAppViewer.show(
       context,
@@ -2984,41 +3033,7 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   }
 
   String _resolveUrl(String path) {
-    String url = path.trim();
-    if (url.contains('minio')) {
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty) {
-          url = url.replaceAll('minio', host);
-        }
-      } catch (_) {}
-    }
-
-    final bool isLocalFile = !kIsWeb && File(url).existsSync();
-
-    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      if (url.startsWith('/')) {
-        url = url.substring(1);
-      }
-      if (url.startsWith('qlyncs-docs/')) {
-        url = url.replaceFirst('qlyncs-docs/', '');
-      }
-      url = '$s3BaseUrl$url';
-    }
-    return url;
+    return SecureAttachmentService.resolveFullUrl(path);
   }
 
   Future<void> _initializePlayer() async {

@@ -54,6 +54,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         getIt<StorageService>().saveReadReceiptsEnabled(user.readReceiptsEnabled);
         getIt<StorageService>().saveTypingIndicatorsEnabled(user.typingIndicatorsEnabled);
         getIt<StorageService>().saveLastSeenEnabled(user.lastSeenEnabled);
+        getIt<StorageService>().saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
         emit(ProfileLoaded(
           username: user.username ?? '',
           imagePath: user.profilePictureUrl,
@@ -164,16 +165,20 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     UpdateDefaultDisappearingTimerEvent event,
     Emitter<ProfileState> emit,
   ) async {
+    await getIt<StorageService>().saveDefaultDisappearingTimer(event.seconds);
     final request = UpdateProfileRequest(
       defaultDisappearingTimer: event.seconds,
     );
     final result = await _profileRepository.updateProfile(request);
     result.when(
-      success: (user) => emit(ProfileLoaded(
-        username: user.displayName,
-        imagePath: user.profilePictureUrl,
-        user: user,
-      )),
+      success: (user) {
+        getIt<StorageService>().saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
+        emit(ProfileLoaded(
+          username: user.displayName,
+          imagePath: user.profilePictureUrl,
+          user: user,
+        ));
+      },
       failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
     );
   }

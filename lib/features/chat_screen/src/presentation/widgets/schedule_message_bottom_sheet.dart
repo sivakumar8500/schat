@@ -332,6 +332,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             );
           }
 
+          final bool isMedia = _selectedType != ScheduledMessageType.text;
           final updatePayload = <String, dynamic>{
             'messageType': typeStr,
             'message_type': typeStr,
@@ -345,6 +346,22 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               'file_size': fileSize,
               'mimeType': mimeType,
               'mime_type': mimeType,
+            },
+            'security': {
+              'isLocked': false,
+              'accessUsers': [],
+              'allowDownload': isMedia ? false : true,
+              'allowShare': isMedia ? false : true,
+              'allowView': true,
+            },
+            'viewControl': {
+              'type': 'normal',
+              'maxViews': 1,
+              'viewedBy': [],
+              'isOpened': false,
+              'allowDownload': isMedia ? false : true,
+              'allowShare': isMedia ? false : true,
+              'allowView': true,
             },
             'scheduledAt': scheduled.toUtc().toIso8601String(),
             'scheduled_at': scheduled.toUtc().toIso8601String(),
@@ -417,6 +434,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               );
             }
 
+            final bool isMedia = _selectedType != ScheduledMessageType.text;
             final requestData = <String, dynamic>{
               "conversationId": widget.conversationId,
               "conversation_id": widget.conversationId,
@@ -442,8 +460,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               "security": {
                 "isLocked": false,
                 "accessUsers": [],
-                "allowDownload": true,
-                "allowShare": true,
+                "allowDownload": isMedia ? false : true,
+                "allowShare": isMedia ? false : true,
                 "allowView": true,
               },
               "viewControl": {
@@ -451,6 +469,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 "maxViews": 1,
                 "viewedBy": [],
                 "isOpened": false,
+                "allowDownload": isMedia ? false : true,
+                "allowShare": isMedia ? false : true,
+                "allowView": true,
               },
               "expiry": {
                 "isEnabled": false,
@@ -971,6 +992,37 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                           foregroundColor: context.colors.primary,
                         ),
                       ),
+                  ],
+                ),
+              ),
+              CommonSpaces.h8,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: context.colors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: context.colors.primary.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.visibility_outlined,
+                      color: context.colors.primary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'View-only: Download and Share will be disabled for recipients',
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textPrimary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
