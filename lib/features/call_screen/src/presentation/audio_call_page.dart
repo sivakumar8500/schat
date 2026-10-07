@@ -10,7 +10,6 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_sta
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
-import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
@@ -193,6 +192,7 @@ class _AudioCallPageState extends State<AudioCallPage>
 
   @override
   Widget build(BuildContext context) {
+    CallWebRtcBloc.isCallScreenMounted = true;
     return BlocListener<CallWebRtcBloc, CallWebRtcState>(
       listener: (context, state) {
         if (state is CallActive && _timer == null) {
@@ -245,6 +245,10 @@ class _AudioCallPageState extends State<AudioCallPage>
                   ? state.isSpeakerOn
                   : (state is CallRinging ? state.isSpeakerOn : false));
 
+          final bool isGroupCall = widget.isGroup ||
+              (state is CallActive && state.isGroup) ||
+              (state is CallConnecting && state.isGroup);
+
           return PopScope(
             canPop: true,
             onPopInvokedWithResult: (didPop, result) {
@@ -284,7 +288,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                     // ─── Header ───
                     _buildHeader(context),
                     
-                    if (widget.isGroup || (state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) || (state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty))) ...[
+                    if (isGroupCall) ...[
                       const SizedBox(height: 8),
                       Text(
                         _statusLabel(state),
@@ -300,60 +304,95 @@ class _AudioCallPageState extends State<AudioCallPage>
                       const SizedBox(height: 12),
                       _buildGroupAudioLayout(context, state, isMuted),
                     ] else ...[
-                      const Spacer(),
+                      const SizedBox(height: 12),
 
-                      // ─── Name & Status ───
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
+                      // ─── WhatsApp 1-on-1 End-to-End Encrypted + Name & Status ───
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            state is CallActive ? state.contactName : widget.contactName,
-                            textAlign: TextAlign.center,
-                            style: context.h2.copyWith(
-                              fontSize: 30,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Icon(
+                            Icons.lock_rounded,
+                            size: 13,
+                            color: Colors.white.withValues(alpha: 0.65),
                           ),
-                          CommonSpaces.h8,
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: Column(
-                              key: ValueKey('${state.runtimeType}_${state is CallActive ? (state).isRemoteMuted : false}'),
-                              children: [
-                                Text(
-                                  _statusLabel(state),
-                                  textAlign: TextAlign.center,
-                                  style: context.titleMedium.copyWith(
-                                    color: state is CallActive
-                                        ? const Color(0xFF34C759)
-                                        : Colors.white.withValues(alpha: 0.70),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                if (state is CallActive && state.isRemoteMuted)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(CommonIcons.micOff,
-                                            size: 14, color: Colors.redAccent),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Muted',
-                                          style: context.bodySmall.copyWith(
-                                            color: Colors.redAccent,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
+                          const SizedBox(width: 5),
+                          Text(
+                            'End-to-end encrypted',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.65),
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.2,
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          state is CallActive ? state.contactName : widget.contactName,
+                          textAlign: TextAlign.center,
+                          style: context.h2.copyWith(
+                            fontSize: 28,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Column(
+                          key: ValueKey('${state.runtimeType}_${state is CallActive ? (state).isRemoteMuted : false}'),
+                          children: [
+                            Text(
+                              _statusLabel(state),
+                              textAlign: TextAlign.center,
+                              style: context.titleMedium.copyWith(
+                                color: state is CallActive
+                                    ? Colors.white.withValues(alpha: 0.90)
+                                    : Colors.white.withValues(alpha: 0.75),
+                                fontWeight: FontWeight.w500,
+                                fontSize: 16,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (state is CallActive && state.isRemoteMuted)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(CommonIcons.micOff,
+                                        size: 14, color: Colors.redAccent),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Muted',
+                                      style: context.bodySmall.copyWith(
+                                        color: Colors.redAccent,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       const Spacer(),
                     ],

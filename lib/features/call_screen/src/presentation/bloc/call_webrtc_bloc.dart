@@ -761,8 +761,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     _notificationService.dismissAllIncomingCalls();
 
     final currentState = state;
-    final isGroupCall = (currentState is CallActive && (currentState.isGroup || currentState.extraParticipants.isNotEmpty)) ||
-        (currentState is CallConnecting && (currentState.isGroup || currentState.extraParticipants.isNotEmpty));
+    final isGroupCall = (currentState is CallActive && currentState.isGroup) ||
+        (currentState is CallConnecting && currentState.isGroup);
 
     if (isGroupCall) {
       _cancelAllParticipantTimers();
@@ -1037,7 +1037,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     if (response == 'reject') {
       final currentState = state;
       final senderId = (event.event['sender_id'] ?? event.event['senderId'] ?? event.event['participant_id'])?.toString() ?? '';
-      if (currentState is CallActive && (currentState.isGroup || currentState.extraParticipants.isNotEmpty)) {
+      if (currentState is CallActive && currentState.isGroup) {
         debugPrint('CallWebRtcBloc: A group participant declined the call, keeping active group call intact');
         if (senderId.isNotEmpty) {
           _participantTimeoutTimers[senderId]?.cancel();
@@ -1046,7 +1046,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         }
         return;
       }
-      if (currentState is CallConnecting && (currentState.isGroup || currentState.extraParticipants.isNotEmpty)) {
+      if (currentState is CallConnecting && currentState.isGroup) {
         debugPrint('CallWebRtcBloc: A group participant declined while connecting');
         if (senderId.isNotEmpty) {
           _participantTimeoutTimers[senderId]?.cancel();
@@ -1452,9 +1452,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
     final isGroup = event.event['is_group'] == true || event.event['isGroup'] == true;
     final currentState = state;
-    final bool isCallGroup = (currentState is CallActive && (currentState.isGroup || currentState.extraParticipants.isNotEmpty)) ||
-        (currentState is CallConnecting && (currentState.isGroup || currentState.extraParticipants.isNotEmpty)) ||
-        (currentState is CallRinging && (currentState.isGroup || currentState.extraParticipants.isNotEmpty));
+    final bool isCallGroup = (currentState is CallActive && currentState.isGroup) ||
+        (currentState is CallConnecting && currentState.isGroup) ||
+        (currentState is CallRinging && currentState.isGroup);
 
     // If this is a 1-to-1 call, ANY participant leaving or hanging up means the call is terminated!
     if (!isCallGroup && !isGroup) {
@@ -1529,7 +1529,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   ) async {
     final currentState = state;
     // If it's a group call and other participants are still present, keep call alive
-    if (currentState is CallActive && (currentState.isGroup || currentState.extraParticipants.length > 1) && currentState.connectedParticipantIds.isNotEmpty) {
+    if (currentState is CallActive && currentState.isGroup && currentState.connectedParticipantIds.isNotEmpty) {
       debugPrint('CallWebRtcBloc: Remote party disconnected from group call. Remaining in call.');
       return;
     }

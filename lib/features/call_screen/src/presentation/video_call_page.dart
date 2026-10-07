@@ -231,6 +231,7 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   @override
   Widget build(BuildContext context) {
+    CallWebRtcBloc.isCallScreenMounted = true;
     return BlocListener<CallWebRtcBloc, CallWebRtcState>(
       listener: (context, state) {
         if (state is CallActive && _timer == null) {
@@ -292,8 +293,8 @@ class _VideoCallPageState extends State<VideoCallPage>
               (state is CallConnecting && state.isSystemPip);
 
           final bool isGroupCall = widget.isGroup ||
-              (state is CallActive && (state.isGroup || state.extraParticipants.isNotEmpty)) ||
-              (state is CallConnecting && (state.isGroup || state.extraParticipants.isNotEmpty));
+              (state is CallActive && state.isGroup) ||
+              (state is CallConnecting && state.isGroup);
 
           return PopScope(
             canPop: true,
