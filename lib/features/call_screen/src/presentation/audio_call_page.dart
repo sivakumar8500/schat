@@ -302,18 +302,10 @@ class _AudioCallPageState extends State<AudioCallPage>
                     ] else ...[
                       const Spacer(),
 
-                      // ─── Avatar with animated pulsing ripples + Name & Status ───
+                      // ─── Name & Status ───
                       Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _SpeakerPulsingAvatar(
-                            avatarUrl: widget.profilePictureUrl,
-                            displayName: widget.contactName,
-                            isSpeaking: state is CallActive && !(state.isRemoteMuted),
-                            isMuted: state is CallActive && state.isRemoteMuted,
-                            radius: 64,
-                          ),
-                          CommonSpaces.h24,
                           Text(
                             state is CallActive ? state.contactName : widget.contactName,
                             textAlign: TextAlign.center,
