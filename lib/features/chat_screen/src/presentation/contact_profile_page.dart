@@ -65,7 +65,34 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     super.initState();
     _fetchSharedMedia();
     _checkBlockedStatus();
+    _checkLockStatus();
     _fetchUserDetails();
+  }
+
+  Future<void> _checkLockStatus() async {
+    try {
+      final isLocallyLocked = getIt<StorageService>().isChatLocked(widget.conversationId);
+      if (isLocallyLocked && mounted) {
+        context.read<ChatBloc>().add(const ToggleLockEvent(isLocked: true));
+      }
+
+      final repo = getIt<ChatRepository>();
+      final lockedList = await repo.getLockedChats();
+      final isServerLocked = lockedList.any((item) {
+        final cid = (item is Map) ? (item['id'] ?? item['_id'])?.toString() : null;
+        return cid == widget.conversationId;
+      });
+
+      if (mounted) {
+        if (isServerLocked) {
+          getIt<StorageService>().saveChatLocked(widget.conversationId, true);
+          context.read<ChatBloc>().add(const ToggleLockEvent(isLocked: true));
+        } else if (!isServerLocked && isLocallyLocked) {
+          getIt<StorageService>().saveChatLocked(widget.conversationId, false);
+          context.read<ChatBloc>().add(const ToggleLockEvent(isLocked: false));
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchUserDetails() async {

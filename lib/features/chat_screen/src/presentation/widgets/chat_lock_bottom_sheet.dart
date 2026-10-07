@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
@@ -229,6 +230,11 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
       if (mounted) {
         setState(() => _isActionProcessing = false);
         if (lockSuccess) {
+          try {
+            if (widget.conversationId.isNotEmpty) {
+              getIt<StorageService>().saveChatLocked(widget.conversationId, targetLockState);
+            }
+          } catch (_) {}
           if (targetLockState) {
             context.showSuccessNotification('Chat locked. Type your code in search to find it.');
           } else {

@@ -84,6 +84,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
           isOnline: false,
           profilePictureUrl: item.pictureUrl,
           isGroup: item.isGroup,
+          initialIsLocked: true,
         ),
       ),
     ).then((_) => _fetchLockedChats());

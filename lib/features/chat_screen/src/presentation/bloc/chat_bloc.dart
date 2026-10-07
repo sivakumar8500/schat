@@ -785,6 +785,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final bool isBlocked = event.initialIsBlocked ?? false;
     final bool isBlockedByMe = event.initialIsBlockedByMe ?? false;
     final bool isBlockedByOther = event.initialIsBlockedByOther ?? false;
+    bool initialLock = event.initialIsLocked ?? false;
+    try {
+      if (!initialLock && event.conversationId.isNotEmpty) {
+        initialLock = getIt<StorageService>().isChatLocked(event.conversationId);
+      }
+    } catch (_) {}
 
     if (cachedMessages.isNotEmpty) {
       final filteredCached = _filterExpiredMessages(cachedMessages);
@@ -801,10 +807,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isBlocked: isBlocked,
         isBlockedByMe: isBlockedByMe,
         isBlockedByOther: isBlockedByOther,
-        isLocked: event.initialIsLocked ?? false,
+        isLocked: initialLock,
       ));
     } else {
       emit(const ChatLoading());
+    }
+
+    // Check server locked chats in background to ensure sync
+    if (event.conversationId.isNotEmpty) {
+      _chatRepository.getLockedChats().then((lockedList) {
+        final isServerLocked = lockedList.any((item) {
+          final cid = (item is Map) ? (item['id'] ?? item['_id'])?.toString() : null;
+          return cid == event.conversationId;
+        });
+        if (isServerLocked) {
+          getIt<StorageService>().saveChatLocked(event.conversationId, true);
+          final curr = state;
+          if (curr is ChatLoaded && !curr.isLocked) {
+            add(const ToggleLockEvent(isLocked: true));
+          }
+        }
+      }).catchError((_) {});
     }
 
     // 2. Fetch fresh messages from API in background
@@ -949,7 +972,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isBlocked: isBlocked,
           isBlockedByMe: isBlockedByMe,
           isBlockedByOther: isBlockedByOther,
-          isLocked: event.initialIsLocked ?? false,
+          isLocked: initialLock,
         ));
       }
     } catch (e) {
