@@ -1,6 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -38,9 +39,12 @@ class StatusViewPage extends StatefulWidget {
   State<StatusViewPage> createState() => _StatusViewPageState();
 }
 
-class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProviderStateMixin {
+class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStateMixin {
   late PageController _pageController;
   late AnimationController _progressController;
+  late AnimationController _emojiBurstController;
+  String? _burstEmoji;
+  List<_EmojiBurstParticle> _emojiParticles = [];
   int _currentContactIndex = 0;
   int _currentStatusIndex = 0;
   bool _isHolding = false;
@@ -199,6 +203,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     _pageController = PageController(initialPage: _currentContactIndex);
     
     _progressController = AnimationController(vsync: this, duration: const Duration(seconds: 5));
+    _emojiBurstController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
     _startProgress();
     
     _progressController.addStatusListener((status) {
@@ -554,6 +559,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     _cleanupMediaPlayers();
     _pageController.dispose();
     _progressController.dispose();
+    _emojiBurstController.dispose();
     super.dispose();
   }
 
@@ -804,6 +810,7 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                 contact.statuses.isNotEmpty ? contact.statuses[_currentStatusIndex.clamp(0, contact.statuses.length - 1)] : null,
               ),
           ],
+          _buildEmojiBurstOverlay(),
         ],
       ),
     );
@@ -1460,6 +1467,130 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     }
   }
 
+  void _triggerEmojiBurst(String emoji) {
+    final random = math.Random();
+    _burstEmoji = emoji;
+    _emojiParticles = List.generate(22, (i) {
+      return _EmojiBurstParticle(
+        startX: 0.15 + random.nextDouble() * 0.70,
+        driftX: (random.nextDouble() - 0.5) * 140,
+        size: 28 + random.nextDouble() * 26,
+        speed: 0.75 + random.nextDouble() * 0.55,
+        opacityPeak: 0.85 + random.nextDouble() * 0.15,
+        delay: random.nextDouble() * 0.28,
+        wobbleFreq: 2.0 + random.nextDouble() * 3.0,
+      );
+    });
+    _emojiBurstController.forward(from: 0.0);
+    try {
+      HapticFeedback.mediumImpact();
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildEmojiBurstOverlay() {
+    if (_burstEmoji == null) return const SizedBox.shrink();
+
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _emojiBurstController,
+        builder: (context, _) {
+          final progress = _emojiBurstController.value;
+          if (progress >= 1.0 || progress <= 0.0) {
+            return const SizedBox.shrink();
+          }
+
+          final size = MediaQuery.of(context).size;
+
+          // Central badge pop animation (0.0 -> 0.4 scale up, 0.4 -> 0.8 sustain, 0.8 -> 1.0 fade)
+          double centerScale = 0.0;
+          double centerOpacity = 0.0;
+          if (progress < 0.25) {
+            final t = progress / 0.25;
+            centerScale = Curves.easeOutBack.transform(t) * 1.3;
+            centerOpacity = t;
+          } else if (progress < 0.65) {
+            centerScale = 1.3;
+            centerOpacity = 1.0;
+          } else {
+            final t = (progress - 0.65) / 0.35;
+            centerScale = 1.3 + t * 0.3;
+            centerOpacity = (1.0 - t).clamp(0.0, 1.0);
+          }
+
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // ─── Central Large Reaction Pop ───
+              Center(
+                child: Opacity(
+                  opacity: centerOpacity,
+                  child: Transform.scale(
+                    scale: centerScale,
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        _burstEmoji!,
+                        style: const TextStyle(fontSize: 64),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ─── Floating Particle Stream ───
+              ..._emojiParticles.map((p) {
+                if (progress < p.delay) return const SizedBox.shrink();
+
+                final adjustedT = ((progress - p.delay) / (1.0 - p.delay)).clamp(0.0, 1.0);
+                final curY = size.height * (0.85 - (adjustedT * p.speed * 0.85));
+                final curX = (size.width * p.startX) +
+                    (p.driftX * math.sin(adjustedT * math.pi * p.wobbleFreq));
+
+                double particleOpacity = 1.0;
+                if (adjustedT < 0.15) {
+                  particleOpacity = (adjustedT / 0.15) * p.opacityPeak;
+                } else if (adjustedT > 0.65) {
+                  particleOpacity = ((1.0 - adjustedT) / 0.35) * p.opacityPeak;
+                } else {
+                  particleOpacity = p.opacityPeak;
+                }
+
+                final particleScale = 0.5 + (adjustedT * 0.7);
+
+                return Positioned(
+                  left: curX,
+                  top: curY,
+                  child: Opacity(
+                    opacity: particleOpacity.clamp(0.0, 1.0),
+                    child: Transform.scale(
+                      scale: particleScale,
+                      child: Text(
+                        _burstEmoji!,
+                        style: TextStyle(fontSize: p.size),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _showReplySheet(StatusContactModel contact, StatusItemModel? statusItem) {
     _pauseCurrentPlayback();
     final textController = TextEditingController();
@@ -1493,26 +1624,27 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
                   ),
                 ),
                 SizedBox(
-                  height: 44,
+                  height: 48,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: emojis.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    separatorBuilder: (_, _) => const SizedBox(width: 10),
                     itemBuilder: (context, idx) {
                       final emoji = emojis[idx];
                       return GestureDetector(
                         onTap: () {
                           Navigator.pop(ctx);
+                          _triggerEmojiBurst(emoji);
                           _sendReplyMessage(contact.contactId, contact.name, emoji, statusItem: statusItem);
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(22),
                           ),
                           child: Center(
-                            child: Text(emoji, style: const TextStyle(fontSize: 22)),
+                            child: Text(emoji, style: const TextStyle(fontSize: 24)),
                           ),
                         ),
                       );
@@ -1609,4 +1741,24 @@ class _StatusViewPageState extends State<StatusViewPage> with SingleTickerProvid
     }
     return "Yesterday";
   }
+}
+
+class _EmojiBurstParticle {
+  final double startX;
+  final double driftX;
+  final double size;
+  final double speed;
+  final double opacityPeak;
+  final double delay;
+  final double wobbleFreq;
+
+  _EmojiBurstParticle({
+    required this.startX,
+    required this.driftX,
+    required this.size,
+    required this.speed,
+    required this.opacityPeak,
+    required this.delay,
+    required this.wobbleFreq,
+  });
 }
