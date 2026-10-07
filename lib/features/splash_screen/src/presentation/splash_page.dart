@@ -15,6 +15,7 @@ import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/features/permissions_screen/permissions_screen.dart';
 import 'package:schat/utils/permission_helper.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/core/services/share_receiver_service.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -32,16 +33,19 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
     if (!mounted) return;
     if (showPermissions) {
-      Navigator.pushReplacement(
+      await Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const PermissionsPage()),
       );
     } else {
-      Navigator.pushReplacement(
+      await Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const DashboardPage()),
       );
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ShareReceiverService().checkAndPresentPendingShare();
+    });
   }
 
   @override

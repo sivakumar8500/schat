@@ -14,6 +14,15 @@ class ShareReceiverService {
 
   StreamSubscription? _intentSub;
   bool _isHandling = false;
+  bool _isShareScreenOpen = false;
+  List<SharedMediaItem>? _pendingMediaItems;
+  String? _pendingSharedText;
+
+  bool get hasPendingShare =>
+      (_pendingMediaItems != null && _pendingMediaItems!.isNotEmpty) ||
+      (_pendingSharedText != null && _pendingSharedText!.isNotEmpty);
+
+  bool get isShareScreenOpen => _isShareScreenOpen;
 
   void init() {
     // 1. Listen to media sharing when app is running (foreground/background)
@@ -40,34 +49,20 @@ class ShareReceiverService {
     _intentSub?.cancel();
   }
 
+  void onShareScreenClosed() {
+    _isShareScreenOpen = false;
+    _pendingMediaItems = null;
+    _pendingSharedText = null;
+  }
+
   Future<void> _handleSharedMedia(List<SharedMediaFile> media) async {
     if (_isHandling) return;
     _isHandling = true;
 
-    // Reset lock after a small delay to allow future shares
-    Future.delayed(const Duration(seconds: 1), () {
+    // Reset lock after a short delay
+    Future.delayed(const Duration(milliseconds: 1500), () {
       _isHandling = false;
     });
-
-    // Wait for navigator to be mounted if app is just launching
-    int retryCount = 0;
-    while (navigatorKey.currentState == null && retryCount < 10) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      retryCount++;
-    }
-
-    final navState = navigatorKey.currentState;
-    if (navState == null) {
-      debugPrint("ShareReceiverService: No navigator state available");
-      return;
-    }
-
-    // Ensure the user is logged in before allowing sharing
-    final storage = getIt<StorageService>();
-    if (!storage.hasToken()) {
-      debugPrint("ShareReceiverService: User is not authenticated. Share ignored.");
-      return;
-    }
 
     final List<SharedMediaItem> mediaItems = [];
     String? sharedText;
@@ -112,7 +107,46 @@ class ShareReceiverService {
       }
     }
 
-    // Navigate to dedicated multi-select ShareForwardTargetPage
+    _pendingMediaItems = mediaItems;
+    _pendingSharedText = sharedText;
+
+    await checkAndPresentPendingShare();
+  }
+
+  Future<void> checkAndPresentPendingShare() async {
+    if (!hasPendingShare) return;
+    if (_isShareScreenOpen) return;
+
+    // Ensure the user is logged in before allowing sharing
+    final storage = getIt<StorageService>();
+    if (!storage.hasToken()) {
+      debugPrint("ShareReceiverService: User is not authenticated. Share ignored.");
+      return;
+    }
+
+    // Wait for navigator to be mounted
+    int retryCount = 0;
+    while (navigatorKey.currentState == null && retryCount < 15) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      retryCount++;
+    }
+
+    final navState = navigatorKey.currentState;
+    if (navState == null) {
+      debugPrint("ShareReceiverService: No navigator state available");
+      return;
+    }
+
+    final mediaItems = List<SharedMediaItem>.from(_pendingMediaItems ?? []);
+    final sharedText = _pendingSharedText;
+
+    if (mediaItems.isEmpty && (sharedText == null || sharedText.isEmpty)) {
+      return;
+    }
+
+    _isShareScreenOpen = true;
+
+    // Push the ShareForwardTargetPage on top of whatever screen is currently active
     navState.push(
       MaterialPageRoute(
         builder: (context) => ShareForwardTargetPage(
@@ -120,6 +154,10 @@ class ShareReceiverService {
           sharedText: sharedText,
         ),
       ),
-    );
+    ).then((_) {
+      _isShareScreenOpen = false;
+      _pendingMediaItems = null;
+      _pendingSharedText = null;
+    });
   }
 }

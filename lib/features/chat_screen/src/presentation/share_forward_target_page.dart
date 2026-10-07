@@ -11,6 +11,9 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
+import 'package:schat/core/services/share_receiver_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -100,6 +103,7 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
   void dispose() {
     _searchController.dispose();
     _captionController.dispose();
+    ShareReceiverService().onShareScreenClosed();
     super.dispose();
   }
 
@@ -109,11 +113,11 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
     });
 
     try {
-      // 1. Get recent chats from ChatsBloc
+      // 1. Get recent chats from ChatsBloc (excluding hidden chats)
       final chatsState = getIt<ChatsBloc>().state;
       List<ChatModel> chatModels = [];
       if (chatsState is ChatsLoaded) {
-        chatModels = chatsState.chats;
+        chatModels = chatsState.chats.where((c) => !c.isHidden && !c.isHided).toList();
       }
 
       final recent = chatModels.map((chat) {
@@ -131,15 +135,23 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
         );
       }).toList();
 
-      // 2. Get contacts
-      final contactsRepo = getIt<ContactsRepository>();
-      List<UserModel> userList = await contactsRepo.getCachedContacts();
+      // 2. Get contacts from ContactsBloc (which already filters out locked/hidden users)
+      final contactsBloc = getIt<ContactsBloc>();
+      List<UserModel> userList = [];
+      if (contactsBloc.state is ContactsLoaded) {
+        userList = (contactsBloc.state as ContactsLoaded).syncedContacts;
+      }
+
       if (userList.isEmpty) {
-        final res = await contactsRepo.fetchSyncedContacts();
-        res.when(
-          success: (list) => userList = list,
-          failure: (_, _) {},
-        );
+        final contactsRepo = getIt<ContactsRepository>();
+        userList = await contactsRepo.getCachedContacts();
+        if (userList.isEmpty) {
+          final res = await contactsRepo.fetchSyncedContacts();
+          res.when(
+            success: (list) => userList = list,
+            failure: (_, _) {},
+          );
+        }
       }
 
       final contacts = userList.map((user) {

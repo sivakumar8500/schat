@@ -42,6 +42,7 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/core/services/share_receiver_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -79,6 +80,7 @@ class _DashboardPageState extends State<DashboardPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         getIt<PushNotificationService>().handlePendingNotification();
+        ShareReceiverService().checkAndPresentPendingShare();
       }
     });
   }
