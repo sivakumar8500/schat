@@ -363,11 +363,12 @@ class WebRtcService {
     required String peerId,
     required String conversationId,
     required ChatSocketRepository repository,
+    bool isVideo = false,
   }) async {
     try {
-      debugPrint('WebRTC: createOfferForPeer started for peerId=$peerId');
+      debugPrint('WebRTC: createOfferForPeer started for peerId=$peerId (isVideo=$isVideo)');
       final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
-      _localStream ??= await _getUserMedia(isVideo: false);
+      _localStream ??= await _getUserMedia(isVideo: isVideo);
 
       // Close previous connection to this specific peer if any
       if (_peerConnections.containsKey(peerId)) {
@@ -428,6 +429,7 @@ class WebRtcService {
           }
           final renderer = await getOrCreatePeerRenderer(peerId);
           renderer.srcObject = stream;
+          _remoteStreamController.add(stream);
         }
         _callSignalController.add(CallSignalState.active);
       };
@@ -460,11 +462,12 @@ class WebRtcService {
     required String conversationId,
     required Map<String, dynamic> offerMap,
     required ChatSocketRepository repository,
+    bool isVideo = false,
   }) async {
     try {
-      debugPrint('WebRTC: handlePeerOffer from peerId=$peerId');
+      debugPrint('WebRTC: handlePeerOffer from peerId=$peerId (isVideo=$isVideo)');
       final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
-      _localStream ??= await _getUserMedia(isVideo: false);
+      _localStream ??= await _getUserMedia(isVideo: isVideo);
 
       if (_peerConnections.containsKey(peerId)) {
         try {
@@ -524,6 +527,7 @@ class WebRtcService {
           }
           final renderer = await getOrCreatePeerRenderer(peerId);
           renderer.srcObject = stream;
+          _remoteStreamController.add(stream);
         }
         _callSignalController.add(CallSignalState.active);
       };

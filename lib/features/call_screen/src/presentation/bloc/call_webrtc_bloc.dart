@@ -243,11 +243,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final offerMap = data['offer'];
           if (offerSenderId.isNotEmpty && offerSenderId != currentMyId && (targetUserId.isEmpty || targetUserId == currentMyId) && offerMap is Map) {
+            final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
+                (state is CallConnecting && (state as CallConnecting).isVideo) ||
+                (state is CallRinging && (state as CallRinging).isVideo);
             _webRtcService.handlePeerOffer(
               peerId: offerSenderId,
               conversationId: currentConvoId,
               offerMap: Map<String, dynamic>.from(offerMap),
               repository: _repository,
+              isVideo: isVideoCall,
             );
           }
           break;
@@ -1303,11 +1307,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
 
     // In group calls, initiate a direct WebRTC peer offer to connect audio/video with the joining user
-    if (convoId.isNotEmpty && user.id.isNotEmpty && (state is CallActive || state is CallConnecting)) {
+    if (convoId.isNotEmpty && user.id.isNotEmpty && (state is CallActive || state is CallConnecting || state is CallRinging)) {
+      final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
+          (state is CallConnecting && (state as CallConnecting).isVideo) ||
+          (state is CallRinging && (state as CallRinging).isVideo);
       _webRtcService.createOfferForPeer(
         peerId: user.id,
         conversationId: convoId,
         repository: _repository,
+        isVideo: isVideoCall,
       );
     }
 

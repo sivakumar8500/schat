@@ -19,8 +19,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
 
-/// 1-to-1 Video Call Page — renders real RTCVideoView for remote and local streams.
+/// 1-to-1 & Group Video Call Page — renders RTCVideoView with sleek participant sheet,
+/// compact action buttons, and active speaker glow matching AudioCallPage design.
 /// mason make page --name video_call
 class VideoCallPage extends StatefulWidget {
   final String conversationId;
@@ -59,6 +61,8 @@ class _VideoCallPageState extends State<VideoCallPage>
   Timer? _timer;
   bool _isNetworkConnected = true;
   StreamSubscription? _connectivitySubscription;
+  StreamSubscription? _remoteStreamSubscription;
+  StreamSubscription? _callSignalSubscription;
   bool _isNavigating = false;
 
   late AnimationController _fadeController;
@@ -107,6 +111,18 @@ class _VideoCallPageState extends State<VideoCallPage>
         setState(() {
           _isNetworkConnected = connected;
         });
+      }
+    });
+
+    _remoteStreamSubscription = _webRtcService.remoteStream.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+
+    _callSignalSubscription = _webRtcService.callSignalState.listen((_) {
+      if (mounted) {
+        setState(() {});
       }
     });
 
@@ -161,7 +177,7 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
-    _controlsTimer = Timer(const Duration(seconds: 4), () {
+    _controlsTimer = Timer(const Duration(seconds: 5), () {
       if (mounted) {
         final state = context.read<CallWebRtcBloc>().state;
         if (state is CallActive) {
@@ -186,8 +202,6 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   void _onHangUp(BuildContext context) {
     context.read<CallWebRtcBloc>().add(HangUpCallEvent(widget.conversationId));
-    // Do NOT pop here — the BlocListener below will pop once CallEnded is emitted.
-    // This ensures call_hangup is sent to the server before the page is disposed.
   }
 
   @override
@@ -197,7 +211,9 @@ class _VideoCallPageState extends State<VideoCallPage>
     _controlsTimer?.cancel();
     _fadeController.dispose();
     _connectivitySubscription?.cancel();
-    
+    _remoteStreamSubscription?.cancel();
+    _callSignalSubscription?.cancel();
+
     // Notify bloc that page is being closed (minimized if call still active)
     if (!_isNavigating) {
       try {
@@ -231,31 +247,31 @@ class _VideoCallPageState extends State<VideoCallPage>
         }
         if (state is CallActive) {
           if (state.switchRequestedCallType == 'audio') {
-             _showSwitchRequestDialog(context, state);
+            _showSwitchRequestDialog(context, state);
           }
           if (!state.isVideo && !_isNavigating) {
-             _isNavigating = true;
-             context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
-             // Downgraded to audio call! Switch UI.
-             Navigator.of(context).pushReplacement(
-               MaterialPageRoute(
-                 builder: (_) => BlocProvider.value(
-                   value: context.read<CallWebRtcBloc>(),
-                   child: AudioCallPage(
-                     conversationId: widget.conversationId,
-                     contactName: widget.contactName,
-                     contactColor: widget.contactColor,
-                     recipientId: widget.recipientId,
-                     isOutgoing: widget.isOutgoing,
-                     profilePictureUrl: widget.profilePictureUrl,
-                     myProfilePictureUrl: widget.myProfilePictureUrl,
-                     isGroup: widget.isGroup,
-                     groupName: widget.groupName,
-                     extraParticipants: widget.extraParticipants,
-                   ),
-                 ),
-               ),
-             );
+            _isNavigating = true;
+            context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
+            // Downgraded to audio call! Switch UI.
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => BlocProvider.value(
+                  value: context.read<CallWebRtcBloc>(),
+                  child: AudioCallPage(
+                    conversationId: widget.conversationId,
+                    contactName: widget.contactName,
+                    contactColor: widget.contactColor,
+                    recipientId: widget.recipientId,
+                    isOutgoing: widget.isOutgoing,
+                    profilePictureUrl: widget.profilePictureUrl,
+                    myProfilePictureUrl: widget.myProfilePictureUrl,
+                    isGroup: widget.isGroup,
+                    groupName: widget.groupName,
+                    extraParticipants: widget.extraParticipants,
+                  ),
+                ),
+              ),
+            );
           }
         }
       },
@@ -305,7 +321,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                               ? _buildGroupVideoGrid(state, isVideoOff, isFrontCamera, isMuted)
                               : (state is CallActive
                                   ? (_isLocalVideoSmall
-                                      ? (state.isRemoteVideoOff 
+                                      ? (state.isRemoteVideoOff
                                           ? _buildRemoteVideoOffPlaceholder(state)
                                           : RTCVideoView(
                                               _webRtcService.remoteRenderer,
@@ -333,33 +349,17 @@ class _VideoCallPageState extends State<VideoCallPage>
 
                     // ─── Gradient overlays ───
                     Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.center,
-                            colors: [
-                              context.colors.pureBlack.withValues(alpha: 0.5),
-                              context.colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        height: 200,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              context.colors.pureBlack.withValues(alpha: 0.7),
-                              context.colors.transparent,
-                            ],
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.center,
+                              colors: [
+                                context.colors.pureBlack.withValues(alpha: 0.5),
+                                context.colors.transparent,
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -380,11 +380,11 @@ class _VideoCallPageState extends State<VideoCallPage>
                     if (!isGroupCall && state is CallActive)
                       _buildSmallVideoPiP(state, isVideoOff, isFrontCamera),
 
-                    // ─── Bottom Control Bar ───
+                    // ─── Bottom Control Bar (fades) ───
                     Positioned(
-                      bottom: 40,
-                      left: 24,
-                      right: 24,
+                      bottom: 24,
+                      left: 0,
+                      right: 0,
                       child: FadeTransition(
                         opacity: _fadeController,
                         child: _buildControlBar(context, isMuted, isVideoOff, state),
@@ -410,7 +410,6 @@ class _VideoCallPageState extends State<VideoCallPage>
               fit: BoxFit.cover,
             ),
           ),
-          // Dark overlay (no blur)
           Positioned.fill(
             child: Container(
               color: Colors.black.withValues(alpha: 0.45),
@@ -434,8 +433,8 @@ class _VideoCallPageState extends State<VideoCallPage>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 100,
-                height: 100,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
@@ -447,15 +446,15 @@ class _VideoCallPageState extends State<VideoCallPage>
                 child: const Icon(
                   CommonIcons.videocam,
                   color: Colors.white,
-                  size: 40,
+                  size: 38,
                 ),
               ),
-              CommonSpaces.h32,
+              CommonSpaces.h24,
               SizedBox(
-                width: 24,
-                height: 24,
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
-                  color: context.colors.pureWhite.withValues(alpha: 0.54),
+                  color: context.colors.pureWhite.withValues(alpha: 0.65),
                   strokeWidth: 2,
                 ),
               ),
@@ -490,7 +489,7 @@ class _VideoCallPageState extends State<VideoCallPage>
           children: [
             // Left Minimize Button
             _buildFrostedButton(
-              icon: CommonIcons.minimize,
+              icon: Icons.keyboard_arrow_down_rounded,
               onTap: () {
                 context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(true));
                 Navigator.of(context).pop();
@@ -522,7 +521,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                         statusText,
                         style: context.bodyMedium.copyWith(
                           color: state is CallActive
-                              ? context.colors.success
+                              ? const Color(0xFF34C759)
                               : context.colors.pureWhite.withValues(alpha: 0.70),
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -548,22 +547,10 @@ class _VideoCallPageState extends State<VideoCallPage>
               ),
             ),
             CommonSpaces.w12,
-            // Right Action Buttons: Add Participant & Flip Camera
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFrostedButton(
-                  icon: CommonIcons.addCall,
-                  onTap: _openAddUserDialog,
-                ),
-                CommonSpaces.w8,
-                _buildFrostedButton(
-                  icon: CommonIcons.flipCamera,
-                  onTap: () => context
-                      .read<CallWebRtcBloc>()
-                      .add(const SwitchCameraCallEvent()),
-                ),
-              ],
+            // Right Action Button: Add Participant
+            _buildFrostedButton(
+              icon: CommonIcons.addCall,
+              onTap: _openAddUserDialog,
             ),
           ],
         ),
@@ -613,13 +600,15 @@ class _VideoCallPageState extends State<VideoCallPage>
     return GestureDetector(
       onTap: () => _safeTap(onTap),
       child: Container(
-        width: 44,
-        height: 44,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-          color: context.colors.pureWhite.withValues(alpha: 0.2),
+          color: Colors.white.withValues(alpha: 0.15),
           shape: BoxShape.circle,
           border: Border.all(
-              color: context.colors.pureWhite.withValues(alpha: 0.3), width: 1),
+            color: Colors.white.withValues(alpha: 0.25),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
               color: context.colors.pureBlack.withValues(alpha: 0.2),
@@ -738,7 +727,6 @@ class _VideoCallPageState extends State<VideoCallPage>
               fit: BoxFit.cover,
             ),
           ),
-          // Dark overlay (no blur)
           Positioned.fill(
             child: Container(
               color: Colors.black.withValues(alpha: 0.45),
@@ -756,8 +744,8 @@ class _VideoCallPageState extends State<VideoCallPage>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 100,
-                height: 100,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
@@ -769,7 +757,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                 child: const Icon(
                   CommonIcons.videocamOff,
                   color: Colors.white,
-                  size: 40,
+                  size: 38,
                 ),
               ),
               CommonSpaces.h24,
@@ -795,50 +783,71 @@ class _VideoCallPageState extends State<VideoCallPage>
         : (state is CallConnecting
             ? state.isSpeakerOn
             : (state is CallRinging ? state.isSpeakerOn : true));
+
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
       decoration: BoxDecoration(
-        color: context.colors.videoCallBarBackground,
-        borderRadius: BorderRadius.circular(100),
+        color: const Color(0xFF1C1C1E).withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 0.8,
+        ),
         boxShadow: [
           BoxShadow(
-            color: context.colors.pureBlack.withValues(alpha: 0.35),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildBarButton(
+          // Camera On/Off
+          _buildPillButton(
             icon: isVideoOff ? CommonIcons.videocamOff : CommonIcons.videocam,
             isActive: isVideoOff,
+            size: 38,
             onTap: () => context
                 .read<CallWebRtcBloc>()
                 .add(const ToggleCameraCallEvent()),
           ),
-          _buildBarButton(
+          // Flip / Switch Camera
+          _buildPillButton(
+            icon: CommonIcons.flipCamera,
+            isActive: false,
+            size: 38,
+            onTap: () => context
+                .read<CallWebRtcBloc>()
+                .add(const SwitchCameraCallEvent()),
+          ),
+          // Speaker Toggle — Green when on
+          _buildPillButton(
             icon: isSpeakerOn ? CommonIcons.volumeUp : CommonIcons.volumeDown,
             isActive: isSpeakerOn,
             activeColor: const Color(0xFF34C759),
+            size: 38,
             onTap: () => context
                 .read<CallWebRtcBloc>()
                 .add(const ToggleSpeakerCallEvent()),
           ),
-          _buildBarButton(
+          // Mute Toggle
+          _buildPillButton(
             icon: isMuted ? CommonIcons.micOff : CommonIcons.mic,
             isActive: isMuted,
+            size: 38,
             onTap: () => context
                 .read<CallWebRtcBloc>()
                 .add(const ToggleMuteCallEvent()),
           ),
-          _buildBarButton(
+          // End Call
+          _buildPillButton(
             icon: CommonIcons.callEnd,
             isActive: true,
             activeColor: const Color(0xFFFF3B30),
-            size: 56,
+            size: 42,
             onTap: () => _onHangUp(context),
           ),
         ],
@@ -846,12 +855,12 @@ class _VideoCallPageState extends State<VideoCallPage>
     );
   }
 
-  Widget _buildBarButton({
+  Widget _buildPillButton({
     required IconData icon,
     required bool isActive,
     required VoidCallback onTap,
     Color? activeColor,
-    double size = 48,
+    double size = 38,
   }) {
     return GestureDetector(
       onTap: () => _safeTap(onTap),
@@ -860,11 +869,11 @@ class _VideoCallPageState extends State<VideoCallPage>
         height: size,
         decoration: BoxDecoration(
           color: isActive
-              ? (activeColor ?? context.colors.videoCallButtonBackground)
-              : context.colors.videoCallButtonBackground,
+              ? (activeColor ?? const Color(0xFF3A3A3C))
+              : const Color(0xFF3A3A3C),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: context.colors.pureWhite, size: size * 0.42),
+        child: Icon(icon, color: Colors.white, size: size * 0.46),
       ),
     );
   }
@@ -905,10 +914,25 @@ class _VideoCallPageState extends State<VideoCallPage>
 
   Widget _buildGroupVideoGrid(CallWebRtcState state, bool isVideoOff, bool isFrontCamera, bool isMuted) {
     final List<Widget> connectedTiles = [];
-    final List<UserModel> callingParticipants = [];
+    final List<_ParticipantInfo> allParticipants = [];
 
-    // Tile 1: Local User ("You")
+    // Local user ("You")
     final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
+    final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
+        ? widget.myProfilePictureUrl
+        : getIt<StorageService>().getProfilePic();
+
+    allParticipants.add(_ParticipantInfo(
+      id: 'local_user',
+      name: 'You',
+      avatarUrl: myPic,
+      isLocal: true,
+      isConnected: true,
+      isSpeaking: localSpeaking,
+      isMuted: isMuted,
+      isVideoOff: isVideoOff,
+    ));
+
     connectedTiles.add(_buildGridTile(
       child: isVideoOff
           ? _buildLocalVideoOffPlaceholder()
@@ -920,7 +944,7 @@ class _VideoCallPageState extends State<VideoCallPage>
             ),
       label: 'You',
       isMuted: isMuted,
-      avatarUrl: widget.myProfilePictureUrl,
+      avatarUrl: myPic,
       isSpeaking: localSpeaking,
     ));
 
@@ -939,19 +963,35 @@ class _VideoCallPageState extends State<VideoCallPage>
     if (extra.isNotEmpty) {
       for (final user in extra) {
         final isConnectedPeer = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+        final isDisconnectedPeer = disconnectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+        final isUserMuted = state is CallActive
+            ? state.mutedParticipantIds.contains(user.id)
+            : false;
+        final isRemoteSpeaking = isConnectedPeer && !isUserMuted;
+        final isRemoteVidOff = state is CallActive
+            ? (state.videoOffParticipantIds.contains(user.id) || state.isRemoteVideoOff)
+            : false;
+
+        allParticipants.add(_ParticipantInfo(
+          id: user.id,
+          name: user.displayName,
+          avatarUrl: user.profilePictureUrl,
+          isConnected: isConnectedPeer,
+          isDisconnected: isDisconnectedPeer,
+          isMuted: isUserMuted,
+          isVideoOff: isRemoteVidOff,
+          isSpeaking: isRemoteSpeaking,
+          rawUser: user,
+        ));
 
         if (isConnectedPeer) {
-          final isUserMuted = state is CallActive
-              ? state.mutedParticipantIds.contains(user.id)
-              : false;
-          final isRemoteSpeaking = !isUserMuted;
-          final isRemoteVidOff = state is CallActive
-              ? (state.videoOffParticipantIds.contains(user.id) || state.isRemoteVideoOff)
-              : false;
+          // Eagerly initialize mesh peer renderer if not yet initialized
+          _webRtcService.getOrCreatePeerRenderer(user.id);
           final peerRenderer = _webRtcService.getPeerRenderer(user.id) ?? _webRtcService.remoteRenderer;
+
           connectedTiles.add(_buildGridTile(
             child: isRemoteVidOff
-                ? _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl)
+                ? _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl, isSpeaking: isRemoteSpeaking)
                 : RTCVideoView(
                     peerRenderer,
                     key: ValueKey('grid_peer_${user.id}_${peerRenderer.textureId}'),
@@ -964,8 +1004,6 @@ class _VideoCallPageState extends State<VideoCallPage>
             avatarUrl: user.profilePictureUrl,
             isSpeaking: isRemoteSpeaking,
           ));
-        } else {
-          callingParticipants.add(user);
         }
       }
     } else {
@@ -973,10 +1011,22 @@ class _VideoCallPageState extends State<VideoCallPage>
         final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
         final isRemoteSpeaking = !isUserMuted;
         final isRemoteVidOff = state.videoOffParticipantIds.contains(state.recipientId) || state.isRemoteVideoOff;
+        _webRtcService.getOrCreatePeerRenderer(state.recipientId);
         final peerRenderer = _webRtcService.getPeerRenderer(state.recipientId) ?? _webRtcService.remoteRenderer;
+
+        allParticipants.add(_ParticipantInfo(
+          id: state.recipientId,
+          name: state.contactName,
+          avatarUrl: widget.profilePictureUrl,
+          isConnected: true,
+          isMuted: isUserMuted,
+          isVideoOff: isRemoteVidOff,
+          isSpeaking: isRemoteSpeaking,
+        ));
+
         connectedTiles.add(_buildGridTile(
           child: isRemoteVidOff
-              ? _buildRemoteParticipantPlaceholder(state.contactName, widget.profilePictureUrl)
+              ? _buildRemoteParticipantPlaceholder(state.contactName, widget.profilePictureUrl, isSpeaking: isRemoteSpeaking)
               : RTCVideoView(
                   peerRenderer,
                   key: ValueKey('grid_remote_${peerRenderer.textureId}'),
@@ -992,10 +1042,13 @@ class _VideoCallPageState extends State<VideoCallPage>
       }
     }
 
+    final connectedCount = allParticipants.where((p) => p.isConnected).length;
+    final waitingCount = allParticipants.where((p) => !p.isConnected).length;
     final count = connectedTiles.length;
+
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 70, 12, 100),
+        padding: const EdgeInsets.fromLTRB(12, 60, 12, 76),
         child: Column(
           children: [
             // ─── Top Main Grid: Connected Users ───
@@ -1014,193 +1067,506 @@ class _VideoCallPageState extends State<VideoCallPage>
                           crossAxisCount: 2,
                           mainAxisSpacing: 10,
                           crossAxisSpacing: 10,
-                          childAspectRatio: 0.85,
+                          childAspectRatio: 0.88,
                           children: connectedTiles,
                         )),
             ),
 
-            // ─── Bottom Tray: Calling / Ringing / Disconnected Tray ───
-            if (callingParticipants.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _buildVideoBottomCallingTray(context, callingParticipants, disconnectedIds),
-            ],
+            const SizedBox(height: 6),
+
+            // ─── BOTTOM STACKED PARTICIPANTS CHIP ───
+            _buildStackedParticipantsChip(
+              context,
+              allParticipants,
+              connectedCount,
+              waitingCount,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildVideoBottomCallingTray(
+  Widget _buildStackedParticipantsChip(
     BuildContext context,
-    List<UserModel> participants,
-    Set<String> disconnectedIds,
+    List<_ParticipantInfo> allParticipants,
+    int connectedCount,
+    int waitingCount,
   ) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-          width: 1,
+    return GestureDetector(
+      onTap: () => _showParticipantsBottomSheet(context, allParticipants),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.18),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 10,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              const Icon(CommonIcons.videocam, size: 13, color: Colors.white70),
-              const SizedBox(width: 5),
-              Text(
-                'Waiting / Disconnected (${participants.length})',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 56,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: participants.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (ctx, index) {
-                final user = participants[index];
-                final isDisconnected = disconnectedIds.contains(user.id);
-
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDisconnected
-                        ? Colors.redAccent.withValues(alpha: 0.15)
-                        : Colors.white.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isDisconnected
-                          ? Colors.redAccent.withValues(alpha: 0.35)
-                          : Colors.white.withValues(alpha: 0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+        child: Row(
+          children: [
+            _buildAvatarStack(allParticipants),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
                     children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: const Color(0xFF00873C),
-                        backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
-                            ? NetworkImage(user.profilePictureUrl!)
-                            : null,
-                        child: (user.profilePictureUrl == null || user.profilePictureUrl!.isEmpty)
-                            ? Text(
-                                user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              )
-                            : null,
+                      Text(
+                        'Participants (${allParticipants.length})',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            user.displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                      if (waitingCount > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.orangeAccent.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.orangeAccent.withValues(alpha: 0.6),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Text(
+                            '$waitingCount calling',
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!isDisconnected) ...[
-                                const SizedBox(
-                                  width: 8,
-                                  height: 8,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 1.5,
-                                    color: Color(0xFF34C759),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Text(
-                                  'Calling...',
-                                  style: TextStyle(
-                                    color: Color(0xFF34C759),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ] else ...[
-                                const Text(
-                                  'No answer',
-                                  style: TextStyle(
-                                    color: Colors.redAccent,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                      if (isDisconnected) ...[
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () {
-                            context.read<CallWebRtcBloc>().add(ReinviteParticipantCallEvent(user));
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF00873C),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(CommonIcons.videocam, size: 11, color: Colors.white),
-                                SizedBox(width: 3),
-                                Text(
-                                  'Call Again',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
+                              color: Colors.orangeAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                       ],
                     ],
                   ),
-                );
-              },
+                  const SizedBox(height: 1),
+                  Text(
+                    '$connectedCount joined',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.keyboard_arrow_up_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarStack(List<_ParticipantInfo> participants) {
+    final displayList = participants.take(4).toList();
+    final remaining = participants.length - displayList.length;
+
+    return SizedBox(
+      height: 28,
+      width: 28 + (displayList.length - 1) * 16.0 + (remaining > 0 ? 20.0 : 0.0),
+      child: Stack(
+        children: [
+          for (int i = 0; i < displayList.length; i++)
+            Positioned(
+              left: i * 16.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF1E2922), width: 1.5),
+                ),
+                child: CircleAvatar(
+                  radius: 12,
+                  backgroundColor: displayList[i].isConnected
+                      ? const Color(0xFF00873C)
+                      : Colors.grey.shade700,
+                  backgroundImage: (displayList[i].avatarUrl != null &&
+                          displayList[i].avatarUrl!.isNotEmpty)
+                      ? NetworkImage(displayList[i].avatarUrl!)
+                      : null,
+                  child: (displayList[i].avatarUrl == null ||
+                          displayList[i].avatarUrl!.isEmpty)
+                      ? Text(
+                          displayList[i].name.isNotEmpty
+                              ? displayList[i].name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          if (remaining > 0)
+            Positioned(
+              left: displayList.length * 16.0,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.25),
+                  border: Border.all(color: const Color(0xFF1E2922), width: 1.5),
+                ),
+                child: Center(
+                  child: Text(
+                    '+$remaining',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showParticipantsBottomSheet(
+    BuildContext context,
+    List<_ParticipantInfo> allParticipants,
+  ) {
+    final connectedList = allParticipants.where((p) => p.isConnected).toList();
+    final waitingList = allParticipants.where((p) => !p.isConnected).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.70,
+          ),
+          decoration: const BoxDecoration(
+            color: Color(0xFF161B22),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 20,
+                offset: Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Text(
+                      'Call Participants (${allParticipants.length})',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        _openAddUserDialog();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00873C),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00873C).withValues(alpha: 0.4),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CommonIcons.addCall, size: 14, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text(
+                              'Add',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Divider(color: Colors.white12, height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  children: [
+                    if (connectedList.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        child: Text(
+                          'CONNECTED (${connectedList.length})',
+                          style: TextStyle(
+                            color: const Color(0xFF34C759).withValues(alpha: 0.9),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      ...connectedList.map((p) => _buildParticipantSheetTile(p)),
+                      const SizedBox(height: 12),
+                    ],
+                    if (waitingList.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        child: Text(
+                          'WAITING / DISCONNECTED (${waitingList.length})',
+                          style: TextStyle(
+                            color: Colors.orangeAccent.withValues(alpha: 0.9),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      ...waitingList.map((p) => _buildParticipantSheetTile(p)),
+                    ],
+                  ],
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(sheetContext).padding.bottom + 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildParticipantSheetTile(_ParticipantInfo p) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: p.isConnected
+              ? (p.isSpeaking ? const Color(0xFF00FF87).withValues(alpha: 0.4) : Colors.white10)
+              : (p.isDisconnected ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white10),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: p.isConnected ? const Color(0xFF00873C) : Colors.grey.shade700,
+            backgroundImage: (p.avatarUrl != null && p.avatarUrl!.isNotEmpty)
+                ? NetworkImage(p.avatarUrl!)
+                : null,
+            child: (p.avatarUrl == null || p.avatarUrl!.isEmpty)
+                ? Text(
+                    p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  p.name + (p.isLocal ? ' (You)' : ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                if (p.isConnected) ...[
+                  Row(
+                    children: [
+                      if (p.isSpeaking) ...[
+                        _buildMiniEqualizer(),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Speaking',
+                          style: TextStyle(
+                            color: Color(0xFF00FF87),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ] else if (p.isMuted) ...[
+                        const Icon(CommonIcons.micOff, size: 12, color: Colors.redAccent),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Muted',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ] else ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF34C759),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        const Text(
+                          'Connected',
+                          style: TextStyle(
+                            color: Color(0xFF34C759),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      if (!p.isDisconnected) ...[
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            color: Color(0xFF34C759),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Calling...',
+                          style: TextStyle(
+                            color: Color(0xFF34C759),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ] else ...[
+                        const Icon(Icons.call_end_rounded, size: 12, color: Colors.redAccent),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Disconnected',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
+          if (!p.isConnected && p.rawUser != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                context.read<CallWebRtcBloc>().add(ReinviteParticipantCallEvent(p.rawUser!));
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00873C),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF00873C).withValues(alpha: 0.4),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CommonIcons.videocam, size: 11, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text(
+                      'Call Again',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1213,97 +1579,82 @@ class _VideoCallPageState extends State<VideoCallPage>
     String? avatarUrl,
     bool isSpeaking = false,
   }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E24),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isSpeaking
-              ? const Color(0xFF34C759)
-              : Colors.white.withValues(alpha: 0.18),
-          width: isSpeaking ? 2.5 : 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isSpeaking
-                ? const Color(0xFF34C759).withValues(alpha: 0.45)
-                : Colors.black.withValues(alpha: 0.35),
-            blurRadius: isSpeaking ? 16 : 10,
-            spreadRadius: isSpeaking ? 1 : 0,
-            offset: const Offset(0, 4),
+    return AnimatedGlowingBorderCard(
+      isSpeaking: isSpeaking,
+      borderRadius: 16,
+      borderWidth: 2.5,
+      padding: EdgeInsets.zero,
+      baseColor: const Color(0xFF1E1E24),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14.5),
+            child: child,
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14.5),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            child,
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 48,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.75),
-                      Colors.transparent,
-                    ],
-                  ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 48,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14.5)),
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.85),
+                    Colors.transparent,
+                  ],
                 ),
               ),
             ),
-            Positioned(
-              left: 10,
-              right: 10,
-              bottom: 8,
-              child: Row(
-                children: [
-                  if (isSpeaking) ...[
-                    _buildMiniEqualizer(),
-                    const SizedBox(width: 5),
-                  ],
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        shadows: [
-                          Shadow(color: Colors.black, blurRadius: 4),
-                        ],
-                      ),
+          ),
+          Positioned(
+            left: 10,
+            right: 10,
+            bottom: 8,
+            child: Row(
+              children: [
+                if (isSpeaking) ...[
+                  _buildMiniEqualizer(),
+                  const SizedBox(width: 5),
+                ],
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      shadows: [
+                        Shadow(color: Colors.black, blurRadius: 4),
+                      ],
                     ),
                   ),
-                  if (isMuted) ...[
-                    const SizedBox(width: 4),
-                    Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        CommonIcons.micOff,
-                        size: 11,
-                        color: Colors.white,
-                      ),
+                ),
+                if (isMuted) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
                     ),
-                  ],
+                    child: const Icon(
+                      CommonIcons.micOff,
+                      size: 11,
+                      color: Colors.white,
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1329,43 +1680,209 @@ class _VideoCallPageState extends State<VideoCallPage>
     );
   }
 
-  Widget _buildRemoteParticipantPlaceholder(String name, String? avatarUrl, {bool isCalling = false}) {
+  Widget _buildRemoteParticipantPlaceholder(String name, String? avatarUrl, {bool isSpeaking = false}) {
     return Container(
       color: const Color(0xFF141419),
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 36,
+        child: _SpeakerPulsingAvatar(
+          avatarUrl: avatarUrl,
+          displayName: name,
+          isSpeaking: isSpeaking,
+          isMuted: false,
+          radius: 34,
+        ),
+      ),
+    );
+  }
+}
+
+class _ParticipantInfo {
+  final String id;
+  final String name;
+  final String? avatarUrl;
+  final bool isLocal;
+  final bool isConnected;
+  final bool isDisconnected;
+  final bool isMuted;
+  final bool isVideoOff;
+  final bool isSpeaking;
+  final UserModel? rawUser;
+
+  const _ParticipantInfo({
+    required this.id,
+    required this.name,
+    this.avatarUrl,
+    this.isLocal = false,
+    this.isConnected = false,
+    this.isDisconnected = false,
+    this.isMuted = false,
+    this.isVideoOff = false,
+    this.isSpeaking = false,
+    this.rawUser,
+  });
+}
+
+class _SpeakerPulsingAvatar extends StatefulWidget {
+  final String? avatarUrl;
+  final String displayName;
+  final bool isSpeaking;
+  final bool isMuted;
+  final double radius;
+
+  const _SpeakerPulsingAvatar({
+    this.avatarUrl,
+    required this.displayName,
+    required this.isSpeaking,
+    required this.isMuted,
+    required this.radius,
+  });
+
+  @override
+  State<_SpeakerPulsingAvatar> createState() => _SpeakerPulsingAvatarState();
+}
+
+class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    );
+    if (widget.isSpeaking) {
+      _pulseController.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SpeakerPulsingAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSpeaking && !_pulseController.isAnimating) {
+      _pulseController.repeat();
+    } else if (!widget.isSpeaking && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double avatarSize = widget.radius * 2;
+    final double outerSize = avatarSize + 26;
+
+    return SizedBox(
+      width: outerSize,
+      height: outerSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (widget.isSpeaking) ...[
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, _) {
+                final v1 = _pulseController.value;
+                final v2 = (_pulseController.value + 0.5) % 1.0;
+
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: avatarSize + (22 * v1),
+                      height: avatarSize + (22 * v1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.7),
+                          width: 1.5,
+                        ),
+                        color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.12),
+                      ),
+                    ),
+                    Container(
+                      width: avatarSize + (14 * v2),
+                      height: avatarSize + (14 * v2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF34C759).withValues(alpha: (1.0 - v2) * 0.8),
+                          width: 1.5,
+                        ),
+                        color: const Color(0xFF34C759).withValues(alpha: (1.0 - v2) * 0.15),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: widget.isSpeaking ? const Color(0xFF00FF87) : Colors.white.withValues(alpha: 0.25),
+                width: widget.isSpeaking ? 2.5 : 1.5,
+              ),
+              boxShadow: widget.isSpeaking
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF00FF87).withValues(alpha: 0.45),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 6,
+                      ),
+                    ],
+            ),
+            child: CircleAvatar(
+              radius: widget.radius,
               backgroundColor: const Color(0xFF00873C),
-              backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                  ? NetworkImage(avatarUrl)
+              backgroundImage: (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
+                  ? NetworkImage(widget.avatarUrl!)
                   : null,
-              child: (avatarUrl == null || avatarUrl.isEmpty)
+              child: (widget.avatarUrl == null || widget.avatarUrl!.isEmpty)
                   ? Text(
-                      name.isNotEmpty ? name[0].toUpperCase() : '?',
-                      style: const TextStyle(
+                      widget.displayName.isNotEmpty ? widget.displayName[0].toUpperCase() : '?',
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 24,
+                        fontSize: widget.radius * 0.65,
                         fontWeight: FontWeight.bold,
                       ),
                     )
                   : null,
             ),
-            if (isCalling) ...[
-              const SizedBox(height: 12),
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white70,
+          ),
+          if (widget.isMuted)
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black, width: 1.5),
+                ),
+                child: const Icon(
+                  CommonIcons.micOff,
+                  size: 11,
+                  color: Colors.white,
                 ),
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
