@@ -130,7 +130,29 @@ class DashboardRepositoryImpl implements DashboardRepository {
         debugPrint('DEBUG: DashboardRepository.getHiddenChats() mapping result: ${json.runtimeType}');
         List<dynamic> list = [];
         if (json is Map) {
-          list = (json['hiddenConversations'] ?? json['hidedConversations']) as List? ?? [];
+          list = (json['hidden_conversations'] ??
+                  json['hiddenConversations'] ??
+                  json['hided_conversations'] ??
+                  json['hidedConversations']) as List? ??
+              [];
+        }
+        return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      },
+    );
+    return result;
+  }
+
+  @override
+  Future<ApiResult<List<ChatModel>>> getLockedChats() async {
+    final result = await _apiService.get<List<ChatModel>>(
+      CommonEndpoints.getLockedChats,
+      mapper: (json) {
+        debugPrint('DEBUG: DashboardRepository.getLockedChats() mapping result: ${json.runtimeType}');
+        List<dynamic> list = [];
+        if (json is List) {
+          list = json;
+        } else if (json is Map && (json['locked_conversations'] ?? json['lockedConversations'] ?? json['conversations']) is List) {
+          list = (json['locked_conversations'] ?? json['lockedConversations'] ?? json['conversations']) as List;
         }
         return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
       },

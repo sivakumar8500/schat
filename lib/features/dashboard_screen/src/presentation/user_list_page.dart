@@ -550,8 +550,25 @@ class _UserListPageState extends State<UserListPage> {
       );
     } else if (state is ContactsLoaded) {
       final query = _searchQuery.toLowerCase();
+      final lockedUserIds = state.lockedUserIds.toSet();
+      final lockedPhones = state.lockedPhoneNumbers.toSet();
+      final hiddenUserIds = state.hiddenUserIds.toSet();
+      final hiddenPhones = state.hiddenPhoneNumbers.toSet();
+      final allExcludedPhones = {...lockedPhones, ...hiddenPhones};
+
       final syncedUsers = state.syncedContacts.where((user) {
         if (widget.excludeUserIds != null && widget.excludeUserIds!.contains(user.id)) {
+          return false;
+        }
+        if (lockedUserIds.contains(user.id) || hiddenUserIds.contains(user.id)) {
+          return false;
+        }
+        final rawPhone = user.phoneNumber;
+        final normPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
+        final last10 = normPhone.length > 10 ? normPhone.substring(normPhone.length - 10) : normPhone;
+        if (allExcludedPhones.contains(rawPhone) ||
+            allExcludedPhones.contains(normPhone) ||
+            (last10.isNotEmpty && allExcludedPhones.contains(last10))) {
           return false;
         }
         if (query.isEmpty) return true;
@@ -589,15 +606,18 @@ class _UserListPageState extends State<UserListPage> {
     } else if (state is ContactsLoaded || state is ContactsPermissionDenied || state is ContactsInitial) {
       final query = _searchQuery.toLowerCase();
       final allContacts = (state is ContactsLoaded) ? state.contacts : <Contact>[];
-      final hiddenPhones = (state is ContactsLoaded) ? state.hiddenPhoneNumbers : <String>[];
+      final hiddenPhones = (state is ContactsLoaded) ? state.hiddenPhoneNumbers.toSet() : <String>{};
+      final lockedPhones = (state is ContactsLoaded) ? state.lockedPhoneNumbers.toSet() : <String>{};
+      final allExcludedPhones = {...hiddenPhones, ...lockedPhones};
 
       final inviteContacts = allContacts.where((contact) {
         bool isHidden = contact.phones.any((phone) {
-          String normalized = phone.number.replaceAll(RegExp(r'\D'), '');
-          if (normalized.length > 10) {
-            normalized = normalized.substring(normalized.length - 10);
-          }
-          return hiddenPhones.contains(normalized);
+          final raw = phone.number;
+          String normalized = raw.replaceAll(RegExp(r'\D'), '');
+          String last10 = normalized.length > 10 ? normalized.substring(normalized.length - 10) : normalized;
+          return allExcludedPhones.contains(raw) ||
+                 allExcludedPhones.contains(normalized) ||
+                 (last10.isNotEmpty && allExcludedPhones.contains(last10));
         });
         if (isHidden) return false;
 

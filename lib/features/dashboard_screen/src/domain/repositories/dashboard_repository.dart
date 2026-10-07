@@ -23,6 +23,7 @@ abstract class DashboardRepository {
   Future<ApiResult<void>> hideChat(String conversationId);
   Future<ApiResult<void>> unhideChat(String conversationId);
   Future<ApiResult<List<ChatModel>>> getHiddenChats();
+  Future<ApiResult<List<ChatModel>>> getLockedChats();
 
   Future<ApiResult<void>> muteChat(String conversationId);
   Future<ApiResult<void>> unmuteChat(String conversationId);

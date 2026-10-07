@@ -101,10 +101,86 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     return normalized;
   }
 
+  Future<({Set<String> lockedUserIds, Set<String> lockedPhoneNumbers, Set<String> hiddenUserIds, Set<String> hiddenPhoneNumbers})> _getExcludedPrivacySets() async {
+    final lockedUserIds = <String>{};
+    final lockedPhoneNumbers = <String>{};
+    final hiddenUserIds = <String>{};
+    final hiddenPhoneNumbers = <String>{};
+
+    try {
+      final hiddenFromRepo = await _contactsRepository.getHiddenPhoneNumbers();
+      for (final p in hiddenFromRepo) {
+        final norm = _normalizePhone(p);
+        if (norm.isNotEmpty) hiddenPhoneNumbers.add(norm);
+        if (p.isNotEmpty) hiddenPhoneNumbers.add(p);
+      }
+    } catch (e) {
+      log('Error getting hidden phone numbers from repo: $e');
+    }
+
+    try {
+      final lockedResult = await _dashboardRepository.getLockedChats();
+      if (lockedResult is Success<List<ChatModel>>) {
+        for (final chat in lockedResult.data) {
+          if (!chat.isGroup && chat.recipient.id.isNotEmpty) {
+            lockedUserIds.add(chat.recipient.id);
+            final norm = _normalizePhone(chat.recipient.phoneNumber);
+            if (norm.isNotEmpty) lockedPhoneNumbers.add(norm);
+            if (chat.recipient.phoneNumber.isNotEmpty) {
+              lockedPhoneNumbers.add(chat.recipient.phoneNumber);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      log('Error getting locked chats: $e');
+    }
+
+    try {
+      final hiddenResult = await _dashboardRepository.getHiddenChats();
+      if (hiddenResult is Success<List<ChatModel>>) {
+        for (final chat in hiddenResult.data) {
+          if (!chat.isGroup && chat.recipient.id.isNotEmpty) {
+            hiddenUserIds.add(chat.recipient.id);
+            final norm = _normalizePhone(chat.recipient.phoneNumber);
+            if (norm.isNotEmpty) hiddenPhoneNumbers.add(norm);
+            if (chat.recipient.phoneNumber.isNotEmpty) {
+              hiddenPhoneNumbers.add(chat.recipient.phoneNumber);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      log('Error getting hidden chats: $e');
+    }
+
+    return (
+      lockedUserIds: lockedUserIds,
+      lockedPhoneNumbers: lockedPhoneNumbers,
+      hiddenUserIds: hiddenUserIds,
+      hiddenPhoneNumbers: hiddenPhoneNumbers,
+    );
+  }
+
+  List<Contact> _filterDeviceContacts(
+    List<Contact> contacts,
+    Set<String> excludedPhones,
+  ) {
+    if (excludedPhones.isEmpty) return contacts;
+    return contacts.where((contact) {
+      final isExcluded = contact.phones.any((p) {
+        final raw = p.number;
+        final norm = _normalizePhone(raw);
+        return excludedPhones.contains(raw) || (norm.isNotEmpty && excludedPhones.contains(norm));
+      });
+      return !isExcluded;
+    }).toList();
+  }
+
   Future<List<UserModel>> _filterAllowedUsers(
     List<UserModel> serverUsers,
     List<Contact> deviceContacts,
-    List<String> hiddenPhoneNumbers,
+    ({Set<String> lockedUserIds, Set<String> lockedPhoneNumbers, Set<String> hiddenUserIds, Set<String> hiddenPhoneNumbers}) privacy,
   ) async {
     final devicePhones = <String>{};
     for (final c in deviceContacts) {
@@ -152,12 +228,22 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       log('Error fetching active chats for allowed user filter: $e');
     }
 
-    final hiddenSet = hiddenPhoneNumbers.toSet();
+    final allExcludedUserIds = {...privacy.lockedUserIds, ...privacy.hiddenUserIds};
+    final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
+
+    bool isUserExcluded(UserModel user) {
+      if (user.id.isNotEmpty && allExcludedUserIds.contains(user.id)) return true;
+      if (user.phoneNumber.isNotEmpty && allExcludedPhones.contains(user.phoneNumber)) return true;
+      final norm = _normalizePhone(user.phoneNumber);
+      if (norm.isNotEmpty && allExcludedPhones.contains(norm)) return true;
+      return false;
+    }
+
     final allowedMap = <String, UserModel>{};
 
     // Add users from server list that match device contacts or active chats
     for (final user in serverUsers) {
-      if (hiddenSet.contains(user.phoneNumber)) continue;
+      if (isUserExcluded(user)) continue;
       final norm = _normalizePhone(user.phoneNumber);
       final isInContacts = norm.isNotEmpty && devicePhones.contains(norm);
       final hasActiveChat = (user.id.isNotEmpty && activeChatUserIds.contains(user.id)) ||
@@ -170,7 +256,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
     // Also include active chat participants who sent messages
     for (final user in activeChatUsersToAdd) {
-      if (hiddenSet.contains(user.phoneNumber)) continue;
+      if (isUserExcluded(user)) continue;
       final key = user.id.isNotEmpty ? user.id : user.phoneNumber;
       if (!allowedMap.containsKey(key)) {
         allowedMap[key] = user;
@@ -201,6 +287,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
           contacts: _sortContacts(currentState.contacts),
           syncedContacts: _sortUsers(updatedSynced),
           hiddenPhoneNumbers: currentState.hiddenPhoneNumbers,
+          lockedPhoneNumbers: currentState.lockedPhoneNumbers,
+          lockedUserIds: currentState.lockedUserIds,
+          hiddenUserIds: currentState.hiddenUserIds,
         ),
       );
     }
@@ -230,6 +319,9 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
           contacts: _sortContacts(currentState.contacts),
           syncedContacts: _sortUsers(updatedSynced),
           hiddenPhoneNumbers: updatedHidden,
+          lockedPhoneNumbers: currentState.lockedPhoneNumbers,
+          lockedUserIds: currentState.lockedUserIds,
+          hiddenUserIds: currentState.hiddenUserIds,
         ),
       );
 
@@ -250,8 +342,17 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
       final result = await _contactsRepository.discoverUsers(query: query);
       if (result is Success<List<UserModel>>) {
-        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-        final filtered = result.data.where((u) => !hidden.contains(u.phoneNumber)).toList();
+        final privacy = await _getExcludedPrivacySets();
+        final allExcludedUserIds = {...privacy.lockedUserIds, ...privacy.hiddenUserIds};
+        final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
+
+        final filtered = result.data.where((u) {
+          if (u.id.isNotEmpty && allExcludedUserIds.contains(u.id)) return false;
+          if (u.phoneNumber.isNotEmpty && allExcludedPhones.contains(u.phoneNumber)) return false;
+          final norm = _normalizePhone(u.phoneNumber);
+          if (norm.isNotEmpty && allExcludedPhones.contains(norm)) return false;
+          return true;
+        }).toList();
 
         List<Contact> existingContacts = [];
         if (state is ContactsLoaded) {
@@ -262,7 +363,10 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
           ContactsLoaded(
             contacts: _sortContacts(existingContacts),
             syncedContacts: _sortUsers(filtered),
-            hiddenPhoneNumbers: hidden,
+            hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+            lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+            lockedUserIds: privacy.lockedUserIds.toList(),
+            hiddenUserIds: privacy.hiddenUserIds.toList(),
           ),
         );
       }
@@ -287,13 +391,16 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
             cachedUsers = serverResult.data;
           }
         }
-        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-        final filtered = await _filterAllowedUsers(cachedUsers, const [], hidden);
+        final privacy = await _getExcludedPrivacySets();
+        final filtered = await _filterAllowedUsers(cachedUsers, const [], privacy);
         emit(
           ContactsLoaded(
             contacts: const [],
             syncedContacts: _sortUsers(filtered),
-            hiddenPhoneNumbers: hidden,
+            hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+            lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+            lockedUserIds: privacy.lockedUserIds.toList(),
+            hiddenUserIds: privacy.hiddenUserIds.toList(),
           ),
         );
         return;
@@ -305,15 +412,18 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         await _loadAndSync(emit);
       } else {
         var cachedUsers = await _contactsRepository.getCachedContacts();
-        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-        final filteredCached = await _filterAllowedUsers(cachedUsers, const [], hidden);
+        final privacy = await _getExcludedPrivacySets();
+        final filteredCached = await _filterAllowedUsers(cachedUsers, const [], privacy);
 
         if (filteredCached.isNotEmpty) {
           emit(
             ContactsLoaded(
               contacts: const [],
               syncedContacts: _sortUsers(filteredCached),
-              hiddenPhoneNumbers: hidden,
+              hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+              lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+              lockedUserIds: privacy.lockedUserIds.toList(),
+              hiddenUserIds: privacy.hiddenUserIds.toList(),
             ),
           );
         }
@@ -336,7 +446,8 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     try {
       final contacts = await _contactsRepository.getContacts();
       var cachedUsers = await _contactsRepository.getCachedContacts();
-      final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+      final privacy = await _getExcludedPrivacySets();
+      final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
 
       if (cachedUsers.isEmpty) {
         final serverResult = await _contactsRepository.fetchSyncedContacts();
@@ -345,13 +456,17 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         }
       }
 
-      var filteredCached = await _filterAllowedUsers(cachedUsers, contacts, hidden);
+      var filteredCached = await _filterAllowedUsers(cachedUsers, contacts, privacy);
+      var filteredContacts = _filterDeviceContacts(contacts, allExcludedPhones);
 
       emit(
         ContactsLoaded(
-          contacts: _sortContacts(contacts),
+          contacts: _sortContacts(filteredContacts),
           syncedContacts: _sortUsers(filteredCached),
-          hiddenPhoneNumbers: hidden,
+          hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+          lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+          lockedUserIds: privacy.lockedUserIds.toList(),
+          hiddenUserIds: privacy.hiddenUserIds.toList(),
         ),
       );
 
@@ -359,14 +474,17 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       if (syncData.isNotEmpty) {
         final result = await _contactsRepository.syncContacts(syncData);
         if (result is Success<List<UserModel>>) {
-          final filteredResult = await _filterAllowedUsers(result.data, contacts, hidden);
+          final filteredResult = await _filterAllowedUsers(result.data, contacts, privacy);
           // Cache verified synced contacts
           await _contactsRepository.cacheContacts(filteredResult);
           emit(
             ContactsLoaded(
-              contacts: _sortContacts(contacts),
+              contacts: _sortContacts(filteredContacts),
               syncedContacts: _sortUsers(filteredResult),
-              hiddenPhoneNumbers: hidden,
+              hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+              lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+              lockedUserIds: privacy.lockedUserIds.toList(),
+              hiddenUserIds: privacy.hiddenUserIds.toList(),
             ),
           );
         }
@@ -385,18 +503,23 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
       emit(const ContactsLoading());
     }
     try {
+      final privacy = await _getExcludedPrivacySets();
+      final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
+
       if (kIsWeb) {
         final serverResult = await _contactsRepository.fetchSyncedContacts();
         final cachedUsers = serverResult is Success<List<UserModel>>
             ? serverResult.data
             : await _contactsRepository.getCachedContacts();
-        final hidden = await _contactsRepository.getHiddenPhoneNumbers();
-        final filtered = await _filterAllowedUsers(cachedUsers, const [], hidden);
+        final filtered = await _filterAllowedUsers(cachedUsers, const [], privacy);
         emit(
           ContactsLoaded(
             contacts: const [],
             syncedContacts: _sortUsers(filtered),
-            hiddenPhoneNumbers: hidden,
+            hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+            lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+            lockedUserIds: privacy.lockedUserIds.toList(),
+            hiddenUserIds: privacy.hiddenUserIds.toList(),
           ),
         );
         return;
@@ -410,7 +533,7 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
 
       final contacts = await _contactsRepository.getContacts();
       final syncData = _extractSyncData(contacts);
-      final hidden = await _contactsRepository.getHiddenPhoneNumbers();
+      final filteredContacts = _filterDeviceContacts(contacts, allExcludedPhones);
 
       await _storageService.setHasSyncedContacts(true);
 
@@ -418,13 +541,16 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         final result = await _contactsRepository.syncContacts(syncData);
 
         if (result is Success<List<UserModel>>) {
-          final filteredResult = await _filterAllowedUsers(result.data, contacts, hidden);
+          final filteredResult = await _filterAllowedUsers(result.data, contacts, privacy);
           await _contactsRepository.cacheContacts(filteredResult);
           emit(
             ContactsLoaded(
-              contacts: _sortContacts(contacts),
+              contacts: _sortContacts(filteredContacts),
               syncedContacts: _sortUsers(filteredResult),
-              hiddenPhoneNumbers: hidden,
+              hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+              lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+              lockedUserIds: privacy.lockedUserIds.toList(),
+              hiddenUserIds: privacy.hiddenUserIds.toList(),
             ),
           );
         } else {
@@ -433,25 +559,31 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
             emit(ContactsFailure(errorMessage: failure.message));
           }
           final filteredSynced = (currentState is ContactsLoaded)
-              ? await _filterAllowedUsers(currentState.syncedContacts, contacts, hidden)
+              ? await _filterAllowedUsers(currentState.syncedContacts, contacts, privacy)
               : <UserModel>[];
           emit(
             ContactsLoaded(
-              contacts: _sortContacts(contacts),
+              contacts: _sortContacts(filteredContacts),
               syncedContacts: _sortUsers(filteredSynced),
-              hiddenPhoneNumbers: hidden,
+              hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+              lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+              lockedUserIds: privacy.lockedUserIds.toList(),
+              hiddenUserIds: privacy.hiddenUserIds.toList(),
             ),
           );
         }
       } else {
         final filteredSynced = (currentState is ContactsLoaded)
-            ? await _filterAllowedUsers(currentState.syncedContacts, contacts, hidden)
+            ? await _filterAllowedUsers(currentState.syncedContacts, contacts, privacy)
             : <UserModel>[];
         emit(
           ContactsLoaded(
-            contacts: _sortContacts(contacts),
+            contacts: _sortContacts(filteredContacts),
             syncedContacts: _sortUsers(filteredSynced),
-            hiddenPhoneNumbers: hidden,
+            hiddenPhoneNumbers: privacy.hiddenPhoneNumbers.toList(),
+            lockedPhoneNumbers: privacy.lockedPhoneNumbers.toList(),
+            lockedUserIds: privacy.lockedUserIds.toList(),
+            hiddenUserIds: privacy.hiddenUserIds.toList(),
           ),
         );
       }

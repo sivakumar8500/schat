@@ -17,11 +17,17 @@ class ContactsLoaded extends ContactsState {
   final List<Contact> contacts;
   final List<UserModel> syncedContacts;
   final List<String> hiddenPhoneNumbers;
+  final List<String> lockedPhoneNumbers;
+  final List<String> lockedUserIds;
+  final List<String> hiddenUserIds;
 
   const ContactsLoaded({
     required this.contacts,
     this.syncedContacts = const [],
     this.hiddenPhoneNumbers = const [],
+    this.lockedPhoneNumbers = const [],
+    this.lockedUserIds = const [],
+    this.hiddenUserIds = const [],
   });
 }
 
