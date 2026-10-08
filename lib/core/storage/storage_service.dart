@@ -266,7 +266,9 @@ class StorageService {
   }
 
   Future<void> clearAll() async {
+    final hasSeenIntro = _prefs.getBool('hasSeenIntro') ?? true;
     await _prefs.clear();
+    await _prefs.setBool('hasSeenIntro', hasSeenIntro);
   }
 }
 

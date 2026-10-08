@@ -153,14 +153,23 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
   Future<void> _onDeleteAccount(DeleteAccountEvent event, Emitter<ProfileState> emit) async {
     emit(const ProfileLoading());
     final result = await _profileRepository.deleteAccount();
-    result.when(
+    await result.when(
       success: (_) async {
         try {
           await _authRepository.logout();
         } catch (_) {}
         emit(const ProfileAccountDeleted());
       },
-      failure: (message, _) => emit(ProfileFailure(errorMessage: message)),
+      failure: (message, statusCode) async {
+        if (statusCode == 401 || message.toLowerCase().contains('unauthorized') || message.contains('401')) {
+          try {
+            await _authRepository.logout();
+          } catch (_) {}
+          emit(const ProfileAccountDeleted());
+        } else {
+          emit(ProfileFailure(errorMessage: message));
+        }
+      },
     );
   }
 

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/features/intro_screen/intro_screen.dart';
+import 'package:schat/features/auth_screen/auth_screen.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
@@ -372,14 +372,14 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
         } else if (state is ProfileLogoutSuccess) {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const IntroPage()),
+            MaterialPageRoute(builder: (context) => const MobileEntryPage()),
             (Route<dynamic> route) => false,
           );
         } else if (state is ProfileAccountDeleted) {
           context.showSuccessNotification('Your account has been deleted successfully');
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (context) => const IntroPage()),
+            MaterialPageRoute(builder: (context) => const MobileEntryPage()),
             (Route<dynamic> route) => false,
           );
         } else if (state is ProfileSuccess) {
