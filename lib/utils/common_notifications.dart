@@ -5,14 +5,29 @@ import 'package:schat/main.dart';
 extension NotificationExt on BuildContext {
   void showErrorNotification(String message) {
     debugPrint('Error notification: $message');
+    AppToastManager.show(
+      context: this,
+      message: message,
+      type: ToastType.error,
+    );
   }
 
   void showSuccessNotification(String message) {
     debugPrint('Success notification: $message');
+    AppToastManager.show(
+      context: this,
+      message: message,
+      type: ToastType.success,
+    );
   }
 
   void showInfoNotification(String message) {
     debugPrint('Info notification: $message');
+    AppToastManager.show(
+      context: this,
+      message: message,
+      type: ToastType.info,
+    );
   }
 
   void showDownloadNotification(String message, {double? progress}) {
@@ -31,6 +46,206 @@ extension NotificationExt on BuildContext {
       messageText: messageText,
       profilePictureUrl: profilePictureUrl,
       onTap: onTap,
+    );
+  }
+}
+
+enum ToastType { error, success, info }
+
+class AppToastManager {
+  static OverlayEntry? _currentEntry;
+  static Timer? _dismissTimer;
+
+  static void show({
+    required BuildContext context,
+    required String message,
+    ToastType type = ToastType.error,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    if (message.trim().isEmpty) return;
+    final overlay = Overlay.maybeOf(context) ?? navigatorKey.currentState?.overlay;
+    if (overlay == null) return;
+
+    // Dismiss existing toast
+    _dismissCurrent();
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _AppToastWidget(
+        message: message,
+        type: type,
+        onDismiss: () {
+          if (_currentEntry == entry) {
+            _dismissCurrent();
+          }
+        },
+      ),
+    );
+
+    _currentEntry = entry;
+    overlay.insert(entry);
+
+    _dismissTimer = Timer(duration, () {
+      if (_currentEntry == entry) {
+        _dismissCurrent();
+      }
+    });
+  }
+
+  static void _dismissCurrent() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    if (_currentEntry != null) {
+      final entryToDismiss = _currentEntry;
+      _currentEntry = null;
+      try {
+        entryToDismiss?.remove();
+      } catch (_) {}
+    }
+  }
+}
+
+class _AppToastWidget extends StatefulWidget {
+  final String message;
+  final ToastType type;
+  final VoidCallback onDismiss;
+
+  const _AppToastWidget({
+    required this.message,
+    required this.type,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_AppToastWidget> createState() => _AppToastWidgetState();
+}
+
+class _AppToastWidgetState extends State<_AppToastWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -0.6),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _dismissWithAnimation() async {
+    try {
+      await _controller.reverse();
+    } catch (_) {}
+    widget.onDismiss();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final topPadding =
+        mediaQuery.padding.top > 0 ? mediaQuery.padding.top + 8 : 16.0;
+
+    final Color bgColor;
+    final Color borderColor;
+    final Color iconColor;
+    final IconData iconData;
+
+    switch (widget.type) {
+      case ToastType.error:
+        bgColor = const Color(0xFF261819);
+        borderColor = const Color(0xFFE53935).withValues(alpha: 0.6);
+        iconColor = const Color(0xFFFF5252);
+        iconData = Icons.error_outline_rounded;
+        break;
+      case ToastType.success:
+        bgColor = const Color(0xFF14241B);
+        borderColor = const Color(0xFF00FF87).withValues(alpha: 0.6);
+        iconColor = const Color(0xFF00FF87);
+        iconData = Icons.check_circle_outline_rounded;
+        break;
+      case ToastType.info:
+        bgColor = const Color(0xFF162330);
+        borderColor = const Color(0xFF2196F3).withValues(alpha: 0.6);
+        iconColor = const Color(0xFF42A5F5);
+        iconData = Icons.info_outline_rounded;
+        break;
+    }
+
+    return Positioned(
+      top: topPadding,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: GestureDetector(
+              onTap: _dismissWithAnimation,
+              onVerticalDragEnd: (details) {
+                if (details.primaryVelocity != null &&
+                    details.primaryVelocity! < -50) {
+                  _dismissWithAnimation();
+                }
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: borderColor, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      offset: const Offset(0, 6),
+                      blurRadius: 20,
+                      spreadRadius: 0,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(iconData, color: iconColor, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

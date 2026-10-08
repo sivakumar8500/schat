@@ -119,11 +119,14 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         return;
       }
     }
+    final categoryValue = (event.category != null && event.category!.isNotEmpty)
+        ? event.category
+        : (event.about ?? "");
     final request = UpdateProfileRequest(
       username: event.username.trim(),
       firstName: null,
       lastName: null,
-      about: event.about ?? "",
+      about: categoryValue,
       profilePictureUrl: profileImageUrl,
     );
 

@@ -68,6 +68,16 @@ Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   if (json.containsKey('defaultDisappearingTimer') && !json.containsKey('default_disappearing_timer')) {
     normalizedJson['default_disappearing_timer'] = json['defaultDisappearingTimer'];
   }
+  final categoryVal = json['about'] ??
+      json['category'] ??
+      json['user_category'] ??
+      json['userCategory'] ??
+      json['role'] ??
+      json['occupation'];
+  if (categoryVal != null && categoryVal.toString().isNotEmpty) {
+    normalizedJson['about'] = categoryVal.toString();
+  }
+
   normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
   normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
   normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;

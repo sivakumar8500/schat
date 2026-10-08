@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/common/widgets/mesh_background.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_sizes.dart';
@@ -28,162 +30,185 @@ class _IntroPageState extends State<IntroPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.colors.isDark;
+
     return Scaffold(
-      backgroundColor: context.colors.pureBlack,
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-           CommonSpaces.h20,
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
+      backgroundColor: context.colors.scaffoldBackground,
+      body: MeshBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28.0),
+            child: Column(
+              children: [
+                const Spacer(flex: 3),
+                // Center Brand Hero
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: context.colors.primary
+                            .withValues(alpha: isDark ? 0.35 : 0.25),
+                        blurRadius: 36,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(32),
                     child: Image.asset(
-                      'assets/neon_speech_globe.png',
+                      CommonIcons.logo,
+                      width: 110,
+                      height: 110,
                       fit: BoxFit.cover,
                     ),
                   ),
-                  // Gradient overlay to blend image into black background
-                  Positioned(
-                    bottom: -1,
-                    left: 0,
-                    right: 0,
-                    height: 200,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            context.colors.pureBlack.withValues(alpha: 0),
-                            context.colors.pureBlack.withValues(alpha: 0.8),
-                            context.colors.pureBlack,
-                          ],
-                        ),
-                      ),
-                    ),
+                ),
+                CommonSpaces.h24,
+                Text(
+                  'S-CHAT',
+                  style: context.h1.copyWith(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 2.0,
+                    color: context.colors.textPrimary,
                   ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: CommonSizes.p32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Secure chats',
-                    style: context.h1.copyWith(
-                      color: context.colors.pureWhite,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  CommonSpaces.h4,
-                  Text(
-                    'Best in Privacy',
-                    style: context.h1Italic.copyWith(
-                      color: context.colors.pureWhite,
-                    ),
-                  ),
-                  CommonSpaces.h20,
-                  Text(
-                    'Messages that disappear. Calls that can\'t be tapped. Files only you control.',
-                    style: context.bodyMedium.copyWith(
-                      color: context.colors.pureWhite.withValues(alpha: 0.7),
-                      fontSize: 16,
-                    ),
-                  ),
-                  CommonSpaces.h32,
+                ),
+                CommonSpaces.h10,
+                const AnimatedTagline(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  showShieldIcon: true,
+                ),
 
-                  // Get started Button
-                  Container(
-                    width: double.infinity,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(CommonSizes.r24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: context.colors.primary.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ElevatedButton(
-                      onPressed: _onDone,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: context.colors.primary,
-                        foregroundColor: context.colors.isDark ? Colors.black : Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(CommonSizes.r24),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Row(
-                        children: [
-                          const Spacer(flex: 3),
-                          Text(
-                            'Get started',
-                            style: context.titleMedium.copyWith(
-                              color: context.colors.isDark ? Colors.black : Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(flex: 2),
-                          Container(
-                            padding: const EdgeInsets.all(CommonSizes.p8),
-                            decoration: BoxDecoration(
-                              color: context.colors.isDark ? Colors.black : Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              CommonIcons.arrowForward,
-                              color: context.colors.primary,
-                              size: CommonSizes.iconSmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  CommonSpaces.h20,
+                const Spacer(flex: 4),
 
-                  // Sign in Footer
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                // Headlines
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Already have an account? ',
-                        style: context.bodyMedium.copyWith(
-                          color: context.colors.pureWhite.withValues(
-                            alpha: 0.5,
-                          ),
-                          fontSize: 15,
+                        'Secure chats',
+                        style: context.h1.copyWith(
+                          color: context.colors.textPrimary,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: _onDone,
-                        child: Text(
-                          'Sign in',
-                          style: context.bodyMedium.copyWith(
-                            color: context.colors.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
+                      CommonSpaces.h4,
+                      Text(
+                        'Best in Privacy',
+                        style: context.h1Italic.copyWith(
+                          color: context.colors.primary,
+                          fontSize: 32,
+                        ),
+                      ),
+                      CommonSpaces.h12,
+                      Text(
+                        'Messages that disappear. Calls that can\'t be tapped. Files only you control.',
+                        style: context.bodyMedium.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 15,
+                          height: 1.4,
                         ),
                       ),
                     ],
                   ),
-                  CommonSpaces.h24,
-                ],
-              ),
+                ),
+
+                CommonSpaces.h32,
+
+                // Get started Button
+                Container(
+                  width: double.infinity,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(26),
+                    boxShadow: [
+                      BoxShadow(
+                        color: context.colors.primary
+                            .withValues(alpha: isDark ? 0.35 : 0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _onDone,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.colors.primary,
+                      foregroundColor: isDark ? Colors.black : Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(26),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Row(
+                      children: [
+                        const Spacer(flex: 3),
+                        Text(
+                          'Get started',
+                          style: context.titleMedium.copyWith(
+                            color: isDark ? Colors.black : Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(flex: 2),
+                        Container(
+                          padding: const EdgeInsets.all(CommonSizes.p8),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.black : Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            CommonIcons.arrowForward,
+                            color: context.colors.primary,
+                            size: CommonSizes.iconSmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                CommonSpaces.h20,
+
+                // Sign in Footer
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Already have an account? ',
+                      style: context.bodyMedium.copyWith(
+                        color: context.colors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _onDone,
+                      child: Text(
+                        'Sign in',
+                        style: context.bodyMedium.copyWith(
+                          color: context.colors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                CommonSpaces.h24,
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
+

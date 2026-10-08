@@ -12,12 +12,14 @@ class UpdateProfileEvent extends ProfileEvent {
   final String username;
   final String? imagePath;
   final String? about;
+  final String? category;
   final Uint8List? fileBytes;
 
   const UpdateProfileEvent({
     required this.username,
     this.imagePath,
     this.about,
+    this.category,
     this.fileBytes,
   });
 }

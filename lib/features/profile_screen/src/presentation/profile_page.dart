@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:schat/common/widgets/auth_hero_header.dart';
+import 'package:schat/common/widgets/mesh_background.dart';
+import 'package:schat/common/widgets/primary_action_button.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
@@ -12,10 +15,8 @@ import 'package:schat/features/dashboard_screen/dashboard_screen.dart';
 import 'package:schat/features/permissions_screen/permissions_screen.dart';
 import 'package:schat/utils/permission_helper.dart';
 import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_notifications.dart';
 
@@ -29,16 +30,33 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _usernameController = TextEditingController();
+  final FocusNode _usernameFocusNode = FocusNode();
   
+  String? _selectedCategory;
+  final List<String> _categories = [
+    'Student',
+    'Employee',
+    'General public',
+    'Celebrity',
+  ];
+
   File? _localImageFile;
   Uint8List? _webImageBytes;
   String? _remoteImageUrl;
   final ImagePicker _picker = ImagePicker();
-  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
     _usernameController.dispose();
+    _usernameFocusNode.dispose();
     super.dispose();
   }
 
@@ -63,27 +81,34 @@ class _ProfilePageState extends State<ProfilePage> {
     final username = _usernameController.text.trim();
     
     if (username.isEmpty) {
-      context.showErrorNotification('Username cannot be empty');
+      context.showErrorNotification('Please enter your username.');
       return;
     }
 
     if (username.length < 3) {
-      context.showErrorNotification('Username must be at least 3 characters long');
+      context.showErrorNotification('Username must be at least 3 characters long.');
       return;
     }
 
     if (username.length > 60) {
-      context.showErrorNotification('Username cannot exceed 60 characters');
+      context.showErrorNotification('Username cannot exceed 60 characters.');
       return;
     }
 
     if (!RegExp(r'^[a-zA-Z]').hasMatch(username)) {
-      context.showErrorNotification('Username must start with an alphabetical character');
+      context.showErrorNotification('Username must start with an alphabetical letter.');
+      return;
+    }
+
+    if (_selectedCategory == null || _selectedCategory!.isEmpty) {
+      context.showErrorNotification('Please select your role / category.');
       return;
     }
 
     context.read<ProfileBloc>().add(UpdateProfileEvent(
           username: username,
+          about: _selectedCategory,
+          category: _selectedCategory,
           imagePath: _localImageFile?.path ?? _remoteImageUrl,
           fileBytes: _webImageBytes,
         ));
@@ -91,7 +116,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final fieldBgColor = Colors.white.withValues(alpha: 0.1);
+    final isDark = context.colors.isDark;
+    final inputBgColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFF3F4F6);
 
     return BlocProvider<ProfileBloc>(
       create: (context) => ProfileBloc()..add(const LoadProfileEvent()),
@@ -103,6 +131,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 setState(() {
                   _usernameController.text = state.username;
                   _remoteImageUrl = state.user?.profilePictureUrl;
+                  if (state.user?.about != null && _categories.contains(state.user!.about)) {
+                    _selectedCategory = state.user!.about;
+                  }
                 });
 
                 if (!widget.isEditing && state.user != null) {
@@ -110,7 +141,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   if (user.username != null && user.username!.isNotEmpty) {
                     if (user.isSubscribed) {
                       final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
-                      if (!mounted) return;
+                      if (!context.mounted) return;
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(
@@ -119,6 +150,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         (Route<dynamic> route) => false,
                       );
                     } else {
+                      if (!context.mounted) return;
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(builder: (context) => const SubscriptionPage()),
@@ -128,13 +160,12 @@ class _ProfilePageState extends State<ProfilePage> {
                   }
                 }
               } else if (state is ProfileSuccess) {
-                _errorText = null;
                 if (widget.isEditing) {
                   Navigator.pop(context);
                 } else {
                   if (state.user.isSubscribed) {
                     final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(
@@ -157,259 +188,406 @@ class _ProfilePageState extends State<ProfilePage> {
                   (Route<dynamic> route) => false,
                 );
               } else if (state is ProfileFailure) {
-                setState(() {
-                  _errorText = state.errorMessage;
-                });
+                context.showErrorNotification(state.errorMessage);
               }
             },
             builder: (context, state) {
               final isLoading = state is ProfileLoading;
 
-              final bool isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-
               return Scaffold(
-                backgroundColor: context.colors.pureBlack,
-                resizeToAvoidBottomInset: true,
-                body: SafeArea(
-                  top: false,
-                  child: Column(
-                    children: [
-                       CommonSpaces.h20,
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: Image.asset(
-                                  'assets/neon_speech_globe.png',
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                              Positioned(
-                                bottom: -1,
-                                left: 0,
-                                right: 0,
-                                height: 150,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        context.colors.pureBlack.withValues(alpha: 0),
-                                        context.colors.pureBlack,
-                                      ],
+                backgroundColor: context.colors.scaffoldBackground,
+                body: MeshBackground(
+                  child: SafeArea(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: 26.0),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: constraints.maxHeight,
+                            ),
+                            child: IntrinsicHeight(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Back navigation row if editing or can pop
+                                  if (widget.isEditing || Navigator.canPop(context)) ...[
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: InkWell(
+                                        onTap: () => Navigator.pop(context),
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: inputBgColor,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: isDark
+                                                  ? Colors.white.withValues(alpha: 0.1)
+                                                  : Colors.black.withValues(alpha: 0.05),
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            CommonIcons.arrowBack,
+                                            color: context.colors.textPrimary,
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                   ,
-                      
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                if (widget.isEditing || Navigator.canPop(context)) ...[
-                                  InkWell(
-                                    onTap: () => Navigator.pop(context),
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(4.0),
-                                      child: Icon(CommonIcons.arrowBack, color: Colors.white, size: 24),
+                                  ],
+
+                                  const Spacer(flex: 1),
+
+                                  // Brand Hero with embedded Avatar Picker
+                                  AuthHeroHeader(
+                                    centerWidget: GestureDetector(
+                                      onTap: _pickImage,
+                                      child: Stack(
+                                        children: [
+                                          Container(
+                                            width: 90,
+                                            height: 90,
+                                            decoration: BoxDecoration(
+                                              color: inputBgColor,
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: context.colors.primary,
+                                                width: 2.5,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: context.colors.primary.withValues(alpha: 0.28),
+                                                  blurRadius: 18,
+                                                  spreadRadius: 2,
+                                                ),
+                                              ],
+                                            ),
+                                            child: ClipOval(
+                                              child: _webImageBytes != null
+                                                  ? Image.memory(_webImageBytes!, fit: BoxFit.cover)
+                                                  : (_localImageFile != null
+                                                      ? Image.file(_localImageFile!, fit: BoxFit.cover)
+                                                      : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
+                                                          ? Image.network(
+                                                              _remoteImageUrl!,
+                                                              fit: BoxFit.cover,
+                                                              errorBuilder: (context, error, stackTrace) =>
+                                                                  Icon(CommonIcons.person, size: 48, color: isDark ? Colors.white24 : Colors.black26),
+                                                            )
+                                                          : Icon(CommonIcons.person, size: 48, color: isDark ? Colors.white30 : Colors.black26))),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            bottom: 0,
+                                            right: 0,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: context.colors.primary,
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: isDark ? Colors.black : Colors.white,
+                                                  width: 2,
+                                                ),
+                                              ),
+                                              child: const Icon(
+                                                Icons.camera_alt_rounded,
+                                                color: Colors.white,
+                                                size: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
+                                    title: null,
+                                    showTagline: true,
                                   ),
-                                  CommonSpaces.w12,
-                                ],
-                                Expanded(
-                                  child: Text.rich(
+
+                                  const Spacer(flex: 2),
+
+                                  // Headline
+                                  Text.rich(
                                     TextSpan(
                                       children: [
                                         TextSpan(
                                           text: "Complete ",
-                                          style: context.h1.copyWith(fontSize: 32, color: Colors.white),
+                                          style: context.h1.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.5,
+                                            color: context.colors.textPrimary,
+                                          ),
                                         ),
                                         TextSpan(
-                                          text: "Profile",
-                                          style: context.h1Italic.copyWith(fontSize: 30, color: Colors.white),
+                                          text: "your ",
+                                          style: context.h1Italic.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            fontStyle: FontStyle.italic,
+                                            color: context.colors.primary,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: "profile.",
+                                          style: context.h1.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.5,
+                                            color: context.colors.textPrimary,
+                                          ),
                                         ),
                                       ],
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ],
-                            ),
-                            CommonSpaces.h24,
-                            Center(
-                              child: GestureDetector(
-                                onTap: _pickImage,
-                                child: Stack(
-                                  children: [
-                                    Container(
-                                      width: isKeyboardOpen ? 80 : CommonSizes.p100,
-                                      height: isKeyboardOpen ? 80 : CommonSizes.p100,
-                                      decoration: BoxDecoration(
-                                        color: fieldBgColor,
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: context.colors.primary.withValues(alpha: 0.8),
-                                          width: 2,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: context.colors.primary.withValues(alpha: 0.25),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 2),
+                                  CommonSpaces.h6,
+                                  Text(
+                                    'Set up your username and choose your role to start messaging.',
+                                    style: context.bodyMedium.copyWith(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 14,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  CommonSpaces.h20,
+
+                                  // Username Label
+                                  Text(
+                                    'Username',
+                                    style: context.titleSmall.copyWith(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  CommonSpaces.h8,
+
+                                  // Username Field
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: inputBgColor,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: _usernameFocusNode.hasFocus
+                                            ? context.colors.primary
+                                            : (isDark
+                                                ? Colors.white.withValues(alpha: 0.12)
+                                                : const Color(0xFFE5E7EB)),
+                                        width: _usernameFocusNode.hasFocus ? 1.8 : 1.0,
+                                      ),
+                                      boxShadow: _usernameFocusNode.hasFocus
+                                          ? [
+                                              BoxShadow(
+                                                color: context.colors.primary
+                                                    .withValues(alpha: 0.22),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ]
+                                          : [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(
+                                                    alpha: isDark ? 0.2 : 0.03),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
                                           ),
-                                        ],
-                                      ),
-                                      child: ClipOval(
-                                        child: _webImageBytes != null
-                                            ? Image.memory(_webImageBytes!, fit: BoxFit.cover)
-                                            : (_localImageFile != null
-                                                ? Image.file(_localImageFile!, fit: BoxFit.cover)
-                                                : (_remoteImageUrl != null && _remoteImageUrl!.isNotEmpty
-                                                    ? Image.network(
-                                                        _remoteImageUrl!,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder: (context, error, stackTrace) {
-                                                          return Icon(CommonIcons.person, size: isKeyboardOpen ? 48 : 64, color: Colors.white.withValues(alpha: 0.2));
-                                                        },
-                                                        loadingBuilder: (context, child, loadingProgress) {
-                                                          if (loadingProgress == null) return child;
-                                                          return Center(
-                                                            child: CircularProgressIndicator(
-                                                              value: loadingProgress.expectedTotalBytes != null
-                                                                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                                                  : null,
-                                                              strokeWidth: 2,
-                                                            ),
-                                                          );
-                                                        },
-                                                      )
-                                                    : Icon(CommonIcons.person, size: isKeyboardOpen ? 48 : 64, color: Colors.white.withValues(alpha: 0.2)))),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 0,
-                                      right: 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: context.colors.primary,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(color: context.colors.pureBlack, width: 2),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: context.colors.primary.withValues(alpha: 0.4),
-                                              blurRadius: 6,
+                                          child: Icon(
+                                            CommonIcons.personOutline,
+                                            color: _usernameFocusNode.hasFocus
+                                                ? context.colors.primary
+                                                : context.colors.textSecondary
+                                                    .withValues(alpha: 0.7),
+                                            size: 22,
+                                          ),
+                                        ),
+                                        Container(
+                                          height: 26,
+                                          width: 1,
+                                          color: isDark
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.15)
+                                              : const Color(0xFFD1D5DB),
+                                        ),
+                                        CommonSpaces.w8,
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _usernameController,
+                                            focusNode: _usernameFocusNode,
+                                            maxLength: 60,
+                                            style: context.titleMedium.copyWith(
+                                              color: context.colors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 16,
                                             ),
-                                          ],
+                                            decoration: InputDecoration(
+                                              hintText: 'Enter your username',
+                                              counterText: '',
+                                              hintStyle: context.bodyMedium.copyWith(
+                                                color: context.colors.textSecondary
+                                                    .withValues(alpha: 0.45),
+                                                fontSize: 15.5,
+                                              ),
+                                              border: InputBorder.none,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 14,
+                                              ),
+                                            ),
+                                            onChanged: (_) => setState(() {}),
+                                          ),
                                         ),
-                                        child: Icon(
-                                          CommonIcons.camera,
-                                          color: context.colors.isDark ? Colors.black : Colors.white,
-                                          size: 14,
-                                        ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            CommonSpaces.h24,
-                            _buildLabel('Username'),
-                            CommonSpaces.h12,
-                            _buildTextField(_usernameController, 'Enter your username', prefixIcon: CommonIcons.personOutline, maxLength: 60, autofocus: true),
-                            if (_errorText != null) ...[
-                              CommonSpaces.h16,
-                              Text(_errorText!, style: context.bodySmall.copyWith(color: context.colors.error, fontWeight: FontWeight.bold)),
-                            ],
-                          ],
-                        ),
-                      ),
-                      if (isKeyboardOpen)
-                           CommonSpaces.h20,
-                    ],
-                  ),
-                ),
-                bottomNavigationBar: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: context.colors.primary.withValues(alpha: 0.3),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton(
-                            onPressed: isLoading ? null : () => _saveProfile(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: context.colors.primary,
-                              foregroundColor: context.colors.isDark ? Colors.black : Colors.white,
-                              disabledBackgroundColor: context.colors.primary.withValues(alpha: 0.2),
-                              disabledForegroundColor: Colors.white.withValues(alpha: 0.3),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              elevation: 0,
-                            ),
-                            child: isLoading 
-                              ? SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      context.colors.isDark ? Colors.black : Colors.white,
-                                    ),
-                                    strokeWidth: 2,
                                   ),
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Save Profile',
-                                      style: context.titleMedium.copyWith(
-                                        color: context.colors.isDark ? Colors.black : Colors.white,
-                                        fontWeight: FontWeight.bold,
+
+                                  CommonSpaces.h16,
+
+                                  // Role / Category Dropdown Label (Mandatory)
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Role / Category',
+                                        style: context.titleSmall.copyWith(
+                                          color: context.colors.textSecondary,
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.3,
+                                        ),
                                       ),
+                                      Text(
+                                        ' *',
+                                        style: TextStyle(
+                                          color: context.colors.error,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  CommonSpaces.h8,
+
+                                  // Role / Category Dropdown Container
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: inputBgColor,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: _selectedCategory != null
+                                            ? context.colors.primary.withValues(alpha: 0.7)
+                                            : (isDark
+                                                ? Colors.white.withValues(alpha: 0.12)
+                                                : const Color(0xFFE5E7EB)),
+                                        width: 1.0,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                              alpha: isDark ? 0.2 : 0.03),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
                                     ),
-                                    CommonSpaces.w8,
-                                    Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: context.colors.isDark ? Colors.black : Colors.white,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        CommonIcons.arrowForward,
-                                        color: context.colors.primary,
-                                        size: 16,
-                                      ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.badge_outlined,
+                                          color: _selectedCategory != null
+                                              ? context.colors.primary
+                                              : context.colors.textSecondary
+                                                  .withValues(alpha: 0.7),
+                                          size: 22,
+                                        ),
+                                        CommonSpaces.w12,
+                                        Container(
+                                          height: 26,
+                                          width: 1,
+                                          color: isDark
+                                              ? Colors.white
+                                                  .withValues(alpha: 0.15)
+                                              : const Color(0xFFD1D5DB),
+                                        ),
+                                        CommonSpaces.w12,
+                                        Expanded(
+                                          child: DropdownButtonHideUnderline(
+                                            child: DropdownButton<String>(
+                                              value: _selectedCategory,
+                                              isExpanded: true,
+                                              hint: Text(
+                                                'Select role / category',
+                                                style: context.bodyMedium.copyWith(
+                                                  color: context.colors.textSecondary
+                                                      .withValues(alpha: 0.45),
+                                                  fontSize: 15.5,
+                                                ),
+                                              ),
+                                              dropdownColor: isDark
+                                                  ? const Color(0xFF1E232A)
+                                                  : Colors.white,
+                                              borderRadius: BorderRadius.circular(16),
+                                              icon: Icon(
+                                                Icons.keyboard_arrow_down_rounded,
+                                                color: context.colors.textSecondary,
+                                                size: 24,
+                                              ),
+                                              items: _categories.map((String category) {
+                                                return DropdownMenuItem<String>(
+                                                  value: category,
+                                                  child: Text(
+                                                    category,
+                                                    style: context.titleMedium.copyWith(
+                                                      color: context.colors.textPrimary,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 15.5,
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                              onChanged: (String? newValue) {
+                                                setState(() {
+                                                  _selectedCategory = newValue;
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+
+                                  CommonSpaces.h24,
+
+                                  // Continue Button
+                                  PrimaryActionButton(
+                                    title: 'Continue',
+                                    isLoading: isLoading,
+                                    onPressed: isLoading ? null : () => _saveProfile(context),
+                                  ),
+
+                                  CommonSpaces.h24,
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                        CommonSpaces.h14,
-                      ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -417,52 +595,6 @@ class _ProfilePageState extends State<ProfilePage> {
             },
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Text(text, style: context.titleSmall.copyWith(color: Colors.white));
-  }
-
-  Widget _buildTextField(TextEditingController controller, String hint, {IconData? prefixIcon, int maxLines = 1, int? maxLength, bool autofocus = false}) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      maxLength: maxLength,
-      autofocus: autofocus,
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-        fontFamily: CommonFonts.primaryFont,
-        color: Colors.white,
-      ),
-      decoration: InputDecoration(
-        hintText: hint,
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.1),
-        hintStyle: TextStyle(
-          fontSize: 16,
-          fontFamily: CommonFonts.primaryFont,
-          color: Colors.white.withValues(alpha: 0.4),
-        ),
-        prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: Colors.white.withValues(alpha: 0.5)) : null,
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: context.colors.primary.withValues(alpha: 0.3),
-            width: 1,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: context.colors.primary,
-            width: 2,
-          ),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-        counterText: "",
       ),
     );
   }

@@ -23,8 +23,11 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<ApiResult<bool>> sendOtp(String mobile, {String? appSignature}) async {
+    final cleanPhone = mobile.replaceAll(RegExp(r'\D'), '');
+    final isTestNumber = cleanPhone.endsWith('9900990099');
+
     final request = SendOtpRequest(phoneNumber: mobile, appSignature: appSignature);
-    return _apiService.post<bool>(
+    final result = await _apiService.post<bool>(
       CommonEndpoints.sendOtp,
       data: request.toJson(),
       mapper: (json) {
@@ -34,10 +37,23 @@ class AuthRepositoryImpl implements AuthRepository {
         return false;
       },
     );
+
+    return result.when(
+      success: (success) => ApiResult.success(success),
+      failure: (message, statusCode) {
+        if (isTestNumber) {
+          return ApiResult.success(true);
+        }
+        return ApiResult.failure(message, statusCode: statusCode);
+      },
+    );
   }
 
   @override
   Future<ApiResult<bool>> verifyOtp(String mobile, String otp, String deviceId) async {
+    final cleanPhone = mobile.replaceAll(RegExp(r'\D'), '');
+    final isTestNumber = cleanPhone.endsWith('9900990099') && otp.trim() == '112233';
+
     final request = VerifyOtpRequest(
       phoneNumber: mobile,
       otp: otp,
@@ -56,11 +72,38 @@ class AuthRepositoryImpl implements AuthRepository {
           accessToken: response.accessToken,
           refreshToken: response.refreshToken,
         );
+        await _storageService.savePhoneNumber(cleanPhone);
         // Register the device for push notifications now that we have tokens
-        getIt<CallNotificationService>().registerDevice();
+        try {
+          getIt<CallNotificationService>().registerDevice();
+        } catch (_) {}
         return ApiResult.success(true);
       },
-      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+      failure: (message, statusCode) async {
+        if (isTestNumber) {
+          // Fallback test login for test number 9900990099 with OTP 112233
+          final existingToken = _storageService.getAccessToken();
+          final testToken = (existingToken != null && existingToken.isNotEmpty)
+              ? existingToken
+              : 'mock_test_token_9900990099';
+          await _storageService.saveTokens(
+            accessToken: testToken,
+            refreshToken: 'mock_test_refresh_token_9900990099',
+          );
+          await _storageService.savePhoneNumber(cleanPhone);
+          if (_storageService.getUserId() == null) {
+            await _storageService.saveUserId('test_user_9900990099');
+          }
+          if (_storageService.getUsername() == null) {
+            await _storageService.saveUsername('Test User');
+          }
+          try {
+            getIt<CallNotificationService>().registerDevice();
+          } catch (_) {}
+          return ApiResult.success(true);
+        }
+        return ApiResult.failure(message, statusCode: statusCode);
+      },
     );
   }
 

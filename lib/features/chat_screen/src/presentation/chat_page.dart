@@ -145,9 +145,12 @@ class _ChatPageState extends State<ChatPage> {
   late CallWebRtcBloc _callWebRtcBloc;
   StreamSubscription? _callSocketSubscription;
   StreamSubscription? _screenshotSubscription;
+  StreamSubscription? _screenRecordSubscription;
   Timer? _screenRecordTimer;
   Timer? _screenRecordCountdownTimer;
+  Timer? _screenRecordPrepTimer;
   bool _isScreenRecordingActive = false;
+  bool _isSystemRecordingStarted = false;
   int _screenRecordRemainingSeconds = 0;
   String? _activeScreenRecordPermissionId;
   Timer? _screenshotAutoExpireTimer;
@@ -278,28 +281,62 @@ class _ChatPageState extends State<ChatPage> {
       }
     });
 
-    // Listen for screenshots to decrement allowed count and auto turn off
+    // Listen for screenshots to decrement allowed count or allow during active screen record
     _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
       final state = _chatBloc.state;
-      if (state is ChatLoaded && state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot) {
+      if (state is ChatLoaded && state.activeScreenPermission != null) {
         final perm = state.activeScreenPermission!;
-        final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
-        final newRemaining = currentRemaining - 1;
-        debugPrint('ScreenProtection: Screenshot taken! newRemaining=$newRemaining / ${perm.allowedCount}');
+        if (perm.isScreenshot) {
+          final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
+          final newRemaining = currentRemaining - 1;
+          debugPrint('ScreenProtection: Screenshot taken! newRemaining=$newRemaining / ${perm.allowedCount}');
 
-        if (newRemaining <= 0) {
-          // Immediately re-enable protection locally with 0 delay so no further screenshots are possible!
-          getIt<ScreenProtectionService>().enableProtection();
-          if (mounted) {
-            context.showInfoNotification('All allowed screenshot(s) taken (${perm.allowedCount}/${perm.allowedCount}). Protection re-enabled.');
+          if (newRemaining <= 0) {
+            // Immediately re-enable protection locally with 0 delay so no further screenshots are possible!
+            getIt<ScreenProtectionService>().enableProtection();
+            if (mounted) {
+              context.showInfoNotification('All allowed screenshot(s) taken (${perm.allowedCount}/${perm.allowedCount}). Protection re-enabled.');
+            }
+          } else {
+            if (mounted) {
+              context.showInfoNotification('Screenshot taken. $newRemaining of ${perm.allowedCount} screenshot(s) remaining.');
+            }
           }
-        } else {
+
+          _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
+        } else if (perm.isScreenRecord && _isScreenRecordingActive) {
+          debugPrint('ScreenProtection: Screenshot taken during active screen record session.');
           if (mounted) {
-            context.showInfoNotification('Screenshot taken. $newRemaining of ${perm.allowedCount} screenshot(s) remaining.');
+            context.showInfoNotification('Screenshot captured during active screen recording.');
           }
         }
+      }
+    });
 
-        _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
+    // Listen for screen recording events to strictly prevent screen recording when only screenshot permission is granted
+    // and sync the timer when screen recording actively begins
+    _screenRecordSubscription = getIt<ScreenProtectionService>().onScreenRecord.listen((isCaptured) {
+      debugPrint('ScreenProtection: Screen capture state changed: isCaptured=$isCaptured');
+      final state = _chatBloc.state;
+      if (state is ChatLoaded && state.activeScreenPermission != null) {
+        final perm = state.activeScreenPermission!;
+        if (perm.isScreenshot && isCaptured) {
+          // Block unauthorized screen recording during screenshot-only permission
+          getIt<ScreenProtectionService>().enableProtection();
+          if (mounted) {
+            context.showErrorNotification('Screen recording is not allowed. Only screenshot permission was granted.');
+          }
+        } else if (perm.isScreenshot && !isCaptured && !perm.isCompleted && (perm.remainingCount ?? 1) > 0) {
+          // When screen recording stops, restore screenshot capability if permission is still valid
+          getIt<ScreenProtectionService>().disableProtection();
+        } else if (perm.isScreenRecord && _isScreenRecordingActive) {
+          if (isCaptured) {
+            _onSystemScreenRecordStarted(perm);
+          }
+        }
+      } else if (isCaptured && !_isScreenRecordingActive) {
+        // No active screen record permission, enforce protection immediately
+        getIt<ScreenProtectionService>().enableProtection();
       }
     });
   }
@@ -2745,11 +2782,15 @@ class _ChatPageState extends State<ChatPage> {
     getIt<InAppNotificationService>().clearActiveChat();
     _callSocketSubscription?.cancel();
     _screenshotSubscription?.cancel();
+    _screenRecordSubscription?.cancel();
     _screenRecordTimer?.cancel();
     _screenRecordTimer = null;
     _screenRecordCountdownTimer?.cancel();
     _screenRecordCountdownTimer = null;
+    _screenRecordPrepTimer?.cancel();
+    _screenRecordPrepTimer = null;
     _isScreenRecordingActive = false;
+    _isSystemRecordingStarted = false;
     _screenshotAutoExpireTimer?.cancel();
     _screenshotAutoExpireTimer = null;
     _highlightTimer?.cancel();
@@ -7536,13 +7577,48 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  void _onSystemScreenRecordStarted(ScreenPermissionModel perm) {
+    final duration = perm.durationSeconds ?? 30;
+    if (!_isSystemRecordingStarted) {
+      _screenRecordPrepTimer?.cancel();
+      _screenRecordCountdownTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _isSystemRecordingStarted = true;
+          _screenRecordRemainingSeconds = duration;
+        });
+        context.showSuccessNotification('Recording started! Full ${duration}s countdown in progress.');
+      } else {
+        _isSystemRecordingStarted = true;
+        _screenRecordRemainingSeconds = duration;
+      }
+
+      _screenRecordCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        if (_screenRecordRemainingSeconds <= 1) {
+          timer.cancel();
+          _stopScreenRecording(perm.id, completedByTimer: true);
+        } else {
+          setState(() {
+            _screenRecordRemainingSeconds--;
+          });
+        }
+      });
+    }
+  }
+
   void _startScreenRecording(ScreenPermissionModel perm) async {
     final duration = perm.durationSeconds ?? 30;
     _screenRecordTimer?.cancel();
     _screenRecordCountdownTimer?.cancel();
+    _screenRecordPrepTimer?.cancel();
 
     setState(() {
       _isScreenRecordingActive = true;
+      _isSystemRecordingStarted = false;
       _screenRecordRemainingSeconds = duration;
       _activeScreenRecordPermissionId = perm.id;
     });
@@ -7552,22 +7628,24 @@ class _ChatPageState extends State<ChatPage> {
 
     if (mounted) {
       context.showSuccessNotification(
-        'Screen recording active for ${duration}s. You can start recording now.',
+        'Recording mode enabled! Start your system screen recording now. Full ${duration}s will be recorded.',
       );
     }
 
-    _screenRecordCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
+    // Give a 5-second preparation buffer for user to swipe down Control Center and tap Record.
+    // If isCaptured is detected, _onSystemScreenRecordStarted takes over with full duration.
+    // Otherwise fallback after 5s to run the countdown timer directly.
+    _screenRecordPrepTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted || !_isScreenRecordingActive) return;
+      if (!_isSystemRecordingStarted) {
+        _onSystemScreenRecordStarted(perm);
       }
-      if (_screenRecordRemainingSeconds <= 1) {
-        timer.cancel();
+    });
+
+    // Safety timeout: if recording is left running and forgotten, auto-cancel after duration + 60s
+    _screenRecordTimer = Timer(Duration(seconds: duration + 60), () {
+      if (_isScreenRecordingActive) {
         _stopScreenRecording(perm.id, completedByTimer: true);
-      } else {
-        setState(() {
-          _screenRecordRemainingSeconds--;
-        });
       }
     });
   }
@@ -7575,17 +7653,21 @@ class _ChatPageState extends State<ChatPage> {
   void _stopScreenRecording(String permId, {bool completedByTimer = false}) async {
     _screenRecordTimer?.cancel();
     _screenRecordCountdownTimer?.cancel();
+    _screenRecordPrepTimer?.cancel();
     _screenRecordTimer = null;
     _screenRecordCountdownTimer = null;
+    _screenRecordPrepTimer = null;
 
     if (mounted) {
       setState(() {
         _isScreenRecordingActive = false;
+        _isSystemRecordingStarted = false;
         _screenRecordRemainingSeconds = 0;
         _activeScreenRecordPermissionId = null;
       });
     } else {
       _isScreenRecordingActive = false;
+      _isSystemRecordingStarted = false;
       _screenRecordRemainingSeconds = 0;
       _activeScreenRecordPermissionId = null;
     }
@@ -7628,8 +7710,9 @@ class _ChatPageState extends State<ChatPage> {
       final totalDuration = perm.durationSeconds ?? 30;
 
       if (_isScreenRecordingActive) {
-        // Active recording UI with live countdown and Stop button
         final progress = totalDuration > 0 ? (_screenRecordRemainingSeconds / totalDuration) : 0.0;
+        final isCountingDown = _isSystemRecordingStarted;
+
         return Container(
           width: double.infinity,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -7645,11 +7728,18 @@ class _ChatPageState extends State<ChatPage> {
               Row(
                 children: [
                   Container(
-                    width: 10,
-                    height: 10,
-                    decoration: const BoxDecoration(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
                       color: Colors.redAccent,
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.redAccent.withValues(alpha: 0.6),
+                          blurRadius: 6,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
                   ),
                   CommonSpaces.w10,
@@ -7658,14 +7748,16 @@ class _ChatPageState extends State<ChatPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Screen Recording Active',
+                          isCountingDown ? '⏺️ Recording In Progress' : '⏳ Recording Ready',
                           style: context.bodyMedium.copyWith(
                             color: Colors.redAccent,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
-                          '${_screenRecordRemainingSeconds}s remaining',
+                          isCountingDown
+                              ? '${_screenRecordRemainingSeconds}s remaining • Auto-stops at 0s'
+                              : 'Swipe Control Center & tap Record (full ${totalDuration}s)',
                           style: context.bodySmall.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w600,
@@ -7699,16 +7791,18 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ],
               ),
-              CommonSpaces.h8,
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: progress.clamp(0.0, 1.0),
-                  backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
-                  minHeight: 4,
+              if (isCountingDown) ...[
+                CommonSpaces.h8,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress.clamp(0.0, 1.0),
+                    backgroundColor: Colors.redAccent.withValues(alpha: 0.2),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                    minHeight: 4,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         );
@@ -7748,14 +7842,14 @@ class _ChatPageState extends State<ChatPage> {
                     style: context.bodyMedium.copyWith(
                       color: colors.textPrimary,
                       fontWeight: FontWeight.bold,
-                      fontSize: 11.5,
+                      fontSize: 12,
                     ),
                   ),
                   Text(
-                    'Duration: ${totalDuration}s • Tap Start to begin',
+                    'Duration: ${totalDuration}s • Tap Start Record to begin',
                     style: context.bodySmall.copyWith(
                       color: colors.textSecondary,
-                      fontSize: 9.5,
+                      fontSize: 10,
                     ),
                   ),
                 ],
@@ -7763,23 +7857,23 @@ class _ChatPageState extends State<ChatPage> {
             ),
             CommonSpaces.w8,
             SizedBox(
-              height: 30,
+              height: 34,
               child: ElevatedButton.icon(
                 onPressed: () => _startScreenRecording(perm),
-                icon: const Icon(Icons.fiber_manual_record, size: 12, color: Colors.white),
+                icon: const Icon(Icons.fiber_manual_record, size: 14, color: Colors.white),
                 label: Text(
-                  'Start',
+                  'Start Record',
                   style: context.bodySmall.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 10.0,
+                    fontSize: 11.0,
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.redAccent,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),

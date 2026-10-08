@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/common/widgets/auth_hero_header.dart';
+import 'package:schat/common/widgets/mesh_background.dart';
+import 'package:schat/common/widgets/primary_action_button.dart';
 import 'package:schat/features/auth_screen/src/presentation/bloc/auth_bloc.dart';
 import 'package:schat/features/auth_screen/src/presentation/bloc/auth_event.dart';
 import 'package:schat/features/auth_screen/src/presentation/bloc/auth_state.dart';
 import 'package:schat/features/auth_screen/src/presentation/otp_verify_page.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+
 class MobileEntryPage extends StatefulWidget {
   const MobileEntryPage({super.key});
 
@@ -23,12 +25,16 @@ class MobileEntryPage extends StatefulWidget {
 
 class _MobileEntryPageState extends State<MobileEntryPage> {
   final TextEditingController _mobileController = TextEditingController();
+  final FocusNode _phoneFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _fetchMobileNumber();
     getIt<CallNotificationService>().registerDevice();
+    _phoneFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   Future<void> _fetchMobileNumber() async {
@@ -50,6 +56,7 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
   @override
   void dispose() {
     _mobileController.dispose();
+    _phoneFocusNode.dispose();
     super.dispose();
   }
 
@@ -87,7 +94,10 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final fieldBgColor = context.colors.pureWhite.withValues(alpha: 0.1);
+    final isDark = context.colors.isDark;
+    final inputBgColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFF3F4F6);
 
     return BlocProvider<AuthBloc>(
       create: (context) => AuthBloc(),
@@ -113,288 +123,246 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
               final isLoading = state is AuthLoading;
 
               return Scaffold(
-                backgroundColor: context.colors.pureBlack,
-                body: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return SingleChildScrollView(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight,
-                        ),
-                        child: IntrinsicHeight(
-                          child: Column(
-                            children: [
-                               CommonSpaces.h20,
-                              Expanded(
-                                child: Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: Image.asset(
-                                        'assets/neon_speech_globe.png',
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: -1,
-                                      left: 0,
-                                      right: 0,
-                                      height: 150,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topCenter,
-                                            end: Alignment.bottomCenter,
-                                            colors: [
-                                              context.colors.pureBlack
-                                                  .withValues(alpha: 0),
-                                              context.colors.pureBlack,
-                                            ],
+                backgroundColor: context.colors.scaffoldBackground,
+                body: MeshBackground(
+                  child: SafeArea(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: constraints.maxHeight,
+                            ),
+                            child: IntrinsicHeight(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Spacer(flex: 2),
+
+                                  // Brand Hero with concentric glowing rings, floating dots, and S-CHAT
+                                  const AuthHeroHeader(),
+
+                                  const Spacer(flex: 3),
+
+                                  // Headline
+                                  Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: "Let's ",
+                                          style: context.h1.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.5,
+                                            color: context.colors.textPrimary,
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              CommonSpaces.h20,
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32.0,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text.rich(
-                                            TextSpan(
-                                              children: [
-                                                TextSpan(
-                                                  text: "Let's ",
-                                                  style: context.h1.copyWith(
-                                                    fontSize: 36,
-                                                    color: context
-                                                        .colors
-                                                        .pureWhite,
-                                                  ),
-                                                ),
-                                                TextSpan(
-                                                  text: "get ",
-                                                  style: context.h1Italic
-                                                      .copyWith(
-                                                        fontSize: 34,
-                                                        color: context
-                                                            .colors
-                                                            .pureWhite,
-                                                      ),
-                                                ),
-                                                TextSpan(
-                                                  text: "you in.",
-                                                  style: context.h1.copyWith(
-                                                    fontSize: 36,
-                                                    color: context
-                                                        .colors
-                                                        .pureWhite,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                                        TextSpan(
+                                          text: "get ",
+                                          style: context.h1Italic.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            fontStyle: FontStyle.italic,
+                                            color: context.colors.primary,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: "you in.",
+                                          style: context.h1.copyWith(
+                                            fontSize: 34,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.5,
+                                            color: context.colors.textPrimary,
                                           ),
                                         ),
                                       ],
                                     ),
-                                    CommonSpaces.h24,
-                                    Text(
-                                      'Phone number',
-                                      style: context.titleSmall.copyWith(
-                                        color: context.colors.pureWhite,
-                                      ),
+                                  ),
+                                  CommonSpaces.h8,
+                                  Text(
+                                    'Enter your mobile number to get started with end-to-end encrypted chats.',
+                                    style: context.bodyMedium.copyWith(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 14.5,
+                                      height: 1.35,
                                     ),
-                                    CommonSpaces.h12,
-                                    SizedBox(
-                                      height: CommonSizes.p40,
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 6,
-                                            ),
+                                  ),
+                                  CommonSpaces.h24,
 
-                                            decoration: BoxDecoration(
-                                              color: fieldBgColor,
-                                               borderRadius: BorderRadius.circular(
-                                                16,
+                                  // Phone Number Label
+                                  Text(
+                                    'Phone number',
+                                    style: context.titleSmall.copyWith(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  CommonSpaces.h8,
+
+                                  // Phone Input Field
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: inputBgColor,
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: _phoneFocusNode.hasFocus
+                                            ? context.colors.primary
+                                            : (isDark
+                                                ? Colors.white.withValues(alpha: 0.12)
+                                                : context.colors.primary.withValues(alpha: 0.28)),
+                                        width: _phoneFocusNode.hasFocus ? 1.8 : 1.2,
+                                      ),
+                                      boxShadow: _phoneFocusNode.hasFocus
+                                          ? [
+                                              BoxShadow(
+                                                color: context.colors.primary.withValues(alpha: 0.18),
+                                                blurRadius: 12,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ]
+                                          : [
+                                              BoxShadow(
+                                                color: Colors.black.withValues(
+                                                    alpha: isDark ? 0.2 : 0.03),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 14, right: 8),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Text(
+                                                '🇮🇳',
+                                                style: TextStyle(fontSize: 20),
+                                              ),
+                                              CommonSpaces.w6,
+                                              Text(
+                                                '+91',
+                                                style: context.titleMedium.copyWith(
+                                                  color: context.colors.textPrimary,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 15.5,
+                                                ),
+                                              ),
+                                              CommonSpaces.w4,
+                                              Icon(
+                                                Icons.keyboard_arrow_down_rounded,
+                                                size: 18,
+                                                color: context.colors.textSecondary,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(
+                                          height: 24,
+                                          width: 1,
+                                          color: isDark
+                                              ? Colors.white.withValues(alpha: 0.15)
+                                              : const Color(0xFFD1D5DB),
+                                        ),
+                                        CommonSpaces.w8,
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _mobileController,
+                                            focusNode: _phoneFocusNode,
+                                            autofocus: true,
+                                            keyboardType: TextInputType.phone,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter.digitsOnly,
+                                              LengthLimitingTextInputFormatter(10),
+                                            ],
+                                            maxLength: 10,
+                                            style: context.titleMedium.copyWith(
+                                              color: context.colors.textPrimary,
+                                              fontWeight: FontWeight.w600,
+                                              letterSpacing: 1.5,
+                                              fontSize: 16,
+                                            ),
+                                            decoration: InputDecoration(
+                                              hintText: '000 000 0000',
+                                              counterText: '',
+                                              hintStyle: context.bodyMedium.copyWith(
+                                                color: context.colors.textSecondary
+                                                    .withValues(alpha: 0.45),
+                                                letterSpacing: 1.5,
+                                                fontSize: 16,
+                                              ),
+                                              border: InputBorder.none,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 14,
                                               ),
                                             ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  '🇮🇳',
-                                                  style: context.bodyLarge
-                                                      .copyWith(fontSize: 22),
-                                                ),
-                                                CommonSpaces.w8,
-                                                Text(
-                                                  '+91',
-                                                  style: context.titleSmall
-                                                      .copyWith(
-                                                        color: context
-                                                            .colors
-                                                            .pureWhite,
-                                                      ),
-                                                ),
-                                              ],
+                                            onChanged: (_) => setState(() {}),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  CommonSpaces.h24,
+
+                                  // Continue Button
+                                  PrimaryActionButton(
+                                    title: 'Continue',
+                                    isLoading: isLoading,
+                                    onPressed: isLoading ? null : () => _sendOtp(context),
+                                  ),
+
+                                  CommonSpaces.h20,
+
+                                  // Terms & Privacy
+                                  Center(
+                                    child: Text.rich(
+                                      TextSpan(
+                                        text: 'By continuing you agree to our\n',
+                                        style: context.bodySmall.copyWith(
+                                          color: context.colors.textSecondary,
+                                          height: 1.4,
+                                          fontSize: 12.5,
+                                        ),
+                                        children: [
+                                          TextSpan(
+                                            text: 'Terms',
+                                            style: context.bodySmall.copyWith(
+                                              color: context.colors.primary,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12.5,
                                             ),
                                           ),
-                                          CommonSpaces.w12,
-                                          Expanded(
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: fieldBgColor,
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                              ),
-                                              child: TextField(
-                                                controller: _mobileController,
-                                                autofocus: true,
-                                                keyboardType: TextInputType.phone,
-                                                inputFormatters: [
-                                                  FilteringTextInputFormatter.digitsOnly,
-                                                  LengthLimitingTextInputFormatter(10),
-                                                ],
-                                                maxLength: 10,
-                                                style: context.titleSmall
-                                                    .copyWith(
-                                                      color: context
-                                                          .colors
-                                                          .pureWhite,
-                                                    ),
-                                                decoration: InputDecoration(
-                                                  hintText: '000 000 0000',
-                                                  counterText: '',
-                                                  hintStyle: context.bodyMedium
-                                                      .copyWith(
-                                                        color: context
-                                                            .colors
-                                                            .pureWhite
-                                                            .withValues(
-                                                              alpha: 0.4,
-                                                            ),
-                                                      ),
-                                                  border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(16),
-                                                    borderSide: BorderSide.none,
-                                                  ),
-                                                  contentPadding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 20,
-                                                        vertical: 6,
-                                                      ),
-                                                ),
-                                              ),
+                                          const TextSpan(text: ' & '),
+                                          TextSpan(
+                                            text: 'Privacy Policy',
+                                            style: context.bodySmall.copyWith(
+                                              color: context.colors.primary,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12.5,
                                             ),
                                           ),
                                         ],
                                       ),
+                                      textAlign: TextAlign.center,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  CommonSpaces.h20,
+                                ],
                               ),
-                              CommonSpaces.h20,
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                bottomNavigationBar: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          height: 46,
-                          child: ElevatedButton(
-                            onPressed: isLoading
-                                ? null
-                                : () => _sendOtp(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: context.colors.primary,
-                              foregroundColor: context.colors.pureWhite,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              elevation: 0,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'Continue',
-                                  style: context.titleMedium.copyWith(
-                                    color: context.colors.pureWhite,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                CommonSpaces.w8,
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: context.colors.pureWhite,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    CommonIcons.arrowForward,
-                                    color: context.colors.primary,
-                                    size: 16,
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
-                        ),
-                        CommonSpaces.h24,
-                        Center(
-                          child: Text.rich(
-                            TextSpan(
-                              text: 'By continuing you agree to our\n',
-                              style: context.bodyMedium.copyWith(
-                                color: context.colors.pureWhite.withValues(
-                                  alpha: 0.5,
-                                ),
-                                height: 1.4,
-                              ),
-                              children: [
-                                TextSpan(
-                                  text: 'Terms',
-                                  style: context.bodyMedium.copyWith(
-                                    color: context.colors.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const TextSpan(text: ' & '),
-                                TextSpan(
-                                  text: 'Privacy Policy',
-                                  style: context.bodyMedium.copyWith(
-                                    color: context.colors.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        CommonSpaces.h14,
-                      ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -406,3 +374,4 @@ class _MobileEntryPageState extends State<MobileEntryPage> {
     );
   }
 }
+

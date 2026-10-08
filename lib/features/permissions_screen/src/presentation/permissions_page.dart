@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:schat/common/widgets/auth_hero_header.dart';
+import 'package:schat/common/widgets/primary_action_button.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/utils/common_sizes.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/permission_helper.dart';
 
@@ -94,6 +95,7 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
   @override
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
+    final primaryColor = context.colors.primary;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
@@ -115,100 +117,59 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
                 Expanded(
                   child: ListView(
                     physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
                     children: [
-                      CommonSpaces.h16,
-                      // Header Section
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF00873C).withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF00873C).withValues(alpha: 0.35),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFF00873C).withValues(alpha: 0.1),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.shield_outlined,
-                              color: Color(0xFF00873C),
-                              size: 28,
-                            ),
-                          ),
-                          CommonSpaces.w16,
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Access Permissions',
-                                  style: context.h2.copyWith(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.3,
-                                    color: context.colors.textPrimary,
-                                  ),
-                                ),
-                                CommonSpaces.h4,
-                                Text(
-                                  'Enable features for secure chat & calls',
-                                  style: context.bodySmall.copyWith(
-                                    color: context.colors.textSecondary,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                      CommonSpaces.h12,
+
+                      // Brand Hero
+                      const AuthHeroHeader(),
+
                       CommonSpaces.h24,
 
-                      // Informative banner card
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: context.colors.lightBackground.withValues(alpha: isDark ? 0.7 : 0.9),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: context.colors.border.withValues(alpha: 0.25),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      // Headline
+                      Text.rich(
+                        TextSpan(
                           children: [
-                            Icon(
-                              Icons.lock_outline_rounded,
-                              size: 16,
-                              color: context.colors.primary,
+                            TextSpan(
+                              text: "Allow ",
+                              style: context.h1.copyWith(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                                color: context.colors.textPrimary,
+                              ),
                             ),
-                            CommonSpaces.w8,
-                            Expanded(
-                              child: Text(
-                                'sChat requires these permissions to protect and route your calls, sync contacts, and enable media capture.',
-                                style: context.bodyMedium.copyWith(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 12.5,
-                                  height: 1.35,
-                                ),
+                            TextSpan(
+                              text: "required ",
+                              style: context.h1Italic.copyWith(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                fontStyle: FontStyle.italic,
+                                color: primaryColor,
+                              ),
+                            ),
+                            TextSpan(
+                              text: "access.",
+                              style: context.h1.copyWith(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                                color: context.colors.textPrimary,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      CommonSpaces.h16,
+                      CommonSpaces.h8,
+                      Text(
+                        'Enable permissions to start messaging and calling smoothly.',
+                        style: context.bodyMedium.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 14,
+                          height: 1.35,
+                        ),
+                      ),
+                      CommonSpaces.h20,
 
                       // Permissions List
                       _buildPermissionItem(
@@ -248,53 +209,13 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
                 ),
 
                 // Bottom Action Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: context.colors.scaffoldBackground.withValues(alpha: 0.95),
-                    border: Border(
-                      top: BorderSide(
-                        color: context.colors.border.withValues(alpha: 0.15),
-                        width: 1,
-                      ),
-                    ),
-                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
                   child: SafeArea(
                     top: false,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _onContinue,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: context.colors.primary,
-                          foregroundColor: Colors.white,
-                          elevation: 2,
-                          shadowColor: context.colors.primary.withValues(alpha: 0.4),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(CommonSizes.r24),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Continue',
-                              style: context.buttonText.copyWith(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            CommonSpaces.w8,
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                          ],
-                        ),
-                      ),
+                    child: PrimaryActionButton(
+                      title: 'Continue',
+                      onPressed: _onContinue,
                     ),
                   ),
                 ),
