@@ -30,14 +30,94 @@ class MainActivity : FlutterActivity() {
     private var lastScreenshotTimestamp = 0L
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        if (isVoiceOrAssistantTrigger(intent)) {
+            finishAndRemoveTask()
+            return
+        }
         super.onCreate(savedInstanceState)
         bringActivityToFront()
     }
 
     override fun onNewIntent(intent: Intent) {
+        if (isVoiceOrAssistantTrigger(intent)) {
+            finishAndRemoveTask()
+            return
+        }
         super.onNewIntent(intent)
         setIntent(intent)
         bringActivityToFront()
+    }
+
+    override fun onProvideAssistContent(outContent: android.app.assist.AssistContent?) {
+        // Block Gemini / Google Assistant from reading active screen context
+    }
+
+    override fun onProvideAssistData(data: android.os.Bundle?) {
+        // Block Assist Data
+    }
+
+    private fun isVoiceOrAssistantTrigger(intent: Intent?): Boolean {
+        if (intent == null) return false
+
+        // 1. Check Voice Interaction API (Android 6.0+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                if (isVoiceInteraction || isVoiceInteractionRoot) {
+                    return true
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        // 2. Check Intent Categories
+        val categories = intent.categories
+        if (categories != null && categories.contains(Intent.CATEGORY_VOICE)) {
+            return true
+        }
+
+        // 3. Check Intent Action
+        val action = intent.action ?: ""
+        if (action.contains("VOICE", ignoreCase = true) ||
+            action == Intent.ACTION_ASSIST ||
+            action == "android.intent.action.VOICE_COMMAND" ||
+            action == "android.speech.action.VOICE_SEARCH_RESULTS" ||
+            action == "android.speech.action.WEB_SEARCH" ||
+            action == "com.google.android.gms.actions.SEARCH_ACTION") {
+            return true
+        }
+
+        // 4. Check Assist Extras
+        if (intent.hasExtra("android.intent.extra.ASSIST_PACKAGE") ||
+            intent.hasExtra("android.intent.extra.ASSIST_CONTEXT") ||
+            intent.hasExtra("android.intent.extra.IS_VOICE_INTERACTION")) {
+            return true
+        }
+
+        // 5. Check Referrer from Assistant/Gemini
+        try {
+            @Suppress("DEPRECATION")
+            val referrerUri = referrer ?: intent.getParcelableExtra<Uri>(Intent.EXTRA_REFERRER)
+            val referrerStr = referrerUri?.toString() ?: intent.getStringExtra("android.intent.extra.REFERRER_NAME") ?: ""
+            if (referrerStr.isNotEmpty()) {
+                val assistantPackages = listOf(
+                    "com.google.android.googlequicksearchbox",
+                    "com.google.android.apps.googleassistant",
+                    "com.google.android.apps.bard",
+                    "com.samsung.android.bixby",
+                    "com.samsung.android.bixby.agent"
+                )
+                for (pkg in assistantPackages) {
+                    if (referrerStr.contains(pkg, ignoreCase = true)) {
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+
+        return false
     }
 
     private fun bringActivityToFront() {
