@@ -1223,9 +1223,12 @@ class WebRtcService {
       final answer = await _peerConnection!.createAnswer(_offerConstraints);
       await _peerConnection!.setLocalDescription(answer);
 
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
       final payload = <String, dynamic>{
         'type': 'call_switch_response',
         'conversation_id': _activeConversationId,
+        'sender_id': myId,
+        'senderId': myId,
         'accepted': true,
         'call_type': isVideo ? 'video' : 'audio',
         'sdp': {
@@ -1248,9 +1251,12 @@ class WebRtcService {
   }) {
     if (_activeConversationId == null) return;
     
+    final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
     final payload = <String, dynamic>{
       'type': 'call_switch_response',
       'conversation_id': _activeConversationId,
+      'sender_id': myId,
+      'senderId': myId,
       'accepted': false,
     };
     if (messageId != null) payload['message_id'] = messageId;
@@ -1263,9 +1269,18 @@ class WebRtcService {
     if (accepted) {
       final sdpData = event['sdp'] as Map<String, dynamic>?;
       if (sdpData != null && _peerConnection != null) {
-        final answer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
-        await _peerConnection!.setRemoteDescription(answer);
-        await _processRemoteCandidateQueue();
+        try {
+          final state = await _peerConnection!.getSignalingState();
+          if (state == RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+            final answer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
+            await _peerConnection!.setRemoteDescription(answer);
+            await _processRemoteCandidateQueue();
+          } else {
+            debugPrint('WebRTC: Skipping setRemoteDescription in handleCallSwitchResponded (signalingState=$state)');
+          }
+        } catch (e) {
+          debugPrint('WebRTC: Error setting remote answer in handleCallSwitchResponded: $e');
+        }
       }
       
       // Ensure renderers refresh video texture
