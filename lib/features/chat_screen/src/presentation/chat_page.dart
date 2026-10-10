@@ -3277,12 +3277,16 @@ class _ChatPageState extends State<ChatPage> {
       final repo = getIt<ChatRepository>();
       fileKey = await repo.uploadMedia(
         conversationId: widget.conversationId,
+        recipientId: widget.recipientId,
         filePath: path,
         fileName: name,
         mediaType: 'VOICE_NOTE',
         mimeType: 'audio/mpeg',
         fileSizeBytes: size,
         fileBytes: bytes,
+        allowView: allowView,
+        allowDownload: allowDownload,
+        allowShare: allowShare,
       );
     } catch (e) {
       debugPrint('Voice upload error: $e');
@@ -3834,12 +3838,16 @@ class _ChatPageState extends State<ChatPage> {
       final repo = getIt<ChatRepository>();
       fileKey = await repo.uploadMedia(
         conversationId: widget.conversationId,
+        recipientId: widget.recipientId,
         filePath: path ?? '',
         fileName: name,
         mediaType: _getMediaType(type),
         mimeType: _getMimeType(name, type),
         fileSizeBytes: size,
         fileBytes: bytes,
+        allowView: allowView,
+        allowDownload: allowDownload,
+        allowShare: allowShare,
       );
     } catch (e) {
       debugPrint('Background upload error: $e');

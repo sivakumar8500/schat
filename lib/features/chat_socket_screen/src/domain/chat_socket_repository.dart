@@ -394,8 +394,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       ...security,
       'isLocked': security['isLocked'] ?? security['is_locked'] ?? false,
       'is_locked': security['isLocked'] ?? security['is_locked'] ?? false,
-      'accessUsers': security['accessUsers'] ?? security['access_users'] ?? [],
-      'access_users': security['accessUsers'] ?? security['access_users'] ?? [],
+      if ((security['accessUsers'] is List && (security['accessUsers'] as List).isNotEmpty))
+        'accessUsers': security['accessUsers'],
+      if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
+        'access_users': security['access_users'],
       'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
       'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
       'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
@@ -519,12 +521,14 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       ...security,
       'isLocked': security['isLocked'] ?? security['is_locked'] ?? false,
       'is_locked': security['isLocked'] ?? security['is_locked'] ?? false,
-      'accessUsers': security['accessUsers'] ?? security['access_users'] ?? [],
-      'access_users': security['accessUsers'] ?? security['access_users'] ?? [],
-      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
-      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
+      if ((security['accessUsers'] is List && (security['accessUsers'] as List).isNotEmpty))
+        'accessUsers': security['accessUsers'],
+      if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
+        'access_users': security['access_users'],
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? true,
       'allowView': security['allowView'] ?? security['allow_view'] ?? true,
       'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
       'canView': security['allowView'] ?? security['allow_view'] ?? true,

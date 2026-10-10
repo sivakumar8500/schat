@@ -138,6 +138,7 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<String?> uploadMedia({
     required String conversationId,
+    String? recipientId,
     required String filePath,
     required String fileName,
     required String mediaType,
@@ -145,6 +146,9 @@ class ChatRepositoryImpl implements ChatRepository {
     required int fileSizeBytes,
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
+    bool allowView = true,
+    bool allowDownload = true,
+    bool allowShare = true,
   }) async {
     try {
       if (!kIsWeb) {
@@ -435,6 +439,21 @@ class ChatRepositoryImpl implements ChatRepository {
 
       if (completedObjectKey == null) {
         throw lastCompleteError ?? Exception('Failed to complete upload after retries');
+      }
+
+      if (mediaId.isNotEmpty && recipientId != null && recipientId.isNotEmpty) {
+        try {
+          await shareMedia(
+            mediaId: mediaId,
+            granteeId: recipientId,
+            canView: allowView,
+            canDownload: allowDownload,
+            canShare: allowShare,
+          );
+          debugPrint('Successfully auto-granted media share ($mediaId) to $recipientId');
+        } catch (e) {
+          debugPrint('Error auto-granting media share to recipient: $e');
+        }
       }
 
       return completedObjectKey;

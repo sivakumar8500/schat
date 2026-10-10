@@ -14,6 +14,7 @@ abstract class ChatRepository {
   Future<bool> sendMessage(MessageModel message);
   Future<String?> uploadMedia({
     required String conversationId,
+    String? recipientId,
     required String filePath,
     required String fileName,
     required String mediaType, // CHAT_IMAGE, CHAT_VIDEO, VOICE_NOTE, DOCUMENT
@@ -21,6 +22,9 @@ abstract class ChatRepository {
     required int fileSizeBytes,
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
+    bool allowView = true,
+    bool allowDownload = true,
+    bool allowShare = true,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);

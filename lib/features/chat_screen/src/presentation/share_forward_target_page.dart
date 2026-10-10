@@ -327,14 +327,20 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
       if (widget.mediaItems.isNotEmpty) {
         for (final item in widget.mediaItems) {
           String? fileKey;
+          final firstTarget = _selectedTargets.isNotEmpty ? _selectedTargets.first : null;
+          final targetRecipientId = firstTarget?.userModel?.id ?? (firstTarget?.chatModel?.recipient.id.isNotEmpty == true ? firstTarget?.chatModel?.recipient.id : null);
           try {
             fileKey = await chatRepo.uploadMedia(
               conversationId: primaryConvId,
+              recipientId: targetRecipientId,
               filePath: item.path,
               fileName: item.name,
               mediaType: _getMediaType(item.type),
               mimeType: _getMimeType(item.name, item.type),
               fileSizeBytes: item.size > 0 ? item.size : 1024,
+              allowView: true,
+              allowDownload: true,
+              allowShare: true,
             );
           } catch (uploadErr) {
             debugPrint('Upload error during share: $uploadErr');
