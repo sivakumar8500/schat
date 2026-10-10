@@ -1100,8 +1100,16 @@ class WebRtcService {
             },
           });
           for (var track in videoStream.getVideoTracks()) {
+            track.enabled = true;
             _localStream?.addTrack(track);
-            await _peerConnection!.addTrack(track, _localStream!);
+            if (_peerConnection != null) {
+              await _peerConnection!.addTrack(track, _localStream!);
+            }
+            for (var pc in _peerConnections.values) {
+              try {
+                await pc.addTrack(track, _localStream!);
+              } catch (_) {}
+            }
           }
         } else {
           for (var track in _localStream!.getVideoTracks()) {
@@ -1112,15 +1120,18 @@ class WebRtcService {
         for (var track in _localStream?.getVideoTracks() ?? []) {
           track.stop();
           _localStream?.removeTrack(track);
-          final senders = await _peerConnection?.getSenders() ?? [];
-          for (var sender in senders) {
-            if (sender.track?.kind == 'video') {
-              await _peerConnection?.removeTrack(sender);
+          if (_peerConnection != null) {
+            final senders = await _peerConnection!.getSenders();
+            for (var sender in senders) {
+              if (sender.track?.kind == 'video') {
+                await _peerConnection!.removeTrack(sender);
+              }
             }
           }
         }
       }
 
+      localRenderer.srcObject = null;
       localRenderer.srcObject = _localStream;
       _localStreamController.add(_localStream);
 
@@ -1138,6 +1149,7 @@ class WebRtcService {
           'sdp': offer.sdp,
         }
       });
+      debugPrint('WebRTC: Sent call_switch_request with renegotiated video offer');
     } catch (e) {
       debugPrint('WebRTC: Error in requestCallSwitch: $e');
     }
@@ -1152,13 +1164,6 @@ class WebRtcService {
     if (_peerConnection == null || _activeConversationId == null) return;
     
     try {
-      // Set remote description if offer is provided
-      if (remoteOfferEvent != null && remoteOfferEvent['sdp'] != null) {
-        final sdpData = remoteOfferEvent['sdp'];
-        final remoteOffer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
-        await _peerConnection!.setRemoteDescription(remoteOffer);
-      }
-      
       if (isVideo) {
         if ((_localStream?.getVideoTracks() ?? []).isEmpty) {
           final videoStream = await navigator.mediaDevices.getUserMedia({
@@ -1171,8 +1176,16 @@ class WebRtcService {
             },
           });
           for (var track in videoStream.getVideoTracks()) {
+            track.enabled = true;
             _localStream?.addTrack(track);
-            await _peerConnection!.addTrack(track, _localStream!);
+            if (_peerConnection != null) {
+              await _peerConnection!.addTrack(track, _localStream!);
+            }
+            for (var pc in _peerConnections.values) {
+              try {
+                await pc.addTrack(track, _localStream!);
+              } catch (_) {}
+            }
           }
         } else {
           for (var track in _localStream!.getVideoTracks()) {
@@ -1183,17 +1196,28 @@ class WebRtcService {
         for (var track in _localStream?.getVideoTracks() ?? []) {
           track.stop();
           _localStream?.removeTrack(track);
-          final senders = await _peerConnection?.getSenders() ?? [];
-          for (var sender in senders) {
-            if (sender.track?.kind == 'video') {
-              await _peerConnection?.removeTrack(sender);
+          if (_peerConnection != null) {
+            final senders = await _peerConnection!.getSenders();
+            for (var sender in senders) {
+              if (sender.track?.kind == 'video') {
+                await _peerConnection!.removeTrack(sender);
+              }
             }
           }
         }
       }
 
+      localRenderer.srcObject = null;
       localRenderer.srcObject = _localStream;
       _localStreamController.add(_localStream);
+
+      // Set remote description if offer is provided
+      if (remoteOfferEvent != null && remoteOfferEvent['sdp'] != null) {
+        final sdpData = remoteOfferEvent['sdp'];
+        final remoteOffer = RTCSessionDescription(sdpData['sdp'], sdpData['type']);
+        await _peerConnection!.setRemoteDescription(remoteOffer);
+        await _processRemoteCandidateQueue();
+      }
       
       // Create new answer
       final answer = await _peerConnection!.createAnswer(_offerConstraints);
@@ -1212,6 +1236,7 @@ class WebRtcService {
       if (messageId != null) payload['message_id'] = messageId;
       
       repository.emit('message', payload);
+      debugPrint('WebRTC: acceptCallSwitch complete, sent call_switch_response');
     } catch (e) {
       debugPrint('WebRTC: Error in acceptCallSwitch: $e');
     }
@@ -1243,15 +1268,20 @@ class WebRtcService {
         await _processRemoteCandidateQueue();
       }
       
-      // Update local stream if we requested switch
-      final newType = event['call_type'] as String?;
-      if (newType != null) {
-        final isVideo = newType == 'video';
-        // We already replaced tracks in requestCallSwitch, but just in case we need to refresh UI:
-        debugPrint('WebRTC: Switch to $newType accepted (isVideo=$isVideo)');
+      // Ensure renderers refresh video texture
+      if (_localStream != null) {
+        localRenderer.srcObject = null;
+        localRenderer.srcObject = _localStream;
+        _localStreamController.add(_localStream);
       }
+      if (_remoteStream != null) {
+        remoteRenderer.srcObject = null;
+        remoteRenderer.srcObject = _remoteStream;
+        _remoteStreamController.add(_remoteStream);
+      }
+      _callSignalController.add(CallSignalState.active);
+      debugPrint('WebRTC: Switch to video accepted and renderers refreshed');
     } else {
-      // Remote rejected the switch.
       debugPrint('WebRTC: Remote party rejected the switch');
     }
   }
@@ -1556,14 +1586,12 @@ class WebRtcService {
         _remoteStream?.addTrack(event.track);
       }
       if (_remoteStream != null) {
+        for (var track in _remoteStream!.getTracks()) {
+          track.enabled = true;
+        }
+        remoteRenderer.srcObject = null;
         remoteRenderer.srcObject = _remoteStream;
         _remoteStreamController.add(_remoteStream);
-        
-        // Ensure ALL tracks are enabled
-        _remoteStream?.getTracks().forEach((track) {
-          track.enabled = true;
-          debugPrint('WebRTC: Remote track: ${track.kind}, id: ${track.id}, enabled: ${track.enabled}');
-        });
       }
 
       _callSignalController.add(CallSignalState.active);
@@ -1573,14 +1601,12 @@ class WebRtcService {
     _peerConnection?.onAddStream = (MediaStream stream) {
       debugPrint('WebRTC: onAddStream event - id: ${stream.id}, tracks: ${stream.getTracks().length}');
       _remoteStream = stream;
+      for (var track in _remoteStream!.getTracks()) {
+        track.enabled = true;
+      }
+      remoteRenderer.srcObject = null;
       remoteRenderer.srcObject = _remoteStream;
       _remoteStreamController.add(_remoteStream);
-
-      _remoteStream?.getTracks().forEach((track) {
-        track.enabled = true;
-        debugPrint('WebRTC: onAddStream track: ${track.kind}, id: ${track.id}, enabled: ${track.enabled}');
-      });
-
       _callSignalController.add(CallSignalState.active);
     };
 

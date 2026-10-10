@@ -62,6 +62,7 @@ class _VideoCallPageState extends State<VideoCallPage>
   Timer? _timer;
   bool _isNetworkConnected = true;
   StreamSubscription? _connectivitySubscription;
+  StreamSubscription? _localStreamSubscription;
   StreamSubscription? _remoteStreamSubscription;
   StreamSubscription? _callSignalSubscription;
   bool _isNavigating = false;
@@ -92,6 +93,15 @@ class _VideoCallPageState extends State<VideoCallPage>
       debugPrint('Wakelock error in VideoCallPage: $e');
     }
 
+    if (_webRtcService.currentLocalStream != null) {
+      _webRtcService.localRenderer.srcObject = null;
+      _webRtcService.localRenderer.srcObject = _webRtcService.currentLocalStream;
+    }
+    if (_webRtcService.currentRemoteStream != null) {
+      _webRtcService.remoteRenderer.srcObject = null;
+      _webRtcService.remoteRenderer.srcObject = _webRtcService.currentRemoteStream;
+    }
+
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -112,6 +122,12 @@ class _VideoCallPageState extends State<VideoCallPage>
         setState(() {
           _isNetworkConnected = connected;
         });
+      }
+    });
+
+    _localStreamSubscription = _webRtcService.localStream.listen((_) {
+      if (mounted) {
+        setState(() {});
       }
     });
 
@@ -212,6 +228,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     _controlsTimer?.cancel();
     _fadeController.dispose();
     _connectivitySubscription?.cancel();
+    _localStreamSubscription?.cancel();
     _remoteStreamSubscription?.cancel();
     _callSignalSubscription?.cancel();
 
