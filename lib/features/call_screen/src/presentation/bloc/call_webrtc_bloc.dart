@@ -1400,9 +1400,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     HandleCallParticipantJoinedEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
-    debugPrint('CallWebRtcBloc: Participant joined event: ${event.event}');
-    _soundService.stopAll();
-    _cancelCallTimeoutTimer();
+    debugPrint('CallWebRtcBloc: Participant joined event: ${event.event} (currentState=$state)');
+    if (state is! CallRinging) {
+      _soundService.stopAll();
+      _cancelCallTimeoutTimer();
+    }
 
     if (event.event['answer'] != null) {
       try {
@@ -1525,11 +1527,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       }
     }
 
+    if (state is CallRinging) {
+      debugPrint('CallWebRtcBloc: User ${user.id} joined group call. Local user is still in CallRinging, keeping ringtone active.');
+      final current = state as CallRinging;
+      final updatedConnected = {...current.connectedParticipantIds, user.id, ...extraConnected};
+      emit(current.copyWith(
+        connectedParticipantIds: updatedConnected,
+      ));
+      return;
+    }
+
     // In group calls, initiate a direct WebRTC peer offer to connect audio/video with the joining user
-    if (convoId.isNotEmpty && user.id.isNotEmpty && (state is CallActive || state is CallConnecting || state is CallRinging)) {
+    if (convoId.isNotEmpty && user.id.isNotEmpty && (state is CallActive || state is CallConnecting)) {
       final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
-          (state is CallConnecting && (state as CallConnecting).isVideo) ||
-          (state is CallRinging && (state as CallRinging).isVideo);
+          (state is CallConnecting && (state as CallConnecting).isVideo);
       _webRtcService.createOfferForPeer(
         peerId: user.id,
         conversationId: convoId,
