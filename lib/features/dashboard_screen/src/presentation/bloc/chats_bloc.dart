@@ -307,24 +307,59 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     });
   }
 
-  static DateTime _getChatActivityTime(ChatModel chat) {
-    DateTime? dt;
+  static bool _isSameConversation(dynamic id1, dynamic id2) {
+    if (id1 == null || id2 == null) return false;
+    final s1 = id1.toString().replaceAll('-', '').toLowerCase().trim();
+    final s2 = id2.toString().replaceAll('-', '').toLowerCase().trim();
+    return s1.isNotEmpty && s1 == s2;
+  }
+
+  static DateTime _parseDateTime(dynamic raw) {
+    if (raw == null) return DateTime.fromMillisecondsSinceEpoch(0);
+    if (raw is DateTime) return raw.toUtc();
+    if (raw is num) {
+      if (raw > 100000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(raw.toInt(), isUtc: true);
+      } else if (raw > 0) {
+        return DateTime.fromMillisecondsSinceEpoch((raw * 1000).toInt(), isUtc: true);
+      }
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    final s = raw.toString().trim();
+    if (s.isEmpty) return DateTime.fromMillisecondsSinceEpoch(0);
+
+    final numVal = num.tryParse(s);
+    if (numVal != null && numVal > 100000000) {
+      if (numVal > 100000000000) {
+        return DateTime.fromMillisecondsSinceEpoch(numVal.toInt(), isUtc: true);
+      } else {
+        return DateTime.fromMillisecondsSinceEpoch((numVal * 1000).toInt(), isUtc: true);
+      }
+    }
+
+    final parsed = DateTime.tryParse(s);
+    if (parsed != null) return parsed.toUtc();
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static DateTime getChatActivityTime(ChatModel chat) {
+    DateTime latest = DateTime.fromMillisecondsSinceEpoch(0);
+
     final lastMsg = chat.lastMessage;
     if (lastMsg != null) {
-      if (lastMsg.updatedAt.isNotEmpty) {
-        dt = DateTime.tryParse(lastMsg.updatedAt);
-      }
-      if (dt == null && lastMsg.createdAt.isNotEmpty) {
-        dt = DateTime.tryParse(lastMsg.createdAt);
-      }
+      final cAt = _parseDateTime(lastMsg.createdAt);
+      if (cAt.isAfter(latest)) latest = cAt;
+      final uAt = _parseDateTime(lastMsg.updatedAt);
+      if (uAt.isAfter(latest)) latest = uAt;
     }
-    if (dt == null && chat.updatedAt.isNotEmpty) {
-      dt = DateTime.tryParse(chat.updatedAt);
-    }
-    if (dt == null && chat.createdAt.isNotEmpty) {
-      dt = DateTime.tryParse(chat.createdAt);
-    }
-    return dt ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+    final chatUAt = _parseDateTime(chat.updatedAt);
+    if (chatUAt.isAfter(latest)) latest = chatUAt;
+
+    final chatCAt = _parseDateTime(chat.createdAt);
+    if (chatCAt.isAfter(latest)) latest = chatCAt;
+
+    return latest;
   }
 
   bool _hasInitialLoaded = false;
@@ -350,8 +385,6 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             finalChats = chats.map((newChat) {
               final existing = existingMap[newChat.id] ?? existingUserMap[newChat.recipient.id];
               if (existing != null) {
-                // Keep the profile image from existing chat (loaded on initial app open),
-                // but update name, text message, timestamp, unread count, online status, etc.
                 final existingPic = existing.recipient.profilePictureUrl;
                 if (existingPic != null && existingPic.isNotEmpty) {
                   return newChat.copyWith(
@@ -368,9 +401,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             finalChats = List<ChatModel>.from(chats);
           }
 
-          // Sort by most recent message/activity time descending
+          // Sort by most recent message/activity time descending (newest at top)
           final sortedChats = finalChats
-            ..sort((a, b) => _getChatActivityTime(b).compareTo(_getChatActivityTime(a)));
+            ..sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
           emit(ChatsLoaded(sortedChats));
         },
         failure: (error, statusCode) {
@@ -392,7 +425,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
-      final index = updatedChats.indexWhere((c) => c.id == event.conversationId);
+      final index = updatedChats.indexWhere((c) => _isSameConversation(c.id, event.conversationId));
       final currentUserId = _storageService.getUserId();
       
       if (index != -1) {
@@ -403,7 +436,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         if (event.unreadCount == null && !isFromMe) {
           newUnreadCount = chat.unreadCount + 1;
         } else if (isFromMe) {
-          newUnreadCount = 0; // If I sent a message, I've seen it or it's my turn
+          newUnreadCount = 0;
         }
 
         final updatedChat = chat.copyWith(
@@ -412,6 +445,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           unreadCount: newUnreadCount,
         );
         updatedChats.insert(0, updatedChat);
+        updatedChats.sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
         emit(ChatsLoaded(updatedChats));
       } else {
         add(const FetchChats());
@@ -423,7 +457,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId && chat.lastMessage?.id == event.message.id) {
+        if (_isSameConversation(chat.id, event.conversationId) && chat.lastMessage?.id == event.message.id) {
           return chat.copyWith(lastMessage: event.message);
         }
         return chat;
@@ -436,7 +470,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId && chat.lastMessage?.id == event.messageId) {
+        if (_isSameConversation(chat.id, event.conversationId) && chat.lastMessage?.id == event.messageId) {
           final updatedLastMessage = chat.lastMessage?.copyWith(isDeleted: true);
           return chat.copyWith(lastMessage: updatedLastMessage);
         }
@@ -450,7 +484,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats
-          .where((c) => c.id != event.conversationId)
+          .where((c) => !_isSameConversation(c.id, event.conversationId))
           .toList();
       emit(ChatsLoaded(updatedChats));
     }
@@ -460,7 +494,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
-      final index = updatedChats.indexWhere((c) => c.id == event.conversationId);
+      final index = updatedChats.indexWhere((c) => _isSameConversation(c.id, event.conversationId));
 
       final callType = event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
       final status = (event.callMeta['status'] ?? 'completed').toString().toLowerCase();
@@ -511,6 +545,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         );
 
         updatedChats.insert(0, updatedChat);
+        updatedChats.sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
         emit(ChatsLoaded(updatedChats));
       } else {
         add(const FetchChats());
@@ -539,7 +574,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId) {
+        if (_isSameConversation(chat.id, event.conversationId)) {
           return chat.copyWith(isTyping: event.isTyping);
         }
         return chat;
@@ -552,7 +587,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId) {
+        if (_isSameConversation(chat.id, event.conversationId)) {
           return chat.copyWith(disappearingTimer: event.seconds);
         }
         return chat;
@@ -565,7 +600,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (chat.id == event.conversationId) {
+        if (_isSameConversation(chat.id, event.conversationId)) {
           final lastMsg = chat.lastMessage;
           if (lastMsg != null) {
             final isTarget = event.messageId == null ||

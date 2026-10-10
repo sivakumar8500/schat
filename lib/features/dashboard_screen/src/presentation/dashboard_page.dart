@@ -641,7 +641,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             if (_filterIndex == 3) return c.isGroup;
                             return true;
                           })
-                          .toList();
+                          .toList()
+                        ..sort((a, b) => ChatsBloc.getChatActivityTime(b).compareTo(ChatsBloc.getChatActivityTime(a)));
 
                       final totalUnreadCount = chatList
                           .where((c) => !_hiddenChatIds.contains(c.id) && !_deletedChatIds.contains(c.id))
@@ -1319,25 +1320,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildChatStatus(ChatModel chat) {
-    final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
+    final activityTime = ChatsBloc.getChatActivityTime(chat);
     String timeStr = '--:--';
-    try {
-      if (timestamp.isNotEmpty) {
-        DateTime time;
-        final parsedInt = int.tryParse(timestamp);
-        if (parsedInt != null) {
-          if (timestamp.length <= 10) {
-            time = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
-          } else {
-            time = DateTime.fromMillisecondsSinceEpoch(parsedInt).toLocal();
-          }
-        } else {
-          time = DateTime.parse(timestamp).toLocal();
-        }
-        timeStr = "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
-      }
-    } catch (e) {
-      debugPrint('Error parsing timestamp: $e');
+    if (activityTime.year > 2000) {
+      final localTime = activityTime.toLocal();
+      timeStr = "${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}";
     }
 
     final isDark = context.colors.isDark;
