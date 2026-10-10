@@ -142,13 +142,15 @@ class UpdateTypingIndicatorEvent extends ChatEvent {
 class MarkMessageReadEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
-  const MarkMessageReadEvent({required this.messageId, required this.conversationId});
+  final String? readerId;
+  const MarkMessageReadEvent({required this.messageId, required this.conversationId, this.readerId});
 }
 
 class MarkMessageDeliveredEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
-  const MarkMessageDeliveredEvent({required this.messageId, required this.conversationId});
+  final String? recipientId;
+  const MarkMessageDeliveredEvent({required this.messageId, required this.conversationId, this.recipientId});
 }
 
 class DeleteMessagesEvent extends ChatEvent {

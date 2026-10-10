@@ -133,6 +133,8 @@ class MessageModel {
   // Group & sender info
   final String? senderName;
   final String? senderProfilePictureUrl;
+  final List<String> readBy;
+  final List<String> deliveredTo;
 
   // Contextual role for Parent-to-Child monitoring ("send" | "receive" | "view")
   final String? userView;
@@ -184,6 +186,8 @@ class MessageModel {
     this.expiry,
     this.senderName,
     this.senderProfilePictureUrl,
+    this.readBy = const [],
+    this.deliveredTo = const [],
     this.userView,
   });
 
@@ -555,6 +559,53 @@ class MessageModel {
       });
     }
 
+    final List<String> readByList = [];
+    final List<String> deliveredToList = [];
+
+    // Extract from viewControl
+    if (viewControl is Map) {
+      final vb = viewControl['viewedBy'] ?? viewControl['viewed_by'] ?? viewControl['readBy'] ?? viewControl['read_by'];
+      if (vb is List) {
+        for (var item in vb) {
+          if (item != null && item.toString().isNotEmpty) {
+            final id = item is Map ? (item['userId'] ?? item['user_id'] ?? item['id'] ?? '').toString() : item.toString();
+            if (id.isNotEmpty && !readByList.contains(id)) readByList.add(id);
+          }
+        }
+      }
+      final dt = viewControl['deliveredTo'] ?? viewControl['delivered_to'] ?? viewControl['delivered'];
+      if (dt is List) {
+        for (var item in dt) {
+          if (item != null && item.toString().isNotEmpty) {
+            final id = item is Map ? (item['userId'] ?? item['user_id'] ?? item['id'] ?? '').toString() : item.toString();
+            if (id.isNotEmpty && !deliveredToList.contains(id)) deliveredToList.add(id);
+          }
+        }
+      }
+    }
+
+    // Extract from top-level readBy / read_by / readers / viewedBy / seen_by
+    final dynamic rawReadBy = json['readBy'] ?? json['read_by'] ?? json['readers'] ?? json['viewedBy'] ?? json['viewed_by'] ?? json['seen_by'] ?? json['read_users'] ?? json['readUsers'];
+    if (rawReadBy is List) {
+      for (var item in rawReadBy) {
+        if (item != null && item.toString().isNotEmpty) {
+          final id = item is Map ? (item['userId'] ?? item['user_id'] ?? item['id'] ?? '').toString() : item.toString();
+          if (id.isNotEmpty && !readByList.contains(id)) readByList.add(id);
+        }
+      }
+    }
+
+    // Extract from top-level deliveredTo / delivered_to / delivered_users
+    final dynamic rawDeliveredTo = json['deliveredTo'] ?? json['delivered_to'] ?? json['delivered_users'] ?? json['deliveredUsers'] ?? json['delivery_receipts'];
+    if (rawDeliveredTo is List) {
+      for (var item in rawDeliveredTo) {
+        if (item != null && item.toString().isNotEmpty) {
+          final id = item is Map ? (item['userId'] ?? item['user_id'] ?? item['id'] ?? '').toString() : item.toString();
+          if (id.isNotEmpty && !deliveredToList.contains(id)) deliveredToList.add(id);
+        }
+      }
+    }
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
@@ -606,6 +657,8 @@ class MessageModel {
       reactions: reactionsList,
       senderName: parsedSenderName,
       senderProfilePictureUrl: parsedSenderProfilePic,
+      readBy: readByList,
+      deliveredTo: deliveredToList,
       expiry: () {
         final dynamic rawExpiry = json['expiry'] ?? json['expiry_config'] ?? json['expires_at'] ?? json['expire_at'];
         if (rawExpiry is int) return rawExpiry;
@@ -725,7 +778,13 @@ class MessageModel {
       'isFileViewed': isFileViewed,
       'isFileDownloaded': isFileDownloaded,
       'isFileShared': isFileShared,
+      'readBy': readBy,
+      'viewedBy': readBy,
+      'deliveredTo': deliveredTo,
     },
+    'readBy': readBy,
+    'viewedBy': readBy,
+    'deliveredTo': deliveredTo,
     'deletedFor': deletedFor,
     'reactions': reactions.map((r) => r.toJson()).toList(),
     if (userView != null) 'userView': userView,
@@ -777,6 +836,8 @@ class MessageModel {
     int? expiry,
     String? senderName,
     String? senderProfilePictureUrl,
+    List<String>? readBy,
+    List<String>? deliveredTo,
     double? latitude,
     double? longitude,
     String? address,
@@ -825,6 +886,8 @@ class MessageModel {
       expiry: expiry ?? this.expiry,
       senderName: senderName ?? this.senderName,
       senderProfilePictureUrl: senderProfilePictureUrl ?? this.senderProfilePictureUrl,
+      readBy: readBy ?? this.readBy,
+      deliveredTo: deliveredTo ?? this.deliveredTo,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,

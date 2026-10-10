@@ -268,30 +268,32 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           final msgIdsList = cleanData['messageIds'] ?? cleanData['message_ids'];
+          final readerUserId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['readerId'] ?? cleanData['reader_id'] ?? cleanData['senderId'] ?? cleanData['sender_id'] ?? cleanData['monitored_user_id'])?.toString();
           if (_isSameConversation(convId, _conversationId)) {
             if (msgIdsList is List && msgIdsList.isNotEmpty) {
               for (final id in msgIdsList) {
                 if (id != null) {
-                  add(MarkMessageReadEvent(messageId: id.toString(), conversationId: convId!));
+                  add(MarkMessageReadEvent(messageId: id.toString(), conversationId: convId!, readerId: readerUserId));
                 }
               }
             } else if (msgId != null) {
-              add(MarkMessageReadEvent(messageId: msgId, conversationId: convId!));
+              add(MarkMessageReadEvent(messageId: msgId, conversationId: convId!, readerId: readerUserId));
             }
           }
         } else if (type == 'delivery_receipt' || type == 'message_delivered') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           final msgIdsList = cleanData['messageIds'] ?? cleanData['message_ids'];
+          final deliveryUserId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['recipientId'] ?? cleanData['recipient_id'] ?? cleanData['senderId'] ?? cleanData['sender_id'])?.toString();
           if (_isSameConversation(convId, _conversationId)) {
             if (msgIdsList is List && msgIdsList.isNotEmpty) {
               for (final id in msgIdsList) {
                 if (id != null) {
-                  add(MarkMessageDeliveredEvent(messageId: id.toString(), conversationId: convId!));
+                  add(MarkMessageDeliveredEvent(messageId: id.toString(), conversationId: convId!, recipientId: deliveryUserId));
                 }
               }
             } else if (msgId != null) {
-              add(MarkMessageDeliveredEvent(messageId: msgId, conversationId: convId!));
+              add(MarkMessageDeliveredEvent(messageId: msgId, conversationId: convId!, recipientId: deliveryUserId));
             }
           }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
@@ -1464,9 +1466,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
-        if (msg.senderId == currentState.myId && (!msg.isRead || msg.status != 'read') &&
-            (targetIndex == -1 || i <= targetIndex)) {
-          updated.add(msg.copyWith(isRead: true, isDelivered: true));
+        if (msg.senderId == currentState.myId && (targetIndex == -1 || i <= targetIndex)) {
+          final newReadBy = List<String>.from(msg.readBy);
+          final newDeliveredTo = List<String>.from(msg.deliveredTo);
+          if (event.readerId != null && event.readerId!.isNotEmpty) {
+            if (!newReadBy.contains(event.readerId!)) newReadBy.add(event.readerId!);
+            if (!newDeliveredTo.contains(event.readerId!)) newDeliveredTo.add(event.readerId!);
+          }
+          updated.add(msg.copyWith(
+            isRead: true,
+            isDelivered: true,
+            readBy: newReadBy,
+            deliveredTo: newDeliveredTo,
+          ));
         } else {
           updated.add(msg);
         }
@@ -1485,10 +1497,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
-        if (msg.senderId == currentState.myId && (!msg.isDelivered || (msg.status != 'delivered' && msg.status != 'read')) &&
-            (targetIndex == -1 || i <= targetIndex)) {
+        if (msg.senderId == currentState.myId && (targetIndex == -1 || i <= targetIndex)) {
+          final newDeliveredTo = List<String>.from(msg.deliveredTo);
+          if (event.recipientId != null && event.recipientId!.isNotEmpty) {
+            if (!newDeliveredTo.contains(event.recipientId!)) newDeliveredTo.add(event.recipientId!);
+          }
           updated.add(msg.copyWith(
             isDelivered: true,
+            deliveredTo: newDeliveredTo,
           ));
         } else {
           updated.add(msg);

@@ -1673,14 +1673,22 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _buildMemberStatusTile(BuildContext context, UserModel user, String timeStr, Color checkmarkColor) {
+  Widget _buildMemberStatusTile(
+    BuildContext context,
+    UserModel user,
+    String timeStr,
+    Color checkmarkColor, {
+    IconData icon = Icons.done_all_rounded,
+    String? subtitle,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 16,
-            backgroundColor: context.colors.primary.withValues(alpha: 0.15),
+            radius: 18,
+            backgroundColor: isDark ? const Color(0xFF2A3942) : const Color(0xFFE1F3FB),
             backgroundImage: (user.profilePictureUrl != null && user.profilePictureUrl!.isNotEmpty)
                 ? CachedNetworkImageProvider(user.profilePictureUrl!)
                 : null,
@@ -1688,41 +1696,71 @@ class _ChatPageState extends State<ChatPage> {
                 ? Text(
                     user.displayName.isNotEmpty ? user.displayName[0].toUpperCase() : '?',
                     style: TextStyle(
-                      color: context.colors.primary,
+                      color: checkmarkColor,
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 14,
                     ),
                   )
                 : null,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   user.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: context.bodyMedium.copyWith(
                     fontWeight: FontWeight.w600,
+                    fontSize: 14.5,
                   ),
                 ),
-                if ((user.username ?? '').isNotEmpty)
+                if (subtitle != null && subtitle.isNotEmpty)
                   Text(
-                    '@${user.username}',
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: context.bodySmall.copyWith(
                       color: context.colors.textSecondary,
-                      fontSize: 11,
+                      fontSize: 11.5,
+                    ),
+                  )
+                else if ((user.username ?? '').isNotEmpty)
+                  Text(
+                    '@${user.username}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.bodySmall.copyWith(
+                      color: context.colors.textSecondary,
+                      fontSize: 11.5,
                     ),
                   ),
               ],
             ),
           ),
-          Text(
-            timeStr,
-            style: context.bodySmall.copyWith(
-              color: context.colors.textSecondary,
-              fontSize: 12,
-            ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                timeStr,
+                style: context.bodySmall.copyWith(
+                  color: context.colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Icon(
+                icon,
+                size: 15,
+                color: checkmarkColor,
+              ),
+            ],
           ),
         ],
       ),
@@ -1736,16 +1774,56 @@ class _ChatPageState extends State<ChatPage> {
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        final isDelivered = msg.isRead || msg.isDelivered || widget.isGroup || isRecipientOnline;
-        final myId = (_chatBloc.state is ChatLoaded) ? (_chatBloc.state as ChatLoaded).myId : '';
+        final myId = (_chatBloc.state is ChatLoaded)
+            ? (_chatBloc.state as ChatLoaded).myId
+            : (getIt<StorageService>().getUserId() ?? '');
         final senderId = msg.senderId.isNotEmpty ? msg.senderId : myId;
 
-        final otherParticipants = widget.isGroup
-            ? _groupParticipants.where((u) => u.id != senderId).toList()
-            : <UserModel>[];
+        // Group participants resolution
+        final List<UserModel> otherParticipants = [];
+        if (widget.isGroup) {
+          final parts = _groupParticipants
+              .where((u) => u.id.isNotEmpty && u.id != senderId && u.id != myId)
+              .toList();
+          otherParticipants.addAll(parts);
+          // If _groupParticipants had not populated yet, build from _groupParticipantNames
+          if (otherParticipants.isEmpty && _groupParticipantNames.isNotEmpty) {
+            _groupParticipantNames.forEach((id, name) {
+              if (id.isNotEmpty && id != senderId && id != myId) {
+                otherParticipants.add(UserModel(
+                  id: id,
+                  username: name,
+                  contactName: name,
+                  profilePictureUrl: _groupParticipantProfilePics[id],
+                ));
+              }
+            });
+          }
+        }
 
-        final readParticipants = msg.isRead ? otherParticipants : <UserModel>[];
-        final deliveredParticipants = isDelivered ? otherParticipants : <UserModel>[];
+        // Categorize read, delivered, pending participants
+        final List<UserModel> readParticipants = [];
+        final List<UserModel> deliveredParticipants = [];
+        final List<UserModel> pendingParticipants = [];
+
+        final readSet = msg.readBy.map((id) => id.toLowerCase()).toSet();
+        final deliveredSet = msg.deliveredTo.map((id) => id.toLowerCase()).toSet();
+
+        if (widget.isGroup) {
+          for (final user in otherParticipants) {
+            final uIdLower = user.id.toLowerCase();
+            if (readSet.contains(uIdLower) || (msg.isRead && msg.readBy.isEmpty)) {
+              readParticipants.add(user);
+            } else if (deliveredSet.contains(uIdLower) || msg.isDelivered || isRecipientOnline) {
+              deliveredParticipants.add(user);
+            } else {
+              pendingParticipants.add(user);
+            }
+          }
+        }
+
+        final isDelivered = msg.isRead || msg.isDelivered || widget.isGroup || isRecipientOnline;
+        final totalCount = otherParticipants.isNotEmpty ? otherParticipants.length : (widget.isGroup ? 0 : 1);
 
         const emeraldGreen = Color(0xFF00D084);
         const skyBlue = Color(0xFF34B7F1);
@@ -1807,14 +1885,16 @@ class _ChatPageState extends State<ChatPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Message Info',
+                              'Message info',
                               style: context.titleMedium.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 18,
                               ),
                             ),
                             Text(
-                              widget.isGroup ? 'Group Message Details' : 'Delivery & Read Receipts',
+                              widget.isGroup
+                                  ? 'Group details ($totalCount members)'
+                                  : 'Delivery & read receipts',
                               style: context.bodySmall.copyWith(
                                 color: context.colors.textSecondary,
                                 fontSize: 12,
@@ -1936,9 +2016,13 @@ class _ChatPageState extends State<ChatPage> {
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(
-                                    msg.isRead ? Icons.done_all_rounded : (isDelivered ? Icons.done_all_rounded : Icons.done_rounded),
+                                    (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : msg.isRead)
+                                        ? Icons.done_all_rounded
+                                        : (isDelivered ? Icons.done_all_rounded : Icons.done_rounded),
                                     size: 14,
-                                    color: msg.isRead ? skyBlue : (isDelivered ? emeraldGreen : context.colors.textSecondary),
+                                    color: (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : msg.isRead)
+                                        ? skyBlue
+                                        : (isDelivered ? emeraldGreen : context.colors.textSecondary),
                                   ),
                                 ],
                               ),
@@ -1969,45 +2053,66 @@ class _ChatPageState extends State<ChatPage> {
                             border: Border.all(color: borderColor, width: 0.8),
                           ),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // 1. Read Tile
+                              // 1. Read by Section
                               Padding(
                                 padding: const EdgeInsets.all(16),
-                                child: Row(
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: msg.isRead
-                                            ? skyBlue.withValues(alpha: 0.15)
-                                            : context.colors.textHint.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        Icons.done_all_rounded,
-                                        color: msg.isRead ? skyBlue : context.colors.textHint,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                                ? skyBlue.withValues(alpha: 0.15)
+                                                : context.colors.textHint.withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.done_all_rounded,
+                                            color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                                ? skyBlue
+                                                : context.colors.textHint,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Row(
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
                                               Text(
-                                                widget.isGroup
-                                                    ? 'Read by (${readParticipants.length} of ${otherParticipants.length})'
-                                                    : 'Read',
+                                                widget.isGroup ? 'Read by' : 'Read',
                                                 style: context.titleSmall.copyWith(
                                                   fontWeight: FontWeight.bold,
-                                                  color: msg.isRead ? skyBlue : context.colors.textPrimary,
+                                                  fontSize: 15,
+                                                  color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                                      ? skyBlue
+                                                      : context.colors.textPrimary,
                                                 ),
                                               ),
-                                              if (!widget.isGroup && msg.isRead)
+                                              if (widget.isGroup)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: readParticipants.isNotEmpty
+                                                        ? skyBlue.withValues(alpha: 0.15)
+                                                        : context.colors.textHint.withValues(alpha: 0.1),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: Text(
+                                                    '${readParticipants.length} of $totalCount',
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: readParticipants.isNotEmpty ? skyBlue : context.colors.textSecondary,
+                                                    ),
+                                                  ),
+                                                )
+                                              else if (msg.isRead)
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                                   decoration: BoxDecoration(
@@ -2025,81 +2130,109 @@ class _ChatPageState extends State<ChatPage> {
                                                 ),
                                             ],
                                           ),
-                                          const SizedBox(height: 3),
-                                          if (!widget.isGroup)
-                                            Text(
-                                              msg.isRead
-                                                  ? _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt)
-                                                  : 'Not read yet',
-                                              style: context.bodyMedium.copyWith(
-                                                color: msg.isRead ? context.colors.textSecondary : context.colors.textHint,
-                                                fontSize: 13,
-                                                fontStyle: msg.isRead ? FontStyle.normal : FontStyle.italic,
-                                              ),
-                                            )
-                                          else if (readParticipants.isEmpty)
-                                            Text(
-                                              'Not read yet',
-                                              style: context.bodyMedium.copyWith(
-                                                color: context.colors.textHint,
-                                                fontSize: 13,
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                            )
-                                          else ...[
-                                            const SizedBox(height: 8),
-                                            ...readParticipants.map((u) => _buildMemberStatusTile(
-                                                  context,
-                                                  u,
-                                                  _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt),
-                                                  skyBlue,
-                                                )),
-                                          ],
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
+                                    const SizedBox(height: 10),
+                                    if (!widget.isGroup)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Text(
+                                          msg.isRead
+                                              ? _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt)
+                                              : 'Not read yet',
+                                          style: context.bodyMedium.copyWith(
+                                            color: msg.isRead ? context.colors.textSecondary : context.colors.textHint,
+                                            fontSize: 13,
+                                            fontStyle: msg.isRead ? FontStyle.normal : FontStyle.italic,
+                                          ),
+                                        ),
+                                      )
+                                    else if (readParticipants.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Text(
+                                          'No one has read this message yet',
+                                          style: context.bodyMedium.copyWith(
+                                            color: context.colors.textHint,
+                                            fontSize: 13,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Column(
+                                          children: readParticipants.map((u) => _buildMemberStatusTile(
+                                                context,
+                                                u,
+                                                _formatFullDateTime(msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt),
+                                                skyBlue,
+                                                icon: Icons.done_all_rounded,
+                                              )).toList(),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
                               Divider(height: 1, thickness: 0.8, color: borderColor, indent: 56),
 
-                              // 2. Delivered Tile
+                              // 2. Delivered to Section
                               Padding(
                                 padding: const EdgeInsets.all(16),
-                                child: Row(
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: isDelivered
-                                            ? emeraldGreen.withValues(alpha: 0.15)
-                                            : context.colors.textHint.withValues(alpha: 0.1),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        Icons.done_all_rounded,
-                                        color: isDelivered ? emeraldGreen : context.colors.textHint,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: (widget.isGroup ? deliveredParticipants.isNotEmpty : isDelivered)
+                                                ? emeraldGreen.withValues(alpha: 0.15)
+                                                : context.colors.textHint.withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            Icons.done_all_rounded,
+                                            color: (widget.isGroup ? deliveredParticipants.isNotEmpty : isDelivered)
+                                                ? emeraldGreen
+                                                : context.colors.textHint,
+                                            size: 18,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Row(
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
                                               Text(
-                                                widget.isGroup
-                                                    ? 'Delivered to (${deliveredParticipants.length})'
-                                                    : 'Delivered',
+                                                widget.isGroup ? 'Delivered to' : 'Delivered',
                                                 style: context.titleSmall.copyWith(
                                                   fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
                                                 ),
                                               ),
-                                              if (!widget.isGroup && isDelivered)
+                                              if (widget.isGroup)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: deliveredParticipants.isNotEmpty
+                                                        ? emeraldGreen.withValues(alpha: 0.15)
+                                                        : context.colors.textHint.withValues(alpha: 0.1),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: Text(
+                                                    '${deliveredParticipants.length} of $totalCount',
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: deliveredParticipants.isNotEmpty ? emeraldGreen : context.colors.textSecondary,
+                                                    ),
+                                                  ),
+                                                )
+                                              else if (isDelivered)
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                                   decoration: BoxDecoration(
@@ -2117,42 +2250,129 @@ class _ChatPageState extends State<ChatPage> {
                                                 ),
                                             ],
                                           ),
-                                          const SizedBox(height: 3),
-                                          if (!widget.isGroup)
-                                            Text(
-                                              isDelivered ? _formatFullDateTime(msg.createdAt) : 'Pending delivery',
-                                              style: context.bodyMedium.copyWith(
-                                                color: isDelivered ? context.colors.textSecondary : context.colors.textHint,
-                                                fontSize: 13,
-                                                fontStyle: isDelivered ? FontStyle.normal : FontStyle.italic,
-                                              ),
-                                            )
-                                          else if (deliveredParticipants.isEmpty)
-                                            Text(
-                                              isDelivered ? _formatFullDateTime(msg.createdAt) : 'Pending delivery',
-                                              style: context.bodyMedium.copyWith(
-                                                color: context.colors.textSecondary,
-                                                fontSize: 13,
-                                              ),
-                                            )
-                                          else ...[
-                                            const SizedBox(height: 8),
-                                            ...deliveredParticipants.map((u) => _buildMemberStatusTile(
-                                                  context,
-                                                  u,
-                                                  _formatFullDateTime(msg.createdAt),
-                                                  emeraldGreen,
-                                                )),
-                                          ],
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
+                                    const SizedBox(height: 10),
+                                    if (!widget.isGroup)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Text(
+                                          isDelivered ? _formatFullDateTime(msg.createdAt) : 'Pending delivery',
+                                          style: context.bodyMedium.copyWith(
+                                            color: isDelivered ? context.colors.textSecondary : context.colors.textHint,
+                                            fontSize: 13,
+                                            fontStyle: isDelivered ? FontStyle.normal : FontStyle.italic,
+                                          ),
+                                        ),
+                                      )
+                                    else if (deliveredParticipants.isEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Text(
+                                          readParticipants.length == totalCount
+                                              ? 'All members have read this message'
+                                              : 'Pending delivery to remaining members',
+                                          style: context.bodyMedium.copyWith(
+                                            color: context.colors.textSecondary,
+                                            fontSize: 13,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Column(
+                                          children: deliveredParticipants.map((u) => _buildMemberStatusTile(
+                                                context,
+                                                u,
+                                                _formatFullDateTime(msg.createdAt),
+                                                emeraldGreen,
+                                                icon: Icons.done_all_rounded,
+                                              )).toList(),
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
+
+                              // 3. Pending Section (for group chats when some members haven't received it yet)
+                              if (widget.isGroup && pendingParticipants.isNotEmpty) ...[
+                                Divider(height: 1, thickness: 0.8, color: borderColor, indent: 56),
+                                Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.textHint.withValues(alpha: 0.1),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              Icons.done_rounded,
+                                              color: context.colors.textHint,
+                                              size: 18,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Pending',
+                                                  style: context.titleSmall.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 15,
+                                                    color: context.colors.textSecondary,
+                                                  ),
+                                                ),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: context.colors.textHint.withValues(alpha: 0.1),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: Text(
+                                                    '${pendingParticipants.length} of $totalCount',
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: context.colors.textSecondary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 46),
+                                        child: Column(
+                                          children: pendingParticipants.map((u) => _buildMemberStatusTile(
+                                                context,
+                                                u,
+                                                'Pending...',
+                                                context.colors.textHint,
+                                                icon: Icons.done_rounded,
+                                              )).toList(),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+
                               Divider(height: 1, thickness: 0.8, color: borderColor, indent: 56),
 
-                              // 3. Sent Tile
+                              // 4. Sent Section
                               Padding(
                                 padding: const EdgeInsets.all(16),
                                 child: Row(
@@ -2179,6 +2399,7 @@ class _ChatPageState extends State<ChatPage> {
                                             'Sent',
                                             style: context.titleSmall.copyWith(
                                               fontWeight: FontWeight.bold,
+                                              fontSize: 15,
                                             ),
                                           ),
                                           const SizedBox(height: 3),
