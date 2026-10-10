@@ -611,6 +611,18 @@ class WebRtcService {
           stream = event.streams.first;
         } else {
           stream = _remoteStreams[peerId];
+          if (stream == null) {
+            try {
+              stream = await createLocalMediaStream('remote_mesh_${peerId}_${DateTime.now().millisecondsSinceEpoch}');
+            } catch (e) {
+              debugPrint('WebRTC: Error creating local stream for peer $peerId: $e');
+            }
+          }
+          if (stream != null) {
+            try {
+              stream.addTrack(event.track);
+            } catch (_) {}
+          }
         }
         if (stream != null) {
           _remoteStreams[peerId] = stream;
@@ -727,6 +739,18 @@ class WebRtcService {
           stream = event.streams.first;
         } else {
           stream = _remoteStreams[peerId];
+          if (stream == null) {
+            try {
+              stream = await createLocalMediaStream('remote_mesh_${peerId}_${DateTime.now().millisecondsSinceEpoch}');
+            } catch (e) {
+              debugPrint('WebRTC: Error creating local stream for peer $peerId: $e');
+            }
+          }
+          if (stream != null) {
+            try {
+              stream.addTrack(event.track);
+            } catch (_) {}
+          }
         }
         if (stream != null) {
           _remoteStreams[peerId] = stream;
@@ -870,7 +894,13 @@ class WebRtcService {
       candidateMap['sdpMLineIndex'] as int?,
     );
 
-    final pc = senderId.isNotEmpty ? (_peerConnections[senderId] ?? _peerConnection) : _peerConnection;
+    RTCPeerConnection? pc;
+    if (senderId.isNotEmpty && _peerConnections.containsKey(senderId)) {
+      pc = _peerConnections[senderId];
+    } else if (senderId.isEmpty || _peerConnections.isEmpty) {
+      pc = _peerConnection;
+    }
+
     if (pc == null) {
       if (senderId.isNotEmpty) {
         _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
@@ -1031,7 +1061,14 @@ class WebRtcService {
           track.enableSpeakerphone(speakerOn);
         } catch (_) {}
       });
-      debugPrint('WebRTC: Speakerphone set to $speakerOn');
+      for (final stream in _remoteStreams.values) {
+        stream.getAudioTracks().forEach((track) {
+          try {
+            track.enableSpeakerphone(speakerOn);
+          } catch (_) {}
+        });
+      }
+      debugPrint('WebRTC: Speakerphone set to $speakerOn (updated ${_remoteStreams.length} mesh peers)');
     } catch (e) {
       debugPrint('WebRTC: toggleSpeaker failed: $e');
     } finally {

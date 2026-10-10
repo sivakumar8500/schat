@@ -305,7 +305,14 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
             final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
                 (state is CallConnecting && (state as CallConnecting).isVideo) ||
                 (state is CallRinging && (state as CallRinging).isVideo);
-            if (_webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
+            final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
+                (state is CallConnecting && (state as CallConnecting).isGroup) ||
+                (state is CallRinging && (state as CallRinging).isGroup) ||
+                data['is_group'] == true ||
+                data['isGroup'] == true ||
+                _ongoingGroupCalls.containsKey(currentConvoId);
+
+            if (!isGroupCall && _webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
               await _webRtcService.handleOfferForActiveCall(
                 offerMap: Map<String, dynamic>.from(offerMap),
                 targetUserId: offerSenderId,
@@ -329,9 +336,17 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           final answerSenderId = (data['sender_id'] ?? data['senderId'] ?? data['from'] ?? data['user_id'])?.toString() ?? '';
           final answerTargetUserId = (data['target_user_id'] ?? data['targetUserId'] ?? data['recipient_id'] ?? data['recipientId'])?.toString() ?? '';
           final mySelfId = getIt<StorageService>().getUserId()?.toString() ?? '';
+          final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final answerMap = data['answer'];
           if (answerSenderId.isNotEmpty && answerSenderId != mySelfId && (answerTargetUserId.isEmpty || answerTargetUserId == mySelfId) && answerMap is Map) {
-            if (_webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
+            final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
+                (state is CallConnecting && (state as CallConnecting).isGroup) ||
+                (state is CallRinging && (state as CallRinging).isGroup) ||
+                data['is_group'] == true ||
+                data['isGroup'] == true ||
+                _ongoingGroupCalls.containsKey(currentConvoId);
+
+            if (!isGroupCall && _webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
               await _webRtcService.handleCallAnswered(Map<String, dynamic>.from(data), repository: _repository);
             } else {
               await _webRtcService.handlePeerAnswer(
@@ -846,11 +861,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           if (state is CallActive) {
             for (final p in extraParticipants) {
               if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
-                _webRtcService.createOfferForPeer(
-                  peerId: p.id,
-                  conversationId: convoId,
-                  repository: _repository,
-                );
+                if (!_webRtcService.peerConnections.containsKey(p.id)) {
+                  _webRtcService.createOfferForPeer(
+                    peerId: p.id,
+                    conversationId: convoId,
+                    repository: _repository,
+                  );
+                }
               }
             }
           }
@@ -1539,14 +1556,16 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
 
     // In group calls, initiate a direct WebRTC peer offer to connect audio/video with the joining user
     if (convoId.isNotEmpty && user.id.isNotEmpty && (state is CallActive || state is CallConnecting)) {
-      final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
-          (state is CallConnecting && (state as CallConnecting).isVideo);
-      _webRtcService.createOfferForPeer(
-        peerId: user.id,
-        conversationId: convoId,
-        repository: _repository,
-        isVideo: isVideoCall,
-      );
+      if (!_webRtcService.peerConnections.containsKey(user.id)) {
+        final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
+            (state is CallConnecting && (state as CallConnecting).isVideo);
+        _webRtcService.createOfferForPeer(
+          peerId: user.id,
+          conversationId: convoId,
+          repository: _repository,
+          isVideo: isVideoCall,
+        );
+      }
     }
 
     if (state is CallActive) {
