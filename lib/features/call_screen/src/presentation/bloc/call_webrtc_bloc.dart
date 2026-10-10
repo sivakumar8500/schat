@@ -768,14 +768,31 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           ? (state as CallRinging).extraParticipants
           : (state is CallConnecting ? (state as CallConnecting).extraParticipants : <UserModel>[]);
 
-      final extraParticipants = extraPartsFromState.isNotEmpty
-          ? extraPartsFromState
-          : _extractParticipantsFromEvent(
-              safeEvent,
-              callerName: callerName,
-              profilePic: profilePic,
-              callerDetails: callerDetails,
-            );
+      final extracted = _extractParticipantsFromEvent(
+        safeEvent,
+        callerName: callerName,
+        profilePic: profilePic,
+        callerDetails: callerDetails,
+      );
+
+      final Map<String, UserModel> mergedParts = {};
+      for (final p in extraPartsFromState) {
+        if (p.id.isNotEmpty) mergedParts[p.id.toLowerCase()] = p;
+      }
+      for (final p in extracted) {
+        if (p.id.isNotEmpty && !mergedParts.containsKey(p.id.toLowerCase())) {
+          mergedParts[p.id.toLowerCase()] = p;
+        }
+      }
+      if (_ongoingGroupCalls.containsKey(convoId)) {
+        for (final p in _ongoingGroupCalls[convoId]!.participants) {
+          if (p.id.isNotEmpty && !mergedParts.containsKey(p.id.toLowerCase())) {
+            mergedParts[p.id.toLowerCase()] = p;
+          }
+        }
+      }
+
+      final extraParticipants = mergedParts.values.toList();
 
       final callerId = (safeEvent['sender_id'] ?? safeEvent['senderId'] ?? safeEvent['caller_id'] ?? safeEvent['callerId'])?.toString() ?? '';
       final connectedSet = <String>{};
@@ -786,6 +803,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       if (state is CallRinging) {
         connectedSet.addAll((state as CallRinging).connectedParticipantIds);
         ringingSpeaker = (state as CallRinging).isSpeakerOn;
+      }
+      if (_ongoingGroupCalls.containsKey(convoId)) {
+        connectedSet.addAll(_ongoingGroupCalls[convoId]!.connectedParticipantIds);
       }
 
       // Cache all metadata
@@ -885,22 +905,19 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           'isGroup': true,
         });
 
-        // Fallback: If existing peers do not initiate an offer within 2.5s, initiate offer to ensure connection
-        Future.delayed(const Duration(milliseconds: 2500), () {
-          if (state is CallActive) {
-            for (final p in extraParticipants) {
-              if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
-                if (!_webRtcService.peerConnections.containsKey(p.id)) {
-                  _webRtcService.createOfferForPeer(
-                    peerId: p.id,
-                    conversationId: convoId,
-                    repository: _repository,
-                  );
-                }
-              }
+        // Ensure connection to all connected participants in the group
+        for (final p in extraParticipants) {
+          if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
+            if (!_webRtcService.peerConnections.containsKey(p.id)) {
+              _webRtcService.createOfferForPeer(
+                peerId: p.id,
+                conversationId: convoId,
+                repository: _repository,
+                isVideo: isVideo,
+              );
             }
           }
-        });
+        }
       }
 
       try {
@@ -1577,9 +1594,31 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     if (state is CallRinging) {
       debugPrint('CallWebRtcBloc: User ${user.id} joined group call. Local user is still in CallRinging, keeping ringtone active.');
       final current = state as CallRinging;
+      final existingIds = current.extraParticipants.map((u) => u.id.toLowerCase()).toSet();
+      final updatedList = current.extraParticipants.map((u) {
+        if (u.id.toLowerCase() == user!.id.toLowerCase()) {
+          return u.copyWith(
+            profilePictureUrl: (u.profilePictureUrl != null && u.profilePictureUrl!.isNotEmpty)
+                ? u.profilePictureUrl
+                : user.profilePictureUrl,
+            contactName: u.displayName.isNotEmpty ? u.displayName : user.displayName,
+          );
+        }
+        return u;
+      }).toList();
+      if (!existingIds.contains(user.id.toLowerCase())) {
+        updatedList.add(user);
+      }
+      for (final m in moreExtra) {
+        if (!updatedList.any((u) => u.id.toLowerCase() == m.id.toLowerCase())) {
+          updatedList.add(m);
+        }
+      }
       final updatedConnected = {...current.connectedParticipantIds, user.id, ...extraConnected};
       emit(current.copyWith(
+        extraParticipants: updatedList,
         connectedParticipantIds: updatedConnected,
+        isGroup: true,
       ));
       return;
     }
