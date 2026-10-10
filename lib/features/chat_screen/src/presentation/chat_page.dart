@@ -7733,6 +7733,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _showRequestScreenPermissionBottomSheet(BuildContext context, {int initialTabIndex = 0}) {
+    if (widget.isReadOnly || widget.targetUserId != null) return;
     final state = _chatBloc.state;
     final myId = state is ChatLoaded ? state.myId : (getIt<StorageService>().getUserId() ?? '');
     final rawIncomingReq = state is ChatLoaded ? state.incomingScreenPermissionRequest : null;
@@ -7782,6 +7783,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildIncomingScreenPermissionBanner(ChatState state) {
+    if (widget.isReadOnly || widget.targetUserId != null) {
+      return const SizedBox.shrink();
+    }
     if (state is! ChatLoaded || state.incomingScreenPermissionRequest == null) {
       return const SizedBox.shrink();
     }
