@@ -838,7 +838,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
 
     // Check server locked chats in background to ensure sync
-    if (event.conversationId.isNotEmpty) {
+    if (event.conversationId.isNotEmpty && !event.isReadOnly) {
       _chatRepository.getLockedChats().then((lockedList) {
         final isServerLocked = lockedList.any((item) {
           final cid = (item is Map) ? (item['id'] ?? item['_id'])?.toString() : null;
@@ -911,7 +911,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Mark unread messages from recipient as read (send read receipt to server) if enabled
       final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
       final effectiveReadReceipts = event.initialReadReceiptsEnabled ?? globalReadReceipts;
-      if (effectiveReadReceipts) {
+      if (effectiveReadReceipts && !event.isReadOnly) {
         for (var i = 0; i < messages.length; i++) {
           final msg = messages[i];
           if (msg.senderId != myId && (!msg.isRead || msg.status != 'read')) {
@@ -925,7 +925,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
 
       // ── Infer read/delivered status from message history (ONLY FOR 1-ON-1 DIRECT CHATS) ──
-      if (event.recipientId != null && event.recipientId!.isNotEmpty) {
+      if (event.recipientId != null && event.recipientId!.isNotEmpty && !event.isReadOnly) {
         String? lastRecipientMessageTime;
         // Walk newest→oldest to find last recipient reply timestamp
         for (final msg in messages.reversed) {
@@ -965,23 +965,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       _saveToCache(event.conversationId, messages);
 
       List<ScreenPermissionModel> activeScreenPermissions = [];
-      try {
-        activeScreenPermissions = await _chatRepository.getActiveScreenPermissions(event.conversationId);
-      } catch (_) {}
+      if (!event.isReadOnly) {
+        try {
+          activeScreenPermissions = await _chatRepository.getActiveScreenPermissions(event.conversationId);
+        } catch (_) {}
+      }
 
       ScreenPermissionModel? incomingScreenPermissionRequest;
-      try {
-        final pendingList = await _chatRepository.getPendingScreenPermissions();
-        final myId = (_storageService.getUserId() ?? '').trim();
-        for (final req in pendingList) {
-          if (req.isPending && (req.conversationId == event.conversationId || req.senderId == event.recipientId)) {
-            if (req.receiverId == myId || (myId.isNotEmpty && req.senderId != myId)) {
-              incomingScreenPermissionRequest = req;
-              break;
+      if (!event.isReadOnly) {
+        try {
+          final pendingList = await _chatRepository.getPendingScreenPermissions();
+          final myId = (_storageService.getUserId() ?? '').trim();
+          for (final req in pendingList) {
+            if (req.isPending && (req.conversationId == event.conversationId || req.senderId == event.recipientId)) {
+              if (req.receiverId == myId || (myId.isNotEmpty && req.senderId != myId)) {
+                incomingScreenPermissionRequest = req;
+                break;
+              }
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       final currentState = state;
       if (currentState is ChatLoaded) {

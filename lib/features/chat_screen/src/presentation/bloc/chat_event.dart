@@ -19,6 +19,7 @@ class LoadMessagesEvent extends ChatEvent {
   final bool? initialReadReceiptsEnabled;
   final bool? initialTypingIndicatorsEnabled;
   final bool? initialIsLocked;
+  final bool isReadOnly;
   const LoadMessagesEvent({
     required this.conversationId,
     this.recipientId,
@@ -32,6 +33,7 @@ class LoadMessagesEvent extends ChatEvent {
     this.initialReadReceiptsEnabled,
     this.initialTypingIndicatorsEnabled,
     this.initialIsLocked,
+    this.isReadOnly = false,
   });
 }
 

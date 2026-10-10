@@ -263,6 +263,7 @@ class _ChatPageState extends State<ChatPage> {
       initialReadReceiptsEnabled: widget.initialReadReceiptsEnabled,
       initialTypingIndicatorsEnabled: widget.initialTypingIndicatorsEnabled,
       initialIsLocked: widget.initialIsLocked,
+      isReadOnly: widget.isReadOnly,
     ));
 
     // Pre-populate with search query if provided (highlight word without replacing top AppBar with search bar)
