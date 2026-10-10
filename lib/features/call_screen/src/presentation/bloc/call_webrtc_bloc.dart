@@ -51,6 +51,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
   String? _activeCallMessageId;
   DateTime? _activeCallStart;
   final Map<String, OngoingGroupCall> _ongoingGroupCalls = {};
+  final Map<String, Map<String, dynamic>> _pendingGroupOffers = {};
 
   // Cached active/connecting call metadata to prevent state loss or 'Unknown' details
   String _cachedConversationId = '';
@@ -302,9 +303,14 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final offerMap = data['offer'];
           if (offerSenderId.isNotEmpty && offerSenderId != currentMyId && (targetUserId.isEmpty || targetUserId == currentMyId) && offerMap is Map) {
+            if (state is CallRinging) {
+              debugPrint('CallWebRtcBloc: Received peer offer from $offerSenderId while in CallRinging. Storing until user answers.');
+              _pendingGroupOffers[offerSenderId] = Map<String, dynamic>.from(offerMap);
+              return;
+            }
+
             final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
-                (state is CallConnecting && (state as CallConnecting).isVideo) ||
-                (state is CallRinging && (state as CallRinging).isVideo);
+                (state is CallConnecting && (state as CallConnecting).isVideo);
             final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
                 (state is CallConnecting && (state as CallConnecting).isGroup) ||
                 (state is CallRinging && (state as CallRinging).isGroup) ||
@@ -339,6 +345,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final answerMap = data['answer'];
           if (answerSenderId.isNotEmpty && answerSenderId != mySelfId && (answerTargetUserId.isEmpty || answerTargetUserId == mySelfId) && answerMap is Map) {
+            if (state is CallRinging) {
+              debugPrint('CallWebRtcBloc: Received peer answer from $answerSenderId while in CallRinging. Ignoring.');
+              return;
+            }
+
             final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
                 (state is CallConnecting && (state as CallConnecting).isGroup) ||
                 (state is CallRinging && (state as CallRinging).isGroup) ||
@@ -839,6 +850,24 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
         final myName = getIt<StorageService>().getUsername() ?? '';
         final myPic = getIt<StorageService>().getProfilePic();
+
+        // Process any offers received from other members while ringing
+        if (_pendingGroupOffers.isNotEmpty) {
+          final pending = Map<String, Map<String, dynamic>>.from(_pendingGroupOffers);
+          _pendingGroupOffers.clear();
+          for (final entry in pending.entries) {
+            if (entry.key != callerId && entry.key != myId) {
+              await _webRtcService.handlePeerOffer(
+                peerId: entry.key,
+                conversationId: convoId,
+                offerMap: entry.value,
+                repository: _repository,
+                isVideo: isVideo,
+              );
+            }
+          }
+        }
+
         _repository.emit('message', {
           'type': 'call_participant_joined',
           'conversation_id': convoId,
@@ -893,6 +922,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     HangUpCallEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
+    _pendingGroupOffers.clear();
     _cancelCallTimeoutTimer();
     _soundService.stopAll();
     _notificationService.dismissAllIncomingCalls();
