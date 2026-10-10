@@ -186,8 +186,8 @@ class _ChatPageState extends State<ChatPage> {
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
-  bool _attachmentAllowShare = false;
-  bool _attachmentAllowDownload = false;
+  bool _attachmentAllowShare = true;
+  bool _attachmentAllowDownload = true;
   bool _attachmentAllowView = true;
   bool _attachmentIsViewOnce = false;
   int _attachmentViewCount = 1;
@@ -3227,8 +3227,8 @@ class _ChatPageState extends State<ChatPage> {
       _recordedPath = null;
       _recordedName = null;
       _recordedDurationSecs = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
     });
 
@@ -3365,8 +3365,8 @@ class _ChatPageState extends State<ChatPage> {
         _recordedPath = null;
         _recordedName = null;
         _recordedDurationSecs = 0;
-        _attachmentAllowShare = false;
-        _attachmentAllowDownload = false;
+        _attachmentAllowShare = true;
+        _attachmentAllowDownload = true;
         _attachmentAllowView = true;
       });
     }
@@ -3705,8 +3705,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
       _attachmentIsViewOnce = false;
       _attachmentViewCount = 1;
@@ -4077,8 +4077,8 @@ class _ChatPageState extends State<ChatPage> {
                     _selectedAttachmentName = null;
                     _selectedAttachmentType = null;
                     _selectedAttachmentSize = 0;
-                    _attachmentAllowShare = false;
-                    _attachmentAllowDownload = false;
+                    _attachmentAllowShare = true;
+                    _attachmentAllowDownload = true;
                     _attachmentAllowView = true;
                     _isTyping = _messageController.text.trim().isNotEmpty;
                   });
@@ -6719,8 +6719,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentType = 'contact';
       _selectedAttachmentBytes = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
       _isTyping = true;
     });
@@ -6805,8 +6805,8 @@ class _ChatPageState extends State<ChatPage> {
               _selectedAttachmentName = name;
               _selectedAttachmentType = fileType;
               _selectedAttachmentSize = sendBytes.length;
-              _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+              _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
               _attachmentAllowView = (result['allowView'] as bool?) ?? true;
               _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
               _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -6855,8 +6855,8 @@ class _ChatPageState extends State<ChatPage> {
 
           if (result != null && result['send'] == true && mounted) {
             final caption = (result['caption'] as String?) ?? '';
-            final allowShare = (result['allowShare'] as bool?) ?? false;
-            final allowDownload = (result['allowDownload'] as bool?) ?? false;
+            final allowShare = (result['allowShare'] as bool?) ?? true;
+            final allowDownload = (result['allowDownload'] as bool?) ?? true;
             final allowView = (result['allowView'] as bool?) ?? true;
             final isViewOnce = (result['isViewOnce'] as bool?) ?? false;
             final maxViews = (result['maxViews'] as int?) ?? 1;
@@ -6941,8 +6941,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentName = name;
             _selectedAttachmentType = 'image';
             _selectedAttachmentSize = sendBytes.length;
-            _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+            _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
             _attachmentAllowView = (result['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7104,8 +7104,8 @@ class _ChatPageState extends State<ChatPage> {
           _selectedAttachmentName = name;
           _selectedAttachmentType = 'video';
           _selectedAttachmentSize = size;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7248,8 +7248,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentName = file.name;
             _selectedAttachmentType = fileType;
             _selectedAttachmentSize = sendBytes?.length ?? file.size;
-            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? false;
-            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? false;
+            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? true;
+            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? true;
             _attachmentAllowView = (previewResult['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (previewResult['maxViews'] as int?) ?? 1;
@@ -7332,8 +7332,8 @@ class _ChatPageState extends State<ChatPage> {
 
         if (previewResult != null && previewResult['send'] == true && mounted) {
           final caption = (previewResult['caption'] as String?) ?? '';
-          final allowShare = (previewResult['allowShare'] as bool?) ?? false;
-          final allowDownload = (previewResult['allowDownload'] as bool?) ?? false;
+          final allowShare = (previewResult['allowShare'] as bool?) ?? true;
+          final allowDownload = (previewResult['allowDownload'] as bool?) ?? true;
           final allowView = (previewResult['allowView'] as bool?) ?? true;
           final isViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
           final maxViews = (previewResult['maxViews'] as int?) ?? 1;
@@ -7401,8 +7401,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentType = 'location';
             _selectedAttachmentBytes = null;
             _selectedAttachmentSize = 0;
-            _attachmentAllowShare = false;
-            _attachmentAllowDownload = false;
+            _attachmentAllowShare = true;
+            _attachmentAllowDownload = true;
             _attachmentAllowView = true;
           });
           if (mounted) _uploadAndSendAttachment(context);

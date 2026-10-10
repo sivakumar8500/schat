@@ -352,16 +352,16 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
               fileSize: item.size,
               mimeType: _getMimeType(item.name, item.type),
               security: const {
-                'allowShare': false,
-                'allowDownload': false,
+                'allowShare': true,
+                'allowDownload': true,
                 'allowView': true,
               },
               viewControl: const {
                 'type': 'normal',
                 'maxViews': 1,
                 'isViewOnce': false,
-                'allowShare': false,
-                'allowDownload': false,
+                'allowShare': true,
+                'allowDownload': true,
                 'allowView': true,
               },
             );
