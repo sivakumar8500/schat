@@ -169,11 +169,20 @@ class ChatViewRequestCard extends StatelessWidget {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: onTap,
-                      icon: Icon(CommonIcons.chatBubble, size: 16, color: Colors.white),
-                      label: const Text('View Live Chats'),
+                      icon: const Icon(CommonIcons.chatBubble, size: 16, color: Colors.white),
+                      label: const Text(
+                        'View Live Chats',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: context.colors.primary,
+                        backgroundColor: const Color(0xFF00873C),
                         foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 11),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -250,8 +259,8 @@ class ChatViewRequestCard extends StatelessWidget {
 
     switch (request.status) {
       case 'accepted':
-        bg = context.colors.success.withValues(alpha: 0.15);
-        fg = context.colors.success;
+        bg = const Color(0xFF00873C).withValues(alpha: 0.18);
+        fg = const Color(0xFF00A859);
         label = 'Active';
         break;
       case 'pending':

@@ -88,6 +88,9 @@ configurations.all {
         force("androidx.activity:activity-ktx:1.9.3")
         force("androidx.activity:activity:1.9.3")
         force("androidx.navigationevent:navigationevent-android:1.0.0")
+        force("androidx.test:runner:1.5.2")
+        force("androidx.test:rules:1.5.0")
+        force("androidx.test:core:1.5.0")
     }
 }
 

@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
@@ -65,8 +67,12 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
 
   void _markStatusViewed(String? statusId) {
     if (statusId == null || statusId.isEmpty || widget.isMyStatus) return;
+    try {
+      getIt<StorageService>().saveViewedStatusId(statusId);
+    } catch (_) {}
     if (_viewedStatusIds.contains(statusId)) return;
     _viewedStatusIds.add(statusId);
+
     getIt<StatusRepository>().viewStatus(statusId).catchError((e) {
       debugPrint('Error marking status as viewed: $e');
     });
@@ -171,7 +177,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
 
       context.showSuccessNotification('Status deleted');
 
-      final list = widget.myStatuses;
+      final list = _myStatuses;
       if (list != null && list.isNotEmpty) {
         list.removeWhere((item) => item.id == statusId);
         if (list.isEmpty) {
@@ -196,10 +202,18 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
     }
   }
 
+  List<StatusItemModel>? _myStatuses;
+
   @override
   void initState() {
     super.initState();
     _currentContactIndex = widget.initialIndex;
+    _myStatuses = widget.myStatuses != null ? List<StatusItemModel>.from(widget.myStatuses!) : null;
+    if (!widget.isMyStatus && widget.contacts.isNotEmpty && _currentContactIndex < widget.contacts.length) {
+      final contact = widget.contacts[_currentContactIndex];
+      final firstUnviewed = contact.statuses.indexWhere((s) => !s.viewed);
+      _currentStatusIndex = firstUnviewed != -1 ? firstUnviewed : 0;
+    }
     _pageController = PageController(initialPage: _currentContactIndex);
     
     _progressController = AnimationController(vsync: this, duration: const Duration(seconds: 5));
@@ -261,7 +275,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
     String? statusType;
 
     if (widget.isMyStatus) {
-      final list = widget.myStatuses ?? [];
+      final list = _myStatuses ?? widget.myStatuses ?? [];
       if (list.isNotEmpty) {
         final item = list[_currentStatusIndex.clamp(0, list.length - 1)];
         mediaUrl = item.imagePath;
@@ -521,9 +535,18 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
   void _nextContact() {
     _cleanupMediaPlayers();
     if (_currentContactIndex < widget.contacts.length - 1) {
+      final nextIdx = _currentContactIndex + 1;
+      int nextStatusIdx = 0;
+      if (nextIdx < widget.contacts.length) {
+        final nextContact = widget.contacts[nextIdx];
+        final firstUnviewed = nextContact.statuses.indexWhere((s) => !s.viewed);
+        if (firstUnviewed != -1) {
+          nextStatusIdx = firstUnviewed;
+        }
+      }
       setState(() {
-        _currentContactIndex++;
-        _currentStatusIndex = 0;
+        _currentContactIndex = nextIdx;
+        _currentStatusIndex = nextStatusIdx;
       });
       _pageController.animateToPage(
         _currentContactIndex,
@@ -610,7 +633,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
 
     if (widget.isMyStatus) {
       avatarUrl = getIt<StorageService>().getProfilePic();
-      final myStatusesList = widget.myStatuses ?? [];
+      final myStatusesList = _myStatuses ?? widget.myStatuses ?? [];
       if (myStatusesList.isNotEmpty) {
         total = myStatusesList.length;
         current = _currentStatusIndex.clamp(0, total - 1);
@@ -816,6 +839,100 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
     );
   }
 
+  static final RegExp _urlRegex = RegExp(
+    r'(https?:\/\/[^\s<>"{}|\\^`]+|www\.[^\s<>"{}|\\^`]+|[a-zA-Z0-9_\-]+\.(?:com|org|net|io|in|app|co|dev|ai|me|info|tv|xyz|tech|site|gov|edu)(?:\/[^\s<>"{}|\\^`]*)?)',
+    caseSensitive: false,
+  );
+
+  Future<void> _openLink(String rawUrl) async {
+    _pauseCurrentPlayback();
+    var openUrl = rawUrl.trim();
+    if (openUrl.toLowerCase().startsWith('www.')) {
+      openUrl = 'https://$openUrl';
+    } else if (!openUrl.toLowerCase().startsWith('http://') && !openUrl.toLowerCase().startsWith('https://')) {
+      openUrl = 'https://$openUrl';
+    }
+    final uri = Uri.tryParse(openUrl);
+    if (uri != null) {
+      try {
+        final can = await canLaunchUrl(uri);
+        if (can) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) context.showErrorNotification('Could not open link: $rawUrl');
+        }
+      } catch (e) {
+        debugPrint('Error opening status link: $e');
+        if (mounted) context.showErrorNotification('Error opening link');
+      }
+    }
+  }
+
+  Widget _buildCaptionWidget(String caption) {
+    final matches = _urlRegex.allMatches(caption).toList();
+    if (matches.isEmpty) {
+      return Text(
+        caption,
+        textAlign: TextAlign.center,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+      );
+    }
+
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: caption.substring(lastEnd, match.start),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+        ));
+      }
+
+      final rawToken = caption.substring(match.start, match.end);
+      final cleanUrl = rawToken.replaceAll(RegExp(r'[.,)>\];:!?]+$'), '');
+      final trailingPunctuation = rawToken.substring(cleanUrl.length);
+
+      spans.add(TextSpan(
+        text: cleanUrl,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF64B5F6),
+          decoration: TextDecoration.underline,
+          decorationColor: Color(0xFF64B5F6),
+          height: 1.3,
+        ),
+        recognizer: TapGestureRecognizer()..onTap = () => _openLink(cleanUrl),
+      ));
+
+      if (trailingPunctuation.isNotEmpty) {
+        spans.add(TextSpan(
+          text: trailingPunctuation,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+        ));
+      }
+
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < caption.length) {
+      spans.add(TextSpan(
+        text: caption.substring(lastEnd),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
+      ));
+    }
+
+    return RichText(
+      textAlign: TextAlign.center,
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(children: spans),
+    );
+  }
+
   Widget _buildVideoStatusContent({
     required String videoUrl,
     String? caption,
@@ -875,13 +992,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 color: Colors.black.withValues(alpha: 0.6),
-                child: Text(
-                  caption,
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
-                ),
+                child: _buildCaptionWidget(caption),
               ),
             ),
         ],
@@ -983,13 +1094,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
           ),
           if (caption != null && caption.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Text(
-              caption,
-              textAlign: TextAlign.center,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white, height: 1.3),
-            ),
+            _buildCaptionWidget(caption),
           ],
         ],
       ),
@@ -1077,13 +1182,7 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 color: Colors.black.withValues(alpha: 0.6),
-                child: Text(
-                  caption,
-                  textAlign: TextAlign.center,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white, height: 1.3),
-                ),
+                child: _buildCaptionWidget(caption),
               ),
             ),
         ],
@@ -1095,23 +1194,140 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
     required String text,
     required Color bgColor,
   }) {
+    final matches = _urlRegex.allMatches(text).toList();
+    final List<String> extractedUrls = [];
+
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: const TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            height: 1.35,
+          ),
+        ));
+      }
+
+      final rawToken = text.substring(match.start, match.end);
+      final cleanUrl = rawToken.replaceAll(RegExp(r'[.,)>\];:!?]+$'), '');
+      final trailingPunctuation = rawToken.substring(cleanUrl.length);
+
+      if (cleanUrl.isNotEmpty && !extractedUrls.contains(cleanUrl)) {
+        extractedUrls.add(cleanUrl);
+      }
+
+      spans.add(TextSpan(
+        text: cleanUrl,
+        style: const TextStyle(
+          fontSize: 30,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF64B5F6),
+          decoration: TextDecoration.underline,
+          decorationColor: Color(0xFF64B5F6),
+          decorationThickness: 2.0,
+          height: 1.35,
+        ),
+        recognizer: TapGestureRecognizer()..onTap = () => _openLink(cleanUrl),
+      ));
+
+      if (trailingPunctuation.isNotEmpty) {
+        spans.add(TextSpan(
+          text: trailingPunctuation,
+          style: const TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            height: 1.35,
+          ),
+        ));
+      }
+
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: const TextStyle(
+          fontSize: 30,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+          height: 1.35,
+        ),
+      ));
+    }
+
     return Container(
       color: bgColor,
       width: double.infinity,
       height: double.infinity,
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 120),
-      child: SingleChildScrollView(
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            height: 1.3,
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 120),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              child: matches.isEmpty
+                  ? Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        height: 1.35,
+                      ),
+                    )
+                  : RichText(
+                      textAlign: TextAlign.center,
+                      text: TextSpan(children: spans),
+                    ),
+            ),
           ),
-        ),
+          if (extractedUrls.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openLink(extractedUrls.first),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.link_rounded, color: Color(0xFF64B5F6), size: 20),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        extractedUrls.first,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.open_in_new_rounded, color: Colors.white70, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

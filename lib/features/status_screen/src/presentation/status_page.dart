@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
@@ -477,13 +478,28 @@ class StatusPageContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<StatusBloc, StatusState>(
+      listenWhen: (previous, current) {
+        if (current is StatusLoaded) {
+          if (previous is! StatusLoaded) {
+            return current.uploadSuccessMessage != null || current.uploadError != null;
+          }
+          return (current.uploadSuccessMessage != null && current.uploadSuccessMessage != previous.uploadSuccessMessage) ||
+                 (current.uploadError != null && current.uploadError != previous.uploadError);
+        } else if (current is StatusFailure) {
+          if (previous is! StatusFailure) return true;
+          return current.errorMessage != previous.errorMessage;
+        }
+        return false;
+      },
       listener: (context, state) {
         if (state is StatusLoaded) {
           if (state.uploadSuccessMessage != null && state.uploadSuccessMessage!.isNotEmpty) {
             context.showSuccessNotification(state.uploadSuccessMessage!);
+            context.read<StatusBloc>().add(const ClearStatusNotificationEvent());
           }
           if (state.uploadError != null && state.uploadError!.isNotEmpty) {
             context.showErrorNotification(state.uploadError!);
+            context.read<StatusBloc>().add(const ClearStatusNotificationEvent());
           }
         } else if (state is StatusFailure) {
           context.showErrorNotification(state.errorMessage);
@@ -524,7 +540,7 @@ class StatusPageContent extends StatelessWidget {
         final isDark = context.colors.isDark;
 
         return Scaffold(
-          backgroundColor: context.colors.scaffoldBackground,
+          backgroundColor: Colors.transparent,
           body: RefreshIndicator(
             onRefresh: () async {
               context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
@@ -534,7 +550,8 @@ class StatusPageContent extends StatelessWidget {
                 // App Bar
                 SliverAppBar(
                   floating: true,
-                  backgroundColor: context.colors.scaffoldBackground,
+                  backgroundColor: Colors.transparent,
+                  surfaceTintColor: Colors.transparent,
                   elevation: 0,
                   title: Text(
                     'Status',
@@ -544,24 +561,6 @@ class StatusPageContent extends StatelessWidget {
                     ),
                   ),
                   actions: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFE8F5E9),
-                        border: Border.all(
-                          color: const Color(0xFF00873C).withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(Icons.add_rounded, color: Color(0xFF00873C), size: 20),
-                        tooltip: 'Add Status',
-                        onPressed: () => _showUploadOptions(context),
-                      ),
-                    ),
                     PopupMenuButton<String>(
                       icon: Icon(Icons.more_vert, color: context.colors.textPrimary, size: 24),
                       color: context.colors.scaffoldBackground,
@@ -803,8 +802,8 @@ class StatusPageContent extends StatelessWidget {
 
   Widget _buildStatusTile(BuildContext context, List<StatusContactModel> list, int index, {bool muted = false}) {
     final contact = list[index];
-    final allViewed = contact.allViewed;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final segmentViewedStates = contact.statuses.map((s) => s.viewed).toList();
 
     return InkWell(
       onTap: () => _viewStatus(context, list, index),
@@ -817,7 +816,7 @@ class StatusPageContent extends StatelessWidget {
               child: _buildStatusRing(
                 context,
                 contact.profileColor,
-                allViewed,
+                segmentViewedStates,
                 contact.statusCount,
                 contact.name.isNotEmpty ? contact.name[0].toUpperCase() : '?',
                 profilePictureUrl: contact.profilePictureUrl,
@@ -890,10 +889,19 @@ class StatusPageContent extends StatelessWidget {
 
   Widget _buildProfileFallback(String? profilePicUrl, String initial) {
     if (profilePicUrl != null && profilePicUrl.trim().isNotEmpty) {
-      return Image.network(
-        profilePicUrl,
+      return CachedNetworkImage(
+        imageUrl: profilePicUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Center(
+        useOldImageOnUrlChange: true,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
+        placeholder: (context, url) => Center(
+          child: Text(
+            initial,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00873C)),
+          ),
+        ),
+        errorWidget: (context, url, error) => Center(
           child: Text(
             initial,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00873C)),
@@ -1025,9 +1033,10 @@ class StatusPageContent extends StatelessWidget {
             height: 48,
             child: CustomPaint(
               painter: _StatusRingPainter(
-                color: const Color(0xFF00873C),
+                activeColor: const Color(0xFF00873C),
+                viewedColor: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+                segmentViewedStates: myStatuses.map((s) => s.viewed).toList(),
                 segmentCount: count,
-                viewed: false,
               ),
               child: Center(
                 child: Container(
@@ -1123,17 +1132,25 @@ class StatusPageContent extends StatelessWidget {
   Widget _buildStatusRing(
     BuildContext context,
     Color color,
-    bool viewed,
+    List<bool> segmentViewedStates,
     int count,
     String initial, {
     String? profilePictureUrl,
   }) {
     final hasPic = profilePictureUrl != null && profilePictureUrl.trim().isNotEmpty;
+    final isDark = context.colors.isDark;
+    final viewedColor = isDark ? Colors.grey.shade600 : Colors.grey.shade400;
+
     return SizedBox(
       width: 48,
       height: 48,
       child: CustomPaint(
-        painter: _StatusRingPainter(color: viewed ? Colors.grey : color, segmentCount: count, viewed: viewed),
+        painter: _StatusRingPainter(
+          activeColor: color,
+          viewedColor: viewedColor,
+          segmentViewedStates: segmentViewedStates,
+          segmentCount: count,
+        ),
         child: Center(
           child: Container(
             width: 38,
@@ -1144,10 +1161,20 @@ class StatusPageContent extends StatelessWidget {
             ),
             child: ClipOval(
               child: hasPic
-                  ? Image.network(
-                      profilePictureUrl,
+                  ? CachedNetworkImage(
+                      imageUrl: profilePictureUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Center(
+                      placeholder: (context, url) => Center(
+                        child: Text(
+                          initial,
+                          style: context.titleMedium.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => Center(
                         child: Text(
                           initial,
                           style: context.titleMedium.copyWith(
@@ -1176,21 +1203,23 @@ class StatusPageContent extends StatelessWidget {
   }
 }
 
-// Custom painter for segmented status ring
+// Custom painter for segmented status ring with per-segment viewed status
 class _StatusRingPainter extends CustomPainter {
-  final Color color;
+  final Color activeColor;
+  final Color viewedColor;
+  final List<bool> segmentViewedStates;
   final int segmentCount;
-  final bool viewed;
 
-  _StatusRingPainter({required this.color, required this.segmentCount, required this.viewed});
+  _StatusRingPainter({
+    required this.activeColor,
+    this.viewedColor = const Color(0xFF9E9E9E),
+    required this.segmentViewedStates,
+    required this.segmentCount,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
+    if (segmentCount <= 0) return;
 
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width / 2) - 1.5;
@@ -1199,18 +1228,35 @@ class _StatusRingPainter extends CustomPainter {
     const startOffset = -pi / 2;
 
     for (int i = 0; i < segmentCount; i++) {
+      final isSegmentViewed = i < segmentViewedStates.length ? segmentViewedStates[i] : false;
+      final segmentPaint = Paint()
+        ..color = isSegmentViewed ? viewedColor : activeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4
+        ..strokeCap = StrokeCap.round;
+
       final startAngle = startOffset + i * (segmentAngle + gapAngle);
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
         startAngle,
         segmentAngle,
         false,
-        paint,
+        segmentPaint,
       );
     }
   }
 
   @override
-  bool shouldRepaint(_StatusRingPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.segmentCount != segmentCount;
+  bool shouldRepaint(_StatusRingPainter oldDelegate) {
+    if (oldDelegate.activeColor != activeColor ||
+        oldDelegate.viewedColor != viewedColor ||
+        oldDelegate.segmentCount != segmentCount ||
+        oldDelegate.segmentViewedStates.length != segmentViewedStates.length) {
+      return true;
+    }
+    for (int i = 0; i < segmentViewedStates.length; i++) {
+      if (oldDelegate.segmentViewedStates[i] != segmentViewedStates[i]) return true;
+    }
+    return false;
+  }
 }

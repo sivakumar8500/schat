@@ -253,7 +253,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8,
                   baseColor: Colors.white70,
-                  highlightColor: Color(0xFF00FF87),
+                  highlightColor: Color(0xFF00A859),
                   showShieldIcon: true,
                 ),
 

@@ -14,6 +14,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -238,9 +239,24 @@ class _VideoCallPageState extends State<VideoCallPage>
           _startTimer();
           _scheduleControlsHide();
         }
-        if (state is CallEnded || state is CallRejected || state is CallError) {
+        if (state is CallRejected) {
           if (!_isNavigating) {
             _isNavigating = true;
+            context.showErrorNotification(
+              state.reason.isNotEmpty ? state.reason : 'User is currently in another call',
+            );
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (context.mounted && Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            });
+          }
+        } else if (state is CallEnded || state is CallError) {
+          if (!_isNavigating) {
+            _isNavigating = true;
+            if (state is CallError) {
+              context.showErrorNotification(state.message);
+            }
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             }
@@ -326,7 +342,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                                           ? _buildRemoteVideoOffPlaceholder(state)
                                           : RTCVideoView(
                                               _webRtcService.remoteRenderer,
-                                              key: ValueKey('main_remote_${_webRtcService.remoteRenderer.textureId}'),
+                                              key: const Key('main_remote_video'),
                                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                               mirror: false,
                                             ))
@@ -334,7 +350,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                                           ? _buildLocalVideoOffPlaceholder()
                                           : RTCVideoView(
                                               _webRtcService.localRenderer,
-                                              key: ValueKey('main_local_${_webRtcService.localRenderer.textureId}'),
+                                              key: const Key('main_local_video'),
                                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                               mirror: isFrontCamera,
                                             )))
@@ -342,7 +358,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                                       ? _buildWaitingScreen()
                                       : RTCVideoView(
                                           _webRtcService.localRenderer,
-                                          key: ValueKey('main_local_${_webRtcService.localRenderer.textureId}'),
+                                          key: const Key('main_local_video'),
                                           objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                           mirror: isFrontCamera,
                                         )))),
@@ -669,7 +685,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                           ? _buildLocalVideoOffPlaceholder()
                           : RTCVideoView(
                               _webRtcService.localRenderer,
-                              key: ValueKey('inset_local_${_webRtcService.localRenderer.textureId}'),
+                              key: const Key('inset_local_video'),
                               mirror: isFrontCamera,
                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                             ))
@@ -677,7 +693,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                           ? _buildRemoteVideoOffPlaceholder(state)
                           : RTCVideoView(
                               _webRtcService.remoteRenderer,
-                              key: ValueKey('inset_remote_${_webRtcService.remoteRenderer.textureId}'),
+                              key: const Key('inset_remote_video'),
                               mirror: false,
                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                             ))),
@@ -986,16 +1002,14 @@ class _VideoCallPageState extends State<VideoCallPage>
         ));
 
         if (isConnectedPeer) {
-          // Eagerly initialize mesh peer renderer if not yet initialized
-          _webRtcService.getOrCreatePeerRenderer(user.id);
-          final peerRenderer = _webRtcService.getPeerRenderer(user.id) ?? _webRtcService.remoteRenderer;
+          final peerRenderer = _webRtcService.getPeerRenderer(user.id);
 
           connectedTiles.add(_buildGridTile(
-            child: isRemoteVidOff
+            child: (isRemoteVidOff || peerRenderer == null)
                 ? _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl, isSpeaking: isRemoteSpeaking)
                 : RTCVideoView(
                     peerRenderer,
-                    key: ValueKey('grid_peer_${user.id}_${peerRenderer.textureId}'),
+                    key: Key('grid_peer_${user.id}'),
                     objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                     mirror: false,
                     filterQuality: FilterQuality.medium,
@@ -1012,7 +1026,6 @@ class _VideoCallPageState extends State<VideoCallPage>
         final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
         final isRemoteSpeaking = !isUserMuted;
         final isRemoteVidOff = state.videoOffParticipantIds.contains(state.recipientId) || state.isRemoteVideoOff;
-        _webRtcService.getOrCreatePeerRenderer(state.recipientId);
         final peerRenderer = _webRtcService.getPeerRenderer(state.recipientId) ?? _webRtcService.remoteRenderer;
 
         allParticipants.add(_ParticipantInfo(
@@ -1030,7 +1043,7 @@ class _VideoCallPageState extends State<VideoCallPage>
               ? _buildRemoteParticipantPlaceholder(state.contactName, widget.profilePictureUrl, isSpeaking: isRemoteSpeaking)
               : RTCVideoView(
                   peerRenderer,
-                  key: ValueKey('grid_remote_${peerRenderer.textureId}'),
+                  key: const Key('grid_single_remote_video'),
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                   mirror: false,
                   filterQuality: FilterQuality.medium,
@@ -1406,7 +1419,7 @@ class _VideoCallPageState extends State<VideoCallPage>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: p.isConnected
-              ? (p.isSpeaking ? const Color(0xFF00FF87).withValues(alpha: 0.4) : Colors.white10)
+              ? (p.isSpeaking ? const Color(0xFF00A859).withValues(alpha: 0.4) : Colors.white10)
               : (p.isDisconnected ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white10),
           width: 1,
         ),
@@ -1456,7 +1469,7 @@ class _VideoCallPageState extends State<VideoCallPage>
                         const Text(
                           'Speaking',
                           style: TextStyle(
-                            color: Color(0xFF00FF87),
+                            color: Color(0xFF00A859),
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1802,10 +1815,10 @@ class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.7),
+                          color: const Color(0xFF00A859).withValues(alpha: (1.0 - v1) * 0.7),
                           width: 1.5,
                         ),
-                        color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.12),
+                        color: const Color(0xFF00A859).withValues(alpha: (1.0 - v1) * 0.12),
                       ),
                     ),
                     Container(
@@ -1829,13 +1842,13 @@ class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: widget.isSpeaking ? const Color(0xFF00FF87) : Colors.white.withValues(alpha: 0.25),
+                color: widget.isSpeaking ? const Color(0xFF00A859) : Colors.white.withValues(alpha: 0.25),
                 width: widget.isSpeaking ? 2.5 : 1.5,
               ),
               boxShadow: widget.isSpeaking
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF00FF87).withValues(alpha: 0.45),
+                        color: const Color(0xFF00A859).withValues(alpha: 0.45),
                         blurRadius: 12,
                         spreadRadius: 2,
                       ),

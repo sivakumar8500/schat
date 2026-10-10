@@ -21,8 +21,6 @@ class CallSoundService {
   void _configureAudioContexts() {
     try {
       // Ringtone AudioContext: Strictly follows system ringer mode (Silent/Vibrate/Normal)
-      // On Android: notificationRingtone usage uses STREAM_RING which is automatically silenced in mute/vibrate mode.
-      // On iOS: ambient category honors the hardware mute switch.
       final ringtoneContext = AudioContext(
         android: const AudioContextAndroid(
           isSpeakerphoneOn: true,
@@ -34,7 +32,9 @@ class CallSoundService {
         ),
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.ambient,
-          options: const {},
+          options: const {
+            AVAudioSessionOptions.mixWithOthers,
+          },
         ),
       );
 
@@ -50,7 +50,9 @@ class CallSoundService {
         ),
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.ambient,
-          options: const {},
+          options: const {
+            AVAudioSessionOptions.mixWithOthers,
+          },
         ),
       );
 
@@ -65,8 +67,10 @@ class CallSoundService {
           audioMode: AndroidAudioMode.inCommunication,
         ),
         iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.ambient,
-          options: const {},
+          category: AVAudioSessionCategory.playback,
+          options: const {
+            AVAudioSessionOptions.mixWithOthers,
+          },
         ),
       );
 

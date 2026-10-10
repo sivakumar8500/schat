@@ -192,6 +192,7 @@ class ReceiveEditMessageEvent extends ChatEvent {
   final String messageId;
   final String conversationId;
   final String? newContent;
+  final String? newMediaUrl;
   final String? updatedAt;
   final int? editedAt;
   final bool? allowShare;
@@ -203,6 +204,7 @@ class ReceiveEditMessageEvent extends ChatEvent {
     required this.messageId,
     required this.conversationId,
     this.newContent,
+    this.newMediaUrl,
     this.updatedAt,
     this.editedAt,
     this.allowShare,

@@ -19,7 +19,7 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
-import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/services/in_app_update_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/pip_call_view.dart';
 
@@ -126,6 +126,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ShareReceiverService().init();
+    try {
+      getIt<PushNotificationService>().clearAllNotifications();
+    } catch (_) {}
   }
 
   /// Reconnect the WebSocket when the app comes back to the foreground.
@@ -137,6 +140,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
       repo.onAppResumed();
+      getIt<InAppUpdateService>().checkForUpdate();
+      try {
+        getIt<PushNotificationService>().clearAllNotifications();
+      } catch (_) {}
     }
   }
 
@@ -213,7 +220,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             ),
             darkTheme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
-                seedColor: const Color(0xFF00FF87),
+                seedColor: const Color(0xFF00873C),
+                primary: const Color(0xFF00873C),
+                onPrimary: Colors.white,
                 brightness: Brightness.dark,
                 surface: const Color(0xFF1A241F),
                 onSurface: Colors.white,
@@ -224,10 +233,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
               cardColor: const Color(0xFF1E2B22),
               useMaterial3: true,
               fontFamily: CommonFonts.primaryFont,
+              elevatedButtonTheme: ElevatedButtonThemeData(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00873C),
+                  foregroundColor: Colors.white,
+                ),
+              ),
               textSelectionTheme: TextSelectionThemeData(
-                cursorColor: const Color(0xFF00FF87),
-                selectionColor: const Color(0xFF00FF87).withValues(alpha: 0.35),
-                selectionHandleColor: const Color(0xFF00FF87),
+                cursorColor: const Color(0xFF00873C),
+                selectionColor: const Color(0xFF00873C).withValues(alpha: 0.35),
+                selectionHandleColor: const Color(0xFF00873C),
               ),
               inputDecorationTheme: InputDecorationTheme(
                 hintStyle: TextStyle(
@@ -280,68 +295,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                                 conversationId: (callState.incomingEvent['conversation_id'] ?? callState.incomingEvent['conversationId'])?.toString() ?? '',
                                 recipientId: callState.recipientId,
                                 profilePictureUrl: callState.profilePictureUrl,
-                              ),
-                            ),
-                          if (((callState is CallActive && !callState.isMinimized) ||
-                                  (callState is CallConnecting && !callState.isMinimized)) &&
-                              !CallWebRtcBloc.isCallScreenMounted)
-                            Positioned.fill(
-                              child: Material(
-                                child: (callState is CallActive
-                                        ? callState.isVideo
-                                        : (callState as CallConnecting).isVideo)
-                                    ? VideoCallPage(
-                                        conversationId: callState is CallActive
-                                            ? callState.conversationId
-                                            : (callState as CallConnecting).conversationId,
-                                        contactName: callState is CallActive
-                                            ? callState.contactName
-                                            : (callState as CallConnecting).contactName,
-                                        contactColor: Colors.blue,
-                                        recipientId: callState is CallActive
-                                            ? callState.recipientId
-                                            : (callState as CallConnecting).recipientId,
-                                        isOutgoing: false,
-                                        profilePictureUrl: callState is CallActive
-                                            ? callState.profilePictureUrl
-                                            : (callState as CallConnecting).profilePictureUrl,
-                                        myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                                        isGroup: callState is CallActive
-                                            ? callState.isGroup
-                                            : (callState as CallConnecting).isGroup,
-                                        groupName: callState is CallActive
-                                            ? callState.groupName
-                                            : (callState as CallConnecting).groupName,
-                                        extraParticipants: callState is CallActive
-                                            ? callState.extraParticipants
-                                            : (callState as CallConnecting).extraParticipants,
-                                      )
-                                    : AudioCallPage(
-                                        conversationId: callState is CallActive
-                                            ? callState.conversationId
-                                            : (callState as CallConnecting).conversationId,
-                                        contactName: callState is CallActive
-                                            ? callState.contactName
-                                            : (callState as CallConnecting).contactName,
-                                        contactColor: Colors.blue,
-                                        recipientId: callState is CallActive
-                                            ? callState.recipientId
-                                            : (callState as CallConnecting).recipientId,
-                                        isOutgoing: false,
-                                        profilePictureUrl: callState is CallActive
-                                            ? callState.profilePictureUrl
-                                            : (callState as CallConnecting).profilePictureUrl,
-                                        myProfilePictureUrl: getIt<StorageService>().getProfilePic(),
-                                        isGroup: callState is CallActive
-                                            ? callState.isGroup
-                                            : (callState as CallConnecting).isGroup,
-                                        groupName: callState is CallActive
-                                            ? callState.groupName
-                                            : (callState as CallConnecting).groupName,
-                                        extraParticipants: callState is CallActive
-                                            ? callState.extraParticipants
-                                            : (callState as CallConnecting).extraParticipants,
-                                      ),
                               ),
                             ),
                         ],

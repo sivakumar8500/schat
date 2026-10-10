@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:schat/core/services/session_manager_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/auth_screen/src/domain/repositories/auth_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -67,6 +69,9 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
 
   @override
   void dispose() {
+    if (getIt.isRegistered<SessionManagerService>()) {
+      getIt<SessionManagerService>().setProtectedSession(false);
+    }
     _countdownTimer?.cancel();
     _otpController.dispose();
     _newPasswordController.dispose();
@@ -204,6 +209,13 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
     });
 
     try {
+      if (getIt.isRegistered<SessionManagerService>()) {
+        getIt<SessionManagerService>().setProtectedSession(true);
+      }
+      if (getIt.isRegistered<ChatSocketRepository>()) {
+        getIt<ChatSocketRepository>().disconnect();
+      }
+
       final authRepo = getIt<AuthRepository>();
       final deviceId = getIt<StorageService>().getDeviceId();
       final res = await authRepo.verifyOtp(_phoneNumber, otp, deviceId);
@@ -215,9 +227,15 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
               _isLoading = false;
               _currentStep = ForgotLockStep.setNewPassword;
             });
+            if (getIt.isRegistered<ChatSocketRepository>()) {
+              getIt<ChatSocketRepository>().connect();
+            }
           }
         },
         failure: (msg, _) {
+          if (getIt.isRegistered<SessionManagerService>()) {
+            getIt<SessionManagerService>().setProtectedSession(false);
+          }
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -227,6 +245,9 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
         },
       );
     } catch (e) {
+      if (getIt.isRegistered<SessionManagerService>()) {
+        getIt<SessionManagerService>().setProtectedSession(false);
+      }
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -261,9 +282,17 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
       if (mounted) {
         setState(() => _isLoading = false);
         if (success) {
-          context.showSuccessNotification('Chat lock password reset successfully!');
-          widget.onPasswordReset?.call();
-          Navigator.pop(context, true);
+          if (getIt.isRegistered<SessionManagerService>()) {
+            getIt<SessionManagerService>().setProtectedSession(false);
+          }
+          final nav = Navigator.of(context);
+          try {
+            context.showSuccessNotification('Chat lock password reset successfully!');
+          } catch (_) {}
+          try {
+            widget.onPasswordReset?.call();
+          } catch (_) {}
+          nav.pop(true);
         } else {
           setState(() {
             _errorMessage = 'Failed to update password. Please try again.';
@@ -305,8 +334,7 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final isDark = colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     return Container(
       decoration: BoxDecoration(

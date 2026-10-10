@@ -29,7 +29,6 @@ class StorageService {
 
   final SharedPreferences _prefs;
 
-  @injectable
   StorageService(this._prefs);
 
   Future<void> saveTokens({required String accessToken, required String refreshToken}) async {
@@ -263,6 +262,27 @@ class StorageService {
   bool isChatHidden(String conversationId) {
     final list = _prefs.getStringList(_hiddenChatsKey) ?? [];
     return list.contains(conversationId);
+  }
+
+  static const String _viewedStatusIdsKey = 'viewed_status_ids_set';
+
+  Future<void> saveViewedStatusId(String statusId) async {
+    if (statusId.isEmpty) return;
+    final current = getViewedStatusIds().toSet();
+    if (!current.contains(statusId)) {
+      current.add(statusId);
+      await _prefs.setStringList(_viewedStatusIdsKey, current.toList());
+    }
+  }
+
+  Set<String> getViewedStatusIds() {
+    final list = _prefs.getStringList(_viewedStatusIdsKey);
+    return list != null ? list.toSet() : <String>{};
+  }
+
+  bool isStatusViewed(String statusId) {
+    if (statusId.isEmpty) return false;
+    return getViewedStatusIds().contains(statusId);
   }
 
   Future<void> clearAll() async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/main.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -305,7 +306,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                         : Icons.lock_rounded,
                     color: widget.isCurrentlyLocked
                         ? const Color(0xFFD92D20)
-                        : (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)),
+                        : const Color(0xFF00873C),
                     size: 32,
                   ),
                 ),
@@ -518,19 +519,25 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                       TextButton.icon(
                         onPressed: _isActionProcessing
                             ? null
-                            : () {
+                            : () async {
+                                final rootCtx = navigatorKey.currentContext ?? context;
                                 Navigator.pop(context);
-                                ForgotChatLockBottomSheet.show(
-                                  context,
-                                  onPasswordReset: () {
-                                    context.showSuccessNotification('Passcode reset. You can now use your new passcode.');
-                                  },
-                                );
+                                await Future.delayed(const Duration(milliseconds: 150));
+                                if (rootCtx.mounted) {
+                                  ForgotChatLockBottomSheet.show(
+                                    rootCtx,
+                                    onPasswordReset: () {
+                                      try {
+                                        rootCtx.showSuccessNotification('Passcode reset. You can now use your new passcode.');
+                                      } catch (_) {}
+                                    },
+                                  );
+                                }
                               },
                         icon: const Icon(Icons.lock_reset_rounded, size: 16),
                         label: const Text('Forgot Secret Code?'),
                         style: TextButton.styleFrom(
-                          foregroundColor: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                          foregroundColor: const Color(0xFF00873C),
                           textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                         ),
                       ),

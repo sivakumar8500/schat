@@ -95,7 +95,7 @@ class _AnimatedGlowingBorderCardState extends State<AnimatedGlowingBorderCard>
               borderRadius: BorderRadius.circular(widget.borderRadius),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF00FF7F).withValues(alpha: 0.35),
+                  color: const Color(0xFF00A859).withValues(alpha: 0.35),
                   blurRadius: 16,
                   spreadRadius: 1,
                   offset: const Offset(0, 2),
@@ -132,11 +132,11 @@ class _RotatingGradientBorderPainter extends CustomPainter {
       endAngle: math.pi * 2,
       transform: GradientRotation(animationValue * math.pi * 2),
       colors: const [
-        Color(0xFF00FF7F),
+        Color(0xFF00A859),
         Color(0xFF34C759),
         Color(0xFF00E676),
         Color(0xFF10B981),
-        Color(0xFF00FF7F),
+        Color(0xFF00A859),
       ],
       stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
     );

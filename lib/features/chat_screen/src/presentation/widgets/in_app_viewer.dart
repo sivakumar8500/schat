@@ -11,6 +11,7 @@ import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
@@ -181,13 +182,22 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       }
 
       final resolvedUrl = SecureAttachmentService.resolveFullUrl(widget.url);
+      final rawPath = widget.url.replaceAll('file://', '').trim();
 
       // 1. If local file exists, use it directly
-      final isLocal = File(resolvedUrl).existsSync();
-      if (isLocal) {
+      if (!kIsWeb && File(resolvedUrl).existsSync()) {
         if (mounted) {
           setState(() {
             _decryptedTempFile = File(resolvedUrl);
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+      if (!kIsWeb && File(rawPath).existsSync()) {
+        if (mounted) {
+          setState(() {
+            _decryptedTempFile = File(rawPath);
             _isLoading = false;
           });
         }
@@ -364,23 +374,29 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                         ),
                       ),
                     )
-                  : Image.network(
-                      activePath,
+                  : CachedNetworkImage(
+                      imageUrl: activePath,
                       fit: BoxFit.contain,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return const Center(child: CircularProgressIndicator(color: Colors.white));
+                      placeholder: (context, url) =>
+                          const Center(child: CircularProgressIndicator(color: Colors.white)),
+                      errorWidget: (context, url, error) {
+                        if (!kIsWeb && File(widget.url).existsSync()) {
+                          return Image.file(
+                            File(widget.url),
+                            fit: BoxFit.contain,
+                          );
+                        }
+                        return const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
+                              CommonSpaces.h16,
+                              Text('Failed to load image', style: TextStyle(color: Colors.white70)),
+                            ],
+                          ),
+                        );
                       },
-                      errorBuilder: (context, error, stackTrace) => const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(CommonIcons.brokenImage, color: Colors.white54, size: 64),
-                            CommonSpaces.h16,
-                            Text('Failed to load image', style: TextStyle(color: Colors.white70)),
-                          ],
-                        ),
-                      ),
                     ),
             ),
           ),

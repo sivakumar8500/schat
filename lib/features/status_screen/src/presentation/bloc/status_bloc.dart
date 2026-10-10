@@ -26,8 +26,19 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     on<DeleteMyStatusEvent>(_onDeleteMyStatus);
     on<FetchStatusPrivacyEvent>(_onFetchStatusPrivacy);
     on<UpdateStatusPrivacyEvent>(_onUpdateStatusPrivacy);
+    on<ClearStatusNotificationEvent>(_onClearStatusNotification);
 
     _listenToSocket();
+  }
+
+  void _onClearStatusNotification(ClearStatusNotificationEvent event, Emitter<StatusState> emit) {
+    final currentState = state;
+    if (currentState is StatusLoaded) {
+      emit(currentState.copyWith(
+        uploadSuccessMessage: () => null,
+        uploadError: () => null,
+      ));
+    }
   }
 
   void _listenToSocket() {
@@ -96,6 +107,8 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
           myStatusPath: () => myPath,
           myStatusTime: () => myTime,
           privacyModel: privacy,
+          uploadSuccessMessage: () => null,
+          uploadError: () => null,
         ));
       } else {
         emit(StatusLoaded(
@@ -106,6 +119,8 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
           myStatusPath: myPath,
           myStatusTime: myTime,
           privacyModel: privacy,
+          uploadSuccessMessage: null,
+          uploadError: null,
         ));
       }
     } catch (e) {
@@ -181,6 +196,38 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
     }
   }
 
+  Future<({String? type, List<String>? userIds})> _resolveActivePrivacy({
+    String? overrideType,
+    List<String>? overrideUserIds,
+  }) async {
+    String? type = overrideType;
+    List<String>? userIds = overrideUserIds;
+
+    StatusPrivacyModel? privacy;
+    final currentState = state;
+    if (currentState is StatusLoaded && currentState.privacyModel != null) {
+      privacy = currentState.privacyModel;
+    } else {
+      try {
+        privacy = await _repository.getStatusPrivacy();
+      } catch (_) {}
+    }
+
+    if (type == null && privacy != null) {
+      type = privacy.privacyType;
+    }
+    if (userIds == null && privacy != null) {
+      final pType = (type ?? 'contacts').toLowerCase();
+      if (pType == 'only' || pType == 'include' || pType == 'only_share_with' || pType == 'only_share') {
+        userIds = privacy.includedUserIds;
+      } else if (pType == 'except' || pType == 'exclude' || pType == 'my_contacts_except') {
+        userIds = privacy.excludedUserIds;
+      }
+    }
+
+    return (type: type, userIds: userIds);
+  }
+
   Future<void> _onUploadTextStatus(UploadTextStatusEvent event, Emitter<StatusState> emit) async {
     final currentState = state;
     if (currentState is StatusLoaded) {
@@ -193,13 +240,18 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
       ));
     }
 
+    final resolvedPrivacy = await _resolveActivePrivacy(
+      overrideType: event.privacyType,
+      overrideUserIds: event.privacyUserIds,
+    );
+
     try {
       await _repository.createStatus(
         statusType: 'text',
         textContent: event.text,
         textColor: event.textColor,
-        privacyType: event.privacyType,
-        privacyUserIds: event.privacyUserIds,
+        privacyType: resolvedPrivacy.type,
+        privacyUserIds: resolvedPrivacy.userIds,
         onProgress: (p) => add(UpdateUploadProgressEvent(p)),
       );
       await _reloadUpdatesAfterUpload(emit, 'Status uploaded successfully');
@@ -240,6 +292,11 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
       ));
     }
 
+    final resolvedPrivacy = await _resolveActivePrivacy(
+      overrideType: event.privacyType,
+      overrideUserIds: event.privacyUserIds,
+    );
+
     try {
       final fileName = event.path != null ? event.path!.split('/').last : 'media.jpg';
       String inferredType = event.statusType ?? 'image';
@@ -264,8 +321,8 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         mimeType: inferredMime,
         textColor: event.textColor,
         fileSizeBytes: event.bytes?.length ?? 1024,
-        privacyType: event.privacyType,
-        privacyUserIds: event.privacyUserIds,
+        privacyType: resolvedPrivacy.type,
+        privacyUserIds: resolvedPrivacy.userIds,
         onProgress: (p) => add(UpdateUploadProgressEvent(p)),
       );
       await _reloadUpdatesAfterUpload(emit, 'Status uploaded successfully');
@@ -296,6 +353,8 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         emit(currentState.copyWith(
           recentUpdates: recent,
           mutedUpdates: muted,
+          uploadSuccessMessage: () => null,
+          uploadError: () => null,
         ));
       } else {
         emit(StatusLoaded(
@@ -323,7 +382,11 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
       final privacy = await _repository.getStatusPrivacy();
       final currentState = state;
       if (currentState is StatusLoaded) {
-        emit(currentState.copyWith(privacyModel: privacy));
+        emit(currentState.copyWith(
+          privacyModel: privacy,
+          uploadSuccessMessage: () => null,
+          uploadError: () => null,
+        ));
       }
     } catch (_) {}
   }
@@ -338,11 +401,16 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
       final privacy = await _repository.getStatusPrivacy();
       final currentState = state;
       if (currentState is StatusLoaded) {
-        emit(currentState.copyWith(privacyModel: privacy));
+        emit(currentState.copyWith(
+          privacyModel: privacy,
+          uploadSuccessMessage: () => null,
+          uploadError: () => null,
+        ));
       }
     } catch (e) {
       emit(StatusFailure(errorMessage: e.toString()));
     }
   }
 }
+
 

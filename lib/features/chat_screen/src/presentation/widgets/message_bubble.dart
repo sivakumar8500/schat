@@ -1235,6 +1235,27 @@ class _MessageBubbleState extends State<MessageBubble> {
     final textColor = context.colors.textPrimary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    if (!allowView) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.lock_outline, size: 12, color: isDark ? Colors.white60 : Colors.black54),
+            const SizedBox(width: 4),
+            Text(
+              'Access restricted by sender',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontStyle: FontStyle.italic,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final List<Widget> actionButtons = [];
 
     // 1. View Action: Toggles permission if sender (isMe), opens viewer if recipient
@@ -1483,7 +1504,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    final bool showShareDetails = isMe && !isGroup && _isMediaMessage;
+    final bool showShareDetails = isMe && !isGroup && _isMediaMessage && allowView && allowShare;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
@@ -1684,34 +1705,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       } else if (effectivePath != null) {
         final resolvedUrl = SecureAttachmentService.resolveFullUrl(effectivePath);
         final isLocalFile = !kIsWeb && File(resolvedUrl).existsSync();
-        if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
-          imageWidget = Image.network(
-            resolvedUrl,
-            height: 220,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                height: 220,
-                width: double.infinity,
-                color: context.colors.pureBlack.withValues(alpha: 0.1),
-                child: Center(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
-                    ),
-                  ),
-                ),
-              );
-            },
-            errorBuilder: (_, _, _) =>
-                _fileChip(context, CommonIcons.brokenImage, 'Image error'),
-          );
-        } else if (isLocalFile) {
+        if (isLocalFile) {
           imageWidget = Image.file(
             File(resolvedUrl),
             height: 220,
@@ -1723,33 +1717,52 @@ class _MessageBubbleState extends State<MessageBubble> {
               'Image error',
             ),
           );
-        } else {
-          imageWidget = Image.network(
-            resolvedUrl,
+        } else if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
+          imageWidget = CachedNetworkImage(
+            imageUrl: resolvedUrl,
+            cacheKey: resolvedUrl.split('?').first,
             height: 220,
             width: double.infinity,
             fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
-                height: 220,
-                width: double.infinity,
-                color: context.colors.pureBlack.withValues(alpha: 0.1),
-                child: Center(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
-                    ),
+            placeholder: (context, url) => Container(
+              height: 220,
+              width: double.infinity,
+              color: context.colors.pureBlack.withValues(alpha: 0.1),
+              child: Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
                   ),
                 ),
+              ),
+            ),
+            errorWidget: (context, url, error) {
+              // Direct network image fallback without cache manager
+              return Image.network(
+                resolvedUrl,
+                height: 220,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) {
+                  // Local file fallback if sender still has local file
+                  if (!kIsWeb && attachmentPath != null && File(attachmentPath!).existsSync()) {
+                    return Image.file(
+                      File(attachmentPath!),
+                      height: 220,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    );
+                  }
+                  return _fileChip(context, CommonIcons.brokenImage, 'Image error');
+                },
               );
             },
-            errorBuilder: (_, _, _) =>
-                _fileChip(context, CommonIcons.brokenImage, 'Image error'),
           );
+        } else {
+          imageWidget = _fileChip(context, CommonIcons.brokenImage, 'Image error');
         }
       } else {
         return const SizedBox.shrink();
@@ -2527,11 +2540,16 @@ class _MessageBubbleState extends State<MessageBubble> {
     
     context.read<ChatSocketBloc>().add(SendEditMessage(
       messageId: messageId,
+      conversationId: conversationId,
       security: {
         'isLocked': false,
+        'is_locked': false,
         'allowShare': newShare,
+        'allow_share': newShare,
         'allowDownload': newDownload,
+        'allow_download': newDownload,
         'allowView': newView,
+        'allow_view': newView,
       },
     ));
 
@@ -2653,23 +2671,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (path == null || path.isEmpty || _isDownloading) return;
     String url = path;
 
-    final bool isLocalFile = !kIsWeb && File(url).existsSync();
-
-    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      url = '$s3BaseUrl$url';
-    }
+    url = SecureAttachmentService.resolveFullUrl(url);
 
     final fileName = attachmentName ?? 'File';
 
@@ -2720,6 +2722,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (!context.mounted) return;
 
     // Notify backend about file download
+    final bool isLocalFile = !kIsWeb && File(url).existsSync();
     if (!isLocalFile) {
       getIt<ChatSocketRepository>().sendFileAction(
         type: 'download_file',
@@ -2933,6 +2936,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _fileChip(BuildContext context, IconData icon, String label) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: () async {
         if (isUploading) return;
@@ -2947,12 +2951,12 @@ class _MessageBubbleState extends State<MessageBubble> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isMe
-              ? context.colors.pureWhite.withValues(alpha: 0.2)
+              ? (isDark ? context.colors.pureWhite.withValues(alpha: 0.2) : context.colors.primary.withValues(alpha: 0.1))
               : context.colors.scaffoldBackground,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isMe
-                ? context.colors.pureWhite.withValues(alpha: 0.3)
+                ? (isDark ? context.colors.pureWhite.withValues(alpha: 0.3) : context.colors.primary.withValues(alpha: 0.2))
                 : context.colors.primary.withValues(alpha: 0.3),
           ),
         ),
@@ -2966,14 +2970,14 @@ class _MessageBubbleState extends State<MessageBubble> {
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    isMe ? context.colors.pureWhite : context.colors.primary,
+                    isMe ? (isDark ? context.colors.pureWhite : context.colors.primary) : context.colors.primary,
                   ),
                 ),
               ),
             ] else ...[
               Icon(
                 icon,
-                color: isMe ? context.colors.pureWhite : context.colors.primary,
+                color: isMe ? (isDark ? context.colors.pureWhite : context.colors.primary) : context.colors.primary,
               ),
             ],
             CommonSpaces.w8,
@@ -2982,7 +2986,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 label,
                 style: context.bodyMedium.copyWith(
                   color: isMe
-                      ? context.colors.pureWhite
+                      ? (isDark ? context.colors.pureWhite : context.colors.textPrimary)
                       : context.colors.textPrimary,
                   fontWeight: FontWeight.w500,
                 ),
@@ -3487,30 +3491,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
       } catch (_) {}
     }
 
-    final bool isLocalFile = !kIsWeb && File(url).existsSync();
-
-    if (!url.startsWith('http') && !url.startsWith('https') && !isLocalFile) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      if (url.startsWith('/')) {
-        url = url.substring(1);
-      }
-      if (url.startsWith('qlyncs-docs/')) {
-        url = url.replaceFirst('qlyncs-docs/', '');
-      }
-      url = '$s3BaseUrl$url';
-    }
-    return url;
+    return SecureAttachmentService.resolveFullUrl(url);
   }
 
   Future<void> _togglePlay() async {
@@ -3546,10 +3527,12 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = widget.isMe ? context.colors.pureWhite : context.colors.primary;
-    final inactiveColor = widget.isMe ? context.colors.pureWhite.withValues(alpha: 0.6) : context.colors.textHint;
-    final buttonBg = widget.isMe ? context.colors.pureWhite : context.colors.primary;
-    final buttonIconColor = widget.isMe ? context.colors.primary : context.colors.pureWhite;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = isDark ? context.colors.pureWhite : context.colors.textPrimary;
+    final inactiveColor = isDark ? context.colors.pureWhite.withValues(alpha: 0.6) : context.colors.textSecondary;
+    const primaryGreen = Color(0xFF00873C);
+    final buttonBg = isDark ? context.colors.primary : primaryGreen;
+    const buttonIconColor = Colors.white;
 
     final double progress = _duration.inMilliseconds > 0 
         ? _position.inMilliseconds / _duration.inMilliseconds 
@@ -3584,7 +3567,7 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                   Icon(
                     Icons.audiotrack_rounded,
                     size: 15,
-                    color: activeColor,
+                    color: isDark ? context.colors.primary : primaryGreen,
                   ),
                   const SizedBox(width: 5),
                   Flexible(
@@ -3627,8 +3610,8 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                     shape: BoxShape.circle,
                   ),
                   child: widget.isUploading
-                      ? Padding(
-                          padding: const EdgeInsets.all(8.0),
+                      ? const Padding(
+                          padding: EdgeInsets.all(8.0),
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(buttonIconColor),
@@ -3660,7 +3643,9 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                           width: barWidth,
                           height: _barHeights[index % _barHeights.length],
                           decoration: BoxDecoration(
-                            color: isPlayed ? activeColor : inactiveColor,
+                            color: isPlayed 
+                                ? (isDark ? context.colors.primary : primaryGreen) 
+                                : (isDark ? Colors.white30 : const Color(0xFFB0B7C3)),
                             borderRadius: BorderRadius.circular(1),
                           ),
                         );
@@ -3674,9 +3659,9 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
               Text(
                 "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
                 style: context.bodySmall.copyWith(
-                  color: activeColor,
+                  color: isDark ? context.colors.pureWhite : context.colors.textSecondary,
                   fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

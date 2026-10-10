@@ -39,6 +39,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<UpdateChatTypingStatus>(_onUpdateChatTypingStatus);
     on<MessageDeleted>(_onMessageDeleted);
     on<UpdateDisappearingTimer>(_onUpdateDisappearingTimer);
+    on<UpdateMessageStatus>(_onUpdateMessageStatus);
 
     _listenToSocket();
   }
@@ -267,6 +268,38 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               ));
             }
           }
+        } else if (type == 'message_read' || type == 'read_receipt' || type == 'message_opened') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final msgIdsListRaw = cleanData['messageIds'] ?? cleanData['message_ids'];
+          List<String>? msgIdsList;
+          if (msgIdsListRaw is List) {
+            msgIdsList = msgIdsListRaw.map((e) => e.toString()).toList();
+          }
+          if (convId != null) {
+            add(UpdateMessageStatus(
+              conversationId: convId,
+              messageId: msgId,
+              messageIds: msgIdsList,
+              status: 'read',
+            ));
+          }
+        } else if (type == 'delivery_receipt' || type == 'message_delivered') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final msgIdsListRaw = cleanData['messageIds'] ?? cleanData['message_ids'];
+          List<String>? msgIdsList;
+          if (msgIdsListRaw is List) {
+            msgIdsList = msgIdsListRaw.map((e) => e.toString()).toList();
+          }
+          if (convId != null) {
+            add(UpdateMessageStatus(
+              conversationId: convId,
+              messageId: msgId,
+              messageIds: msgIdsList,
+              status: 'delivered',
+            ));
+          }
         }
       } catch (e) {
         // Log error
@@ -294,6 +327,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     return dt ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
+  bool _hasInitialLoaded = false;
+
   Future<void> _onFetchChats(FetchChats event, Emitter<ChatsState> emit) async {
     debugPrint('DEBUG: ChatsBloc _onFetchChats triggered');
     if (state is! ChatsLoaded) {
@@ -305,8 +340,36 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       result.when(
         success: (chats) {
           debugPrint('DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}');
+          
+          List<ChatModel> finalChats;
+          if (_hasInitialLoaded && state is ChatsLoaded) {
+            final existingChats = (state as ChatsLoaded).chats;
+            final existingMap = {for (var c in existingChats) c.id: c};
+            final existingUserMap = {for (var c in existingChats) c.recipient.id: c};
+
+            finalChats = chats.map((newChat) {
+              final existing = existingMap[newChat.id] ?? existingUserMap[newChat.recipient.id];
+              if (existing != null) {
+                // Keep the profile image from existing chat (loaded on initial app open),
+                // but update name, text message, timestamp, unread count, online status, etc.
+                final existingPic = existing.recipient.profilePictureUrl;
+                if (existingPic != null && existingPic.isNotEmpty) {
+                  return newChat.copyWith(
+                    recipient: newChat.recipient.copyWith(
+                      profilePictureUrl: existingPic,
+                    ),
+                  );
+                }
+              }
+              return newChat;
+            }).toList();
+          } else {
+            _hasInitialLoaded = true;
+            finalChats = List<ChatModel>.from(chats);
+          }
+
           // Sort by most recent message/activity time descending
-          final sortedChats = List<ChatModel>.from(chats)
+          final sortedChats = finalChats
             ..sort((a, b) => _getChatActivityTime(b).compareTo(_getChatActivityTime(a)));
           emit(ChatsLoaded(sortedChats));
         },
@@ -491,6 +554,37 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (chat.id == event.conversationId) {
           return chat.copyWith(disappearingTimer: event.seconds);
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onUpdateMessageStatus(UpdateMessageStatus event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (chat.id == event.conversationId) {
+          final lastMsg = chat.lastMessage;
+          if (lastMsg != null) {
+            final isTarget = event.messageId == null ||
+                lastMsg.id == event.messageId ||
+                (event.messageIds != null && event.messageIds!.contains(lastMsg.id));
+            if (isTarget) {
+              final isRead = event.status == 'read' || lastMsg.isRead;
+              final isDelivered = event.status == 'delivered' || isRead || lastMsg.isDelivered;
+              final updatedLastMsg = lastMsg.copyWith(
+                isRead: isRead,
+                isDelivered: isDelivered,
+                status: isRead ? 'read' : (isDelivered ? 'delivered' : lastMsg.status),
+              );
+              return chat.copyWith(
+                lastMessage: updatedLastMsg,
+                unreadCount: event.status == 'read' ? 0 : chat.unreadCount,
+              );
+            }
+          }
         }
         return chat;
       }).toList();

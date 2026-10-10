@@ -49,7 +49,7 @@ class _AnimatedTaglineState extends State<AnimatedTagline>
     final defaultBase = widget.baseColor ??
         (isDark ? Colors.white70 : const Color(0xFF4B5563));
     final defaultHighlight = widget.highlightColor ??
-        (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C));
+        (isDark ? const Color(0xFF00A859) : const Color(0xFF00873C));
 
     return AnimatedBuilder(
       animation: _controller,

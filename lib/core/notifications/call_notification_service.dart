@@ -18,6 +18,7 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_sta
 import 'package:schat/features/call_screen/src/domain/call_sound_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
+import 'package:schat/core/services/phone_call_state_service.dart';
 
 @pragma('vm:entry-point')
 void callNotificationTapBackground(NotificationResponse notificationResponse) {
@@ -180,9 +181,6 @@ class CallNotificationService {
       await androidPlugin.createNotificationChannel(callChannel);
       try {
         await androidPlugin.requestNotificationsPermission();
-      } catch (_) {}
-      try {
-        await androidPlugin.requestExactAlarmsPermission();
       } catch (_) {}
     }
 
@@ -453,6 +451,31 @@ class CallNotificationService {
       debugPrint('CallNotificationService: showIncomingCall skipped on Web');
       return;
     }
+
+    final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
+    final bool isSchatActive = getIt.isRegistered<CallWebRtcBloc>() &&
+        (getIt<CallWebRtcBloc>().state is CallActive ||
+         getIt<CallWebRtcBloc>().state is CallConnecting ||
+         getIt<CallWebRtcBloc>().state is CallRinging);
+
+    if (isPhoneActive || isSchatActive) {
+      debugPrint('CallNotificationService: Suppressing incoming call heads-up UI because user is currently in another call (phone: $isPhoneActive, schat: $isSchatActive)');
+      if (getIt.isRegistered<ChatSocketRepository>()) {
+        final convoId = (data['conversation_id'] ?? data['conversationId'])?.toString() ?? '';
+        final senderId = (data['sender_id'] ?? data['senderId'] ?? data['caller_id'] ?? data['callerId'])?.toString() ?? '';
+        getIt<ChatSocketRepository>().emit('message', {
+          'type': 'call_response',
+          'conversation_id': convoId,
+          'recipient_id': senderId,
+          'response': 'busy',
+          'reason': 'busy',
+          'message': 'Currently other person in call',
+          'caller_name': getIt<StorageService>().getUsername() ?? 'User',
+        });
+      }
+      return;
+    }
+
     _lastCallKitShowTime = DateTime.now();
     final String uuid = _uuid.v4();
     final callerInfo = _extractCallerInfo(data);
@@ -488,7 +511,9 @@ class CallNotificationService {
     };
 
     final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (!isForeground) {
+    // On Android, CallkitNotificationService natively presents the heads-up CallKit banner.
+    // Avoid double-showing local notifications when CallKit is active.
+    if (!isForeground && Platform.isIOS) {
       printCallLog(
         stage: 'DISPLAYING HEADS-UP CALL NOTIFICATION (BACKGROUND)',
         callerName: notificationTitle,
@@ -496,7 +521,7 @@ class CallNotificationService {
         conversationId: conversationId,
         availableButtons: ['Accept (Green Button)', 'Decline (Red Button)'],
         payload: extra,
-        note: 'Showing heads-up notification with Accept / Decline action buttons (Battery friendly, no background overlay)',
+        note: 'Showing heads-up notification with Accept / Decline action buttons (iOS)',
       );
       await _showLocalCallNotification(uuid, notificationTitle, callSubtitle, extra);
     }
@@ -907,6 +932,17 @@ class CallNotificationService {
 
     // 1. Incoming Call (High-Priority Heads-Up Notification with Decline & Accept Buttons)
     if (isCall) {
+      final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
+      if (isPhoneActive) {
+        printCallLog(
+          stage: 'BACKGROUND FCM MESSAGE: INCOMING CALL SUPPRESSED',
+          conversationId: data['conversation_id']?.toString(),
+          payload: data,
+          note: 'User is active on another call (cellular/phone). Skipping incoming call notification.',
+        );
+        return;
+      }
+
       final Uuid uuid = const Uuid();
       final String callUuid = uuid.v4();
       final callerInfo = _extractCallerInfo(data);
@@ -943,10 +979,14 @@ class CallNotificationService {
         conversationId: data['conversation_id']?.toString(),
         availableButtons: ['Accept (Green Button)', 'Decline (Red Button)'],
         payload: extra,
-        note: 'Showing heads-up notification with Accept & Decline buttons on lock screen / shade',
+        note: 'CallKit handles native heads-up banner on Android without duplicate local notification',
       );
 
-      await _showLocalCallNotification(callUuid, notificationTitle, callSubtitle, extra);
+      // On Android, CallkitNotificationService natively presents the heads-up CallKit banner.
+      // Avoid double-showing local notifications when CallKit is active.
+      if (Platform.isIOS) {
+        await _showLocalCallNotification(callUuid, notificationTitle, callSubtitle, extra);
+      }
       return;
     }
 

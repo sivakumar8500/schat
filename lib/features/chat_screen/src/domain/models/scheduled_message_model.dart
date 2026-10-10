@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class ScheduledMessageModel {
   final String id;
   final String conversationId;
@@ -36,16 +38,23 @@ class ScheduledMessageModel {
   });
 
   factory ScheduledMessageModel.fromJson(Map<String, dynamic> json) {
-    final content = (json['content'] is Map<String, dynamic>
-            ? json['content'] as Map<String, dynamic>
-            : null) ??
-        (json['content_meta'] is Map<String, dynamic>
-            ? json['content_meta'] as Map<String, dynamic>
-            : null) ??
-        (json['content'] is Map
-            ? Map<String, dynamic>.from(json['content'] as Map)
-            : null) ??
-        {};
+    Map<String, dynamic> content = {};
+    if (json['content'] is Map) {
+      content = Map<String, dynamic>.from(json['content'] as Map);
+    } else if (json['content_meta'] is Map) {
+      content = Map<String, dynamic>.from(json['content_meta'] as Map);
+    } else if (json['attachment'] is Map) {
+      content = Map<String, dynamic>.from(json['attachment'] as Map);
+    } else if (json['media'] is Map) {
+      content = Map<String, dynamic>.from(json['media'] as Map);
+    } else if (json['content'] is String && (json['content'] as String).trim().startsWith('{')) {
+      try {
+        final decoded = jsonDecode((json['content'] as String).trim());
+        if (decoded is Map) {
+          content = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
+    }
 
     DateTime parseDate(dynamic val) {
       if (val == null) return DateTime.now();

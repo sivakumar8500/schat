@@ -112,6 +112,7 @@ class PushNotificationService {
     }
 
     _initialized = true;
+    await clearAllNotifications();
   }
 
   Future<void> registerToken() async {
@@ -322,10 +323,34 @@ class PushNotificationService {
     }
   }
 
-  void _queueOrExecuteNotification(Map<String, dynamic> data) {
-    _pendingNotificationData = Map<String, dynamic>.from(data);
+  bool isDashboardReady = false;
+
+  void _queueOrExecuteNotification(Map<String, dynamic> rawData) {
+    Map<String, dynamic> data = Map<String, dynamic>.from(rawData);
+    if (data.containsKey('data')) {
+      if (data['data'] is String) {
+        try {
+          final nested = jsonDecode(data['data'] as String);
+          if (nested is Map) data.addAll(Map<String, dynamic>.from(nested));
+        } catch (_) {}
+      } else if (data['data'] is Map) {
+        data.addAll(Map<String, dynamic>.from(data['data'] as Map));
+      }
+    }
+    if (data.containsKey('message')) {
+      if (data['message'] is String) {
+        try {
+          final nested = jsonDecode(data['message'] as String);
+          if (nested is Map) data.addAll(Map<String, dynamic>.from(nested));
+        } catch (_) {}
+      } else if (data['message'] is Map) {
+        data.addAll(Map<String, dynamic>.from(data['message'] as Map));
+      }
+    }
+
+    _pendingNotificationData = data;
     final navState = navigatorKey.currentState;
-    if (navState != null) {
+    if (navState != null && isDashboardReady) {
       handlePendingNotification();
     }
   }
@@ -373,7 +398,32 @@ class PushNotificationService {
       return;
     }
 
-    final convId = (data['conversationId'] ?? data['conversation_id'])?.toString();
+    dynamic rawConvId = data['conversationId'] ??
+        data['conversation_id'] ??
+        data['chatId'] ??
+        data['chat_id'] ??
+        data['convId'] ??
+        data['conv_id'] ??
+        data['id'];
+
+    if ((rawConvId == null || rawConvId.toString().isEmpty) && data['conversation'] != null) {
+      if (data['conversation'] is Map) {
+        rawConvId = data['conversation']['id'] ?? data['conversation']['_id'];
+      } else {
+        rawConvId = data['conversation'];
+      }
+    }
+    if ((rawConvId == null || rawConvId.toString().isEmpty) && data['chat'] != null) {
+      if (data['chat'] is Map) {
+        rawConvId = data['chat']['id'] ?? data['chat']['_id'];
+      } else {
+        rawConvId = data['chat'];
+      }
+    }
+
+    final convId = rawConvId?.toString();
+    final messageId = (data['messageId'] ?? data['message_id'] ?? data['msg_id'] ?? data['msgId'])?.toString();
+
     String senderName = (data['sender_name'] ??
             data['senderName'] ??
             data['contact_name'] ??
@@ -386,7 +436,14 @@ class PushNotificationService {
             '')
         .toString()
         .trim();
-    final senderId = (data['sender_id'] ?? data['senderId'] ?? '').toString();
+    final senderId = (data['sender_id'] ??
+            data['senderId'] ??
+            data['recipient_id'] ??
+            data['recipientId'] ??
+            data['userId'] ??
+            data['user_id'] ??
+            '')
+        .toString();
     final isGroup = data['is_group'] == true ||
         data['isGroup'] == true ||
         data['is_group'] == 'true' ||
@@ -406,6 +463,7 @@ class PushNotificationService {
         senderId,
         isGroup: isGroup,
         profilePic: profilePic,
+        targetMessageId: messageId,
       );
     }
   }
@@ -416,6 +474,7 @@ class PushNotificationService {
     String recipientId, {
     bool isGroup = false,
     String? profilePic,
+    String? targetMessageId,
   }) {
     final navState = navigatorKey.currentState;
     if (navState == null) {
@@ -440,6 +499,7 @@ class PushNotificationService {
           recipientId: recipientId,
           profilePictureUrl: profilePic,
           isGroup: isGroup,
+          initialTargetMessageId: targetMessageId,
         ),
       ),
     );

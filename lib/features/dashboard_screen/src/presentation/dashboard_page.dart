@@ -43,6 +43,7 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
+import 'package:schat/core/services/in_app_update_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -54,8 +55,9 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   int _currentIndex = 0;
   int _filterIndex = 0; // 0: All, 1: Unread, 2: Individual, 3: Groups
-  String _username = 'David';
-  String? _profilePicUrl;
+  late String _username = getIt<StorageService>().getUsername() ?? 'David';
+  late String? _profilePicUrl = getIt<StorageService>().getProfilePic();
+  bool _isProfileLoading = false;
   final Set<String> _hiddenChatIds = {};
   final Set<String> _deletedChatIds = {};
   final Set<String> _selectedChatIds = {};
@@ -79,8 +81,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        getIt<PushNotificationService>().handlePendingNotification();
+        final pushService = getIt<PushNotificationService>();
+        pushService.isDashboardReady = true;
+        pushService.handlePendingNotification();
         ShareReceiverService().checkAndPresentPendingShare();
+        getIt<InAppUpdateService>().checkForUpdate(context: context);
       }
     });
   }
@@ -100,6 +105,7 @@ class _DashboardPageState extends State<DashboardPage> {
     await pushService.initialize();
     await pushService.registerToken();
     await callService.registerDevice();
+    pushService.isDashboardReady = true;
     pushService.handlePendingNotification();
   }
 
@@ -464,36 +470,59 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  Future<void> _loadProfile() async {
-    // Immediate load from storage
-    if (mounted) {
-      setState(() {
-        _username = getIt<StorageService>().getUsername() ?? 'David';
-        _profilePicUrl = getIt<StorageService>().getProfilePic();
-      });
+  Future<void> _loadProfile({bool forceRefresh = false}) async {
+    // 1. Sync from local storage without setState unless values actually differ
+    final localName = getIt<StorageService>().getUsername() ?? 'David';
+    final localPic = getIt<StorageService>().getProfilePic();
+    if (_username != localName || _profilePicUrl != localPic) {
+      if (mounted) {
+        setState(() {
+          _username = localName;
+          _profilePicUrl = localPic;
+        });
+      }
     }
 
-    // Background refresh from API
-    getIt<ProfileRepository>().getProfile().then((result) {
+    // 2. Prevent overlapping background API requests
+    if (_isProfileLoading && !forceRefresh) return;
+    _isProfileLoading = true;
+
+    try {
+      final result = await getIt<ProfileRepository>().getProfile();
       result.when(
         success: (user) {
-          if (mounted) {
+          if (!mounted) return;
+          final serverName = user.username ?? 'David';
+          final serverPic = user.profilePictureUrl;
+
+          // Update storage silently
+          getIt<StorageService>().saveUsername(serverName);
+          if (serverPic != null && serverPic.isNotEmpty) {
+            getIt<StorageService>().saveProfilePic(serverPic);
+          }
+
+          // Only trigger UI rebuild if the server data actually changed
+          if (_username != serverName || _profilePicUrl != serverPic) {
             setState(() {
-              _username = user.username ?? 'David';
-              _profilePicUrl = user.profilePictureUrl;
+              _username = serverName;
+              _profilePicUrl = serverPic;
             });
-            if (!user.isSubscribed) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => SubscriptionPage()),
-                (Route<dynamic> route) => false,
-              );
-            }
+          }
+
+          if (!user.isSubscribed) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => SubscriptionPage()),
+              (Route<dynamic> route) => false,
+            );
           }
         },
         failure: (_, statusCode) {},
       );
-    });
+    } catch (_) {
+    } finally {
+      _isProfileLoading = false;
+    }
   }
 
   @override
@@ -695,12 +724,12 @@ class _DashboardPageState extends State<DashboardPage> {
                     height: 42,
                     decoration: BoxDecoration(
                       color: isDark
-                          ? const Color(0xFF00FF87).withValues(alpha: 0.15)
+                          ? const Color(0xFF00873C).withValues(alpha: 0.15)
                           : const Color(0xFF00873C).withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: isDark
-                            ? const Color(0xFF00FF87).withValues(alpha: 0.4)
+                            ? const Color(0xFF00873C).withValues(alpha: 0.4)
                             : const Color(0xFF00873C).withValues(alpha: 0.25),
                         width: 1.5,
                       ),
@@ -710,15 +739,16 @@ class _DashboardPageState extends State<DashboardPage> {
                           ? CachedNetworkImage(
                               imageUrl: _profilePicUrl!,
                               fit: BoxFit.cover,
+                              useOldImageOnUrlChange: true,
+                              fadeInDuration: Duration.zero,
+                              fadeOutDuration: Duration.zero,
                               placeholder: (context, url) => Center(
                                 child: Text(
                                   _username.isNotEmpty
                                       ? _username.substring(0, 1).toUpperCase()
                                       : 'U',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFF00FF87)
-                                        : const Color(0xFF00873C),
+                                  style: const TextStyle(
+                                    color: Color(0xFF00873C),
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -729,10 +759,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                   _username.isNotEmpty
                                       ? _username.substring(0, 1).toUpperCase()
                                       : 'U',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFF00FF87)
-                                        : const Color(0xFF00873C),
+                                  style: const TextStyle(
+                                    color: Color(0xFF00873C),
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -744,10 +772,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                 _username.isNotEmpty
                                     ? _username.substring(0, 1).toUpperCase()
                                     : 'U',
-                                style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFF00FF87)
-                                        : const Color(0xFF00873C),
+                                style: const TextStyle(
+                                  color: Color(0xFF00873C),
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -761,11 +787,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          "S-Chat",
+                        const Text(
+                          "S-CHAT",
                           style: TextStyle(
                             fontSize: 22,
-                            color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                            color: Color(0xFF00873C),
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.5,
                           ),
@@ -991,8 +1017,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildFilterChips() {
     final isDark = context.colors.isDark;
     final filterOptions = ['All', 'Unread', 'Individual', 'Groups'];
-    final activeColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
-    final activeTextColor = isDark ? Colors.black : Colors.white;
+    const activeColor = Color(0xFF00873C);
+    const activeTextColor = Colors.white;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
@@ -1046,7 +1072,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildSectionHeader(int unreadCount) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
@@ -1069,7 +1095,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+                        ? const Color(0xFF00873C).withValues(alpha: 0.18)
                         : const Color(0xFFD1FADF),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1119,9 +1145,9 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _buildAvatar(ChatModel chat) {
     final isGroup = chat.isGroup;
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
-    final avatarTextColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF027A48);
+    final avatarTextColor = isDark ? const Color(0xFF00873C) : const Color(0xFF027A48);
 
     if (isGroup) {
       final groupPic = chat.recipient.profilePictureUrl;
@@ -1139,6 +1165,11 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: CachedNetworkImage(
                   imageUrl: groupPic,
                   fit: BoxFit.cover,
+                  useOldImageOnUrlChange: true,
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  memCacheWidth: 150,
+                  memCacheHeight: 150,
                   placeholder: (context, url) => Center(
                     child: Icon(Icons.group_rounded, color: primaryColor, size: 24),
                   ),
@@ -1244,6 +1275,11 @@ class _DashboardPageState extends State<DashboardPage> {
                 ? CachedNetworkImage(
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
+                    useOldImageOnUrlChange: true,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    memCacheWidth: 150,
+                    memCacheHeight: 150,
                     placeholder: (context, url) => buildInitialFallback(),
                     errorWidget: (context, url, error) => buildInitialFallback(),
                   )
@@ -1305,7 +1341,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1606,9 +1642,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }) {
     final isActive = _currentIndex == index;
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
     final activePillColor = isDark
-        ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+        ? const Color(0xFF00873C).withValues(alpha: 0.18)
         : const Color(0xFFD1FADF);
 
     return GestureDetector(
@@ -1655,7 +1691,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       width: 8.5,
                       height: 8.5,
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                        color: const Color(0xFF00873C),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -1663,7 +1699,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.4),
+                            color: const Color(0xFF00873C).withValues(alpha: 0.4),
                             blurRadius: 4,
                             spreadRadius: 0.5,
                           ),
@@ -1755,57 +1791,6 @@ class HomeBackgroundWavePainter extends CustomPainter {
       path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
       canvas.drawPath(path, linePaint);
     }
-
-    // 3. Soft mint background ambient glow for Bottom-Left
-    final blGlowRect = Rect.fromLTWH(0, size.height - 220, size.width * 0.65, 220);
-    final blGlowPaint = Paint()
-      ..shader = const RadialGradient(
-        center: Alignment.bottomLeft,
-        radius: 1.1,
-        colors: [
-          Color(0x35D1FADF),
-          Color(0x12D1FADF),
-          Color(0x00FFFFFF),
-        ],
-        stops: [0.0, 0.6, 1.0],
-      ).createShader(blGlowRect)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(blGlowRect, blGlowPaint);
-
-    // 4. Bottom-Left flowing wave lines ribbon
-    const int blLineCount = 22;
-    for (int i = 0; i < blLineCount; i++) {
-      final t = i / (blLineCount - 1);
-      final alpha = (0.12 + 0.30 * (1 - (t - 0.5).abs() * 2)).clamp(0.08, 0.42);
-
-      final Color lineColor;
-      if (i % 3 == 0) {
-        lineColor = const Color(0xFF00873C).withValues(alpha: alpha);
-      } else if (i % 3 == 1) {
-        lineColor = const Color(0xFF12B76A).withValues(alpha: alpha);
-      } else {
-        lineColor = const Color(0xFF34D399).withValues(alpha: alpha);
-      }
-
-      final linePaint = Paint()
-        ..color = lineColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0 + 0.3 * (1 - t);
-
-      final path = Path();
-      final startX = 0.0;
-      final startY = size.height - (165.0 * (1 - t) + 15.0);
-      final control1X = size.width * (0.12 + 0.28 * t);
-      final control1Y = size.height - (125.0 * (1 - t) + 20.0);
-      final control2X = size.width * (0.32 + 0.32 * t);
-      final control2Y = size.height - (55.0 * (1 - t) + 10.0);
-      final endX = size.width * (0.28 + 0.44 * t);
-      final endY = size.height - (8.0 + 15.0 * t);
-
-      path.moveTo(startX, startY);
-      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
-      canvas.drawPath(path, linePaint);
-    }
   }
 
   void _paintDarkTheme(Canvas canvas, Size size) {
@@ -1815,7 +1800,7 @@ class HomeBackgroundWavePainter extends CustomPainter {
       final t = i / (trLineCount - 1);
       final alpha = (0.06 + 0.14 * (1 - (t - 0.5).abs() * 2)).clamp(0.04, 0.20);
       final linePaint = Paint()
-        ..color = const Color(0xFF00FF87).withValues(alpha: alpha)
+        ..color = const Color(0xFF00A859).withValues(alpha: alpha)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0;
 
@@ -1828,31 +1813,6 @@ class HomeBackgroundWavePainter extends CustomPainter {
       final control2Y = 35.0 + 75.0 * (1 - t);
       final endX = size.width;
       final endY = 10.0 + 115.0 * t;
-
-      path.moveTo(startX, startY);
-      path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);
-      canvas.drawPath(path, linePaint);
-    }
-
-    // Bottom-Left Dark Mode Emerald lines
-    const int blLineCount = 18;
-    for (int i = 0; i < blLineCount; i++) {
-      final t = i / (blLineCount - 1);
-      final alpha = (0.06 + 0.14 * (1 - (t - 0.5).abs() * 2)).clamp(0.04, 0.20);
-      final linePaint = Paint()
-        ..color = const Color(0xFF00FF87).withValues(alpha: alpha)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.0;
-
-      final path = Path();
-      final startX = 0.0;
-      final startY = size.height - (165.0 * (1 - t) + 15.0);
-      final control1X = size.width * (0.12 + 0.28 * t);
-      final control1Y = size.height - (125.0 * (1 - t) + 20.0);
-      final control2X = size.width * (0.32 + 0.32 * t);
-      final control2Y = size.height - (55.0 * (1 - t) + 10.0);
-      final endX = size.width * (0.28 + 0.44 * t);
-      final endY = size.height - (8.0 + 15.0 * t);
 
       path.moveTo(startX, startY);
       path.cubicTo(control1X, control1Y, control2X, control2Y, endX, endY);

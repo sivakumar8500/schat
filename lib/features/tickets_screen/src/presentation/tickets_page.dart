@@ -29,7 +29,7 @@ class _TicketsPageState extends State<TicketsPage> {
 
   void _showRaiseTicketBottomSheet(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     showModalBottomSheet(
       context: context,
@@ -263,7 +263,7 @@ class _TicketsPageState extends State<TicketsPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return BlocListener<TicketsBloc, TicketsState>(
       listener: (context, state) {
@@ -419,7 +419,7 @@ class _TicketsPageState extends State<TicketsPage> {
               height: 88,
               decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF00FF87).withValues(alpha: 0.12)
+                    ? const Color(0xFF00873C).withValues(alpha: 0.15)
                     : const Color(0xFFD1FADF),
                 shape: BoxShape.circle,
               ),

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/multi_image_gallery_page.dart';
 import 'package:schat/utils/common_colors.dart';
@@ -37,46 +38,8 @@ class MultiImageGridBubble extends StatelessWidget {
   }
 
   String _resolveImageUrl(MessageModel msg) {
-    String displayUrl = msg.mediaUrl ?? '';
-    if (displayUrl.contains('minio')) {
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty) {
-          displayUrl = displayUrl.replaceAll('minio', host);
-        }
-      } catch (_) {}
-    }
-
-    if (displayUrl.startsWith('http') || displayUrl.startsWith('https')) {
-      return displayUrl;
-    }
-
-    if (!kIsWeb && File(displayUrl).existsSync()) {
-      return displayUrl;
-    }
-
-    // Backend / S3 URL fallback
-    String s3BaseUrl;
-    try {
-      final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-      final host = serverUri.host;
-      if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-        s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-      } else {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-    } catch (_) {
-      s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-    }
-
-    if (displayUrl.startsWith('/')) {
-      displayUrl = displayUrl.substring(1);
-    }
-    if (displayUrl.startsWith('qlyncs-docs/')) {
-      displayUrl = displayUrl.replaceFirst('qlyncs-docs/', '');
-    }
-    return '$s3BaseUrl$displayUrl';
+    final displayUrl = msg.mediaUrl ?? '';
+    return SecureAttachmentService.resolveFullUrl(displayUrl);
   }
 
   @override

@@ -8,6 +8,7 @@ import 'package:schat/features/auth_screen/auth_screen.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_bloc.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_event.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/profile_state.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:schat/features/profile_screen/src/presentation/emergency_contacts_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
 import 'package:schat/presentation/pages/blocked_users_page.dart';
@@ -31,6 +32,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/chat_lock_bo
 import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/core/services/in_app_update_service.dart';
 
 class ProfileSettingsPage extends StatelessWidget {
   final String username;
@@ -81,10 +83,12 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   bool _typingIndicatorsEnabled = true;
   bool _lastSeenEnabled = true;
   bool _notificationsEnabled = true;
+  String _appVersion = "v1.0.0 (6)";
 
   @override
   void initState() {
     super.initState();
+    _loadAppVersion();
     _currentUsername = widget.username;
     _currentImageUrl = widget.profilePicUrl;
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
@@ -103,6 +107,22 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
       _messageToneName = cachedMsgTone;
     }
     _loadUserTones();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      int? patchNum;
+      try {
+        patchNum = await getIt<InAppUpdateService>().getCurrentPatchNumber();
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          final patchStr = patchNum != null ? ' • Patch $patchNum' : '';
+          _appVersion = 'v${info.version} (${info.buildNumber})$patchStr';
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadUserTones() async {
@@ -805,6 +825,58 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                                 fontWeight: FontWeight.w600,
                                 showShieldIcon: true,
                               ),
+                              const SizedBox(height: 10),
+                              InkWell(
+                                onTap: () async {
+                                  context.showSuccessNotification('Checking for new releases...');
+                                  await getIt<InAppUpdateService>().checkForUpdate(
+                                    context: context,
+                                    isManualCheck: true,
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.lightBackground,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: context.colors.textHint.withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.system_update_rounded, size: 14, color: context.colors.primary),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Version $_appVersion',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: context.colors.textSecondary,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: context.colors.primary.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          'Check Updates',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: context.colors.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                               const SizedBox(height: 16),
                             ],
                           ),
@@ -1093,8 +1165,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
 
   void _showChatLockSettingsSheet(BuildContext context) {
     final colors = context.colors;
-    final isDark = colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     showModalBottomSheet(
       context: context,
@@ -1258,7 +1329,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   void _showFontSizeBottomSheet(BuildContext context) {
     final currentSize = getIt<ThemeController>().fontSizeName;
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     showModalBottomSheet(
       context: context,
@@ -1345,7 +1416,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                   margin: const EdgeInsets.only(bottom: 10),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+                        ? (isDark ? const Color(0xFF00873C).withValues(alpha: 0.15) : const Color(0xFFE8F5E9))
                         : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
@@ -1760,7 +1831,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
 
   void _showDisappearingMessagesBottomSheet(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     showModalBottomSheet(
       context: context,
@@ -1874,7 +1945,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isCustom
-            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            ? (isDark ? const Color(0xFF00873C).withValues(alpha: 0.15) : const Color(0xFFE8F5E9))
             : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
@@ -2007,7 +2078,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isSelected
-            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            ? (isDark ? const Color(0xFF00873C).withValues(alpha: 0.15) : const Color(0xFFE8F5E9))
             : (isDark ? sheetCtx.colors.cardBackground : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
@@ -2057,7 +2128,7 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
 
   void _showSecurityScanConfirmationBottomSheet(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     showModalBottomSheet(
       context: context,

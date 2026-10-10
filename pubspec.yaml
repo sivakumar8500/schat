@@ -2,7 +2,7 @@ name: schat
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+2
+version: 1.0.0+8
 
 environment:
   sdk: ^3.11.0
@@ -58,6 +58,9 @@ dependencies:
   flutter_local_notifications: ^22.3.0
   intl: ^0.20.3
   wakelock_plus: ^1.5.2
+  in_app_update: ^5.0.0
+  package_info_plus: ^9.0.1
+  shorebird_code_push: ^2.0.7
 
 dev_dependencies:
   flutter_test:
@@ -66,8 +69,6 @@ dev_dependencies:
   build_runner: ^2.15.0
   injectable_generator: 3.0.2
   freezed: ^3.2.5
-  integration_test:
-    sdk: flutter
   mocktail: ^1.0.5
   bloc_test: ^10.0.0
   json_serializable: ^6.14.0
@@ -90,5 +91,10 @@ flutter:
     - assets/home_page/
     - assets/audio/
     - assets/fonts/
+    - assets/intro_designs/
+    - assets/intro_designs/Backgrounds/
+    - assets/intro_designs/Icons/
+    - assets/intro_designs/Decorative/
+    - assets/firstscreen/
     - assets/
 

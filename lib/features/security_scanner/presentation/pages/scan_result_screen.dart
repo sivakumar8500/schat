@@ -48,7 +48,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
@@ -194,7 +194,7 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFF00FF87).withValues(alpha: 0.15)
+                            ? const Color(0xFF00873C).withValues(alpha: 0.18)
                             : const Color(0xFFD1FADF),
                         borderRadius: BorderRadius.circular(12),
                       ),

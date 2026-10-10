@@ -77,3 +77,7 @@ class UpdateUploadProgressEvent extends StatusEvent {
   const UpdateUploadProgressEvent(this.progress);
 }
 
+class ClearStatusNotificationEvent extends StatusEvent {
+  const ClearStatusNotificationEvent();
+}
+

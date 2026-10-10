@@ -174,17 +174,17 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                     width: pipWidth,
                     height: pipHeight,
                     decoration: BoxDecoration(
-                      color: context.colors.scaffoldBackground,
+                      color: const Color(0xFF1E293B),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: const Color(0xFF00873C).withValues(alpha: 0.6),
+                        color: const Color(0xFF00873C).withValues(alpha: 0.8),
                         width: 1.5,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4),
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
                         ),
                       ],
                     ),
@@ -212,14 +212,20 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                         else
                           Positioned.fill(
                             child: Container(
-                              color: context.colors.primary.withValues(alpha: 0.12),
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
+                              ),
                               child: Center(
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     CircleAvatar(
                                       radius: 28,
-                                      backgroundColor: context.colors.primary,
+                                      backgroundColor: const Color(0xFF00873C),
                                       backgroundImage: profilePictureUrl != null && profilePictureUrl.isNotEmpty
                                           ? NetworkImage(profilePictureUrl)
                                           : null,
@@ -242,32 +248,32 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                                         contactName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: context.bodySmall.copyWith(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: context.colors.textPrimary,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
                                           decoration: TextDecoration.none,
                                         ),
                                       ),
                                     ),
                                     CommonSpaces.h4,
                                     if (isRemoteVideoOff)
-                                      Text(
+                                      const Text(
                                         'Camera Off',
-                                        style: context.bodySmall.copyWith(
+                                        style: TextStyle(
                                           fontSize: 10,
-                                          color: context.colors.textSecondary,
+                                          color: Color(0xFF94A3B8),
                                           decoration: TextDecoration.none,
                                         ),
                                       )
                                     else if (isConnected && startedAt != null)
-                                      _CallTimerText(startedAt: startedAt, color: const Color(0xFF00873C))
+                                      _CallTimerText(startedAt: startedAt, color: const Color(0xFF4ADE80))
                                     else
-                                      Text(
+                                      const Text(
                                         'Connecting...',
-                                        style: context.bodySmall.copyWith(
+                                        style: TextStyle(
                                           fontSize: 10,
-                                          color: context.colors.textSecondary,
+                                          color: Color(0xFF94A3B8),
                                           decoration: TextDecoration.none,
                                         ),
                                       ),

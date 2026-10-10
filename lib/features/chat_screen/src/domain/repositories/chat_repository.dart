@@ -20,6 +20,7 @@ abstract class ChatRepository {
     required String mimeType,
     required int fileSizeBytes,
     Uint8List? fileBytes,
+    void Function(double progress)? onProgress,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);
@@ -159,6 +160,8 @@ abstract class ChatRepository {
   Future<List<ScreenPermissionModel>> getPendingScreenPermissions();
 
   Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId);
+
+  Future<List<ScreenPermissionModel>> getActiveScreenPermissions(String conversationId);
 
   Future<ScreenPermissionModel> consumeScreenPermission(String requestId);
 

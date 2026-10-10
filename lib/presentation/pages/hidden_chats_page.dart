@@ -99,7 +99,7 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     final filteredChats = _hiddenChats.where((chat) {
       final name = chat.isGroup
@@ -191,7 +191,7 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
               decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+                    ? const Color(0xFF00873C).withValues(alpha: 0.18)
                     : const Color(0xFFD1FADF),
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -336,7 +336,7 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
               height: 88,
               decoration: BoxDecoration(
                 color: isDark
-                    ? const Color(0xFF00FF87).withValues(alpha: 0.12)
+                    ? const Color(0xFF00873C).withValues(alpha: 0.15)
                     : const Color(0xFFD1FADF),
                 shape: BoxShape.circle,
               ),
@@ -524,9 +524,9 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
   Widget _buildAvatar(ChatModel chat) {
     final isGroup = chat.isGroup;
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
-    final avatarTextColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF027A48);
+    final avatarTextColor = const Color(0xFF027A48);
 
     if (isGroup) {
       final groupPic = chat.recipient.profilePictureUrl;
@@ -706,7 +706,7 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
     }
 
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    final primaryColor = const Color(0xFF00873C);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,

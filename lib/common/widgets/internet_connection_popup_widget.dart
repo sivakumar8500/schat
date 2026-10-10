@@ -33,7 +33,7 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
       duration: const Duration(milliseconds: 400),
     );
     _offsetAnimation =
-        Tween<Offset>(begin: const Offset(0, -1.5), end: Offset.zero).animate(
+        Tween<Offset>(begin: const Offset(0, 1.5), end: Offset.zero).animate(
           CurvedAnimation(
             parent: _animationController,
             curve: Curves.easeOutBack,
@@ -95,14 +95,15 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
     final icon = _isOffline ? CommonIcons.wifiOff : CommonIcons.wifi;
 
     return Positioned(
-      top: 0,
+      bottom: 0,
       left: 0,
       right: 0,
       child: IgnorePointer(
         child: SlideTransition(
           position: _offsetAnimation,
           child: SafeArea(
-            bottom: false,
+            top: false,
+            bottom: true,
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: 16.0,
@@ -122,7 +123,7 @@ class _InternetConnectionPopupState extends State<InternetConnectionPopup>
                       BoxShadow(
                         color: context.colors.pureBlack.withValues(alpha: 0.15),
                         blurRadius: 10,
-                        offset: const Offset(0, 4),
+                        offset: const Offset(0, -2),
                       ),
                     ],
                   ),

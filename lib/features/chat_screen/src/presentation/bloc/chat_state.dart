@@ -5,6 +5,8 @@ import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.d
 
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 
+import 'package:collection/collection.dart';
+
 abstract class ChatState {
   const ChatState();
 }
@@ -44,9 +46,44 @@ class ChatLoaded extends ChatState {
   final int? disappearingTimer;
   final bool onlyAdminsSendMessages;
 
-  // Screen permission (active granted permission for current user & incoming pending requests)
-  final ScreenPermissionModel? activeScreenPermission;
+  // Screen permissions (active granted permissions for current user & incoming pending requests)
+  final List<ScreenPermissionModel> activeScreenPermissions;
   final ScreenPermissionModel? incomingScreenPermissionRequest;
+
+  ScreenPermissionModel? get activeScreenPermission {
+    final valid = activeScreenPermissions.where((p) =>
+        !p.isCompleted &&
+        !p.isRejected &&
+        ((p.isScreenshot && (p.remainingCount ?? p.allowedCount ?? 1) > 0) ||
+            (p.isScreenRecord && p.durationSeconds != null)));
+    return valid.isNotEmpty ? valid.first : null;
+  }
+
+  int get totalRemainingScreenshots => activeScreenPermissions
+      .where((p) => p.isScreenshot && !p.isCompleted && !p.isRejected)
+      .fold(0, (sum, p) => sum + (p.remainingCount ?? p.allowedCount ?? 0));
+
+  int get totalAllowedScreenshots => activeScreenPermissions
+      .where((p) => p.isScreenshot && !p.isCompleted && !p.isRejected)
+      .fold(0, (sum, p) => sum + (p.allowedCount ?? 1));
+
+  ScreenPermissionModel? get firstActiveScreenshotPermission =>
+      activeScreenPermissions.firstWhereOrNull(
+        (p) =>
+            p.isScreenshot &&
+            !p.isCompleted &&
+            !p.isRejected &&
+            (p.remainingCount ?? p.allowedCount ?? 1) > 0,
+      );
+
+  ScreenPermissionModel? get firstActiveScreenRecordPermission =>
+      activeScreenPermissions.firstWhereOrNull(
+        (p) =>
+            p.isScreenRecord &&
+            !p.isCompleted &&
+            !p.isRejected &&
+            p.durationSeconds != null,
+      );
 
   // Privacy settings (null = inherit global, true = on, false = off)
   final bool? readReceiptsEnabled;
@@ -78,14 +115,15 @@ class ChatLoaded extends ChatState {
     this.groupPictureUrl,
     this.disappearingTimer,
     this.onlyAdminsSendMessages = false,
-    this.activeScreenPermission,
+    this.activeScreenPermissions = const [],
+    ScreenPermissionModel? activeScreenPermission,
     this.incomingScreenPermissionRequest,
     this.readReceiptsEnabled,
     this.typingIndicatorsEnabled,
     this.isBlocked = false,
     this.isBlockedByMe = false,
     this.isBlockedByOther = false,
-  });
+  }) : super();
 
   ChatLoaded copyWith({
     List<MessageModel>? messages,
@@ -112,6 +150,8 @@ class ChatLoaded extends ChatState {
     int? disappearingTimer,
     bool clearDisappearingTimer = false,
     bool? onlyAdminsSendMessages,
+    List<ScreenPermissionModel>? activeScreenPermissions,
+    bool clearActiveScreenPermissions = false,
     ScreenPermissionModel? activeScreenPermission,
     bool clearActiveScreenPermission = false,
     ScreenPermissionModel? incomingScreenPermissionRequest,
@@ -124,6 +164,24 @@ class ChatLoaded extends ChatState {
     bool? isBlockedByMe,
     bool? isBlockedByOther,
   }) {
+    List<ScreenPermissionModel> resolvedPermissions;
+    if (clearActiveScreenPermissions || clearActiveScreenPermission) {
+      resolvedPermissions = const [];
+    } else if (activeScreenPermissions != null) {
+      resolvedPermissions = activeScreenPermissions;
+    } else if (activeScreenPermission != null) {
+      final list = List<ScreenPermissionModel>.from(this.activeScreenPermissions);
+      final idx = list.indexWhere((p) => p.id == activeScreenPermission.id);
+      if (idx >= 0) {
+        list[idx] = activeScreenPermission;
+      } else {
+        list.add(activeScreenPermission);
+      }
+      resolvedPermissions = list;
+    } else {
+      resolvedPermissions = this.activeScreenPermissions;
+    }
+
     return ChatLoaded(
       messages: messages ?? this.messages,
       pinnedMessages: pinnedMessages ?? this.pinnedMessages,
@@ -149,9 +207,7 @@ class ChatLoaded extends ChatState {
           ? null
           : (disappearingTimer ?? this.disappearingTimer),
       onlyAdminsSendMessages: onlyAdminsSendMessages ?? this.onlyAdminsSendMessages,
-      activeScreenPermission: clearActiveScreenPermission
-          ? null
-          : (activeScreenPermission ?? this.activeScreenPermission),
+      activeScreenPermissions: resolvedPermissions,
       incomingScreenPermissionRequest: clearIncomingScreenPermissionRequest
           ? null
           : (incomingScreenPermissionRequest ?? this.incomingScreenPermissionRequest),
@@ -167,7 +223,6 @@ class ChatLoaded extends ChatState {
     );
   }
 }
-
 
 class ChatError extends ChatState {
   final String errorMessage;

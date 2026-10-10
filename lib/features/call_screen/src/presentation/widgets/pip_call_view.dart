@@ -364,7 +364,7 @@ class _PipCallTimerTextState extends State<_PipCallTimerText> {
         return Text(
           _formatDuration(duration),
           style: const TextStyle(
-            color: Color(0xFF00FF87),
+            color: Color(0xFF00873C),
             fontSize: 11,
             fontWeight: FontWeight.w600,
             decoration: TextDecoration.none,

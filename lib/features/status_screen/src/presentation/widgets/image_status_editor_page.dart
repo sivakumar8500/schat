@@ -93,7 +93,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
 
   // Drawing state
   bool _isDrawingMode = false;
-  Color _selectedPenColor = const Color(0xFF00FF87);
+  Color _selectedPenColor = const Color(0xFF00873C);
   double _selectedStrokeWidth = 4.0;
   final List<_DoodleStroke> _strokes = [];
   _DoodleStroke? _activeStroke;
@@ -106,7 +106,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
 
   final List<Color> _penColors = const [
     Color(0xFFFFFFFF), // White
-    Color(0xFF00FF87), // Emerald / Neon Green
+    Color(0xFF00873C), // Emerald Green
     Color(0xFFFFD600), // Yellow
     Color(0xFFFF3D00), // Bright Orange
     Color(0xFFFF1744), // Crimson Red
@@ -410,7 +410,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
             Container(
               color: Colors.black54,
               child: const Center(
-                child: CircularProgressIndicator(color: Color(0xFF00FF87)),
+                child: CircularProgressIndicator(color: Color(0xFF00873C)),
               ),
             ),
         ],
@@ -486,7 +486,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
           IconButton(
             icon: Icon(
               Icons.auto_fix_high_rounded,
-              color: _showFiltersBar ? const Color(0xFF00FF87) : Colors.white,
+              color: _showFiltersBar ? const Color(0xFF00873C) : Colors.white,
               size: 24,
             ),
             tooltip: 'Filters',
@@ -502,7 +502,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
           IconButton(
             icon: Icon(
               Icons.draw_rounded,
-              color: _isDrawingMode ? const Color(0xFF00FF87) : Colors.white,
+              color: _isDrawingMode ? const Color(0xFF00873C) : Colors.white,
               size: 24,
             ),
             tooltip: 'Draw',
@@ -566,7 +566,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
                 color: isSelected ? const Color(0xFF00873C) : Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFF00FF87) : Colors.transparent,
+                  color: isSelected ? const Color(0xFF00873C) : Colors.transparent,
                   width: 1.5,
                 ),
               ),
@@ -710,7 +710,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
                         maxLines: 3,
                         minLines: 1,
                         style: const TextStyle(color: Colors.white, fontSize: 15),
-                        cursorColor: const Color(0xFF00FF87),
+                        cursorColor: const Color(0xFF00873C),
                         decoration: const InputDecoration(
                           hintText: 'Add a caption...',
                           hintStyle: TextStyle(color: Colors.white54, fontSize: 14.5),

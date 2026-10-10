@@ -12,6 +12,7 @@ import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/features/chat_search/src/domain/models/global_search_model.dart';
 import 'package:schat/core/network/api_service.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_spaces.dart';
@@ -66,7 +67,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
 
   void _debounceServerSearch(String query) {
     _debounceTimer?.cancel();
-    if (query.isEmpty) {
+    final cleanQuery = query.trim();
+    if (cleanQuery.length < 3) {
       setState(() {
         _isSearchingServer = false;
         _serverSearchResponse = null;
@@ -75,12 +77,13 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     }
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _executeServerSearch(query);
+      _executeServerSearch(cleanQuery);
     });
   }
 
   Future<void> _executeServerSearch(String query) async {
-    if (!mounted || query.isEmpty) return;
+    final cleanQuery = query.trim();
+    if (!mounted || cleanQuery.length < 3) return;
 
     setState(() {
       _isSearchingServer = true;
@@ -268,7 +271,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 children: [
                   Icon(
                     Icons.search_rounded,
-                    color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                    color: const Color(0xFF00873C),
                     size: 20,
                   ),
                   const SizedBox(width: 10),
@@ -317,8 +320,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Widget _buildFilterChips(bool isDark) {
-    final activeColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
-    final activeTextColor = isDark ? Colors.black : Colors.white;
+    const activeColor = Color(0xFF00873C);
+    const activeTextColor = Colors.white;
 
     return SizedBox(
       height: 48,
@@ -336,7 +339,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               setState(() {
                 _selectedFilter = filter['key'] as String;
               });
-              if (_searchQuery.isNotEmpty) {
+              if (_searchQuery.trim().length >= 3) {
                 _executeServerSearch(_searchQuery);
               }
             },
@@ -1136,10 +1139,10 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                           message.toLowerCase().contains('www.'))
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
-                          child: Icon(
+                          child: const Icon(
                             Icons.link_rounded,
                             size: 14,
-                            color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                            color: Color(0xFF00873C),
                           ),
                         ),
                       Expanded(
@@ -1148,7 +1151,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                           query: _searchQuery,
                           baseStyle: TextStyle(
                             color: chat.isTyping
-                                ? (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C))
+                                ? const Color(0xFF00873C)
                                 : (isDark ? Colors.white54 : const Color(0xFF6B7280)),
                             fontSize: 13.5,
                             fontWeight: chat.isTyping
@@ -1200,7 +1203,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
 
   Widget _buildAvatar(ChatModel chat, bool isDark) {
     final isGroup = chat.isGroup;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
 
     if (isGroup) {
@@ -1357,7 +1360,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   Widget _buildChatStatus(ChatModel chat, bool isDark) {
     final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
     final timeStr = _formatMessageTime(timestamp);
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1437,31 +1440,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   String _resolveMediaUrl(String? path) {
     if (path == null || path.isEmpty) return '';
     String url = path;
-    if (url.contains('minio')) {
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty) {
-          url = url.replaceAll('minio', host);
-        }
-      } catch (_) {}
-    }
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      url = '$s3BaseUrl$url';
-    }
-    return url;
+    return SecureAttachmentService.resolveFullUrl(url);
   }
 
   Widget _buildMediaGrid(List<ChatModel> visibleChats, bool isDark, String filterType) {
@@ -1713,12 +1692,12 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.15),
+                      color: const Color(0xFF00873C).withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.audiotrack_rounded,
-                      color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                      color: Color(0xFF00873C),
                       size: 20,
                     ),
                   ),
@@ -1800,12 +1779,12 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C)).withValues(alpha: 0.15),
+                  color: const Color(0xFF00873C).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.link_rounded,
-                  color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                  color: Color(0xFF00873C),
                   size: 20,
                 ),
               ),
@@ -1839,9 +1818,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                       rawContent,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 13.5,
-                        color: isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C),
+                        color: Color(0xFF00873C),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -1945,7 +1924,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Widget _buildLockedChatsResultView(List<SearchChatItem> lockedChats, bool isDark) {
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     if (lockedChats.isEmpty) {
       return Center(
@@ -2032,7 +2011,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Widget _buildLockedChatItem(SearchChatItem item, bool isDark) {
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
     final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
     final displayName = _resolveContactDisplayName(item);
     final messageSnippet = (item.lastMessageSnippet != null && item.lastMessageSnippet!.trim().isNotEmpty)

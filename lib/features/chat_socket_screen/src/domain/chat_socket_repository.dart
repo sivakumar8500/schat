@@ -4,7 +4,9 @@ import 'js_convert_helper_stub.dart'
     if (dart.library.html) 'js_convert_helper_web.dart';
 import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
+import 'package:schat/core/services/session_manager_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -50,6 +52,7 @@ abstract class ChatSocketRepository {
   void sendDeliveryReceipt(String conversationId, String messageId);
   void editMessage({
     required String messageId,
+    String? conversationId,
     String? text,
     Map<String, dynamic>? security,
   });
@@ -257,8 +260,23 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
           ? decodedData 
           : {'raw': rawData.toString(), 'decoded': decodedData});
 
-      if (decodedData is Map<String, dynamic> && decodedData['type'] == 'pong') {
-        _lastPongReceived = DateTime.now();
+      if (decodedData is Map<String, dynamic>) {
+        final eventType = decodedData['type'] ?? decodedData['event'] ?? decodedData['action'];
+        if (eventType == 'pong') {
+          _lastPongReceived = DateTime.now();
+        } else if (eventType == 'force_logout' ||
+            eventType == 'session_expired' ||
+            eventType == 'duplicate_login' ||
+            eventType == 'logout_other_devices' ||
+            eventType == 'device_conflict') {
+          debugPrint('ChatSocketRepository: Received eviction event "$eventType". Triggering auto-logout & navigation to login.');
+          final reason = decodedData['reason'] ??
+              decodedData['message'] ??
+              'You have been logged out because your account was logged in on another device.';
+          getIt<SessionManagerService>().logoutAndRedirectToLogin(
+            reason: reason.toString(),
+          );
+        }
       }
 
       _messageController.add(decodedData);
@@ -293,8 +311,11 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       'closeReason': closeReason,
     });
     disconnect();
-    if (closeCode == 1008) {
-      debugPrint('Subscription check failed (Code 1008). Policy Violation. Avoiding reconnection loop.');
+    if (closeCode == 1008 || closeCode == 4001 || closeCode == 4003) {
+      debugPrint('ChatSocketRepository: Session terminated with CloseCode $closeCode (Policy / Displacement). Logging out...');
+      getIt<SessionManagerService>().logoutAndRedirectToLogin(
+        reason: 'Your session has ended because your account was logged in on another device.',
+      );
     } else {
       _reconnect();
     }
@@ -368,15 +389,39 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       payloadType = 'audio';
     }
 
-    final String finalType;
-    if (type == 'update_attachment_permissions') {
-      finalType = 'update_attachment_permissions';
-    } else {
-      finalType = payloadType;
-    }
+    final resolvedSecurity = security != null ? {
+      ...security,
+      'isLocked': security['isLocked'] ?? security['is_locked'] ?? false,
+      'is_locked': security['isLocked'] ?? security['is_locked'] ?? false,
+      'accessUsers': security['accessUsers'] ?? security['access_users'] ?? [],
+      'access_users': security['accessUsers'] ?? security['access_users'] ?? [],
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allowView': security['allowView'] ?? security['allow_view'] ?? true,
+      'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
+      'canView': security['allowView'] ?? security['allow_view'] ?? true,
+      'can_view': security['allowView'] ?? security['allow_view'] ?? true,
+    } : null;
+
+    final resolvedViewControl = viewControl != null ? {
+      ...viewControl,
+      'type': viewControl['type'] ?? 'normal',
+      'maxViews': viewControl['maxViews'] ?? viewControl['max_views'] ?? 1,
+      'max_views': viewControl['maxViews'] ?? viewControl['max_views'] ?? 1,
+      'isViewOnce': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
+      'is_view_once': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
+      'allowDownload': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
+      'allow_download': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
+      'allowShare': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
+      'allow_share': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
+      'allowView': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
+      'allow_view': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
+    } : null;
 
     final Map<String, dynamic> payload = {
-      "type": finalType,
+      "type": payloadType,
       "conversationId": conversationId,
       "conversation_id": conversationId,
     };
@@ -386,8 +431,16 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       payload['replyMessageId'] = replyMessageId;
       payload['reply_message_id'] = replyMessageId;
     }
-    if (security != null) payload['security'] = security;
-    if (viewControl != null) payload['viewControl'] = viewControl;
+    if (resolvedSecurity != null) {
+      payload['security'] = resolvedSecurity;
+      payload['allowView'] = resolvedSecurity['allowView'];
+      payload['allow_view'] = resolvedSecurity['allowView'];
+      payload['allowDownload'] = resolvedSecurity['allowDownload'];
+      payload['allow_download'] = resolvedSecurity['allowDownload'];
+      payload['allowShare'] = resolvedSecurity['allowShare'];
+      payload['allow_share'] = resolvedSecurity['allowShare'];
+    }
+    if (resolvedViewControl != null) payload['viewControl'] = resolvedViewControl;
     if (expiry != null) payload['expiry'] = expiry;
     if (callMeta != null) payload['callMeta'] = callMeta;
 
@@ -432,15 +485,40 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   @override
   void editMessage({
     required String messageId,
+    String? conversationId,
     String? text,
     Map<String, dynamic>? security,
   }) {
+    final resolvedSecurity = security != null ? {
+      ...security,
+      'isLocked': security['isLocked'] ?? security['is_locked'] ?? false,
+      'is_locked': security['isLocked'] ?? security['is_locked'] ?? false,
+      'accessUsers': security['accessUsers'] ?? security['access_users'] ?? [],
+      'access_users': security['accessUsers'] ?? security['access_users'] ?? [],
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allowView': security['allowView'] ?? security['allow_view'] ?? true,
+      'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
+      'canView': security['allowView'] ?? security['allow_view'] ?? true,
+      'can_view': security['allowView'] ?? security['allow_view'] ?? true,
+    } : null;
+
     final Map<String, dynamic> payload = {
       "type": "edit_message",
       "message_id": messageId,
       "messageId": messageId,
-      "text": ?text,
-      "security": ?security,
+      if (conversationId != null) "conversation_id": conversationId,
+      if (conversationId != null) "conversationId": conversationId,
+      if (text != null) "text": text,
+      if (resolvedSecurity != null) "security": resolvedSecurity,
+      if (resolvedSecurity != null) "allowView": resolvedSecurity['allowView'],
+      if (resolvedSecurity != null) "allow_view": resolvedSecurity['allowView'],
+      if (resolvedSecurity != null) "allowDownload": resolvedSecurity['allowDownload'],
+      if (resolvedSecurity != null) "allow_download": resolvedSecurity['allowDownload'],
+      if (resolvedSecurity != null) "allowShare": resolvedSecurity['allowShare'],
+      if (resolvedSecurity != null) "allow_share": resolvedSecurity['allowShare'],
     };
     emit('message', payload);
   }

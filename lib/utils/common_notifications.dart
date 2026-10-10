@@ -176,8 +176,8 @@ class _AppToastWidgetState extends State<_AppToastWidget>
         break;
       case ToastType.success:
         bgColor = const Color(0xFF14241B);
-        borderColor = const Color(0xFF00FF87).withValues(alpha: 0.6);
-        iconColor = const Color(0xFF00FF87);
+        borderColor = const Color(0xFF00873C).withValues(alpha: 0.6);
+        iconColor = const Color(0xFF00873C);
         iconData = Icons.check_circle_outline_rounded;
         break;
       case ToastType.info:
@@ -433,7 +433,7 @@ class _InAppNotificationBannerWidgetState extends State<_InAppNotificationBanner
                             width: 18,
                             height: 18,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF25D366),
+                              color: const Color(0xFF00873C),
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: const Color(0xFF383B3E),

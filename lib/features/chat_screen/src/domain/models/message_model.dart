@@ -78,6 +78,7 @@ class MessageModel {
   final bool isDeletedForMe;
   final bool isRead;
   final bool isDelivered;
+  String get status => isRead ? 'read' : (isDelivered ? 'delivered' : 'sent');
   final String createdAt;
   final String updatedAt;
   
@@ -390,6 +391,12 @@ class MessageModel {
       allowView = json['can_view'] as bool;
     }
 
+    if (json['isRevoked'] == true || json['is_revoked'] == true || json['revoked'] == true) {
+      allowView = false;
+      allowDownload = false;
+      allowShare = false;
+    }
+
     if (json['isFileViewed'] != null) {
       isFileViewed = json['isFileViewed'] as bool;
     } else if (json['file_viewed'] != null) isFileViewed = json['file_viewed'] as bool;
@@ -677,6 +684,7 @@ class MessageModel {
     'isDeletedForMe': isDeletedForMe,
     'isRead': isRead,
     'isDelivered': isDelivered,
+    'status': isRead ? 'read' : (isDelivered ? 'delivered' : 'sent'),
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'isReply': isReply,

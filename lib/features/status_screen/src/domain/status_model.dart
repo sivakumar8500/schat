@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:flutter/material.dart';
-
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 part 'status_model.freezed.dart';
@@ -23,7 +24,7 @@ abstract class StatusItemModel with _$StatusItemModel {
     @JsonKey(name: 'privacyType') String? privacyType,
     @JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,
     @JsonKey(includeFromJson: false, includeToJson: false) @Default(Colors.black) Color backgroundColor,
-    @JsonKey(includeFromJson: false, includeToJson: false) @Default(false) bool viewed,
+    @JsonKey(name: 'viewed', defaultValue: false) @Default(false) bool viewed,
   }) = _StatusItemModel;
 
   factory StatusItemModel.fromJson(Map<String, dynamic> json) => _$StatusItemModelFromJson(_normalizeStatusItemJson(json));
@@ -42,7 +43,8 @@ abstract class StatusItemModel with _$StatusItemModel {
 
 Map<String, dynamic> _normalizeStatusItemJson(Map<String, dynamic> json) {
   final map = Map<String, dynamic>.from(json);
-  map['id'] = (json['id'] ?? json['_id'] ?? json['status_id'])?.toString() ?? '';
+  final id = (json['id'] ?? json['_id'] ?? json['status_id'])?.toString() ?? '';
+  map['id'] = id;
   map['textContent'] = json['textContent'] ?? json['text_content'] ?? json['text'];
 
   dynamic rawMedia = json['mediaUrl'] ?? json['media_url'] ?? json['media'] ?? json['fileUrl'] ?? json['file_url'] ?? json['url'];
@@ -68,6 +70,36 @@ Map<String, dynamic> _normalizeStatusItemJson(Map<String, dynamic> json) {
     final rawExpiresAt = json['expiresAt'] ?? json['expires_at'];
     map['expiresAt'] = _safeToIso8601String(rawExpiresAt);
   }
+
+  // Parse viewed state from backend or local cache
+  bool isViewed = json['viewed'] == true ||
+      json['isViewed'] == true ||
+      json['is_viewed'] == true ||
+      json['seen'] == true ||
+      json['isSeen'] == true ||
+      json['is_seen'] == true;
+
+  try {
+    final myUserId = getIt<StorageService>().getUserId();
+    if (!isViewed && myUserId != null && myUserId.isNotEmpty) {
+      final rawViewers = json['viewers'] ?? json['viewer_ids'] ?? json['views'];
+      if (rawViewers is List) {
+        isViewed = rawViewers.any((v) {
+          if (v is Map) {
+            final vId = (v['viewerId'] ?? v['id'] ?? v['userId'] ?? v['user_id'])?.toString();
+            return vId == myUserId;
+          }
+          return v.toString() == myUserId;
+        });
+      }
+    }
+
+    if (!isViewed && id.isNotEmpty) {
+      isViewed = getIt<StorageService>().isStatusViewed(id);
+    }
+  } catch (_) {}
+
+  map['viewed'] = isViewed;
 
   return map;
 }
@@ -181,6 +213,54 @@ abstract class StatusPrivacyContact with _$StatusPrivacyContact {
   factory StatusPrivacyContact.fromJson(Map<String, dynamic> json) => _$StatusPrivacyContactFromJson(json);
 }
 
+Map<String, dynamic> _normalizePrivacyJson(Map<String, dynamic> rawJson) {
+  final json = rawJson.containsKey('data') && rawJson['data'] is Map
+      ? Map<String, dynamic>.from(rawJson['data'] as Map)
+      : Map<String, dynamic>.from(rawJson);
+
+  final type = (json['privacyType'] ?? json['privacy_type'] ?? json['type'] ?? 'contacts').toString();
+
+  List<String> parseIds(dynamic raw) {
+    if (raw is List) {
+      return raw.map((e) {
+        if (e is Map) {
+          return (e['id'] ?? e['_id'] ?? e['userId'] ?? e['user_id'] ?? '').toString();
+        }
+        return e.toString();
+      }).where((id) => id.isNotEmpty).toList();
+    }
+    return [];
+  }
+
+  List<String> included = parseIds(json['includedUserIds'] ?? json['included_user_ids']);
+  if (included.isEmpty && (json['includedContacts'] != null || json['included_contacts'] != null)) {
+    included = parseIds(json['includedContacts'] ?? json['included_contacts']);
+  }
+  List<String> excluded = parseIds(json['excludedUserIds'] ?? json['excluded_user_ids']);
+  if (excluded.isEmpty && (json['excludedContacts'] != null || json['excluded_contacts'] != null)) {
+    excluded = parseIds(json['excludedContacts'] ?? json['excluded_contacts']);
+  }
+
+  final privacyUserIds = parseIds(json['privacyUserIds'] ?? json['privacy_user_ids'] ?? json['contactIds'] ?? json['contact_ids']);
+  if (privacyUserIds.isNotEmpty) {
+    final lowerType = type.toLowerCase();
+    if (lowerType == 'only' || lowerType == 'include' || lowerType == 'only_share_with' || lowerType == 'only_share') {
+      if (included.isEmpty) included = privacyUserIds;
+    } else if (lowerType == 'except' || lowerType == 'exclude' || lowerType == 'my_contacts_except') {
+      if (excluded.isEmpty) excluded = privacyUserIds;
+    }
+  }
+
+  return {
+    'privacyType': type,
+    'includedUserIds': included,
+    'excludedUserIds': excluded,
+    'includedContacts': json['includedContacts'] ?? json['included_contacts'] ?? [],
+    'excludedContacts': json['excludedContacts'] ?? json['excluded_contacts'] ?? [],
+    'updatedAt': json['updatedAt'] ?? json['updated_at'],
+  };
+}
+
 @freezed
 abstract class StatusPrivacyModel with _$StatusPrivacyModel {
   const factory StatusPrivacyModel({
@@ -192,6 +272,6 @@ abstract class StatusPrivacyModel with _$StatusPrivacyModel {
     @JsonKey(name: 'updatedAt') int? updatedAt,
   }) = _StatusPrivacyModel;
 
-  factory StatusPrivacyModel.fromJson(Map<String, dynamic> json) => _$StatusPrivacyModelFromJson(json);
+  factory StatusPrivacyModel.fromJson(Map<String, dynamic> json) => _$StatusPrivacyModelFromJson(_normalizePrivacyJson(json));
 }
 

@@ -13,6 +13,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/core/notifications/push_notification_service.dart';
+import 'package:schat/core/services/session_manager_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/common/widgets/auth_hero_header.dart';
@@ -178,7 +179,7 @@ class _OtpVerifyPageState extends State<OtpVerifyPage>
     super.dispose();
   }
 
-  void _verifyOtp(BuildContext context) {
+  Future<void> _verifyOtp(BuildContext context) async {
     if (_isAutoVerifying) return;
     String otp = _controllers.map((c) => c.text).join();
     
@@ -188,6 +189,15 @@ class _OtpVerifyPageState extends State<OtpVerifyPage>
     }
 
     _isAutoVerifying = true;
+
+    // Show device conflict bottom sheet warning before completing login
+    final shouldProceed = await getIt<SessionManagerService>().showDeviceConflictBottomSheet(context);
+    if (!shouldProceed) {
+      _isAutoVerifying = false;
+      return;
+    }
+
+    if (!context.mounted) return;
     final deviceId = getIt<StorageService>().getOrGenerateDeviceId();
     context.read<AuthBloc>().add(
       VerifyOtpEvent(otpCode: otp, deviceId: deviceId),

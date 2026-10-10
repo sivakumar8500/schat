@@ -328,6 +328,37 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     }
   }
 
+  List<CallHistoryModel> _getFilteredCalls(List<CallHistoryModel> calls) {
+    return calls.where((call) {
+      if (_searchQuery.isNotEmpty) {
+        final q = _searchQuery.toLowerCase();
+        final nameMatch = call.displayName.toLowerCase().contains(q);
+        final callerMatch = (call.callerName ?? '').toLowerCase().contains(q);
+        final receiverMatch = (call.receiverName ?? '').toLowerCase().contains(q);
+        final groupMatch = (call.groupName ?? '').toLowerCase().contains(q);
+        final callerIdMatch = (call.callerId ?? '').toLowerCase().contains(q);
+        final receiverIdMatch = (call.receiverId ?? '').toLowerCase().contains(q);
+        if (!nameMatch && !callerMatch && !receiverMatch && !groupMatch && !callerIdMatch && !receiverIdMatch) {
+          return false;
+        }
+      }
+      switch (_currentFilter) {
+        case CallFilter.all:
+          return true;
+        case CallFilter.audio:
+          return !call.isVideoCall;
+        case CallFilter.video:
+          return call.isVideoCall;
+        case CallFilter.missed:
+          return call.isMissed;
+        case CallFilter.incoming:
+          return call.isIncoming && !call.isMissed;
+        case CallFilter.outgoing:
+          return !call.isIncoming && !call.isMissed;
+      }
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isSelectionMode = _selectedIds.isNotEmpty;
@@ -337,11 +368,12 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
       children: [
         BlocBuilder<CallHistoryCubit, CallHistoryState>(
           builder: (context, state) {
-            final currentCalls = state.maybeWhen(
-              loaded: (calls) => calls,
+            final calls = state.maybeWhen(
+              loaded: (c) => c,
               orElse: () => <CallHistoryModel>[],
             );
-            return _buildHeader(isSelectionMode, currentCalls);
+            final filteredCalls = _getFilteredCalls(calls);
+            return _buildHeader(isSelectionMode, filteredCalls);
           },
         ),
         if (!_isSearching) _buildFilterPills(),
@@ -383,34 +415,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                 ),
                 error: (message) => _buildErrorState(context, message),
                 loaded: (calls) {
-                  final filteredCalls = calls.where((call) {
-                    if (_searchQuery.isNotEmpty) {
-                      final q = _searchQuery.toLowerCase();
-                      final nameMatch = call.displayName.toLowerCase().contains(q);
-                      final callerMatch = (call.callerName ?? '').toLowerCase().contains(q);
-                      final receiverMatch = (call.receiverName ?? '').toLowerCase().contains(q);
-                      final groupMatch = (call.groupName ?? '').toLowerCase().contains(q);
-                      final callerIdMatch = (call.callerId ?? '').toLowerCase().contains(q);
-                      final receiverIdMatch = (call.receiverId ?? '').toLowerCase().contains(q);
-                      if (!nameMatch && !callerMatch && !receiverMatch && !groupMatch && !callerIdMatch && !receiverIdMatch) {
-                        return false;
-                      }
-                    }
-                    switch (_currentFilter) {
-                      case CallFilter.all:
-                        return true;
-                      case CallFilter.audio:
-                        return !call.isVideoCall;
-                      case CallFilter.video:
-                        return call.isVideoCall;
-                      case CallFilter.missed:
-                        return call.isMissed;
-                      case CallFilter.incoming:
-                        return call.isIncoming && !call.isMissed;
-                      case CallFilter.outgoing:
-                        return !call.isIncoming;
-                    }
-                  }).toList();
+                  final filteredCalls = _getFilteredCalls(calls);
 
                   if (filteredCalls.isEmpty) {
                     return _buildEmptyState(context);
@@ -595,13 +600,27 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                       }
                     } else if (val == 'clear_all') {
                       if (currentCalls.isEmpty) return;
+                      final filterLabel = _currentFilter == CallFilter.missed
+                          ? 'missed calls'
+                          : (_currentFilter == CallFilter.incoming
+                              ? 'incoming calls'
+                              : (_currentFilter == CallFilter.outgoing
+                                  ? 'outgoing calls'
+                                  : 'call'));
+                      final filterTitle = _currentFilter == CallFilter.missed
+                          ? 'Clear Missed Calls?'
+                          : (_currentFilter == CallFilter.incoming
+                              ? 'Clear Incoming Calls?'
+                              : (_currentFilter == CallFilter.outgoing
+                                  ? 'Clear Outgoing Calls?'
+                                  : 'Clear Call Log?'));
                       final confirmed = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
                           backgroundColor: context.colors.cardBackground,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          title: const Text('Clear Call Log?'),
-                          content: const Text('Do you want to clear your entire call history? This cannot be undone.'),
+                          title: Text(filterTitle),
+                          content: Text('Do you want to clear your $filterLabel history? This cannot be undone.'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
@@ -614,7 +633,7 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
                               onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Clear All'),
+                              child: const Text('Clear'),
                             ),
                           ],
                         ),

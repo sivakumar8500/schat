@@ -404,6 +404,7 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
                 recipientId: chat.recipient.id,
                 isGroup: chat.isGroup,
                 isReadOnly: true,
+                targetUserId: widget.targetUser.id,
               ),
             ),
           );

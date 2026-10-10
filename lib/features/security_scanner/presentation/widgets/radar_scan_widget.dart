@@ -56,7 +56,7 @@ class _RadarScanWidgetState extends State<RadarScanWidget>
           Text(
             widget.statusText!,
             style: const TextStyle(
-              color: Color(0xFF00FF66),
+              color: Color(0xFF00A859),
               fontFamily: 'monospace',
               fontSize: 14,
               fontWeight: FontWeight.bold,
@@ -87,7 +87,7 @@ class _RadarPainter extends CustomPainter {
 
     // 2. Concentric Green Target Rings
     final ringPaint = Paint()
-      ..color = const Color(0xFF00FF66).withValues(alpha: 0.35)
+      ..color = const Color(0xFF00A859).withValues(alpha: 0.35)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
@@ -97,14 +97,14 @@ class _RadarPainter extends CustomPainter {
 
     // Outer Border Ring
     final outerRingPaint = Paint()
-      ..color = const Color(0xFF00FF66)
+      ..color = const Color(0xFF00A859)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5;
     canvas.drawCircle(center, radius, outerRingPaint);
 
     // 3. Radar Crosshairs (X and Y axes)
     final gridPaint = Paint()
-      ..color = const Color(0xFF00FF66).withValues(alpha: 0.4)
+      ..color = const Color(0xFF00A859).withValues(alpha: 0.4)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -134,7 +134,7 @@ class _RadarPainter extends CustomPainter {
 
     // 4. Outer Dial Tick Marks
     final tickPaint = Paint()
-      ..color = const Color(0xFF00FF66).withValues(alpha: 0.6)
+      ..color = const Color(0xFF00A859).withValues(alpha: 0.6)
       ..strokeWidth = 1.5;
 
     const int totalTicks = 36;
@@ -160,9 +160,9 @@ class _RadarPainter extends CustomPainter {
         startAngle: 0.0,
         endAngle: math.pi / 2, // 90 degree sweep trailing beam
         colors: [
-          const Color(0xFF00FF66).withValues(alpha: 0.0),
-          const Color(0xFF00FF66).withValues(alpha: 0.15),
-          const Color(0xFF00FF66).withValues(alpha: 0.55),
+          const Color(0xFF00A859).withValues(alpha: 0.0),
+          const Color(0xFF00A859).withValues(alpha: 0.15),
+          const Color(0xFF00A859).withValues(alpha: 0.55),
         ],
         stops: const [0.0, 0.5, 1.0],
         transform: GradientRotation(sweepAngle - math.pi / 2),
@@ -172,7 +172,7 @@ class _RadarPainter extends CustomPainter {
 
     // Leading Sweep Line
     final sweepLinePaint = Paint()
-      ..color = const Color(0xFF00FF66)
+      ..color = const Color(0xFF00A859)
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke;
 
@@ -184,13 +184,13 @@ class _RadarPainter extends CustomPainter {
 
     // Center Bright Dot
     final centerDotPaint = Paint()
-      ..color = const Color(0xFF00FF66)
+      ..color = const Color(0xFF00A859)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 4, centerDotPaint);
 
     // 6. Blips / Threat Dots
     final blipPaint = Paint()
-      ..color = const Color(0xFF00FF66)
+      ..color = const Color(0xFF00A859)
       ..style = PaintingStyle.fill;
 
     final blips = [
@@ -205,7 +205,7 @@ class _RadarPainter extends CustomPainter {
         blip,
         6.0,
         Paint()
-          ..color = const Color(0xFF00FF66).withValues(alpha: 0.3)
+          ..color = const Color(0xFF00A859).withValues(alpha: 0.3)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.0,
       );

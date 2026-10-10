@@ -822,13 +822,13 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     required VoidCallback onTap,
   }) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: isSelected
-            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            ? (isDark ? const Color(0xFF00873C).withValues(alpha: 0.15) : const Color(0xFFE8F5E9))
             : (isDark ? context.colors.cardBackground : Colors.white),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -1806,7 +1806,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                         labelStyle: TextStyle(
                           fontSize: 12,
                           color: isSelected
-                              ? (isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C))
+                              ? const Color(0xFF00873C)
                               : context.colors.textSecondary,
                           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                         ),

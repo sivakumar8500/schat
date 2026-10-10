@@ -30,6 +30,7 @@ _StatusItemModel _$StatusItemModelFromJson(Map<String, dynamic> json) =>
       privacyUserIds: (json['privacyUserIds'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
+      viewed: json['viewed'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$StatusItemModelToJson(_StatusItemModel instance) =>

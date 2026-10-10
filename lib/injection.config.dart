@@ -25,6 +25,8 @@ import 'core/notifications/push_notification_service.dart' as _i610;
 import 'core/security/screen_protection_service.dart' as _i568;
 import 'core/security/secure_attachment_service.dart' as _i32;
 import 'core/security/security_scanner_service.dart' as _i464;
+import 'core/services/in_app_update_service.dart' as _i756;
+import 'core/services/session_manager_service.dart' as _i967;
 import 'core/storage/storage_service.dart' as _i263;
 import 'features/auth_screen/src/data/repositories/auth_repository_impl.dart'
     as _i299;
@@ -148,6 +150,12 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i568.ScreenProtectionService>(
       () => _i568.ScreenProtectionService(),
+    );
+    gh.lazySingleton<_i756.InAppUpdateService>(
+      () => _i756.InAppUpdateService(),
+    );
+    gh.lazySingleton<_i967.SessionManagerService>(
+      () => _i967.SessionManagerService(),
     );
     gh.lazySingleton<_i176.WebRtcService>(() => _i176.WebRtcService());
     gh.lazySingleton<_i213.UrlSafetyService>(() => _i213.UrlSafetyService());
@@ -330,6 +338,14 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i371.CallHistoryCubit>(
       () => _i371.CallHistoryCubit(gh<_i762.CallHistoryRepository>()),
     );
+    gh.lazySingleton<_i14.ContactsBloc>(
+      () => _i14.ContactsBloc(
+        gh<_i1069.ContactsRepository>(),
+        gh<_i411.ChatSocketRepository>(),
+        gh<_i263.StorageService>(),
+        gh<_i198.DashboardRepository>(),
+      ),
+    );
     gh.lazySingleton<_i127.GetChatsUseCase>(
       () => _i127.GetChatsUseCase(gh<_i198.DashboardRepository>()),
     );
@@ -337,13 +353,6 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i236.ChatsBloc(
         gh<_i127.GetChatsUseCase>(),
         gh<_i198.DashboardRepository>(),
-        gh<_i1069.ContactsRepository>(),
-        gh<_i411.ChatSocketRepository>(),
-        gh<_i263.StorageService>(),
-      ),
-    );
-    gh.lazySingleton<_i14.ContactsBloc>(
-      () => _i14.ContactsBloc(
         gh<_i1069.ContactsRepository>(),
         gh<_i411.ChatSocketRepository>(),
         gh<_i263.StorageService>(),

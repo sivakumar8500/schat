@@ -3,6 +3,13 @@ allprojects {
         google()
         mavenCentral()
     }
+    configurations.all {
+        resolutionStrategy {
+            force("androidx.test:runner:1.5.2")
+            force("androidx.test:rules:1.5.0")
+            force("androidx.test:core:1.5.0")
+        }
+    }
 }
 
 val newBuildDir: Directory =

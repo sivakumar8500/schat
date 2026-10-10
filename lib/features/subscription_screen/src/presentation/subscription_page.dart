@@ -154,7 +154,7 @@ class SubscriptionPage extends StatelessWidget {
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: isPopular
-                    ? (isDark ? const Color(0xFF00FF87) : const Color(0xFF10B981))
+                    ? const Color(0xFF00873C)
                     : (isDark
                         ? Colors.white.withValues(alpha: 0.12)
                         : const Color(0xFFE5E7EB)),
@@ -163,9 +163,7 @@ class SubscriptionPage extends StatelessWidget {
               boxShadow: [
                 BoxShadow(
                   color: isPopular
-                      ? (isDark
-                          ? const Color(0xFF00FF87).withValues(alpha: 0.15)
-                          : const Color(0xFF10B981).withValues(alpha: 0.12))
+                      ? const Color(0xFF00873C).withValues(alpha: 0.15)
                       : Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
                   blurRadius: isPopular ? 16 : 8,
                   offset: const Offset(0, 4),
@@ -186,15 +184,13 @@ class SubscriptionPage extends StatelessWidget {
                       height: 48,
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFF00FF87).withValues(alpha: 0.18)
+                            ? const Color(0xFF00873C).withValues(alpha: 0.18)
                             : const Color(0xFFD1FADF),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         meta.icon,
-                        color: isDark
-                            ? const Color(0xFF00FF87)
-                            : const Color(0xFF00873C),
+                        color: const Color(0xFF00873C),
                         size: 24,
                       ),
                     ),
@@ -267,12 +263,10 @@ class SubscriptionPage extends StatelessWidget {
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.check_circle_rounded,
                                   size: 16,
-                                  color: isDark
-                                      ? const Color(0xFF00FF87)
-                                      : const Color(0xFF00873C),
+                                  color: Color(0xFF00873C),
                                 ),
                                 CommonSpaces.w8,
                                 Expanded(
@@ -311,22 +305,16 @@ class SubscriptionPage extends StatelessWidget {
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: isPopular
-                              ? (isDark
-                                  ? const Color(0xFF00FF87)
-                                  : const Color(0xFF00873C))
+                              ? const Color(0xFF00873C)
                               : Colors.transparent,
                           foregroundColor: isPopular
-                              ? (isDark ? Colors.black : Colors.white)
-                              : (isDark
-                                  ? const Color(0xFF00FF87)
-                                  : const Color(0xFF00873C)),
+                              ? Colors.white
+                              : const Color(0xFF00873C),
                           elevation: 0,
                           side: isPopular
                               ? BorderSide.none
-                              : BorderSide(
-                                  color: isDark
-                                      ? const Color(0xFF00FF87)
-                                      : const Color(0xFF00873C),
+                              : const BorderSide(
+                                  color: Color(0xFF00873C),
                                   width: 1.5,
                                 ),
                           padding: const EdgeInsets.symmetric(
@@ -338,21 +326,17 @@ class SubscriptionPage extends StatelessWidget {
                           ),
                         ),
                         child: isLoading
-                            ? SizedBox(
+                            ? const SizedBox(
                                 width: 16,
                                 height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   valueColor: AlwaysStoppedAnimation<Color>(
-                                    isPopular
-                                        ? (isDark ? Colors.black : Colors.white)
-                                        : (isDark
-                                            ? const Color(0xFF00FF87)
-                                            : const Color(0xFF00873C)),
+                                    Colors.white,
                                   ),
                                 ),
                               )
-                            : Row(
+                            : const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
@@ -360,22 +344,12 @@ class SubscriptionPage extends StatelessWidget {
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13.5,
-                                      color: isPopular
-                                          ? (isDark ? Colors.black : Colors.white)
-                                          : (isDark
-                                              ? const Color(0xFF00FF87)
-                                              : const Color(0xFF00873C)),
                                     ),
                                   ),
                                   CommonSpaces.w6,
                                   Icon(
                                     Icons.arrow_forward_rounded,
                                     size: 15,
-                                    color: isPopular
-                                        ? (isDark ? Colors.black : Colors.white)
-                                        : (isDark
-                                            ? const Color(0xFF00FF87)
-                                            : const Color(0xFF00873C)),
                                   ),
                                 ],
                               ),
@@ -398,25 +372,21 @@ class SubscriptionPage extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF00FF87)
-                      : const Color(0xFF00873C),
+                  color: const Color(0xFF00873C),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: (isDark
-                              ? const Color(0xFF00FF87)
-                              : const Color(0xFF00873C))
+                      color: const Color(0xFF00873C)
                           .withValues(alpha: 0.35),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: Text(
+                child: const Text(
                   'POPULAR',
                   style: TextStyle(
-                    color: isDark ? Colors.black : Colors.white,
+                    color: Colors.white,
                     fontSize: 9.5,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0.8,

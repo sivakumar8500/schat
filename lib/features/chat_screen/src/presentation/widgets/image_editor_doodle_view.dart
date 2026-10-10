@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 
 class DrawnLine {
@@ -16,12 +17,14 @@ class DrawnLine {
 }
 
 class OverlayTextItem {
+  String id;
   String text;
   Offset position;
   Color color;
   double fontSize;
 
   OverlayTextItem({
+    required this.id,
     required this.text,
     required this.position,
     required this.color,
@@ -46,26 +49,27 @@ class ImageEditorDoodleView extends StatefulWidget {
 }
 
 class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
+  final GlobalKey _repaintBoundaryKey = GlobalKey();
   final List<DrawnLine> _lines = [];
   final List<OverlayTextItem> _textOverlays = [];
 
-  Color _selectedColor = Colors.redAccent;
+  Color _selectedColor = const Color(0xFF00E676);
   double _strokeWidth = 6.0;
-  final bool _isTextMode = false;
   ui.Image? _decodedImage;
   bool _isLoading = true;
+  bool _isSaving = false;
 
   final List<Color> _palette = const [
     Colors.white,
-    Colors.black,
-    Colors.redAccent,
-    Colors.orangeAccent,
-    Colors.amber,
-    Colors.greenAccent,
-    Colors.cyanAccent,
-    Colors.blueAccent,
-    Colors.purpleAccent,
-    Colors.pinkAccent,
+    Color(0xFF212121),
+    Color(0xFFFF1744),
+    Color(0xFFFF5252),
+    Color(0xFFFF9100),
+    Color(0xFFFFEA00),
+    Color(0xFF00E676),
+    Color(0xFF00E5FF),
+    Color(0xFF2979FF),
+    Color(0xFFD500F9),
   ];
 
   @override
@@ -75,13 +79,20 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
   }
 
   Future<void> _loadImage() async {
-    final codec = await ui.instantiateImageCodec(widget.imageBytes);
-    final frame = await codec.getNextFrame();
-    if (mounted) {
-      setState(() {
-        _decodedImage = frame.image;
-        _isLoading = false;
-      });
+    try {
+      final codec = await ui.instantiateImageCodec(widget.imageBytes);
+      final frame = await codec.getNextFrame();
+      if (mounted) {
+        setState(() {
+          _decodedImage = frame.image;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error decoding image for doodle editor: $e');
+      if (mounted) {
+        widget.onCancel();
+      }
     }
   }
 
@@ -97,28 +108,41 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
     }
   }
 
-  void _showAddTextDialog() {
-    final controller = TextEditingController();
-    Color textColor = _selectedColor;
+  void _showAddTextDialog([OverlayTextItem? existingItem]) {
+    final controller = TextEditingController(text: existingItem?.text ?? '');
+    Color textColor = existingItem?.color ?? _selectedColor;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: Text('Add Text', style: context.titleMedium.copyWith(color: Colors.white)),
+            backgroundColor: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text(
+              existingItem != null ? 'Edit Text' : 'Add Text',
+              style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: controller,
                   autofocus: true,
-                  style: TextStyle(color: textColor, fontSize: 20, fontWeight: FontWeight.bold),
-                  decoration: const InputDecoration(
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  decoration: InputDecoration(
                     hintText: 'Enter text here...',
-                    hintStyle: TextStyle(color: Colors.white38),
-                    border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white54)),
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -130,15 +154,18 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
                     return GestureDetector(
                       onTap: () => setDialogState(() => textColor = c),
                       child: Container(
-                        width: 28,
-                        height: 28,
+                        width: 30,
+                        height: 30,
                         decoration: BoxDecoration(
                           color: c,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: isSel ? Colors.white : Colors.white24,
-                            width: isSel ? 2.5 : 1,
+                            width: isSel ? 3 : 1,
                           ),
+                          boxShadow: isSel
+                              ? [BoxShadow(color: c.withValues(alpha: 0.6), blurRadius: 6)]
+                              : null,
                         ),
                       ),
                     );
@@ -147,28 +174,48 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
               ],
             ),
             actions: [
+              if (existingItem != null)
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _textOverlays.removeWhere((item) => item.id == existingItem.id);
+                    });
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+                ),
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.greenAccent),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00873C),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
                 onPressed: () {
                   final txt = controller.text.trim();
                   if (txt.isNotEmpty) {
                     setState(() {
-                      _textOverlays.add(
-                        OverlayTextItem(
-                          text: txt,
-                          position: const Offset(50, 100),
-                          color: textColor,
-                        ),
-                      );
+                      if (existingItem != null) {
+                        existingItem.text = txt;
+                        existingItem.color = textColor;
+                      } else {
+                        _textOverlays.add(
+                          OverlayTextItem(
+                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                            text: txt,
+                            position: const Offset(40, 80),
+                            color: textColor,
+                          ),
+                        );
+                      }
                     });
                   }
                   Navigator.pop(ctx);
                 },
-                child: const Text('Add', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                child: Text(existingItem != null ? 'Save' : 'Add', style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -177,74 +224,33 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
     );
   }
 
-  Future<void> _renderAndSave(Size canvasSize) async {
-    if (_decodedImage == null) {
-      widget.onCancel();
-      return;
-    }
+  Future<void> _renderAndSave() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
 
-    setState(() => _isLoading = true);
+    try {
+      final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary != null) {
+        // Calculate adaptive pixelRatio to preserve original image quality
+        double pixelRatio = 3.0;
+        if (_decodedImage != null && boundary.size.width > 0) {
+          pixelRatio = (_decodedImage!.width / boundary.size.width).clamp(1.5, 4.0);
+        }
 
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
+        final ui.Image renderedImg = await boundary.toImage(pixelRatio: pixelRatio);
+        final ByteData? byteData = await renderedImg.toByteData(format: ui.ImageByteFormat.png);
 
-    final imgW = _decodedImage!.width.toDouble();
-    final imgH = _decodedImage!.height.toDouble();
-
-    // Draw background image full resolution
-    canvas.drawImage(_decodedImage!, Offset.zero, Paint());
-
-    // Compute scale factor between on-screen preview canvas and original image
-    final scaleX = imgW / canvasSize.width;
-    final scaleY = imgH / canvasSize.height;
-
-    // Draw lines scaled
-    for (final line in _lines) {
-      final paint = Paint()
-        ..color = line.color
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..strokeWidth = line.width * scaleX
-        ..style = PaintingStyle.stroke;
-
-      final path = Path();
-      if (line.points.isNotEmpty) {
-        path.moveTo(line.points.first.dx * scaleX, line.points.first.dy * scaleY);
-        for (int i = 1; i < line.points.length; i++) {
-          path.lineTo(line.points[i].dx * scaleX, line.points[i].dy * scaleY);
+        if (byteData != null) {
+          widget.onApplied(byteData.buffer.asUint8List());
+          return;
         }
       }
-      canvas.drawPath(path, paint);
+    } catch (e) {
+      debugPrint('Error rendering doodle: $e');
     }
 
-    // Draw text overlays scaled
-    for (final item in _textOverlays) {
-      final textSpan = TextSpan(
-        text: item.text,
-        style: TextStyle(
-          color: item.color,
-          fontSize: item.fontSize * scaleX,
-          fontWeight: FontWeight.bold,
-          shadows: const [
-            Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(2, 2)),
-          ],
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      textPainter.paint(canvas, Offset(item.position.dx * scaleX, item.position.dy * scaleY));
-    }
-
-    final picture = recorder.endRecording();
-    final renderedImg = await picture.toImage(imgW.toInt(), imgH.toInt());
-    final byteData = await renderedImg.toByteData(format: ui.ImageByteFormat.png);
-
-    if (byteData != null) {
-      widget.onApplied(byteData.buffer.asUint8List());
-    } else {
+    if (mounted) {
+      setState(() => _isSaving = false);
       widget.onCancel();
     }
   }
@@ -252,11 +258,15 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.black,
-        body: const Center(child: CircularProgressIndicator(color: Colors.white)),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF00873C))),
       );
     }
+
+    final imgW = _decodedImage?.width.toDouble() ?? 1.0;
+    final imgH = _decodedImage?.height.toDouble() ?? 1.0;
+    final aspectRatio = imgW / imgH;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -268,8 +278,8 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
           onPressed: widget.onCancel,
         ),
         title: Text(
-          _isTextMode ? 'Add Text' : 'Draw & Doodle',
-          style: context.titleMedium.copyWith(color: Colors.white),
+          'Draw & Edit',
+          style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
@@ -278,28 +288,30 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
             onPressed: (_lines.isNotEmpty || _textOverlays.isNotEmpty) ? _undo : null,
           ),
           IconButton(
-            icon: const Icon(Icons.title, color: Colors.white),
+            icon: const Icon(Icons.title_rounded, color: Colors.white),
             tooltip: 'Add Text',
-            onPressed: _showAddTextDialog,
+            onPressed: () => _showAddTextDialog(),
           ),
-          LayoutBuilder(
-            builder: (ctx, constraints) {
-              return TextButton.icon(
-                onPressed: () {
-                  final renderBox = ctx.findRenderObject() as RenderBox?;
-                  final size = renderBox?.size ?? const Size(360, 600);
-                  _renderAndSave(size);
-                },
-                icon: const Icon(Icons.check, color: Colors.greenAccent),
-                label: Text(
-                  'Done',
-                  style: context.bodyMedium.copyWith(
-                    color: Colors.greenAccent,
-                    fontWeight: FontWeight.bold,
-                  ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed: _isSaving ? null : _renderAndSave,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_rounded, color: Color(0xFF00E676)),
+              label: Text(
+                'Done',
+                style: context.bodyMedium.copyWith(
+                  color: const Color(0xFF00E676),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ],
       ),
@@ -307,93 +319,99 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
         children: [
           // Drawing Canvas Area
           Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Center(
-                  child: Container(
-                    margin: const EdgeInsets.all(12),
-                    constraints: BoxConstraints(
-                      maxWidth: constraints.maxWidth - 24,
-                      maxHeight: constraints.maxHeight - 24,
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Background image
-                        Image.memory(
-                          widget.imageBytes,
-                          fit: BoxFit.contain,
-                        ),
-
-                        // Interactive Drawing Gesture Area
-                        Positioned.fill(
-                          child: GestureDetector(
-                            onPanStart: (details) {
-                              setState(() {
-                                _lines.add(
-                                  DrawnLine(
-                                    points: [details.localPosition],
-                                    color: _selectedColor,
-                                    width: _strokeWidth,
-                                  ),
-                                );
-                              });
-                            },
-                            onPanUpdate: (details) {
-                              setState(() {
-                                if (_lines.isNotEmpty) {
-                                  _lines.last.points.add(details.localPosition);
-                                }
-                              });
-                            },
-                            child: CustomPaint(
-                              painter: _DoodlePainter(lines: _lines),
-                            ),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: RepaintBoundary(
+                      key: _repaintBoundaryKey,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // Background Image
+                          Image.memory(
+                            widget.imageBytes,
+                            fit: BoxFit.fill,
                           ),
-                        ),
 
-                        // Draggable Text Overlays
-                        ..._textOverlays.map((item) {
-                          return Positioned(
-                            left: item.position.dx,
-                            top: item.position.dy,
+                          // Custom Brush Drawing Layer
+                          Positioned.fill(
                             child: GestureDetector(
-                              onPanUpdate: (details) {
+                              behavior: HitTestBehavior.opaque,
+                              onPanStart: (details) {
                                 setState(() {
-                                  item.position += details.delta;
+                                  _lines.add(
+                                    DrawnLine(
+                                      points: [details.localPosition],
+                                      color: _selectedColor,
+                                      width: _strokeWidth,
+                                    ),
+                                  );
                                 });
                               },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black45,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.white30, width: 1),
-                                ),
-                                child: Text(
-                                  item.text,
-                                  style: TextStyle(
-                                    color: item.color,
-                                    fontSize: item.fontSize,
-                                    fontWeight: FontWeight.bold,
+                              onPanUpdate: (details) {
+                                setState(() {
+                                  if (_lines.isNotEmpty) {
+                                    _lines.last.points.add(details.localPosition);
+                                  }
+                                });
+                              },
+                              child: CustomPaint(
+                                painter: _DoodlePainter(lines: _lines),
+                              ),
+                            ),
+                          ),
+
+                          // Draggable & Editable Text Overlays
+                          ..._textOverlays.map((item) {
+                            return Positioned(
+                              left: item.position.dx,
+                              top: item.position.dy,
+                              child: GestureDetector(
+                                onTap: () => _showAddTextDialog(item),
+                                onPanUpdate: (details) {
+                                  setState(() {
+                                    item.position += details.delta;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white38, width: 1),
+                                  ),
+                                  child: Text(
+                                    item.text,
+                                    style: TextStyle(
+                                      color: item.color,
+                                      fontSize: item.fontSize,
+                                      fontWeight: FontWeight.bold,
+                                      shadows: const [
+                                        Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        }),
-                      ],
+                            );
+                          }),
+                        ],
+                      ),
                     ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
 
-          // Palette and Stroke Width bar
+          // Palette and Stroke Width Controls
           Container(
-            color: Colors.black,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: const Color(0xFF141414),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -408,15 +426,18 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
                         child: GestureDetector(
                           onTap: () => setState(() => _selectedColor = c),
                           child: Container(
-                            width: 32,
-                            height: 32,
+                            width: 34,
+                            height: 34,
                             decoration: BoxDecoration(
                               color: c,
                               shape: BoxShape.circle,
                               border: Border.all(
                                 color: isSel ? Colors.white : Colors.white24,
-                                width: isSel ? 3 : 1,
+                                width: isSel ? 3.5 : 1,
                               ),
+                              boxShadow: isSel
+                                  ? [BoxShadow(color: c.withValues(alpha: 0.7), blurRadius: 8)]
+                                  : null,
                             ),
                           ),
                         ),
@@ -426,7 +447,7 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
                 ),
                 const SizedBox(height: 12),
 
-                // Stroke Width Picker
+                // Stroke Width Chips
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -451,10 +472,10 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
       label: Text(title),
       selected: isSelected,
       onSelected: (_) => setState(() => _strokeWidth = width),
-      selectedColor: Colors.white,
+      selectedColor: const Color(0xFF00873C),
       backgroundColor: Colors.white12,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.black : Colors.white,
+        color: isSelected ? Colors.white : Colors.white70,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         fontSize: 12,
       ),
@@ -469,6 +490,7 @@ class _DoodlePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     for (final line in lines) {
+      if (line.points.isEmpty) continue;
       final paint = Paint()
         ..color = line.color
         ..strokeCap = StrokeCap.round
@@ -476,14 +498,16 @@ class _DoodlePainter extends CustomPainter {
         ..strokeWidth = line.width
         ..style = PaintingStyle.stroke;
 
-      final path = Path();
-      if (line.points.isNotEmpty) {
+      if (line.points.length == 1) {
+        canvas.drawCircle(line.points.first, line.width / 2, paint..style = PaintingStyle.fill);
+      } else {
+        final path = Path();
         path.moveTo(line.points.first.dx, line.points.first.dy);
         for (int i = 1; i < line.points.length; i++) {
           path.lineTo(line.points[i].dx, line.points[i].dy);
         }
+        canvas.drawPath(path, paint);
       }
-      canvas.drawPath(path, paint);
     }
   }
 

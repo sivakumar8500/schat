@@ -112,7 +112,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Scaffold(
       backgroundColor: colors.scaffoldBackground,

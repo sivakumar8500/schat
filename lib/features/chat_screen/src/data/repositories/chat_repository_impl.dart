@@ -13,7 +13,6 @@ import 'package:schat/features/chat_screen/src/domain/models/screen_permission_m
 import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
-import 'package:http/http.dart' as http;
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -27,7 +26,7 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<List<MessageModel>> getMessages(String conversationId, {int? limit, int? skip}) async {
     final queryParams = <String, dynamic>{
-      'limit': limit ?? 50,
+      'limit': limit ?? 100,
     };
     if (skip != null) {
       queryParams['skip'] = skip;
@@ -145,6 +144,7 @@ class ChatRepositoryImpl implements ChatRepository {
     required String mimeType,
     required int fileSizeBytes,
     Uint8List? fileBytes,
+    void Function(double progress)? onProgress,
   }) async {
     try {
       if (!kIsWeb) {
@@ -153,6 +153,7 @@ class ChatRepositoryImpl implements ChatRepository {
     } catch (_) {}
 
     try {
+      onProgress?.call(0.05);
       String resolvedMime = mimeType;
       final ext = fileName.split('.').last.toLowerCase();
       if (mediaType == 'CHAT_VIDEO' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
@@ -329,19 +330,57 @@ class ChatRepositoryImpl implements ChatRepository {
         throw Exception('No file data available for upload');
       }
 
+      if (uploadUrl.contains('minio') || uploadUrl.contains('localhost') || uploadUrl.contains('127.0.0.1')) {
+        try {
+          final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+          final host = serverUri.host;
+          if (host.isNotEmpty) {
+            final parsedUpload = Uri.parse(uploadUrl);
+            if (parsedUpload.host == 'minio' || parsedUpload.host == 'localhost' || parsedUpload.host == '127.0.0.1') {
+              uploadUrl = parsedUpload.replace(host: host).toString();
+            } else if (uploadUrl.contains('minio')) {
+              uploadUrl = uploadUrl.replaceAll('minio', host);
+            }
+          }
+        } catch (_) {}
+      }
+
+      final finalUploadMime = requestData['mime_type']?.toString() ?? resolvedMime;
       Exception? lastUploadError;
       bool s3Success = false;
 
+      final uploadDio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(minutes: 5),
+          sendTimeout: const Duration(minutes: 10),
+          receiveTimeout: const Duration(minutes: 5),
+        ),
+      );
+
       for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
         try {
-          final uploadResponse = await http.put(
-            Uri.parse(uploadUrl),
-            body: bytes,
-            headers: {'Content-Type': mimeType},
-          ).timeout(const Duration(minutes: 10));
+          final uploadResponse = await uploadDio.put(
+            uploadUrl,
+            data: Stream.fromIterable(<List<int>>[bytes]),
+            options: Options(
+              headers: {
+                'Content-Type': finalUploadMime,
+                'Content-Length': bytes.length.toString(),
+              },
+            ),
+            onSendProgress: (sent, total) {
+              if (total > 0 && onProgress != null) {
+                // Map upload progress into 5% -> 90% range
+                final uploadFraction = (sent / total).clamp(0.0, 1.0);
+                final overallProgress = 0.05 + (uploadFraction * 0.85);
+                onProgress(overallProgress);
+              }
+            },
+          );
 
-          if (uploadResponse.statusCode == 200) {
+          if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 204 || uploadResponse.statusCode == 201) {
             s3Success = true;
+            onProgress?.call(0.92);
             break;
           } else {
             throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
@@ -379,6 +418,7 @@ class ChatRepositoryImpl implements ChatRepository {
           completedObjectKey = completeResult.when(
             success: (_) {
               debugPrint('========\nmediaid: $mediaId completed\n========');
+              onProgress?.call(1.0);
               return objectKey;
             },
             failure: (error, statusCode) => throw Exception('Failed to complete upload: $error'),
@@ -776,11 +816,26 @@ class ChatRepositoryImpl implements ChatRepository {
       data: {
         'security': {
           'isLocked': isLocked,
+          'is_locked': isLocked,
           'accessUsers': accessUsers,
+          'access_users': accessUsers,
           'allowDownload': allowDownload,
+          'allow_download': allowDownload,
           'allowShare': allowShare,
+          'allow_share': allowShare,
           'allowView': allowView,
+          'allow_view': allowView,
+          'canView': allowView,
+          'can_view': allowView,
         },
+        'allowView': allowView,
+        'allow_view': allowView,
+        'allowDownload': allowDownload,
+        'allow_download': allowDownload,
+        'allowShare': allowShare,
+        'allow_share': allowShare,
+        'isLocked': isLocked,
+        'is_locked': isLocked,
       },
       mapper: (data) => data,
     );
@@ -1145,21 +1200,47 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId) async {
-    final result = await _apiService.get<ScreenPermissionModel?>(
+  Future<List<ScreenPermissionModel>> getActiveScreenPermissions(String conversationId) async {
+    final result = await _apiService.get<List<ScreenPermissionModel>>(
       CommonEndpoints.screenPermissionActive(conversationId),
       mapper: (data) {
-        if (data != null && data is Map) {
-          return ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data));
+        if (data is List) {
+          return data
+              .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
+              .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+              .toList();
+        } else if (data is Map) {
+          if (data['permissions'] is List) {
+            return (data['permissions'] as List)
+                .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
+                .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+                .toList();
+          }
+          if (data['data'] is List) {
+            return (data['data'] as List)
+                .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
+                .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+                .toList();
+          }
+          final model = ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data));
+          if (!model.isCompleted && !model.isRejected && ((model.remainingCount ?? model.allowedCount ?? 1) > 0 || (model.isScreenRecord && model.durationSeconds != null))) {
+            return [model];
+          }
         }
-        return null;
+        return [];
       },
     );
 
     return result.when(
       success: (data) => data,
-      failure: (error, _) => null,
+      failure: (error, _) => [],
     );
+  }
+
+  @override
+  Future<ScreenPermissionModel?> getActiveScreenPermission(String conversationId) async {
+    final list = await getActiveScreenPermissions(conversationId);
+    return list.isNotEmpty ? list.first : null;
   }
 
   @override

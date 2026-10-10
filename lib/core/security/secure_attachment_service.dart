@@ -58,19 +58,29 @@ class SecureAttachmentService {
       if (!kIsWeb && Platform.isAndroid && (host == 'localhost' || host == '127.0.0.1' || host.isEmpty)) {
         host = '10.0.2.2';
       }
-      if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-        s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
+      final scheme = serverUri.scheme.isNotEmpty ? serverUri.scheme : 'http';
+      if (host.isNotEmpty && host != 'qlyncs.com' && !host.contains('amazonaws.com')) {
+        s3BaseUrl = '$scheme://$host:9000/qlyncs-doc/';
       } else {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+        s3BaseUrl = 'https://qlyncs-doc.s3.amazonaws.com/';
       }
     } catch (_) {
-      s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
+      s3BaseUrl = 'https://qlyncs-doc.s3.amazonaws.com/';
     }
 
     while (cleanPath.startsWith('/')) {
       cleanPath = cleanPath.substring(1);
     }
-    if (cleanPath.startsWith('qlyncs-docs/')) {
+    if (cleanPath.startsWith('minio:9000/qlyncs-doc/')) {
+      cleanPath = cleanPath.replaceFirst('minio:9000/qlyncs-doc/', '');
+    } else if (cleanPath.startsWith('minio:9000/')) {
+      cleanPath = cleanPath.replaceFirst('minio:9000/', '');
+    } else if (cleanPath.startsWith('minio/')) {
+      cleanPath = cleanPath.replaceFirst('minio/', '');
+    }
+    if (cleanPath.startsWith('qlyncs-doc/')) {
+      cleanPath = cleanPath.replaceFirst('qlyncs-doc/', '');
+    } else if (cleanPath.startsWith('qlyncs-docs/')) {
       cleanPath = cleanPath.replaceFirst('qlyncs-docs/', '');
     }
     return '$s3BaseUrl$cleanPath';

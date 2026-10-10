@@ -11,7 +11,7 @@ class ThemeColors {
   bool get isDark => Theme.of(context).brightness == Brightness.dark;
 
   // Brand Colors
-  Color get primary => isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+  Color get primary => const Color(0xFF00873C);
   Color get sentBubble => isDark ? const Color(0xFF005C4B) : const Color(0xFFE7FFDB);
   Color get secondary => Colors.pink;
   

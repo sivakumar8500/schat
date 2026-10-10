@@ -300,21 +300,36 @@ class StatusRepositoryImpl implements StatusRepository {
     // Create the actual status
     final createPayload = <String, dynamic>{
       'statusType': statusType,
+      'status_type': statusType,
     };
     if (textContent != null && textContent.trim().isNotEmpty) {
       createPayload['textContent'] = textContent.trim();
+      createPayload['text_content'] = textContent.trim();
+      createPayload['text'] = textContent.trim();
     }
     if (finalMediaId != null && finalMediaId.trim().isNotEmpty) {
       createPayload['mediaFileId'] = finalMediaId.trim();
+      createPayload['media_file_id'] = finalMediaId.trim();
+      createPayload['mediaId'] = finalMediaId.trim();
+      createPayload['media_id'] = finalMediaId.trim();
     }
     if (textColor != null && textColor.trim().isNotEmpty) {
       createPayload['textColor'] = textColor.trim();
+      createPayload['text_color'] = textColor.trim();
     }
     if (privacyType != null && privacyType.isNotEmpty) {
       createPayload['privacyType'] = privacyType;
+      createPayload['privacy_type'] = privacyType;
     }
     if (privacyUserIds != null) {
       createPayload['privacyUserIds'] = privacyUserIds;
+      createPayload['privacy_user_ids'] = privacyUserIds;
+      createPayload['includedUserIds'] = privacyUserIds;
+      createPayload['included_user_ids'] = privacyUserIds;
+      createPayload['excludedUserIds'] = privacyUserIds;
+      createPayload['excluded_user_ids'] = privacyUserIds;
+      createPayload['contactIds'] = privacyUserIds;
+      createPayload['contact_ids'] = privacyUserIds;
     }
 
     final result = await _apiService.post(
@@ -389,10 +404,23 @@ class StatusRepositoryImpl implements StatusRepository {
     List<String>? includedUserIds,
     List<String>? excludedUserIds,
   }) async {
+    final incList = includedUserIds ?? [];
+    final excList = excludedUserIds ?? [];
+    final activeIds = (privacyType == 'only' || privacyType == 'include' || privacyType == 'only_share_with')
+        ? incList
+        : excList;
+
     final data = {
       'privacyType': privacyType,
-      'includedUserIds': includedUserIds ?? [],
-      'excludedUserIds': excludedUserIds ?? [],
+      'privacy_type': privacyType,
+      'includedUserIds': incList,
+      'included_user_ids': incList,
+      'excludedUserIds': excList,
+      'excluded_user_ids': excList,
+      'privacyUserIds': activeIds,
+      'privacy_user_ids': activeIds,
+      'contactIds': activeIds,
+      'contact_ids': activeIds,
     };
     try {
       final result = await _apiService.put<StatusPrivacyModel>(
@@ -402,11 +430,19 @@ class StatusRepositoryImpl implements StatusRepository {
       );
       final model = result.when(
         success: (data) => data,
-        failure: (error, _) => const StatusPrivacyModel(),
+        failure: (error, _) => StatusPrivacyModel(
+          privacyType: privacyType,
+          includedUserIds: incList,
+          excludedUserIds: excList,
+        ),
       );
       return model;
     } catch (_) {
-      return const StatusPrivacyModel();
+      return StatusPrivacyModel(
+        privacyType: privacyType,
+        includedUserIds: incList,
+        excludedUserIds: excList,
+      );
     }
   }
 }

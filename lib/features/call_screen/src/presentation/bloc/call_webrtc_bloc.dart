@@ -21,6 +21,7 @@ import 'package:injectable/injectable.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/call_screen/src/domain/models/ongoing_group_call.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
+import 'package:schat/core/services/phone_call_state_service.dart';
 import 'call_webrtc_event.dart';
 import 'call_webrtc_state.dart';
 
@@ -221,6 +222,21 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           }
           if (state is CallConnecting) {
             debugPrint('CallWebRtcBloc: Currently making an outgoing call, ignoring incoming call socket event');
+            return;
+          }
+          if (state is CallActive && isGroup && convoId != null && (state as CallActive).conversationId == convoId) {
+            debugPrint('CallWebRtcBloc: Already in active call for this group ($convoId). Handling joining peer $senderId directly.');
+            final offerMap = data['offer'];
+            if (offerMap is Map && senderId != null && senderId.isNotEmpty) {
+              _webRtcService.handlePeerOffer(
+                peerId: senderId,
+                conversationId: convoId,
+                offerMap: Map<String, dynamic>.from(offerMap),
+                repository: _repository,
+                isVideo: (state as CallActive).isVideo,
+              );
+            }
+            add(HandleCallParticipantJoinedEvent(Map<String, dynamic>.from(data)));
             return;
           }
           add(HandleIncomingCallEvent(Map<String, dynamic>.from(data)));
@@ -503,6 +519,14 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   ) async {
     try {
       debugPrint('CallWebRtcBloc: _onInitiateCall started (isGroup=${event.isGroup})');
+
+      // Prevent starting a call if user is already in another call (cellular or VoIP)
+      final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
+      if (isPhoneActive || state is CallActive || state is CallConnecting || state is CallRinging) {
+        debugPrint('CallWebRtcBloc: Cannot start call while already in another call (cellularActive=$isPhoneActive, state=$state)');
+        emit(const CallError('Cannot start call while on another call'));
+        return;
+      }
       
       if (event.isGroup) {
         _ongoingGroupCalls[event.conversationId] = OngoingGroupCall(
@@ -865,26 +889,47 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
     final currentState = state;
     if (currentState is CallConnecting) {
-      debugPrint('CallWebRtcBloc: User is currently initiating an outgoing call. Ignoring incoming call event.');
-      return;
-    }
-
-    // 1. Busy check: if user is already in an ongoing/connecting call from a DIFFERENT conversation
-    String currentConvoId = '';
-    if (currentState is CallActive) {
-      currentConvoId = currentState.conversationId;
-    }
-
-    if (currentState is CallActive &&
-        currentConvoId.isNotEmpty &&
-        currentConvoId != incomingConvoId) {
-      debugPrint('CallWebRtcBloc: User is already busy in call ($currentConvoId). Replying busy to $senderId for $incomingConvoId');
+      debugPrint('CallWebRtcBloc: User is currently initiating an outgoing call. Replying busy to $senderId for $incomingConvoId');
       _repository.emit('message', {
         'type': 'call_response',
         'conversation_id': incomingConvoId,
         'recipient_id': senderId,
         'response': 'busy',
         'reason': 'busy',
+        'caller_name': getIt<StorageService>().getUsername(),
+      });
+      return;
+    }
+
+    // 1. Busy check: if user is already in an ongoing/connecting call from another chat or on a cellular call
+    String currentConvoId = '';
+    if (currentState is CallActive) {
+      currentConvoId = currentState.conversationId;
+    } else if (currentState is CallConnecting) {
+      currentConvoId = currentState.conversationId;
+    }
+
+    final bool isBusyInSchat = (currentState is CallActive &&
+            currentConvoId.isNotEmpty &&
+            currentConvoId != incomingConvoId) ||
+        (currentState is CallConnecting &&
+            currentConvoId.isNotEmpty &&
+            currentConvoId != incomingConvoId) ||
+        (currentState is CallRinging);
+
+    final bool isBusyInCellular = await PhoneCallStateService.isPhoneCallActive();
+
+    if (isBusyInSchat || isBusyInCellular) {
+      debugPrint('CallWebRtcBloc: User is already busy on another call (schatBusy=$isBusyInSchat, cellularBusy=$isBusyInCellular). Replying busy to $senderId for $incomingConvoId');
+      _soundService.stopAll();
+      _notificationService.dismissAllIncomingCalls();
+      _repository.emit('message', {
+        'type': 'call_response',
+        'conversation_id': incomingConvoId,
+        'recipient_id': senderId,
+        'response': 'busy',
+        'reason': 'busy',
+        'message': 'Currently other person in call',
         'caller_name': getIt<StorageService>().getUsername(),
       });
       return;
@@ -1055,6 +1100,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         }
         return;
       }
+      final convoId = (event.event['conversation_id'] ?? event.event['conversationId'])?.toString() ?? '';
+      if (convoId.isNotEmpty) {
+        _ongoingGroupCalls.remove(convoId);
+      }
       _cancelCallTimeoutTimer();
       _cancelAllParticipantTimers();
       _soundService.stopAll();
@@ -1214,15 +1263,25 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         profilePictureUrl: (rawUser['profile_picture_url'] ?? rawUser['profilePictureUrl'] ?? rawUser['avatar'] ?? rawUser['caller_profile_picture_url'])?.toString(),
       );
     } else {
-      final pid = (event.event['participant_id'] ?? event.event['user_id'] ?? event.event['sender_id'])?.toString() ?? '';
+      final pid = (event.event['participant_id'] ?? event.event['user_id'] ?? event.event['sender_id'] ?? event.event['senderId'] ?? event.event['from'])?.toString() ?? '';
+      final name = (event.event['name'] ?? event.event['display_name'] ?? event.event['caller_name'] ?? event.event['callerName'] ?? event.event['username'])?.toString() ?? '';
       if (pid.isNotEmpty) {
         user = UserModel(
           id: pid,
-          username: event.event['username']?.toString() ?? '',
-          contactName: event.event['name']?.toString() ?? event.event['display_name']?.toString() ?? event.event['caller_name']?.toString() ?? '',
-          phoneNumber: '',
+          username: (event.event['username'] ?? name).toString(),
+          contactName: name.isNotEmpty ? name : 'Participant',
+          phoneNumber: (event.event['phone_number'] ?? event.event['phoneNumber'] ?? '').toString(),
           profilePictureUrl: (event.event['profile_picture_url'] ?? event.event['profilePictureUrl'] ?? event.event['avatar'] ?? event.event['caller_profile_picture_url'])?.toString(),
         );
+      }
+    }
+
+    if (user != null && ((user.contactName?.isEmpty ?? true) || user.contactName == 'Unknown' || user.contactName == 'Participant')) {
+      if (user.phoneNumber.isNotEmpty) {
+        final saved = await _findContactName(user.phoneNumber);
+        if (saved != null && saved.isNotEmpty) {
+          user = user.copyWith(contactName: saved);
+        }
       }
     }
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
@@ -13,6 +14,7 @@ import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 
 enum ScheduledMessageType { text, image, video, document, audio }
@@ -48,6 +50,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   ScheduledMessageType _selectedType = ScheduledMessageType.text;
   File? _attachedFile;
   String? _attachedFileName;
+  int? _attachedFileSize;
 
   late DateTime _selectedDate;
   int _selectedHour = 12;
@@ -57,6 +60,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
   String? _errorMessage;
   bool _isSubmitting = false;
+  double _uploadProgress = 0.0;
+  String _uploadStatusText = '';
+  int _uploadPercentage = 0;
 
   // Tab 2: Scheduled Messages List State
   List<ScheduledMessageModel> _scheduledMessages = [];
@@ -183,9 +189,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         final picker = ImagePicker();
         final picked = await picker.pickImage(source: ImageSource.gallery);
         if (picked != null) {
+          final f = File(picked.path);
+          final size = await f.length();
           setState(() {
-            _attachedFile = File(picked.path);
+            _attachedFile = f;
             _attachedFileName = picked.name;
+            _attachedFileSize = size;
             _errorMessage = null;
           });
         }
@@ -193,9 +202,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         final picker = ImagePicker();
         final picked = await picker.pickVideo(source: ImageSource.gallery);
         if (picked != null) {
+          final f = File(picked.path);
+          final size = await f.length();
           setState(() {
-            _attachedFile = File(picked.path);
+            _attachedFile = f;
             _attachedFileName = picked.name;
+            _attachedFileSize = size;
             _errorMessage = null;
           });
         }
@@ -211,18 +223,24 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         }
         final audioRes = result;
         if (audioRes != null && audioRes.files.isNotEmpty && audioRes.files.single.path != null) {
+          final f = File(audioRes.files.single.path!);
+          final size = audioRes.files.single.size > 0 ? audioRes.files.single.size : await f.length();
           setState(() {
-            _attachedFile = File(audioRes.files.single.path!);
+            _attachedFile = f;
             _attachedFileName = audioRes.files.single.name;
+            _attachedFileSize = size;
             _errorMessage = null;
           });
         }
       } else if (_selectedType == ScheduledMessageType.document) {
         final docRes = await FilePicker.pickFiles(type: FileType.any);
         if (docRes != null && docRes.files.isNotEmpty && docRes.files.single.path != null) {
+          final f = File(docRes.files.single.path!);
+          final size = docRes.files.single.size > 0 ? docRes.files.single.size : await f.length();
           setState(() {
-            _attachedFile = File(docRes.files.single.path!);
+            _attachedFile = f;
             _attachedFileName = docRes.files.single.name;
+            _attachedFileSize = size;
             _errorMessage = null;
           });
         }
@@ -244,6 +262,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       _messageController.text = message.text;
       _attachedFile = null;
       _attachedFileName = message.fileName;
+      _attachedFileSize = message.fileSize > 0 ? message.fileSize : null;
 
       if (message.messageType == 'image') {
         _selectedType = ScheduledMessageType.image;
@@ -270,9 +289,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       _messageController.clear();
       _attachedFile = null;
       _attachedFileName = null;
+      _attachedFileSize = null;
       _selectedType = ScheduledMessageType.text;
       _initDateTime(DateTime.now().add(const Duration(hours: 1)));
       _errorMessage = null;
+      _uploadProgress = 0.0;
+      _uploadStatusText = '';
+      _uploadPercentage = 0;
     });
   }
 
@@ -302,6 +325,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     if (_editingMessage != null) {
       setState(() {
         _isSubmitting = true;
+        _uploadProgress = 0.0;
+        _uploadPercentage = 0;
+        _uploadStatusText = 'Updating scheduled message...';
       });
 
       try {
@@ -315,13 +341,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
           String? fileKey = _editingMessage!.fileKey;
           String? fileName = _attachedFileName ?? _editingMessage!.fileName;
-          int fileSize = _editingMessage!.fileSize;
+          int fileSize = _attachedFileSize ?? _editingMessage!.fileSize;
           String? mimeType = _editingMessage!.mimeType;
 
           if (_attachedFile != null) {
             fileName = _attachedFile!.path.split('/').last;
             fileSize = await _attachedFile!.length();
             mimeType = _getMimeType(_attachedFile!.path, typeStr);
+
+            setState(() {
+              _uploadProgress = 0.05;
+              _uploadPercentage = 5;
+              _uploadStatusText = 'Preparing $typeStr upload... 5%';
+            });
+
             fileKey = await repo.uploadMedia(
               conversationId: widget.conversationId ?? _editingMessage!.conversationId,
               filePath: _attachedFile!.path,
@@ -329,7 +362,24 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               mediaType: _getMediaType(typeStr),
               mimeType: mimeType,
               fileSizeBytes: fileSize,
+              onProgress: (p) {
+                if (mounted) {
+                  setState(() {
+                    _uploadProgress = p;
+                    _uploadPercentage = (p * 100).clamp(0, 100).toInt();
+                    _uploadStatusText = 'Uploading $typeStr... $_uploadPercentage%';
+                  });
+                }
+              },
             );
+
+            if (mounted) {
+              setState(() {
+                _uploadProgress = 0.95;
+                _uploadPercentage = 95;
+                _uploadStatusText = 'Finalizing update... 95%';
+              });
+            }
           }
 
           final bool isMedia = _selectedType != ScheduledMessageType.text;
@@ -385,6 +435,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         if (mounted) {
           setState(() {
             _isSubmitting = false;
+            _uploadProgress = 0.0;
+            _uploadPercentage = 0;
+            _uploadStatusText = '';
           });
         }
       }
@@ -405,6 +458,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       if (widget.conversationId != null) {
         setState(() {
           _isSubmitting = true;
+          _uploadProgress = 0.0;
+          _uploadPercentage = 0;
+          _uploadStatusText = 'Scheduling message...';
         });
         try {
           if (getIt.isRegistered<ChatRepository>()) {
@@ -417,13 +473,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
             String? fileKey;
             String? fileName = _attachedFileName;
-            int fileSize = 0;
+            int fileSize = _attachedFileSize ?? 0;
             String? mimeType;
 
             if (_attachedFile != null) {
               fileName = _attachedFile!.path.split('/').last;
               fileSize = await _attachedFile!.length();
               mimeType = _getMimeType(_attachedFile!.path, typeStr);
+
+              setState(() {
+                _uploadProgress = 0.05;
+                _uploadPercentage = 5;
+                _uploadStatusText = 'Preparing $typeStr upload... 5%';
+              });
+
               fileKey = await repo.uploadMedia(
                 conversationId: widget.conversationId ?? '',
                 filePath: _attachedFile!.path,
@@ -431,7 +494,24 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 mediaType: _getMediaType(typeStr),
                 mimeType: mimeType,
                 fileSizeBytes: fileSize,
+                onProgress: (p) {
+                  if (mounted) {
+                    setState(() {
+                      _uploadProgress = p;
+                      _uploadPercentage = (p * 100).clamp(0, 100).toInt();
+                      _uploadStatusText = 'Uploading $typeStr... $_uploadPercentage%';
+                    });
+                  }
+                },
               );
+
+              if (mounted) {
+                setState(() {
+                  _uploadProgress = 0.95;
+                  _uploadPercentage = 95;
+                  _uploadStatusText = 'Saving scheduled message... 95%';
+                });
+              }
             }
 
             final bool isMedia = _selectedType != ScheduledMessageType.text;
@@ -502,6 +582,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           if (mounted) {
             setState(() {
               _isSubmitting = false;
+              _uploadProgress = 0.0;
+              _uploadPercentage = 0;
+              _uploadStatusText = '';
             });
           }
         }
@@ -941,60 +1024,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             ),
             CommonSpaces.h14,
 
-            // Attachment Selector (for Non-text types)
+            // Attachment Selector & Rich Preview (for Non-text types)
             if (_selectedType != ScheduledMessageType.text) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: context.colors.lightBackground,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: context.colors.primary.withValues(alpha: 0.2)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _selectedType == ScheduledMessageType.image
-                          ? CommonIcons.gallery
-                          : (_selectedType == ScheduledMessageType.video
-                              ? Icons.videocam_rounded
-                              : (_selectedType == ScheduledMessageType.audio
-                                  ? CommonIcons.audio
-                                  : CommonIcons.document)),
-                      color: context.colors.primary,
-                    ),
-                    CommonSpaces.w12,
-                    Expanded(
-                      child: Text(
-                        _attachedFileName ?? 'No attachment selected',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.bodyMedium.copyWith(
-                          color: _attachedFileName != null
-                              ? context.colors.textPrimary
-                              : context.colors.textHint,
-                        ),
-                      ),
-                    ),
-                    if (_attachedFileName != null)
-                      IconButton(
-                        icon: Icon(CommonIcons.close, color: context.colors.error, size: 18),
-                        onPressed: () => setState(() {
-                          _attachedFile = null;
-                          _attachedFileName = null;
-                        }),
-                      )
-                    else
-                      TextButton.icon(
-                        onPressed: _pickAttachment,
-                        icon: const Icon(Icons.attach_file_rounded, size: 18),
-                        label: const Text('Choose'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: context.colors.primary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
+              _buildAttachmentPickerAndPreview(context),
               CommonSpaces.h8,
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1166,7 +1198,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 ],
               ),
             ),
-            CommonSpaces.h20,
+            CommonSpaces.h16,
+
+            // Live Upload Progress Bar with Percentage Card
+            if (_isSubmitting) ...[
+              _buildUploadProgressCard(context),
+              CommonSpaces.h12,
+            ],
 
             // Submit Button
             SizedBox(
@@ -1190,9 +1228,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                         size: 20,
                       ),
                 label: Text(
-                  _editingMessage != null
-                      ? 'Update Scheduled Message'
-                      : 'Confirm & Schedule',
+                  _isSubmitting
+                      ? (_uploadStatusText.isNotEmpty
+                          ? _uploadStatusText
+                          : 'Processing...')
+                      : (_editingMessage != null
+                          ? 'Update Scheduled Message'
+                          : 'Confirm & Schedule'),
                   style: context.titleMedium.copyWith(
                     color: context.colors.textLight,
                     fontWeight: FontWeight.bold,
@@ -1212,6 +1254,743 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         ),
       ),
     );
+  }
+
+  Widget _buildUploadProgressCard(BuildContext context) {
+    final isDark = context.colors.isDark;
+    final fileName = _attachedFileName ?? (_attachedFile != null ? _attachedFile!.path.split('/').last : '');
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: context.colors.primary.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: context.colors.primary.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: context.colors.primary.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.cloud_upload_rounded,
+                  color: context.colors.primary,
+                  size: 20,
+                ),
+              ),
+              CommonSpaces.w10,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _uploadStatusText.isNotEmpty
+                          ? _uploadStatusText
+                          : 'Uploading ${_selectedType.name}...',
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (fileName.isNotEmpty)
+                      Text(
+                        _attachedFileSize != null && _attachedFileSize! > 0
+                            ? '$fileName • ${_formatFileSize(_attachedFileSize!)}'
+                            : fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.colors.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$_uploadPercentage%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          CommonSpaces.h10,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: _uploadProgress > 0 ? _uploadProgress : null,
+              minHeight: 8,
+              backgroundColor: context.colors.primary.withValues(alpha: 0.15),
+              valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentPickerAndPreview(BuildContext context) {
+    final isDark = context.colors.isDark;
+    final hasAttachment = _attachedFile != null || (_attachedFileName != null && _attachedFileName!.isNotEmpty);
+
+    if (!hasAttachment) {
+      IconData pickerIcon;
+      String pickerTitle;
+      String pickerHint;
+      Color pickerColor;
+
+      switch (_selectedType) {
+        case ScheduledMessageType.image:
+          pickerIcon = CommonIcons.gallery;
+          pickerTitle = 'Choose Image to Schedule';
+          pickerHint = 'Supports JPG, PNG, WEBP, GIF';
+          pickerColor = const Color(0xFF2196F3);
+          break;
+        case ScheduledMessageType.video:
+          pickerIcon = Icons.videocam_rounded;
+          pickerTitle = 'Choose Video to Schedule';
+          pickerHint = 'Supports MP4, MOV, WEBM';
+          pickerColor = Colors.red;
+          break;
+        case ScheduledMessageType.document:
+          pickerIcon = CommonIcons.document;
+          pickerTitle = 'Choose Document to Schedule';
+          pickerHint = 'Supports PDF, DOC, XLS, PPT, TXT, ZIP';
+          pickerColor = const Color(0xFFFF9800);
+          break;
+        case ScheduledMessageType.audio:
+          pickerIcon = CommonIcons.audio;
+          pickerTitle = 'Choose Audio to Schedule';
+          pickerHint = 'Supports MP3, M4A, WAV, AAC, OGG';
+          pickerColor = const Color(0xFF9C27B0);
+          break;
+        default:
+          pickerIcon = Icons.attach_file_rounded;
+          pickerTitle = 'Choose Attachment';
+          pickerHint = 'Tap to select file';
+          pickerColor = context.colors.primary;
+      }
+
+      return InkWell(
+        onTap: _pickAttachment,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          decoration: BoxDecoration(
+            color: context.colors.lightBackground,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: pickerColor.withValues(alpha: 0.35),
+              style: BorderStyle.solid,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: pickerColor.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(pickerIcon, color: pickerColor, size: 24),
+              ),
+              CommonSpaces.w12,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pickerTitle,
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    CommonSpaces.h2,
+                    Text(
+                      pickerHint,
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: pickerColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Select',
+                  style: TextStyle(
+                    color: pickerColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final fileName = _attachedFileName ?? (_attachedFile != null ? _attachedFile!.path.split('/').last : '');
+    final fileSizeFormatted = _attachedFileSize != null && _attachedFileSize! > 0
+        ? _formatFileSize(_attachedFileSize!)
+        : (_editingMessage != null && _editingMessage!.fileSize > 0 ? _formatFileSize(_editingMessage!.fileSize) : '');
+
+    // 1. Image Preview Card
+    if (_selectedType == ScheduledMessageType.image) {
+      final hasLocalFile = _attachedFile != null && _attachedFile!.existsSync();
+      final resolvedUrl = _editingMessage?.fileKey != null ? _resolveMediaUrl(_editingMessage!.fileKey) : null;
+
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: () {
+                final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                if (viewUrl.isNotEmpty) {
+                  InAppViewer.show(
+                    context,
+                    url: viewUrl,
+                    fileName: fileName.isNotEmpty ? fileName : 'Image',
+                    type: 'image',
+                  );
+                }
+              },
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 180,
+                    width: double.infinity,
+                    child: hasLocalFile
+                        ? Image.file(
+                            _attachedFile!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, o, s) => _buildMediaFallback(
+                              context,
+                              Icons.broken_image_rounded,
+                              'Image preview error',
+                            ),
+                          )
+                        : (resolvedUrl != null && resolvedUrl.isNotEmpty
+                            ? Image.network(
+                                resolvedUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, o, s) => _buildMediaFallback(
+                                  context,
+                                  Icons.image_rounded,
+                                  fileName.isNotEmpty ? fileName : 'Attached Image',
+                                ),
+                              )
+                            : _buildMediaFallback(
+                                context,
+                                Icons.image_rounded,
+                                fileName.isNotEmpty ? fileName : 'Attached Image',
+                              )),
+                  ),
+                  // Top Overlay Badges
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.zoom_in_rounded, color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            'Tap to preview',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Remove Button (Top Right)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => setState(() {
+                        _attachedFile = null;
+                        _attachedFileName = null;
+                        _attachedFileSize = null;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Bottom Info & Change Button Row
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              color: context.colors.lightBackground,
+              child: Row(
+                children: [
+                  Icon(Icons.photo_outlined, size: 16, color: context.colors.primary),
+                  CommonSpaces.w8,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fileName.isNotEmpty ? fileName : 'Attached Image',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (fileSizeFormatted.isNotEmpty)
+                          Text(
+                            fileSizeFormatted,
+                            style: context.bodySmall.copyWith(
+                              color: context.colors.textHint,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _pickAttachment,
+                    icon: const Icon(Icons.edit_rounded, size: 14),
+                    label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.colors.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. Video Preview Card
+    if (_selectedType == ScheduledMessageType.video) {
+      final hasLocalFile = _attachedFile != null && _attachedFile!.existsSync();
+      final resolvedUrl = _editingMessage?.fileKey != null ? _resolveMediaUrl(_editingMessage!.fileKey) : null;
+
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: () {
+                final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                if (viewUrl.isNotEmpty) {
+                  InAppViewer.show(
+                    context,
+                    url: viewUrl,
+                    fileName: fileName.isNotEmpty ? fileName : 'Video',
+                    type: 'video',
+                  );
+                }
+              },
+              child: Container(
+                height: 150,
+                width: double.infinity,
+                color: const Color(0xFF0F172A),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.videocam_rounded, color: Colors.white24, size: 64),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent,
+                            blurRadius: 12,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+                    ),
+                    // Top Left Badge
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.play_circle_outline_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Tap to preview video',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Remove Button (Top Right)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: () => setState(() {
+                          _attachedFile = null;
+                          _attachedFileName = null;
+                          _attachedFileSize = null;
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Bottom Info & Change Button Row
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              color: context.colors.lightBackground,
+              child: Row(
+                children: [
+                  const Icon(Icons.videocam_outlined, size: 16, color: Colors.red),
+                  CommonSpaces.w8,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fileName.isNotEmpty ? fileName : 'Attached Video',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.bodySmall.copyWith(
+                            color: context.colors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (fileSizeFormatted.isNotEmpty)
+                          Text(
+                            fileSizeFormatted,
+                            style: context.bodySmall.copyWith(
+                              color: context.colors.textHint,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _pickAttachment,
+                    icon: const Icon(Icons.edit_rounded, size: 14),
+                    label: const Text('Change', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 3. Document Preview Card
+    if (_selectedType == ScheduledMessageType.document) {
+      final hasLocalFile = _attachedFile != null && _attachedFile!.existsSync();
+      final resolvedUrl = _editingMessage?.fileKey != null ? _resolveMediaUrl(_editingMessage!.fileKey) : null;
+      final ext = fileName.contains('.') ? fileName.split('.').last.toUpperCase() : 'DOC';
+
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF9800).withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () {
+                final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                if (viewUrl.isNotEmpty) {
+                  InAppViewer.show(
+                    context,
+                    url: viewUrl,
+                    fileName: fileName.isNotEmpty ? fileName : 'Document',
+                    type: 'file',
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF9800),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.description_rounded, color: Colors.white, size: 22),
+              ),
+            ),
+            CommonSpaces.w12,
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                  if (viewUrl.isNotEmpty) {
+                    InAppViewer.show(
+                      context,
+                      url: viewUrl,
+                      fileName: fileName.isNotEmpty ? fileName : 'Document',
+                      type: 'file',
+                    );
+                  }
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF9800).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            ext,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE65100),
+                            ),
+                          ),
+                        ),
+                        CommonSpaces.w6,
+                        Expanded(
+                          child: Text(
+                            fileName.isNotEmpty ? fileName : 'Attached Document',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.bodyMedium.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: context.colors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    CommonSpaces.h4,
+                    Text(
+                      fileSizeFormatted.isNotEmpty
+                          ? '$fileSizeFormatted • Tap to preview'
+                          : 'Tap to preview document',
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_rounded, color: Color(0xFFFF9800), size: 20),
+              tooltip: 'Change Document',
+              onPressed: _pickAttachment,
+            ),
+            IconButton(
+              icon: Icon(Icons.close_rounded, color: context.colors.error, size: 20),
+              tooltip: 'Remove',
+              onPressed: () => setState(() {
+                _attachedFile = null;
+                _attachedFileName = null;
+                _attachedFileSize = null;
+              }),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 4. Audio Preview Card
+    if (_selectedType == ScheduledMessageType.audio) {
+      final hasLocalFile = _attachedFile != null && _attachedFile!.existsSync();
+      final resolvedUrl = _editingMessage?.fileKey != null ? _resolveMediaUrl(_editingMessage!.fileKey) : null;
+
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF9C27B0).withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF9C27B0).withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () {
+                final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                if (viewUrl.isNotEmpty) {
+                  InAppViewer.show(
+                    context,
+                    url: viewUrl,
+                    fileName: fileName.isNotEmpty ? fileName : 'Audio',
+                    type: 'audio',
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF9C27B0),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.audiotrack_rounded, color: Colors.white, size: 22),
+              ),
+            ),
+            CommonSpaces.w12,
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
+                  if (viewUrl.isNotEmpty) {
+                    InAppViewer.show(
+                      context,
+                      url: viewUrl,
+                      fileName: fileName.isNotEmpty ? fileName : 'Audio',
+                      type: 'audio',
+                    );
+                  }
+                },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName.isNotEmpty ? fileName : 'Attached Audio',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.bodyMedium.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    CommonSpaces.h4,
+                    Text(
+                      fileSizeFormatted.isNotEmpty
+                          ? '$fileSizeFormatted • Tap to play audio'
+                          : 'Tap to play audio preview',
+                      style: context.bodySmall.copyWith(
+                        color: context.colors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.edit_rounded, color: Color(0xFF9C27B0), size: 20),
+              tooltip: 'Change Audio',
+              onPressed: _pickAttachment,
+            ),
+            IconButton(
+              icon: Icon(Icons.close_rounded, color: context.colors.error, size: 20),
+              tooltip: 'Remove',
+              onPressed: () => setState(() {
+                _attachedFile = null;
+                _attachedFileName = null;
+                _attachedFileSize = null;
+              }),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Widget _buildScheduledListTab(BuildContext context) {
@@ -1342,25 +2121,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       } catch (_) {}
     }
 
-    final bool isLocalFile = !kIsWeb && File(url).existsSync();
-
-    if (!url.startsWith('http://') && !url.startsWith('https://') && !isLocalFile) {
-      String s3BaseUrl;
-      try {
-        final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-        final host = serverUri.host;
-        if (host.isNotEmpty && !host.contains('amazonaws.com')) {
-          s3BaseUrl = 'http://$host:9000/qlyncs-docs/';
-        } else {
-          s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-        }
-      } catch (_) {
-        s3BaseUrl = 'https://qlyncs-docs.s3.amazonaws.com/';
-      }
-      final cleanKey = url.startsWith('/') ? url.substring(1) : url;
-      url = '$s3BaseUrl$cleanKey';
-    }
-    return url;
+    return SecureAttachmentService.resolveFullUrl(url);
   }
 
   String _formatFileSize(int bytes) {
@@ -1372,20 +2133,38 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
   Widget _buildMediaPreview(BuildContext context, ScheduledMessageModel msg) {
     final isDark = context.colors.isDark;
-    final effectivePath = msg.fileKey?.isNotEmpty == true
+    final rawPath = msg.fileKey?.isNotEmpty == true
         ? msg.fileKey
-        : (msg.thumbnail?.isNotEmpty == true ? msg.thumbnail : null);
-    final resolvedUrl = _resolveMediaUrl(effectivePath);
-    final fileName = msg.fileName ?? (msg.fileKey != null ? msg.fileKey!.split('/').last : '');
-    final isLocal = resolvedUrl != null && !kIsWeb && File(resolvedUrl).existsSync();
+        : (msg.thumbnail?.isNotEmpty == true
+            ? msg.thumbnail
+            : (msg.rawContent['fileKey'] ??
+                    msg.rawContent['file_key'] ??
+                    msg.rawContent['url'] ??
+                    msg.rawContent['mediaUrl'] ??
+                    msg.rawContent['media_url'] ??
+                    msg.rawContent['path'] ??
+                    msg.rawContent['filePath'] ??
+                    msg.rawContent['file_path'])
+                ?.toString());
+    final resolvedUrl = _resolveMediaUrl(rawPath);
+    final fileName = msg.fileName?.isNotEmpty == true
+        ? msg.fileName!
+        : (rawPath != null && rawPath.isNotEmpty ? rawPath.split('/').last : '');
+    final isLocal = !kIsWeb &&
+        ((resolvedUrl != null && File(resolvedUrl).existsSync()) ||
+            (rawPath != null && File(rawPath).existsSync()));
+    final localPath = isLocal
+        ? (resolvedUrl != null && File(resolvedUrl).existsSync() ? resolvedUrl : rawPath)
+        : null;
+    final effectiveUrl = localPath ?? resolvedUrl ?? rawPath ?? '';
 
     // 1. Image Preview
     if (msg.messageType == 'image') {
       return GestureDetector(
-        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+        onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
                   context,
-                  url: resolvedUrl,
+                  url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Image',
                   type: 'image',
                 )
@@ -1402,38 +2181,70 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
+              if (effectiveUrl.isNotEmpty)
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
                   child: SizedBox(
                     height: 180,
                     width: double.infinity,
-                    child: isLocal
-                        ? Image.file(
-                            File(resolvedUrl),
-                            fit: BoxFit.cover,
-                            errorBuilder: (c, o, s) => _buildMediaFallback(
-                                context, Icons.broken_image_rounded, 'Image Preview Unavailable'),
-                          )
-                        : Image.network(
-                            resolvedUrl,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Container(
-                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        isLocal && localPath != null
+                            ? Image.file(
+                                File(localPath),
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, o, s) => _buildMediaFallback(
+                                    context, Icons.broken_image_rounded, 'Image Preview Unavailable'),
+                              )
+                            : CachedNetworkImage(
+                                imageUrl: effectiveUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Container(
+                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                  child: const Center(
+                                    child: SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                            errorBuilder: (ctx, url, err) => _buildMediaFallback(
-                                context, Icons.image_rounded, fileName.isNotEmpty ? fileName : 'Image Attachment'),
+                                errorWidget: (context, url, error) => Image.network(
+                                  effectiveUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, url, err) => _buildMediaFallback(
+                                      context, Icons.image_rounded, fileName.isNotEmpty ? fileName : 'Image Attachment'),
+                                ),
+                              ),
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.zoom_in_rounded, color: Colors.white, size: 14),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Tap to view preview',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               else
@@ -1477,10 +2288,10 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     // 2. Audio Preview
     if (msg.messageType == 'audio' || msg.messageType == 'voice_note') {
       return GestureDetector(
-        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+        onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
                   context,
-                  url: resolvedUrl,
+                  url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Audio',
                   type: 'audio',
                 )
@@ -1523,7 +2334,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                         const Icon(Icons.play_circle_outline_rounded, size: 14, color: Color(0xFF9C27B0)),
                         CommonSpaces.w4,
                         Text(
-                          msg.fileSize > 0 ? _formatFileSize(msg.fileSize) : 'Tap to play audio',
+                          msg.fileSize > 0
+                              ? '${_formatFileSize(msg.fileSize)} • Tap to play audio'
+                              : 'Tap to play audio preview',
                           style: context.bodySmall.copyWith(
                             color: context.colors.textSecondary,
                             fontSize: 11,
@@ -1534,8 +2347,29 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   ],
                 ),
               ),
-              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
-                const Icon(Icons.play_arrow_rounded, color: Color(0xFF9C27B0), size: 22),
+              if (effectiveUrl.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9C27B0).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.play_arrow_rounded, color: Color(0xFF9C27B0), size: 18),
+                      SizedBox(width: 2),
+                      Text(
+                        'Play',
+                        style: TextStyle(
+                          color: Color(0xFF9C27B0),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -1545,10 +2379,10 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     // 3. Video Preview
     if (msg.messageType == 'video') {
       return GestureDetector(
-        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+        onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
                   context,
-                  url: resolvedUrl,
+                  url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Video',
                   type: 'video',
                 )
@@ -1566,20 +2400,53 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 140,
+                height: 150,
                 width: double.infinity,
-                color: Colors.black.withValues(alpha: 0.8),
+                color: const Color(0xFF0F172A),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const Icon(Icons.videocam_rounded, color: Colors.white38, size: 48),
+                    const Icon(Icons.videocam_rounded, color: Colors.white24, size: 56),
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.9),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent,
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                          ),
+                        ],
                       ),
                       child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                    ),
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.play_circle_outline_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'Tap to play video',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1619,12 +2486,14 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
 
     // 4. Document / Generic Attachment Preview
-    if (msg.fileName != null || msg.fileKey != null || msg.messageType == 'document' || msg.messageType == 'file') {
+    if (msg.fileName != null || msg.fileKey != null || msg.messageType == 'document' || msg.messageType == 'file' || rawPath != null) {
+      final ext = fileName.contains('.') ? fileName.split('.').last.toUpperCase() : 'DOC';
+
       return GestureDetector(
-        onTap: (resolvedUrl != null && resolvedUrl.isNotEmpty)
+        onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
                   context,
-                  url: resolvedUrl,
+                  url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Document',
                   type: 'file',
                 )
@@ -1652,18 +2521,42 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      fileName.isNotEmpty ? fileName : 'Attached Document',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: context.colors.textPrimary,
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF9800).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            ext,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFE65100),
+                            ),
+                          ),
+                        ),
+                        CommonSpaces.w6,
+                        Expanded(
+                          child: Text(
+                            fileName.isNotEmpty ? fileName : 'Attached Document',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: context.colors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     CommonSpaces.h2,
                     Text(
-                      msg.fileSize > 0 ? _formatFileSize(msg.fileSize) : 'Document Attachment (Tap to view)',
+                      msg.fileSize > 0
+                          ? '${_formatFileSize(msg.fileSize)} • Tap to view document'
+                          : 'Document Attachment (Tap to view)',
                       style: context.bodySmall.copyWith(
                         color: context.colors.textSecondary,
                         fontSize: 11,
@@ -1672,8 +2565,29 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   ],
                 ),
               ),
-              if (resolvedUrl != null && resolvedUrl.isNotEmpty)
-                const Icon(Icons.open_in_new_rounded, color: Color(0xFFFF9800), size: 18),
+              if (effectiveUrl.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF9800).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.open_in_new_rounded, color: Color(0xFFFF9800), size: 16),
+                      SizedBox(width: 4),
+                      Text(
+                        'View',
+                        style: TextStyle(
+                          color: Color(0xFFFF9800),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -1729,7 +2643,31 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       typeColor = context.colors.primary;
     }
 
-    final hasMedia = msg.fileKey != null || msg.fileName != null || msg.messageType != 'text';
+    final rawPath = msg.fileKey?.isNotEmpty == true
+        ? msg.fileKey
+        : (msg.thumbnail?.isNotEmpty == true
+            ? msg.thumbnail
+            : (msg.rawContent['fileKey'] ??
+                    msg.rawContent['file_key'] ??
+                    msg.rawContent['url'] ??
+                    msg.rawContent['mediaUrl'] ??
+                    msg.rawContent['media_url'] ??
+                    msg.rawContent['path'] ??
+                    msg.rawContent['filePath'] ??
+                    msg.rawContent['file_path'])
+                ?.toString());
+    final resolvedUrl = _resolveMediaUrl(rawPath);
+    final fileName = msg.fileName?.isNotEmpty == true
+        ? msg.fileName!
+        : (rawPath != null && rawPath.isNotEmpty ? rawPath.split('/').last : '');
+    final hasMedia = msg.messageType != 'text' || (rawPath != null && rawPath.isNotEmpty) || (fileName.isNotEmpty);
+    final isLocal = !kIsWeb &&
+        ((resolvedUrl != null && File(resolvedUrl).existsSync()) ||
+            (rawPath != null && File(rawPath).existsSync()));
+    final localPath = isLocal
+        ? (resolvedUrl != null && File(resolvedUrl).existsSync() ? resolvedUrl : rawPath)
+        : null;
+    final effectiveUrl = localPath ?? resolvedUrl ?? rawPath ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -1750,7 +2688,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Type icon and Pending Status badge ONLY (no duplicate action buttons)
+          // Row 1: Type icon and Pending Status badge
           Row(
             children: [
               Container(
@@ -1823,50 +2761,85 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           ),
           CommonSpaces.h12,
 
-          // Bottom Action Buttons (Single Edit and Single Delete button)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => _startEditing(msg),
-                icon: Icon(Icons.edit_outlined, size: 14, color: context.colors.primary),
-                label: Text(
-                  'Edit / Reschedule',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: context.colors.primary,
+          // Bottom Action Buttons: [Preview] (if media) + [Edit / Reschedule] + [Delete]
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (hasMedia && effectiveUrl.isNotEmpty) ...[
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      InAppViewer.show(
+                        context,
+                        url: effectiveUrl,
+                        fileName: fileName.isNotEmpty ? fileName : msg.messageType,
+                        type: (msg.messageType == 'document' || msg.messageType == 'file')
+                            ? 'file'
+                            : msg.messageType,
+                      );
+                    },
+                    icon: const Icon(Icons.visibility_outlined, size: 14, color: Color(0xFF2196F3)),
+                    label: const Text(
+                      'Preview',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2196F3),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF2196F3),
+                      side: BorderSide(color: const Color(0xFF2196F3).withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      minimumSize: Size.zero,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+                OutlinedButton.icon(
+                  onPressed: () => _startEditing(msg),
+                  icon: Icon(Icons.edit_outlined, size: 14, color: context.colors.primary),
+                  label: Text(
+                    'Edit / Reschedule',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.primary,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: context.colors.primary,
+                    side: BorderSide(color: context.colors.primary.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: context.colors.primary,
-                  side: BorderSide(color: context.colors.primary.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  minimumSize: Size.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              CommonSpaces.w8,
-              OutlinedButton.icon(
-                onPressed: () => _confirmCancelScheduledMessage(msg),
-                icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFE53935)),
-                label: const Text(
-                  'Delete',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFE53935),
+                OutlinedButton.icon(
+                  onPressed: () => _confirmCancelScheduledMessage(msg),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 14, color: Color(0xFFE53935)),
+                  label: const Text(
+                    'Delete',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFE53935),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFE53935),
+                    side: const BorderSide(color: Color(0xFFFFCDD2)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFE53935),
-                  side: const BorderSide(color: Color(0xFFFFCDD2)),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  minimumSize: Size.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

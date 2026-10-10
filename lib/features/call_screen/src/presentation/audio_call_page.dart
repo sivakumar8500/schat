@@ -10,6 +10,7 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_sta
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_icons.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
@@ -198,9 +199,24 @@ class _AudioCallPageState extends State<AudioCallPage>
         if (state is CallActive && _timer == null) {
           _startTimer();
         }
-        if (state is CallEnded || state is CallRejected || state is CallError) {
+        if (state is CallRejected) {
           if (!_isNavigating) {
             _isNavigating = true;
+            context.showErrorNotification(
+              state.reason.isNotEmpty ? state.reason : 'User is currently in another call',
+            );
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (context.mounted && Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            });
+          }
+        } else if (state is CallEnded || state is CallError) {
+          if (!_isNavigating) {
+            _isNavigating = true;
+            if (state is CallError) {
+              context.showErrorNotification(state.message);
+            }
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             }
@@ -866,7 +882,7 @@ class _AudioCallPageState extends State<AudioCallPage>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: p.isConnected
-              ? (p.isSpeaking ? const Color(0xFF00FF87).withValues(alpha: 0.4) : Colors.white10)
+              ? (p.isSpeaking ? const Color(0xFF00A859).withValues(alpha: 0.4) : Colors.white10)
               : (p.isDisconnected ? Colors.redAccent.withValues(alpha: 0.3) : Colors.white10),
           width: 1,
         ),
@@ -916,7 +932,7 @@ class _AudioCallPageState extends State<AudioCallPage>
                         const Text(
                           'Speaking',
                           style: TextStyle(
-                            color: Color(0xFF00FF87),
+                            color: Color(0xFF00A859),
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
@@ -1083,7 +1099,7 @@ class _AudioCallPageState extends State<AudioCallPage>
             status,
             style: TextStyle(
               color: isSpeaking
-                  ? const Color(0xFF00FF7F)
+                  ? const Color(0xFF00A859)
                   : (status == 'Connected' ? const Color(0xFF34C759) : Colors.white60),
               fontSize: 11,
               fontWeight: isSpeaking ? FontWeight.bold : FontWeight.w500,
@@ -1433,10 +1449,10 @@ class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.7),
+                          color: const Color(0xFF00A859).withValues(alpha: (1.0 - v1) * 0.7),
                           width: 1.5,
                         ),
-                        color: const Color(0xFF00FF87).withValues(alpha: (1.0 - v1) * 0.12),
+                        color: const Color(0xFF00A859).withValues(alpha: (1.0 - v1) * 0.12),
                       ),
                     ),
                     // Inner ripple
@@ -1462,13 +1478,13 @@ class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: widget.isSpeaking ? const Color(0xFF00FF87) : Colors.white.withValues(alpha: 0.25),
+                color: widget.isSpeaking ? const Color(0xFF00A859) : Colors.white.withValues(alpha: 0.25),
                 width: widget.isSpeaking ? 2.5 : 1.5,
               ),
               boxShadow: widget.isSpeaking
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF00FF87).withValues(alpha: 0.45),
+                        color: const Color(0xFF00A859).withValues(alpha: 0.45),
                         blurRadius: 12,
                         spreadRadius: 2,
                       ),

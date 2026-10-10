@@ -3,6 +3,7 @@ import UIKit
 import GoogleMaps
 import AVKit
 import AVFoundation
+import CallKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, AVPictureInPictureControllerDelegate {
@@ -10,6 +11,8 @@ import AVFoundation
   private var pipVideoCallViewController: AVPictureInPictureVideoCallViewController?
   private var pipSourceView: UIView?
   private var pipChannel: FlutterMethodChannel?
+  private var phoneCallChannel: FlutterMethodChannel?
+  private let callObserver = CXCallObserver()
 
   override func application(
     _ application: UIApplication,
@@ -67,8 +70,10 @@ import AVFoundation
 
     if let registrar = self.registrar(forPlugin: "com.sdpi.schat/pip") {
       setupPipChannel(messenger: registrar.messenger())
+      setupPhoneCallChannel(messenger: registrar.messenger())
     } else if let controller = window?.rootViewController as? FlutterViewController {
       setupPipChannel(messenger: controller.binaryMessenger)
+      setupPhoneCallChannel(messenger: controller.binaryMessenger)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -132,6 +137,25 @@ import AVFoundation
         result(FlutterMethodNotImplemented)
       }
     }
+  }
+
+  private func setupPhoneCallChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "com.sdpi.schat/phone_call_state", binaryMessenger: messenger)
+    self.phoneCallChannel = channel
+    channel.setMethodCallHandler { [weak self] (call, result) in
+      guard let self = self else { return }
+      switch call.method {
+      case "isPhoneCallActive":
+        result(self.isSystemPhoneCallActive())
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func isSystemPhoneCallActive() -> Bool {
+    let calls = callObserver.calls
+    return calls.contains { !$0.hasEnded }
   }
 
   private func handleCallActive(isActive: Bool) {

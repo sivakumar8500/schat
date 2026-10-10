@@ -15,13 +15,19 @@ import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.media.AudioManager
+import android.content.Context
+import android.telephony.TelephonyManager
+import android.telecom.TelecomManager
 import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
     private val PIP_CHANNEL = "com.sdpi.schat/pip"
+    private val PHONE_CALL_CHANNEL = "com.sdpi.schat/phone_call_state"
     private var methodChannel: MethodChannel? = null
     private var pipMethodChannel: MethodChannel? = null
+    private var phoneCallChannel: MethodChannel? = null
     private var isCallActive = false
     private var contentObserver: ContentObserver? = null
     private var screenCaptureCallback: Any? = null
@@ -191,6 +197,48 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        phoneCallChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PHONE_CALL_CHANNEL)
+        phoneCallChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isPhoneCallActive" -> {
+                    result.success(isSystemPhoneCallActive())
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun isSystemPhoneCallActive(): Boolean {
+        try {
+            // 1. Check TelecomManager (Android 6.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+                if (telecomManager != null && telecomManager.isInCall) {
+                    return true
+                }
+            }
+            // 2. Check TelephonyManager
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            if (telephonyManager != null) {
+                @Suppress("DEPRECATION")
+                val callState = telephonyManager.callState
+                if (callState != TelephonyManager.CALL_STATE_IDLE) {
+                    return true
+                }
+            }
+            // 3. Check AudioManager
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (audioManager != null) {
+                val mode = audioManager.mode
+                if (!isCallActive && (mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_RINGTONE)) {
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
     }
 
     private fun enterPipMode(): Boolean {

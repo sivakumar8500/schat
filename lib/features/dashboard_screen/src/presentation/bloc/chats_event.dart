@@ -106,3 +106,18 @@ class UpdateDisappearingTimer extends ChatsEvent {
   });
 }
 
+class UpdateMessageStatus extends ChatsEvent {
+  final String conversationId;
+  final String? messageId;
+  final List<String>? messageIds;
+  final String status; // 'delivered' or 'read'
+
+  const UpdateMessageStatus({
+    required this.conversationId,
+    this.messageId,
+    this.messageIds,
+    required this.status,
+  });
+}
+
+

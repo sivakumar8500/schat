@@ -118,10 +118,12 @@ class ChatPage extends StatefulWidget {
     this.initialIsLocked = false,
     this.initialTargetMessageId,
     this.initialSearchQuery,
+    this.targetUserId,
   });
 
   final String? initialTargetMessageId;
   final String? initialSearchQuery;
+  final String? targetUserId;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -161,6 +163,22 @@ class _ChatPageState extends State<ChatPage> {
 
   final Set<String> _selectedMessageIds = {};
   MessageModel? _replyingToMessage;
+
+  bool _isMessageFromMe(MessageModel msg, String myId) {
+    if (widget.isReadOnly) {
+      if (msg.userView == 'send') return true;
+      if (msg.userView == 'receive' || msg.userView == 'view') return false;
+      if (widget.targetUserId != null && widget.targetUserId!.isNotEmpty) {
+        return msg.senderId == widget.targetUserId;
+      }
+      if (widget.recipientId.isNotEmpty) {
+        return msg.senderId != widget.recipientId;
+      }
+    }
+    if (msg.userView == 'send') return true;
+    if (msg.userView == 'receive') return false;
+    return msg.senderId == myId;
+  }
   MessageModel? _editingMessage;
   
   String? _selectedAttachmentPath;
@@ -284,27 +302,37 @@ class _ChatPageState extends State<ChatPage> {
     // Listen for screenshots to decrement allowed count or allow during active screen record
     _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
       final state = _chatBloc.state;
-      if (state is ChatLoaded && state.activeScreenPermission != null) {
-        final perm = state.activeScreenPermission!;
-        if (perm.isScreenshot) {
-          final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
-          final newRemaining = currentRemaining - 1;
-          debugPrint('ScreenProtection: Screenshot taken! newRemaining=$newRemaining / ${perm.allowedCount}');
+      if (state is ChatLoaded) {
+        final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
+            (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot
+                ? state.activeScreenPermission
+                : null);
 
-          if (newRemaining <= 0) {
-            // Immediately re-enable protection locally with 0 delay so no further screenshots are possible!
+        if (activeScreenshotPerm != null) {
+          final totalRemaining = state.totalRemainingScreenshots > 0
+              ? state.totalRemainingScreenshots
+              : (activeScreenshotPerm.remainingCount ?? activeScreenshotPerm.allowedCount ?? 1);
+          final totalAllowed = state.totalAllowedScreenshots > 0
+              ? state.totalAllowedScreenshots
+              : (activeScreenshotPerm.allowedCount ?? 1);
+          final newTotalRemaining = totalRemaining - 1;
+
+          debugPrint('ScreenProtection: Screenshot taken! newTotalRemaining=$newTotalRemaining / $totalAllowed');
+
+          if (newTotalRemaining <= 0) {
+            // Immediately re-enable protection locally with 0 delay once ALL allowed screenshots across all active requests are exhausted!
             getIt<ScreenProtectionService>().enableProtection();
             if (mounted) {
-              context.showInfoNotification('All allowed screenshot(s) taken (${perm.allowedCount}/${perm.allowedCount}). Protection re-enabled.');
+              context.showInfoNotification('All allowed screenshot(s) taken ($totalAllowed/$totalAllowed). Protection re-enabled.');
             }
           } else {
             if (mounted) {
-              context.showInfoNotification('Screenshot taken. $newRemaining of ${perm.allowedCount} screenshot(s) remaining.');
+              context.showInfoNotification('Screenshot taken. $newTotalRemaining of $totalAllowed screenshot(s) remaining.');
             }
           }
 
-          _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
-        } else if (perm.isScreenRecord && _isScreenRecordingActive) {
+          _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
+        } else if (state.activeScreenPermission?.isScreenRecord == true && _isScreenRecordingActive) {
           debugPrint('ScreenProtection: Screenshot taken during active screen record session.');
           if (mounted) {
             context.showInfoNotification('Screenshot captured during active screen recording.');
@@ -752,9 +780,12 @@ class _ChatPageState extends State<ChatPage> {
             ? (callState is CallActive ? callState.isVideo : (callState as CallConnecting).isVideo)
             : (ongoingGroupCall?.isVideo ?? false);
 
-        final String contactName = isCurrentInCall
+        String contactName = isCurrentInCall
             ? (callState is CallActive ? callState.contactName : (callState as CallConnecting).contactName)
             : (ongoingGroupCall?.groupName ?? widget.contactName);
+        if (contactName.isEmpty || contactName.toLowerCase() == 'unknown' || contactName.toLowerCase() == 'unknown user') {
+          contactName = widget.contactName;
+        }
 
         final String? profilePic = isCurrentInCall
             ? (callState is CallActive ? callState.profilePictureUrl : (callState as CallConnecting).profilePictureUrl)
@@ -762,11 +793,14 @@ class _ChatPageState extends State<ChatPage> {
 
         final bool isGroup = isCurrentInCall
             ? (callState is CallActive ? callState.isGroup : (callState as CallConnecting).isGroup)
-            : true;
+            : widget.isGroup;
 
-        final String? groupName = isCurrentInCall
+        String? groupName = isCurrentInCall
             ? (callState is CallActive ? callState.groupName : (callState as CallConnecting).groupName)
             : (ongoingGroupCall?.groupName ?? widget.contactName);
+        if (groupName == null || groupName.isEmpty || groupName.toLowerCase() == 'unknown') {
+          groupName = widget.contactName;
+        }
 
         final String recipientId = isCurrentInCall
             ? (callState is CallActive ? callState.recipientId : (callState as CallConnecting).recipientId)
@@ -809,7 +843,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ],
             border: Border.all(
-              color: const Color(0xFF00E676).withValues(alpha: 0.5),
+              color: const Color(0xFF00A859).withValues(alpha: 0.5),
               width: 1,
             ),
           ),
@@ -837,11 +871,11 @@ class _ChatPageState extends State<ChatPage> {
                         width: 8,
                         height: 8,
                         decoration: const BoxDecoration(
-                          color: Color(0xFF00E676),
+                          color: Color(0xFF00A859),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Color(0xFF00E676),
+                              color: Color(0xFF00A859),
                               blurRadius: 4,
                               spreadRadius: 1,
                             ),
@@ -1476,7 +1510,7 @@ class _ChatPageState extends State<ChatPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!_isRecording && _showUnknownContactBanner && _chatBloc.state is ChatLoaded) _buildUnknownContactBanner(context),
+        if (!widget.isReadOnly && widget.targetUserId == null && !_isRecording && _showUnknownContactBanner && _chatBloc.state is ChatLoaded) _buildUnknownContactBanner(context),
         if (_isRecording) _buildRecordingBanner(),
         if (!_isRecording && _replyingToMessage != null) _buildReplyPreview(),
         if (!_isRecording && _editingMessage != null) _buildEditPreview(),
@@ -3917,41 +3951,50 @@ class _ChatPageState extends State<ChatPage> {
 
           if (state is ChatLoaded) {
             _checkUnknownContactStatus(state.messages);
-            final activePerm = state.activeScreenPermission;
-            final isScreenshotAllowed = activePerm != null &&
-                activePerm.isScreenshot &&
-                !activePerm.isCompleted &&
-                !activePerm.isRejected &&
-                (activePerm.remainingCount ?? 1) > 0;
-            final isScreenRecordAllowed = activePerm != null &&
-                activePerm.isScreenRecord &&
-                !activePerm.isCompleted &&
-                !activePerm.isRejected &&
-                activePerm.durationSeconds != null;
+            final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
+                (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot
+                    ? state.activeScreenPermission
+                    : null);
+            final activeRecordPerm = state.firstActiveScreenRecordPermission ??
+                (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenRecord
+                    ? state.activeScreenPermission
+                    : null);
+
+            final isScreenshotAllowed = state.totalRemainingScreenshots > 0 ||
+                (activeScreenshotPerm != null &&
+                    !activeScreenshotPerm.isCompleted &&
+                    !activeScreenshotPerm.isRejected &&
+                    (activeScreenshotPerm.remainingCount ?? activeScreenshotPerm.allowedCount ?? 1) > 0);
+            final isScreenRecordAllowed = activeRecordPerm != null &&
+                !activeRecordPerm.isCompleted &&
+                !activeRecordPerm.isRejected &&
+                activeRecordPerm.durationSeconds != null;
 
             if (isScreenshotAllowed) {
               getIt<ScreenProtectionService>().disableProtection();
 
+              final targetId = activeScreenshotPerm?.id ?? 'screenshot_active';
               // Handle screenshot permission safety auto-lock timer (60s)
-              if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != activePerm.id) {
+              if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != targetId) {
                 _screenshotAutoExpireTimer?.cancel();
-                _activeScreenshotPermissionId = activePerm.id;
+                _activeScreenshotPermissionId = targetId;
                 _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
                   if (mounted) {
                     getIt<ScreenProtectionService>().enableProtection();
                     context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
-                    _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activePerm.id));
+                    if (activeScreenshotPerm != null) {
+                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
+                    }
                   }
                 });
               }
             } else if (isScreenRecordAllowed) {
-              // Screen recording requires user to tap "Start" button explicitly.
-              // Keep protection enabled until user taps Start.
-              if (!_isScreenRecordingActive) {
+              // Screen recording approved: automatically start screen recording session
+              if (!_isScreenRecordingActive || _activeScreenRecordPermissionId != activeRecordPerm.id) {
                 _screenshotAutoExpireTimer?.cancel();
                 _screenshotAutoExpireTimer = null;
                 _activeScreenshotPermissionId = null;
-                getIt<ScreenProtectionService>().enableProtection();
+                _startScreenRecording(activeRecordPerm);
               }
             } else {
               // No active permission
@@ -4065,14 +4108,8 @@ class _ChatPageState extends State<ChatPage> {
                   Expanded(
                     child: NotificationListener<ScrollNotification>(
                       onNotification: (ScrollNotification notification) {
-                        if (notification is ScrollUpdateNotification) {
-                          if (_scrollController.hasClients) {
-                            final pixels = _scrollController.position.pixels;
-                            final maxScroll = _scrollController.position.maxScrollExtent;
-                            if (pixels >= maxScroll - 200) {
-                              _chatBloc.add(LoadMoreMessagesEvent(conversationId: widget.conversationId));
-                            }
-                          }
+                        if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 300) {
+                          _chatBloc.add(LoadMoreMessagesEvent(conversationId: widget.conversationId));
                         }
                         return false;
                       },
@@ -4105,7 +4142,7 @@ class _ChatPageState extends State<ChatPage> {
                                     final adjustedIndex = isOtherUserTyping ? index - 1 : index;
                                     final item = groupedItems[groupedItems.length - 1 - adjustedIndex];
                                     final msg = item.primaryMessage;
-                                    final isMe = state is ChatLoaded && msg.senderId == state.myId;
+                                    final isMe = state is ChatLoaded && _isMessageFromMe(msg, state.myId);
                                     final isGrouped = item.groupedImages != null && item.groupedImages!.length > 1;
                                     final groupedList = item.groupedImages;
                                     final allGroupIds = isGrouped ? groupedList!.map((m) => m.id).toSet() : {msg.id};
@@ -4116,7 +4153,7 @@ class _ChatPageState extends State<ChatPage> {
                                     if (msg.isReply && msg.replyMessageId != null) {
                                       try {
                                         final parent = messages.firstWhere((m) => m.id == msg.replyMessageId);
-                                        replySenderName = (state is ChatLoaded && parent.senderId == state.myId)
+                                        replySenderName = (state is ChatLoaded && _isMessageFromMe(parent, state.myId))
                                             ? 'You'
                                             : (widget.isGroup
                                                 ? _resolveSenderName(parent.senderId, parent.senderName)
@@ -5271,24 +5308,49 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  bool _hasBothSentMessages(List<MessageModel> messages, String myId) {
-    bool meSent = false;
-    bool otherSent = false;
+  bool _hasUserSentAnyMessage(List<MessageModel> messages, String myId) {
     for (final m in messages) {
       if (m.isDeleted || m.isDeletedForMe) continue;
       if (m.messageType == 'system' || m.messageType == 'group_event' || m.messageType == 'notification') continue;
-      if (m.senderId == myId) {
+      if (_isMessageFromMe(m, myId)) return true;
+    }
+    return false;
+  }
+
+  bool _hasBothSentMessages(List<MessageModel> messages, String myId) {
+    bool meSent = false;
+    bool otherSent = false;
+    final Set<String> distinctSenders = {};
+
+    for (final m in messages) {
+      if (m.isDeleted || m.isDeletedForMe) continue;
+      if (m.messageType == 'system' || m.messageType == 'group_event' || m.messageType == 'notification') continue;
+      
+      if (_isMessageFromMe(m, myId)) {
         meSent = true;
-      } else if (m.senderId.isNotEmpty) {
+      } else {
         otherSent = true;
       }
-      if (meSent && otherSent) return true;
+
+      if (m.senderId.isNotEmpty) {
+        distinctSenders.add(m.senderId);
+      }
+
+      if ((meSent && otherSent) || distinctSenders.length >= 2) {
+        return true;
+      }
     }
     return false;
   }
 
   Future<void> _checkUnknownContactStatus([List<MessageModel>? messageList]) async {
-    if (widget.isGroup || widget.recipientId.isEmpty) return;
+    // Never show in read-only / chat monitoring mode, group chats, or invalid recipient
+    if (widget.isReadOnly || widget.targetUserId != null || widget.isGroup || widget.recipientId.isEmpty) {
+      if (mounted && _showUnknownContactBanner) {
+        setState(() => _showUnknownContactBanner = false);
+      }
+      return;
+    }
     final chatState = _chatBloc.state;
     if (chatState is! ChatLoaded) {
       if (mounted && _showUnknownContactBanner) {
@@ -5326,10 +5388,27 @@ class _ChatPageState extends State<ChatPage> {
       final myId = chatState.myId.isNotEmpty ? chatState.myId : (getIt<StorageService>().getUserId() ?? '');
       final msgs = messageList ?? chatState.messages;
 
-      // If both users have exchanged at least 1 message with each other, auto-continue and don't show banner
-      if (_hasBothSentMessages(msgs, myId)) {
+      // If user has sent any message or both users have exchanged messages, auto-continue and don't show banner
+      if (_hasUserSentAnyMessage(msgs, myId) || _hasBothSentMessages(msgs, myId)) {
         await box.put(widget.recipientId, true);
         await box.put(widget.conversationId, true);
+        if (mounted && _showUnknownContactBanner) {
+          setState(() => _showUnknownContactBanner = false);
+        }
+        return;
+      }
+
+      // If there are no incoming messages from the other user (e.g. empty new chat), don't show banner
+      final hasIncomingMessage = msgs.any((m) =>
+        !m.isDeleted &&
+        !m.isDeletedForMe &&
+        m.messageType != 'system' &&
+        m.messageType != 'group_event' &&
+        m.messageType != 'notification' &&
+        !_isMessageFromMe(m, myId)
+      );
+
+      if (!hasIncomingMessage) {
         if (mounted && _showUnknownContactBanner) {
           setState(() => _showUnknownContactBanner = false);
         }
@@ -6434,13 +6513,16 @@ class _ChatPageState extends State<ChatPage> {
 
         if (mediaFiles.length == 1) {
           final file = mediaFiles.first;
-          final String name = file.name;
+          final ext = file.name.split('.').last.toLowerCase();
+          final isHeic = ext == 'heic' || ext == 'heif';
+          final String name = isHeic
+              ? file.name.replaceAll(RegExp(r'\.hei[cf]$', caseSensitive: false), '.jpg')
+              : file.name;
           final int size = await file.length();
           if (!mounted) return;
           final Uint8List bytes = await file.readAsBytes();
           if (!mounted) return;
 
-          final ext = name.split('.').last.toLowerCase();
           final isVideo = {'mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'webm', '3gp', 'm4v'}.contains(ext);
           final fileType = isVideo ? 'video' : 'image';
 
@@ -6481,10 +6563,13 @@ class _ChatPageState extends State<ChatPage> {
           // Multiple media files selected: open multi-item preview
           final List<AttachmentPreviewItem> previewItems = [];
           for (final file in mediaFiles) {
-            final String name = file.name;
+            final ext = file.name.split('.').last.toLowerCase();
+            final isHeic = ext == 'heic' || ext == 'heif';
+            final String name = isHeic
+                ? file.name.replaceAll(RegExp(r'\.hei[cf]$', caseSensitive: false), '.jpg')
+                : file.name;
             final int size = await file.length();
             final Uint8List bytes = await file.readAsBytes();
-            final ext = name.split('.').last.toLowerCase();
             final isVideo = {'mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'webm', '3gp', 'm4v'}.contains(ext);
             final fileType = isVideo ? 'video' : 'image';
 
@@ -6566,7 +6651,11 @@ class _ChatPageState extends State<ChatPage> {
         final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
         if (image == null || !mounted) return;
 
-        final String name = image.name;
+        final ext = image.name.split('.').last.toLowerCase();
+        final isHeic = ext == 'heic' || ext == 'heif';
+        final String name = isHeic
+            ? image.name.replaceAll(RegExp(r'\.hei[cf]$', caseSensitive: false), '.jpg')
+            : image.name;
         final int size = await image.length();
         if (!mounted) return;
 
@@ -7677,9 +7766,9 @@ class _ChatPageState extends State<ChatPage> {
 
     if (mounted) {
       if (completedByTimer) {
-        context.showInfoNotification('Screen recording duration completed. Protection re-enabled.');
+        context.showSuccessNotification('Screen recording completed and saved to your device.');
       } else {
-        context.showInfoNotification('Screen recording stopped. Protection re-enabled.');
+        context.showInfoNotification('Screen recording completed.');
       }
     }
 
@@ -7689,25 +7778,40 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildActiveScreenPermissionBanner(ChatState state) {
-    if (state is! ChatLoaded || state.activeScreenPermission == null) {
+    if (state is! ChatLoaded) {
       return const SizedBox.shrink();
     }
-    final perm = state.activeScreenPermission!;
-    final isScreenshot = perm.isScreenshot;
-    final remaining = perm.remainingCount ?? perm.allowedCount ?? 1;
 
-    if (perm.isCompleted || perm.isRejected) {
-      return const SizedBox.shrink();
-    }
-    if (isScreenshot && remaining <= 0) {
+    final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
+        (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot
+            ? state.activeScreenPermission
+            : null);
+    final screenRecordPerm = state.firstActiveScreenRecordPermission ??
+        (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenRecord
+            ? state.activeScreenPermission
+            : null);
+
+    final totalRemaining = state.totalRemainingScreenshots > 0
+        ? state.totalRemainingScreenshots
+        : (activeScreenshotPerm?.remainingCount ?? activeScreenshotPerm?.allowedCount ?? 0);
+    final totalAllowed = state.totalAllowedScreenshots > 0
+        ? state.totalAllowedScreenshots
+        : (activeScreenshotPerm?.allowedCount ?? 0);
+
+    final isScreenshotAllowed = totalRemaining > 0 && activeScreenshotPerm != null &&
+        !activeScreenshotPerm.isCompleted && !activeScreenshotPerm.isRejected;
+    final isScreenRecordAllowed = screenRecordPerm != null &&
+        !screenRecordPerm.isCompleted && !screenRecordPerm.isRejected && screenRecordPerm.durationSeconds != null;
+
+    if (!isScreenshotAllowed && !isScreenRecordAllowed) {
       return const SizedBox.shrink();
     }
 
     final colors = context.colors;
 
     // ── Screen Recording Banner ──
-    if (!isScreenshot) {
-      final totalDuration = perm.durationSeconds ?? 30;
+    if (isScreenRecordAllowed && !isScreenshotAllowed) {
+      final totalDuration = screenRecordPerm.durationSeconds ?? 30;
 
       if (_isScreenRecordingActive) {
         final progress = totalDuration > 0 ? (_screenRecordRemainingSeconds / totalDuration) : 0.0;
@@ -7769,7 +7873,7 @@ class _ChatPageState extends State<ChatPage> {
                   SizedBox(
                     height: 34,
                     child: ElevatedButton.icon(
-                      onPressed: () => _stopScreenRecording(perm.id, completedByTimer: false),
+                      onPressed: () => _stopScreenRecording(screenRecordPerm.id, completedByTimer: false),
                       icon: const Icon(Icons.stop_rounded, size: 16, color: Colors.white),
                       label: Text(
                         'Stop',
@@ -7859,7 +7963,7 @@ class _ChatPageState extends State<ChatPage> {
             SizedBox(
               height: 34,
               child: ElevatedButton.icon(
-                onPressed: () => _startScreenRecording(perm),
+                onPressed: () => _startScreenRecording(screenRecordPerm),
                 icon: const Icon(Icons.fiber_manual_record, size: 14, color: Colors.white),
                 label: Text(
                   'Start Record',
@@ -7905,7 +8009,7 @@ class _ChatPageState extends State<ChatPage> {
           CommonSpaces.w8,
           Expanded(
             child: Text(
-              'Screenshot allowed: $remaining remaining',
+              'Screenshot allowed: $totalRemaining remaining',
               style: context.bodySmall.copyWith(
                 color: colors.textPrimary,
                 fontWeight: FontWeight.w600,
@@ -7913,34 +8017,34 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
-          InkWell(
-            onTap: () {
-              final currentRemaining = perm.remainingCount ?? perm.allowedCount ?? 1;
-              final newRemaining = currentRemaining - 1;
-              if (newRemaining <= 0) {
-                getIt<ScreenProtectionService>().enableProtection();
-                context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
-              } else {
-                context.showSuccessNotification('Screenshot used ($newRemaining remaining)');
-              }
-              _chatBloc.add(ConsumeScreenPermissionEvent(requestId: perm.id));
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-              decoration: BoxDecoration(
-                color: colors.primary,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                'Use 1',
-                style: context.bodySmall.copyWith(
-                  color: colors.textLight,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 10.0,
+          if (activeScreenshotPerm != null)
+            InkWell(
+              onTap: () {
+                final newRemaining = totalRemaining - 1;
+                if (newRemaining <= 0) {
+                  getIt<ScreenProtectionService>().enableProtection();
+                  context.showInfoNotification('All allowed screenshot(s) used. Protection re-enabled.');
+                } else {
+                  context.showSuccessNotification('Screenshot used ($newRemaining of $totalAllowed remaining)');
+                }
+                _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Use 1',
+                  style: context.bodySmall.copyWith(
+                    color: colors.textLight,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 10.0,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -8139,13 +8243,13 @@ class _ChatPageState extends State<ChatPage> {
     required VoidCallback onTap,
   }) {
     final isDark = context.colors.isDark;
-    final primaryColor = isDark ? const Color(0xFF00FF87) : const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isSelected
-            ? (isDark ? const Color(0xFF00FF87).withValues(alpha: 0.12) : const Color(0xFFE8F5E9))
+            ? (isDark ? const Color(0xFF00873C).withValues(alpha: 0.15) : const Color(0xFFE8F5E9))
             : (isDark ? context.colors.cardBackground : Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
