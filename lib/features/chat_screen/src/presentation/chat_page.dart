@@ -1806,15 +1806,44 @@ class _ChatPageState extends State<ChatPage> {
         final List<UserModel> deliveredParticipants = [];
         final List<UserModel> pendingParticipants = [];
 
-        final readSet = msg.readBy.map((id) => id.toLowerCase()).toSet();
-        final deliveredSet = msg.deliveredTo.map((id) => id.toLowerCase()).toSet();
+        final readSet = msg.readBy.map((id) => id.toLowerCase().trim()).toSet();
+        final deliveredSet = msg.deliveredTo.map((id) => id.toLowerCase().trim()).toSet();
 
         if (widget.isGroup) {
           for (final user in otherParticipants) {
-            final uIdLower = user.id.toLowerCase();
-            if (readSet.contains(uIdLower) || (msg.isRead && msg.readBy.isEmpty)) {
+            final uIdLower = user.id.toLowerCase().trim();
+            final uPhoneLower = user.phoneNumber.toLowerCase().trim();
+            final uNameLower = (user.username ?? '').toLowerCase().trim();
+
+            final isUserRead = (uIdLower.isNotEmpty && readSet.contains(uIdLower)) ||
+                (uPhoneLower.isNotEmpty && readSet.contains(uPhoneLower)) ||
+                (uNameLower.isNotEmpty && readSet.contains(uNameLower));
+
+            final isUserDelivered = (uIdLower.isNotEmpty && deliveredSet.contains(uIdLower)) ||
+                (uPhoneLower.isNotEmpty && deliveredSet.contains(uPhoneLower)) ||
+                (uNameLower.isNotEmpty && deliveredSet.contains(uNameLower));
+
+            if (isUserRead) {
               readParticipants.add(user);
-            } else if (deliveredSet.contains(uIdLower) || msg.isDelivered || isRecipientOnline) {
+            } else if (isUserDelivered) {
+              deliveredParticipants.add(user);
+            } else {
+              pendingParticipants.add(user);
+            }
+          }
+        } else {
+          // Direct 1-to-1 chat
+          for (final user in otherParticipants) {
+            final uIdLower = user.id.toLowerCase().trim();
+            final isUserRead = (uIdLower.isNotEmpty && readSet.contains(uIdLower)) || msg.isRead;
+            final isUserDelivered = isUserRead ||
+                (uIdLower.isNotEmpty && deliveredSet.contains(uIdLower)) ||
+                msg.isDelivered ||
+                isRecipientOnline;
+
+            if (isUserRead) {
+              readParticipants.add(user);
+            } else if (isUserDelivered) {
               deliveredParticipants.add(user);
             } else {
               pendingParticipants.add(user);
@@ -1822,7 +1851,9 @@ class _ChatPageState extends State<ChatPage> {
           }
         }
 
-        final isDelivered = msg.isRead || msg.isDelivered || widget.isGroup || isRecipientOnline;
+        final isDelivered = widget.isGroup
+            ? (readParticipants.isNotEmpty || deliveredParticipants.isNotEmpty)
+            : (msg.isRead || msg.isDelivered || isRecipientOnline);
         final totalCount = otherParticipants.isNotEmpty ? otherParticipants.length : (widget.isGroup ? 0 : 1);
 
         const emeraldGreen = Color(0xFF00D084);

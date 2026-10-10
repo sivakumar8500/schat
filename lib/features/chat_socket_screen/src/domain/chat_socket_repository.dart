@@ -461,24 +461,49 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void sendReadReceipt(String conversationId, String messageId) {
+    final myId = (_storageService.getUserId() ?? '').trim();
     final Map<String, dynamic> payload = {
       "type": "read_receipt",
+      "action": "read",
       "conversationId": conversationId,
       "conversation_id": conversationId,
       "messageId": messageId,
       "message_id": messageId,
+      "messageIds": [messageId],
+      "message_ids": [messageId],
+      if (myId.isNotEmpty) ...{
+        "userId": myId,
+        "user_id": myId,
+        "readerId": myId,
+        "reader_id": myId,
+      },
+      "readAt": DateTime.now().toIso8601String(),
+      "read_at": DateTime.now().toIso8601String(),
     };
     emit('message', payload);
   }
 
   @override
   void sendDeliveryReceipt(String conversationId, String messageId) {
+    final myId = (_storageService.getUserId() ?? '').trim();
     final Map<String, dynamic> payload = {
       "type": "delivery_receipt",
+      "action": "delivered",
       "conversationId": conversationId,
       "conversation_id": conversationId,
       "messageId": messageId,
       "message_id": messageId,
+      "messageIds": [messageId],
+      "message_ids": [messageId],
+      if (myId.isNotEmpty) ...{
+        "userId": myId,
+        "user_id": myId,
+        "recipientId": myId,
+        "recipient_id": myId,
+        "deliveryUserId": myId,
+      },
+      "deliveredAt": DateTime.now().toIso8601String(),
+      "delivered_at": DateTime.now().toIso8601String(),
     };
     emit('message', payload);
   }

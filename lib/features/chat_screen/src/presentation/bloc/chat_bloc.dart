@@ -873,9 +873,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final cached = cachedMap[m.id]!;
             final keepRead = m.isRead || cached.isRead || m.status == 'read' || cached.status == 'read';
             final keepDelivered = keepRead || m.isDelivered || cached.isDelivered || m.status == 'delivered' || cached.status == 'delivered';
+            final mergedReadBy = <String>{...m.readBy, ...cached.readBy}.toList();
+            final mergedDeliveredTo = <String>{...m.deliveredTo, ...cached.deliveredTo}.toList();
             m = m.copyWith(
               isRead: keepRead,
               isDelivered: keepDelivered,
+              readBy: mergedReadBy,
+              deliveredTo: mergedDeliveredTo,
             );
           }
           freshMap[m.id] = m;
@@ -920,40 +924,42 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
-      // ── Infer read/delivered status from message history ──────────────────
-      // If the recipient has sent any message AFTER one of our messages,
-      // they clearly read everything before it → mark those as isRead=true.
-      String? lastRecipientMessageTime;
-      // Walk newest→oldest to find last recipient reply timestamp
-      for (final msg in messages.reversed) {
-        if (msg.senderId != myId) {
-          lastRecipientMessageTime = msg.createdAt;
-          break;
-        }
-      }
-
-      messages = messages.map((msg) {
-        if (msg.senderId != myId) return msg;
-        // Skip failed messages — keep their status as-is
-        if (msg.isFailed) return msg;
-        bool inferredRead = msg.isRead || msg.status == 'read';
-        bool inferredDelivered = msg.isDelivered || inferredRead || msg.status == 'delivered';
-
-        if (!inferredRead && lastRecipientMessageTime != null) {
-          // If recipient sent a message after this one, it was read
-          final myTime = DateTime.tryParse(msg.createdAt);
-          final recipientTime = DateTime.tryParse(lastRecipientMessageTime);
-          if (myTime != null && recipientTime != null && (recipientTime.isAfter(myTime) || recipientTime.isAtSameMomentAs(myTime))) {
-            inferredRead = true;
-            inferredDelivered = true;
+      // ── Infer read/delivered status from message history (ONLY FOR 1-ON-1 DIRECT CHATS) ──
+      if (event.recipientId != null && event.recipientId!.isNotEmpty) {
+        String? lastRecipientMessageTime;
+        // Walk newest→oldest to find last recipient reply timestamp
+        for (final msg in messages.reversed) {
+          if (msg.senderId != myId) {
+            lastRecipientMessageTime = msg.createdAt;
+            break;
           }
         }
-        if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
-        return msg.copyWith(
-          isRead: inferredRead,
-          isDelivered: inferredDelivered,
-        );
-      }).toList();
+
+        if (lastRecipientMessageTime != null) {
+          messages = messages.map((msg) {
+            if (msg.senderId != myId) return msg;
+            // Skip failed messages — keep their status as-is
+            if (msg.isFailed) return msg;
+            bool inferredRead = msg.isRead || msg.status == 'read';
+            bool inferredDelivered = msg.isDelivered || inferredRead || msg.status == 'delivered';
+
+            if (!inferredRead) {
+              // If recipient sent a message after this one, it was read
+              final myTime = DateTime.tryParse(msg.createdAt);
+              final recipientTime = DateTime.tryParse(lastRecipientMessageTime!);
+              if (myTime != null && recipientTime != null && (recipientTime.isAfter(myTime) || recipientTime.isAtSameMomentAs(myTime))) {
+                inferredRead = true;
+                inferredDelivered = true;
+              }
+            }
+            if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
+            return msg.copyWith(
+              isRead: inferredRead,
+              isDelivered: inferredDelivered,
+            );
+          }).toList();
+        }
+      }
 
       // Save fresh resolved messages to cache
       _saveToCache(event.conversationId, messages);
@@ -1460,13 +1466,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onMarkMessageRead(MarkMessageReadEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      // Mark ALL our sent messages up to the target message as read
       final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
       final msgs = currentState.messages;
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
-        if (msg.senderId == currentState.myId && (targetIndex == -1 || i <= targetIndex)) {
+        final isTarget = (targetIndex != -1)
+            ? (i <= targetIndex)
+            : (event.messageId.isEmpty || msg.id == event.messageId);
+        if (msg.senderId == currentState.myId && isTarget) {
           final newReadBy = List<String>.from(msg.readBy);
           final newDeliveredTo = List<String>.from(msg.deliveredTo);
           if (event.readerId != null && event.readerId!.isNotEmpty) {
@@ -1491,13 +1499,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onMarkMessageDelivered(MarkMessageDeliveredEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      // Mark ALL our sent messages up to the target message as delivered
       final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
       final msgs = currentState.messages;
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
-        if (msg.senderId == currentState.myId && (targetIndex == -1 || i <= targetIndex)) {
+        final isTarget = (targetIndex != -1)
+            ? (i <= targetIndex)
+            : (event.messageId.isEmpty || msg.id == event.messageId);
+        if (msg.senderId == currentState.myId && isTarget) {
           final newDeliveredTo = List<String>.from(msg.deliveredTo);
           if (event.recipientId != null && event.recipientId!.isNotEmpty) {
             if (!newDeliveredTo.contains(event.recipientId!)) newDeliveredTo.add(event.recipientId!);
