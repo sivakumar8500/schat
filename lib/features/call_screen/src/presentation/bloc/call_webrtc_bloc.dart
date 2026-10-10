@@ -309,11 +309,17 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
               return;
             }
 
+            // ONLY process peer offers if the user is actively in the call!
+            // When user has cut the call or is in CallIdle looking at the Rejoin banner, ignore all media offers.
+            if (state is! CallActive && state is! CallConnecting) {
+              debugPrint('CallWebRtcBloc: Received peer offer from $offerSenderId while not in call (state=$state). Ignoring to prevent voice leak.');
+              return;
+            }
+
             final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
                 (state is CallConnecting && (state as CallConnecting).isVideo);
             final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
                 (state is CallConnecting && (state as CallConnecting).isGroup) ||
-                (state is CallRinging && (state as CallRinging).isGroup) ||
                 data['is_group'] == true ||
                 data['isGroup'] == true ||
                 _ongoingGroupCalls.containsKey(currentConvoId);
@@ -345,14 +351,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           final currentConvoId = (data['conversation_id'] ?? data['conversationId'] ?? _webRtcService.activeConversationId)?.toString() ?? '';
           final answerMap = data['answer'];
           if (answerSenderId.isNotEmpty && answerSenderId != mySelfId && (answerTargetUserId.isEmpty || answerTargetUserId == mySelfId) && answerMap is Map) {
-            if (state is CallRinging) {
-              debugPrint('CallWebRtcBloc: Received peer answer from $answerSenderId while in CallRinging. Ignoring.');
+            if (state is! CallActive && state is! CallConnecting) {
+              debugPrint('CallWebRtcBloc: Received peer answer from $answerSenderId while not in active call (state=$state). Ignoring.');
               return;
             }
 
             final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
                 (state is CallConnecting && (state as CallConnecting).isGroup) ||
-                (state is CallRinging && (state as CallRinging).isGroup) ||
                 data['is_group'] == true ||
                 data['isGroup'] == true ||
                 _ongoingGroupCalls.containsKey(currentConvoId);
@@ -369,7 +374,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           break;
         case 'ice_candidate':
         case 'ice_candidate_received':
-          add(HandleIceCandidateEvent(Map<String, dynamic>.from(data)));
+          if (state is CallActive || state is CallConnecting) {
+            add(HandleIceCandidateEvent(Map<String, dynamic>.from(data)));
+          }
           break;
         case 'call_hangup':
         case 'call_disconnected':
