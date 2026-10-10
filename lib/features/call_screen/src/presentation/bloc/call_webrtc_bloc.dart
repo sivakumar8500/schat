@@ -26,13 +26,17 @@ import 'call_webrtc_event.dart';
 import 'call_webrtc_state.dart';
 
 @lazySingleton
-class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
+class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with WidgetsBindingObserver {
   static const MethodChannel _pipChannel = MethodChannel('com.sdpi.schat/pip');
   static final ValueNotifier<bool> isCallScreenMountedNotifier = ValueNotifier<bool>(false);
   static bool get isCallScreenMounted => isCallScreenMountedNotifier.value;
   static set isCallScreenMounted(bool value) {
     if (isCallScreenMountedNotifier.value != value) {
-      isCallScreenMountedNotifier.value = value;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (isCallScreenMountedNotifier.value != value) {
+          isCallScreenMountedNotifier.value = value;
+        }
+      });
     }
   }
   final WebRtcService _webRtcService;
@@ -42,13 +46,33 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
   StreamSubscription? _notificationSubscription;
   StreamSubscription? _socketSubscription;
   StreamSubscription? _webRtcSignalSubscription;
+  StreamSubscription? _phoneCallEndedSubscription;
   Timer? _callTimeoutTimer;
   String? _activeCallMessageId;
   DateTime? _activeCallStart;
   final Map<String, OngoingGroupCall> _ongoingGroupCalls = {};
 
+  // Cached active/connecting call metadata to prevent state loss or 'Unknown' details
+  String _cachedConversationId = '';
+  String _cachedContactName = '';
+  String _cachedRecipientId = '';
+  bool _cachedIsVideo = false;
+  bool _cachedIsGroup = false;
+  String? _cachedGroupName;
+  String? _cachedProfilePictureUrl;
+  List<UserModel> _cachedExtraParticipants = [];
+  Map<String, dynamic>? _cachedIncomingEvent;
+
   DateTime? get activeCallStart => _activeCallStart;
   Map<String, OngoingGroupCall> get ongoingGroupCalls => Map.unmodifiable(_ongoingGroupCalls);
+  String get cachedContactName => _cachedContactName;
+  String get cachedConversationId => _cachedConversationId;
+  String get cachedRecipientId => _cachedRecipientId;
+  bool get cachedIsVideo => _cachedIsVideo;
+  bool get cachedIsGroup => _cachedIsGroup;
+  String? get cachedGroupName => _cachedGroupName;
+  String? get cachedProfilePictureUrl => _cachedProfilePictureUrl;
+  List<UserModel> get cachedExtraParticipants => List.unmodifiable(_cachedExtraParticipants);
 
   void dismissOngoingGroupCall(String conversationId) {
     _ongoingGroupCalls.remove(conversationId);
@@ -90,8 +114,18 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState appState) {
+    if (appState == AppLifecycleState.resumed && state is CallActive) {
+      debugPrint('CallWebRtcBloc: App resumed in CallActive - triggering ReacquireMediaEvent');
+      add(const ReacquireMediaEvent());
+    }
+  }
+
   CallWebRtcBloc(this._webRtcService, this._repository)
       : super(const CallIdle()) {
+    WidgetsBinding.instance.addObserver(this);
+
     on<InitiateCallEvent>(_onInitiateCall);
     on<AnswerCallEvent>(_onAnswerCall);
     on<HangUpCallEvent>(_onHangUp);
@@ -118,11 +152,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     on<AddParticipantsCallEvent>(_onAddParticipants);
     on<ReinviteParticipantCallEvent>(_onReinviteParticipant);
     on<HandleParticipantTimeoutEvent>(_onHandleParticipantTimeout);
+    on<ReacquireMediaEvent>(_onReacquireMedia);
     on<HandleCallErrorEvent>((event, emit) {
       _cancelCallTimeoutTimer();
       _cancelAllParticipantTimers();
       _activeCallStart = null;
       emit(CallError(event.error));
+    });
+
+    // Listen for phone call ended events to recover media tracks immediately
+    _phoneCallEndedSubscription = PhoneCallStateService.onPhoneCallEnded.listen((_) {
+      debugPrint('CallWebRtcBloc: Native phone call ended received');
+      if (state is CallActive) {
+        add(const ReacquireMediaEvent());
+      }
     });
 
     // Listen to PiP state changes from native platform
@@ -154,7 +197,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
 
     // Listen to socket messages for call signaling
-    _socketSubscription = _repository.onMessage.listen((data) {
+    _socketSubscription = _repository.onMessage.listen((data) async {
       if (data is! Map) return;
       final type = data['type'];
       final conversationId = data['conversation_id'] ?? data['conversationId'];
@@ -262,13 +305,23 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
             final isVideoCall = (state is CallActive && (state as CallActive).isVideo) ||
                 (state is CallConnecting && (state as CallConnecting).isVideo) ||
                 (state is CallRinging && (state as CallRinging).isVideo);
-            _webRtcService.handlePeerOffer(
-              peerId: offerSenderId,
-              conversationId: currentConvoId,
-              offerMap: Map<String, dynamic>.from(offerMap),
-              repository: _repository,
-              isVideo: isVideoCall,
-            );
+            if (_webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
+              await _webRtcService.handleOfferForActiveCall(
+                offerMap: Map<String, dynamic>.from(offerMap),
+                targetUserId: offerSenderId,
+                conversationId: currentConvoId,
+                repository: _repository,
+                isVideo: isVideoCall,
+              );
+            } else {
+              await _webRtcService.handlePeerOffer(
+                peerId: offerSenderId,
+                conversationId: currentConvoId,
+                offerMap: Map<String, dynamic>.from(offerMap),
+                repository: _repository,
+                isVideo: isVideoCall,
+              );
+            }
           }
           break;
         case 'call_answer':
@@ -278,10 +331,14 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           final mySelfId = getIt<StorageService>().getUserId()?.toString() ?? '';
           final answerMap = data['answer'];
           if (answerSenderId.isNotEmpty && answerSenderId != mySelfId && (answerTargetUserId.isEmpty || answerTargetUserId == mySelfId) && answerMap is Map) {
-            _webRtcService.handlePeerAnswer(
-              peerId: answerSenderId,
-              answerMap: Map<String, dynamic>.from(answerMap),
-            );
+            if (_webRtcService.peerConnection != null && _webRtcService.peerConnections.isEmpty) {
+              await _webRtcService.handleCallAnswered(Map<String, dynamic>.from(data), repository: _repository);
+            } else {
+              await _webRtcService.handlePeerAnswer(
+                peerId: answerSenderId,
+                answerMap: Map<String, dynamic>.from(answerMap),
+              );
+            }
           }
           break;
         case 'ice_candidate':
@@ -324,6 +381,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
           break;
         case 'call_switch_responded':
           add(HandleCallSwitchRespondedEvent(Map<String, dynamic>.from(data)));
+          break;
+        case 'call_media_restored':
+          debugPrint('CallWebRtcBloc: Remote peer restored media after interruption - synchronizing streams');
+          if (state is CallActive && _webRtcService.currentRemoteStream != null) {
+            _webRtcService.remoteRenderer.srcObject = _webRtcService.currentRemoteStream;
+          }
           break;
         case 'error':
           final errorMsg = data['message']?.toString();
@@ -528,6 +591,15 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         return;
       }
       
+      _cachedConversationId = event.conversationId;
+      _cachedContactName = event.contactName;
+      _cachedRecipientId = event.recipientId;
+      _cachedIsVideo = event.isVideo;
+      _cachedIsGroup = event.isGroup;
+      _cachedGroupName = event.groupName;
+      _cachedProfilePictureUrl = event.profilePictureUrl;
+      _cachedExtraParticipants = List.from(event.extraParticipants);
+
       if (event.isGroup) {
         _ongoingGroupCalls[event.conversationId] = OngoingGroupCall(
           conversationId: event.conversationId,
@@ -620,13 +692,30 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       // --- Safe offer decode -------------------------------------------
       final Map<String, dynamic> safeEvent =
           Map<String, dynamic>.from(event.incomingEvent);
+      
+      // If safeEvent doesn't have an offer, check if current state is CallRinging and merge
+      if ((safeEvent['offer'] == null || safeEvent['offer'] == '') && state is CallRinging) {
+        final ringingOffer = (state as CallRinging).incomingEvent['offer'] ?? (state as CallRinging).incomingEvent['sdp'];
+        if (ringingOffer != null) {
+          safeEvent['offer'] = ringingOffer;
+        }
+      }
+      if ((safeEvent['offer'] == null || safeEvent['offer'] == '') && _cachedIncomingEvent != null) {
+        final cachedOffer = _cachedIncomingEvent!['offer'] ?? _cachedIncomingEvent!['sdp'];
+        if (cachedOffer != null) {
+          safeEvent['offer'] = cachedOffer;
+        }
+      }
+
       final dynamic rawOffer = safeEvent['offer'];
       if (rawOffer is String && rawOffer.isNotEmpty) {
-        try {
-          safeEvent['offer'] = jsonDecode(rawOffer);
-        } catch (e) {
-          debugPrint('CallWebRtcBloc: Failed to decode offer JSON: $e');
-          safeEvent['offer'] = null;
+        final trimmed = rawOffer.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            safeEvent['offer'] = jsonDecode(trimmed);
+          } catch (e) {
+            debugPrint('CallWebRtcBloc: Failed to decode offer JSON: $e');
+          }
         }
       }
       // ----------------------------------------------------------------
@@ -647,7 +736,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       final isGroupVal = safeEvent['is_group'] ?? safeEvent['isGroup'];
       final bool isGroup = isGroupVal == true || isGroupVal == 1 || isGroupVal == 'true';
       final String? groupName = (safeEvent['group_name'] ?? safeEvent['groupName'])?.toString();
-      final convoId = safeEvent['conversation_id'] ?? safeEvent['conversationId'] ?? '';
+      final convoId = (safeEvent['conversation_id'] ?? safeEvent['conversationId'] ?? '').toString();
 
       final extraPartsFromState = state is CallRinging
           ? (state as CallRinging).extraParticipants
@@ -667,9 +756,21 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       if (callerId.isNotEmpty) {
         connectedSet.add(callerId);
       }
+      bool ringingSpeaker = isVideo;
       if (state is CallRinging) {
         connectedSet.addAll((state as CallRinging).connectedParticipantIds);
+        ringingSpeaker = (state as CallRinging).isSpeakerOn;
       }
+
+      // Cache all metadata
+      _cachedConversationId = convoId;
+      _cachedContactName = callerName;
+      _cachedRecipientId = recipientId;
+      _cachedIsVideo = isVideo;
+      _cachedIsGroup = isGroup;
+      _cachedGroupName = groupName;
+      _cachedProfilePictureUrl = profilePic;
+      _cachedExtraParticipants = List.from(extraParticipants);
 
       if (isGroup && convoId.isNotEmpty) {
         _ongoingGroupCalls[convoId] = OngoingGroupCall(
@@ -702,12 +803,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       );
       _soundService.stopAll();
 
-      bool speaker = isVideo;
-      if (state is CallRinging) {
-        speaker = (state as CallRinging).isSpeakerOn;
-      }
-
-      await _webRtcService.toggleSpeaker(speaker);
+      await _webRtcService.toggleSpeaker(ringingSpeaker);
 
       _activeCallStart = DateTime.now();
       emit(CallActive(
@@ -715,7 +811,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         contactName: callerName,
         recipientId: recipientId,
         isVideo: isVideo,
-        isSpeakerOn: speaker,
+        isSpeakerOn: ringingSpeaker,
         profilePictureUrl: profilePic,
         isGroup: isGroup,
         groupName: groupName,
@@ -889,16 +985,18 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
     final currentState = state;
     if (currentState is CallConnecting) {
-      debugPrint('CallWebRtcBloc: User is currently initiating an outgoing call. Replying busy to $senderId for $incomingConvoId');
-      _repository.emit('message', {
-        'type': 'call_response',
-        'conversation_id': incomingConvoId,
-        'recipient_id': senderId,
-        'response': 'busy',
-        'reason': 'busy',
-        'caller_name': getIt<StorageService>().getUsername(),
-      });
-      return;
+      if (currentState.conversationId.isNotEmpty && currentState.conversationId != incomingConvoId) {
+        debugPrint('CallWebRtcBloc: User is currently initiating an outgoing call. Replying busy to $senderId for $incomingConvoId');
+        _repository.emit('message', {
+          'type': 'call_response',
+          'conversation_id': incomingConvoId,
+          'recipient_id': senderId,
+          'response': 'busy',
+          'reason': 'busy',
+          'caller_name': getIt<StorageService>().getUsername(),
+        });
+        return;
+      }
     }
 
     // 1. Busy check: if user is already in an ongoing/connecting call from another chat or on a cellular call
@@ -907,6 +1005,14 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       currentConvoId = currentState.conversationId;
     } else if (currentState is CallConnecting) {
       currentConvoId = currentState.conversationId;
+    } else if (currentState is CallRinging) {
+      currentConvoId = (currentState.incomingEvent['conversation_id'] ?? currentState.incomingEvent['conversationId'] ?? '').toString();
+    }
+
+    // If we are ALREADY ringing for this same conversation, ignore duplicate event (FCM/socket duplicate)
+    if (currentState is CallRinging && currentConvoId.isNotEmpty && currentConvoId == incomingConvoId) {
+      debugPrint('CallWebRtcBloc: Already ringing for conversation $incomingConvoId, ignoring duplicate event');
+      return;
     }
 
     final bool isBusyInSchat = (currentState is CallActive &&
@@ -915,7 +1021,9 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         (currentState is CallConnecting &&
             currentConvoId.isNotEmpty &&
             currentConvoId != incomingConvoId) ||
-        (currentState is CallRinging);
+        (currentState is CallRinging &&
+            currentConvoId.isNotEmpty &&
+            currentConvoId != incomingConvoId);
 
     final bool isBusyInCellular = await PhoneCallStateService.isPhoneCallActive();
 
@@ -979,6 +1087,17 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       callerDetails: callerDetails,
     );
     final connectedSet = callerId.isNotEmpty ? {callerId} : <String>{};
+
+    // Cache metadata
+    _cachedConversationId = incomingConvoId;
+    _cachedContactName = callerName;
+    _cachedRecipientId = recipientId;
+    _cachedIsVideo = callType == 'video';
+    _cachedIsGroup = isGroup;
+    _cachedGroupName = groupName;
+    _cachedProfilePictureUrl = profilePic;
+    _cachedExtraParticipants = List.from(extraParts);
+    _cachedIncomingEvent = Map<String, dynamic>.from(event.incomingEvent);
 
     _soundService.playRingtone();
     emit(CallRinging(
@@ -1067,19 +1186,36 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     HandleCallAnsweredEvent event,
     Emitter<CallWebRtcState> emit,
   ) async {
-    final response = event.event['response'] as String?;
-    
+    final String type = (event.event['type'] ?? '').toString().toLowerCase();
+    final String response = (event.event['response'] ?? event.event['action'] ?? event.event['status'] ?? '').toString().toLowerCase();
+    final bool hasAnswer = event.event['answer'] != null || event.event['sdp'] != null;
+    final bool isAccept = response == 'accept' || response == 'accepted' || response == 'answer' || response == 'answered' || type == 'call_answered' || (response.isEmpty && hasAnswer);
+    final bool isReject = response == 'reject' || response == 'rejected' || response == 'decline' || response == 'declined' || response == 'cancel' || response == 'canceled';
+    final bool isBusy = response == 'busy';
+
+    debugPrint('CallWebRtcBloc: _onHandleCallAnswered triggered (type=$type, response=$response, isAccept=$isAccept, isReject=$isReject, isBusy=$isBusy)');
+
     // 1. Busy response handling
-    if (response == 'busy') {
+    if (isBusy) {
+      final convoId = (event.event['conversation_id'] ?? event.event['conversationId'])?.toString() ?? '';
+      if (_cachedConversationId.isNotEmpty && convoId.isNotEmpty && _cachedConversationId != convoId) {
+        debugPrint('CallWebRtcBloc: Ignoring busy response for different conversation $convoId');
+        return;
+      }
+      if (state is! CallConnecting && state is! CallRinging) {
+        debugPrint('CallWebRtcBloc: Ignoring busy response as we are not connecting/ringing');
+        return;
+      }
       _cancelCallTimeoutTimer();
       _soundService.stopAll();
-      final calleeName = event.event['caller_name'] ?? 'User';
-      emit(CallRejected(reason: '$calleeName is currently in another call'));
+      final calleeName = event.event['caller_name'] ?? _cachedContactName;
+      final displayName = calleeName.isNotEmpty && calleeName != 'Unknown' ? calleeName : 'User';
+      emit(CallRejected(reason: '$displayName is currently in another call'));
       return;
     }
 
     // 2. Reject response handling
-    if (response == 'reject') {
+    if (isReject) {
       final currentState = state;
       final senderId = (event.event['sender_id'] ?? event.event['senderId'] ?? event.event['participant_id'])?.toString() ?? '';
       if (currentState is CallActive && currentState.isGroup) {
@@ -1112,7 +1248,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
     }
 
     // 3. Accept response handling
-    if (response == 'accept') {
+    if (isAccept) {
       // If we are currently still in CallRinging (we haven't answered yet),
       // another member in the group answered. We must NOT dismiss our ringing window!
       if (state is CallRinging) {
@@ -1121,62 +1257,86 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
       }
 
       _cancelCallTimeoutTimer();
-      await _webRtcService.handleCallAnswered(event.event);
+      await _webRtcService.handleCallAnswered(event.event, repository: _repository);
       _soundService.stopAll();
 
       final currentState = state;
-      String conversationId = '';
-      String contactName = '';
-      String recipientId = '';
-      bool isVideo = false;
+      String conversationId = _cachedConversationId.isNotEmpty ? _cachedConversationId : (_webRtcService.activeConversationId ?? '');
+      String contactName = _cachedContactName.isNotEmpty ? _cachedContactName : 'User';
+      String recipientId = _cachedRecipientId;
+      bool isVideo = _cachedIsVideo;
       bool isMinimized = false;
-      bool isGroup = false;
-      String? groupName;
-      List<UserModel> extraParticipants = [];
-      String? profilePic;
+      bool isGroup = _cachedIsGroup;
+      String? groupName = _cachedGroupName;
+      List<UserModel> extraParticipants = List.from(_cachedExtraParticipants);
+      String? profilePic = _cachedProfilePictureUrl;
 
       final connectedSet = <String>{};
       final disconnectedSet = <String>{};
       if (currentState is CallConnecting) {
-        conversationId = currentState.conversationId;
-        contactName = currentState.contactName;
-        recipientId = currentState.recipientId;
+        if (currentState.conversationId.isNotEmpty) conversationId = currentState.conversationId;
+        if (currentState.contactName.isNotEmpty && currentState.contactName != 'Unknown') contactName = currentState.contactName;
+        if (currentState.recipientId.isNotEmpty) recipientId = currentState.recipientId;
         isVideo = currentState.isVideo;
         isMinimized = currentState.isMinimized;
-        profilePic = currentState.profilePictureUrl;
+        profilePic = currentState.profilePictureUrl ?? profilePic;
         isGroup = currentState.isGroup;
-        groupName = currentState.groupName;
-        extraParticipants = currentState.extraParticipants;
+        groupName = currentState.groupName ?? groupName;
+        if (currentState.extraParticipants.isNotEmpty) extraParticipants = currentState.extraParticipants;
         connectedSet.addAll(currentState.connectedParticipantIds);
         disconnectedSet.addAll(currentState.disconnectedParticipantIds);
       } else if (currentState is CallActive) {
-        conversationId = currentState.conversationId;
-        contactName = currentState.contactName;
-        recipientId = currentState.recipientId;
+        if (currentState.conversationId.isNotEmpty) conversationId = currentState.conversationId;
+        if (currentState.contactName.isNotEmpty && currentState.contactName != 'Unknown') contactName = currentState.contactName;
+        if (currentState.recipientId.isNotEmpty) recipientId = currentState.recipientId;
         isVideo = currentState.isVideo;
         isMinimized = currentState.isMinimized;
-        profilePic = currentState.profilePictureUrl;
+        profilePic = currentState.profilePictureUrl ?? profilePic;
         isGroup = currentState.isGroup;
-        groupName = currentState.groupName;
-        extraParticipants = currentState.extraParticipants;
+        groupName = currentState.groupName ?? groupName;
+        if (currentState.extraParticipants.isNotEmpty) extraParticipants = currentState.extraParticipants;
         connectedSet.addAll(currentState.connectedParticipantIds);
         disconnectedSet.addAll(currentState.disconnectedParticipantIds);
       } else {
-        conversationId = _webRtcService.activeConversationId ?? '';
-        contactName = event.event['caller_name'] ?? 'Unknown';
-        recipientId = event.event['recipient_id'] ?? '';
-        isVideo = event.event['call_type'] == 'video';
-        isGroup = event.event['is_group'] == true || event.event['isGroup'] == true;
-        groupName = (event.event['group_name'] ?? event.event['groupName'])?.toString();
+        if (event.event['conversation_id'] != null) {
+          conversationId = event.event['conversation_id'].toString();
+        }
+        final eventCallerName = event.event['caller_name'] ?? event.event['callerName'];
+        if (eventCallerName != null && eventCallerName.toString().isNotEmpty && eventCallerName.toString() != 'Unknown') {
+          contactName = eventCallerName.toString();
+        }
+        final eventRecipientId = event.event['recipient_id'] ?? event.event['recipientId'];
+        if (eventRecipientId != null && eventRecipientId.toString().isNotEmpty) {
+          recipientId = eventRecipientId.toString();
+        }
+        if (event.event['call_type'] != null || event.event['callType'] != null) {
+          isVideo = (event.event['call_type'] ?? event.event['callType']) == 'video';
+        }
+        if (event.event['is_group'] != null || event.event['isGroup'] != null) {
+          isGroup = event.event['is_group'] == true || event.event['isGroup'] == true;
+        }
+        final gName = (event.event['group_name'] ?? event.event['groupName'])?.toString();
+        if (gName != null && gName.isNotEmpty) {
+          groupName = gName;
+        }
         final callerDetails = event.event['caller_details'] ?? event.event['callerDetails'];
         if (callerDetails is Map) {
-          profilePic = callerDetails['profile_picture_url'] ??
-              callerDetails['profilePictureUrl'];
+          profilePic = callerDetails['profile_picture_url'] ?? callerDetails['profilePictureUrl'] ?? profilePic;
         }
         profilePic ??= event.event['caller_profile_picture_url'] ??
             event.event['profile_picture_url'] ??
             event.event['profilePictureUrl'];
       }
+
+      // Update cached values
+      _cachedConversationId = conversationId;
+      _cachedContactName = contactName;
+      _cachedRecipientId = recipientId;
+      _cachedIsVideo = isVideo;
+      _cachedIsGroup = isGroup;
+      _cachedGroupName = groupName;
+      _cachedProfilePictureUrl = profilePic;
+      _cachedExtraParticipants = List.from(extraParticipants);
       
       final senderId = (event.event['sender_id'] ?? event.event['senderId'] ?? event.event['participant_id'] ?? recipientId)?.toString() ?? '';
       if (senderId.isNotEmpty) {
@@ -1246,7 +1406,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
     if (event.event['answer'] != null) {
       try {
-        await _webRtcService.handleCallAnswered(event.event);
+        await _webRtcService.handleCallAnswered(event.event, repository: _repository);
       } catch (e) {
         debugPrint('CallWebRtcBloc: Error handling WebRTC answer in participant joined: $e');
       }
@@ -1747,6 +1907,8 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
 
   @override
   Future<void> close() {
+    WidgetsBinding.instance.removeObserver(this);
+    _phoneCallEndedSubscription?.cancel();
     _callTimeoutTimer?.cancel();
     _cancelAllParticipantTimers();
     _notificationSubscription?.cancel();
@@ -1994,6 +2156,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> {
         'offer': ?offerData,
       });
     }
+  }
+
+  Future<void> _onReacquireMedia(
+    ReacquireMediaEvent event,
+    Emitter<CallWebRtcState> emit,
+  ) async {
+    if (state is! CallActive) return;
+    final active = state as CallActive;
+    debugPrint('CallWebRtcBloc: Executing _onReacquireMedia for conversation ${active.conversationId}');
+    await _webRtcService.reacquireMediaAfterInterruption(
+      isVideo: active.isVideo,
+      repository: _repository,
+      isSpeakerOn: active.isSpeakerOn,
+    );
   }
 }
 

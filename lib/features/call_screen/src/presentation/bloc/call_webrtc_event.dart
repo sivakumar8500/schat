@@ -186,3 +186,8 @@ class HandleParticipantTimeoutEvent extends CallWebRtcEvent {
   final String userId;
   const HandleParticipantTimeoutEvent(this.userId);
 }
+
+/// Dispatched when returning from a phone call interruption or app resume to reacquire mic/camera and restore media transmission
+class ReacquireMediaEvent extends CallWebRtcEvent {
+  const ReacquireMediaEvent();
+}

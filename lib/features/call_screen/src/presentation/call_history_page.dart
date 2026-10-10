@@ -1227,13 +1227,21 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
     final bloc = context.read<CallWebRtcBloc>();
     bloc.add(const SetCallMinimizedEvent(false));
     final isVideo = state is CallActive ? state.isVideo : (state as CallConnecting).isVideo;
-    final conversationId = state is CallActive ? state.conversationId : (state as CallConnecting).conversationId;
-    final contactName = state is CallActive ? state.contactName : (state as CallConnecting).contactName;
-    final recipientId = state is CallActive ? state.recipientId : (state as CallConnecting).recipientId;
-    final profilePictureUrl = state is CallActive ? state.profilePictureUrl : (state as CallConnecting).profilePictureUrl;
+    String conversationId = state is CallActive ? state.conversationId : (state as CallConnecting).conversationId;
+    if (conversationId.isEmpty) conversationId = bloc.cachedConversationId;
+    String contactName = state is CallActive ? state.contactName : (state as CallConnecting).contactName;
+    if (contactName.isEmpty || contactName.toLowerCase() == 'unknown' || contactName.toLowerCase() == 'unknown user') {
+      contactName = bloc.cachedContactName;
+    }
+    String recipientId = state is CallActive ? state.recipientId : (state as CallConnecting).recipientId;
+    if (recipientId.isEmpty) recipientId = bloc.cachedRecipientId;
+    String? profilePictureUrl = state is CallActive ? state.profilePictureUrl : (state as CallConnecting).profilePictureUrl;
+    if (profilePictureUrl == null || profilePictureUrl.isEmpty) profilePictureUrl = bloc.cachedProfilePictureUrl;
     final isGroup = state is CallActive ? state.isGroup : (state as CallConnecting).isGroup;
-    final groupName = state is CallActive ? state.groupName : (state as CallConnecting).groupName;
-    final extraParticipants = state is CallActive ? state.extraParticipants : (state as CallConnecting).extraParticipants;
+    String? groupName = state is CallActive ? state.groupName : (state as CallConnecting).groupName;
+    if (groupName == null || groupName.isEmpty) groupName = bloc.cachedGroupName;
+    List<UserModel> extraParticipants = state is CallActive ? state.extraParticipants : (state as CallConnecting).extraParticipants;
+    if (extraParticipants.isEmpty) extraParticipants = bloc.cachedExtraParticipants;
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -1270,22 +1278,32 @@ class _CallHistoryPageContentState extends State<_CallHistoryPageContent> {
   }
 
   Widget _buildCurrentActiveCallCard(BuildContext context, CallWebRtcState state) {
+    final bloc = getIt<CallWebRtcBloc>();
     final bool isConnecting = state is CallConnecting;
     final bool isVideo = state is CallActive
         ? state.isVideo
         : (state as CallConnecting).isVideo;
-    final String contactName = state is CallActive
+    String contactName = state is CallActive
         ? state.contactName
         : (state as CallConnecting).contactName;
-    final String? profilePictureUrl = state is CallActive
+    if (contactName.isEmpty || contactName.toLowerCase() == 'unknown' || contactName.toLowerCase() == 'unknown user') {
+      contactName = bloc.cachedContactName;
+    }
+    String? profilePictureUrl = state is CallActive
         ? state.profilePictureUrl
         : (state as CallConnecting).profilePictureUrl;
+    if (profilePictureUrl == null || profilePictureUrl.isEmpty) {
+      profilePictureUrl = bloc.cachedProfilePictureUrl;
+    }
     final bool isGroup = state is CallActive
         ? state.isGroup
         : (state as CallConnecting).isGroup;
-    final String? groupName = state is CallActive
+    String? groupName = state is CallActive
         ? state.groupName
         : (state as CallConnecting).groupName;
+    if (groupName == null || groupName.isEmpty) {
+      groupName = bloc.cachedGroupName;
+    }
     final displayName = (isGroup && groupName != null && groupName.isNotEmpty)
         ? groupName
         : (contactName.isNotEmpty ? contactName : 'Call');

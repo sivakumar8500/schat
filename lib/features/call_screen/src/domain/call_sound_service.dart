@@ -31,7 +31,7 @@ class CallSoundService {
           audioMode: AndroidAudioMode.ringtone,
         ),
         iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.ambient,
+          category: AVAudioSessionCategory.playback,
           options: const {
             AVAudioSessionOptions.mixWithOthers,
           },
@@ -49,22 +49,22 @@ class CallSoundService {
           audioMode: AndroidAudioMode.normal,
         ),
         iOS: AudioContextIOS(
-          category: AVAudioSessionCategory.ambient,
+          category: AVAudioSessionCategory.playback,
           options: const {
             AVAudioSessionOptions.mixWithOthers,
           },
         ),
       );
 
-      // Back ring (outgoing call ringing): In-communication stream
+      // Back ring (outgoing call ringing): Loudspeaker media stream
       final backRingContext = AudioContext(
         android: const AudioContextAndroid(
-          isSpeakerphoneOn: false,
+          isSpeakerphoneOn: true,
           stayAwake: true,
-          contentType: AndroidContentType.sonification,
-          usageType: AndroidUsageType.voiceCommunication,
-          audioFocus: AndroidAudioFocus.gainTransient,
-          audioMode: AndroidAudioMode.inCommunication,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioMode: AndroidAudioMode.normal,
         ),
         iOS: AudioContextIOS(
           category: AVAudioSessionCategory.playback,

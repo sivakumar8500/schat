@@ -256,6 +256,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         decodedData = convertJsObject(rawData);
       }
       
+      _lastPongReceived = DateTime.now();
       _logEvent('inbound', decodedData is Map<String, dynamic> 
           ? decodedData 
           : {'raw': rawData.toString(), 'decoded': decodedData});
@@ -333,10 +334,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
   void _startHeartbeat() {
     _lastPongReceived = DateTime.now();
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (_lastPongReceived != null &&
-          DateTime.now().difference(_lastPongReceived!) > const Duration(seconds: 15)) {
-        debugPrint('DEBUG: WebSocket heartbeat timeout (no pong received). Reconnecting...');
+          DateTime.now().difference(_lastPongReceived!) > const Duration(seconds: 45)) {
+        debugPrint('DEBUG: WebSocket heartbeat timeout (no activity received in 45s). Reconnecting...');
         _handleConnectionError('Heartbeat timeout');
         return;
       }

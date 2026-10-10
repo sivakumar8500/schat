@@ -31,6 +31,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_b
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
+import 'package:schat/core/services/phone_call_state_service.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -97,6 +98,9 @@ Future<void> main() async {
 
     // Initialize ScreenProtectionService
     await getIt<ScreenProtectionService>().initialize();
+
+    // Initialize PhoneCallStateService
+    PhoneCallStateService.initialize();
 
     runApp(const MyApp());
   } catch (e, stackTrace) {

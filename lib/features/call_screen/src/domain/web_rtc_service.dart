@@ -46,6 +46,11 @@ class WebRtcService {
   Stream<MediaStream?> get localStream => _localStreamController.stream;
   Stream<MediaStream?> get remoteStream => _remoteStreamController.stream;
   Stream<CallSignalState> get callSignalState => _callSignalController.stream;
+  MediaStream? get currentLocalStream => _localStream;
+  MediaStream? get currentRemoteStream => _remoteStream;
+
+  RTCPeerConnection? get peerConnection => _peerConnection;
+  Map<String, RTCPeerConnection> get peerConnections => _peerConnections;
 
   String? get activeConversationId => _activeConversationId;
 
@@ -248,15 +253,39 @@ class WebRtcService {
     final messageId = incomingEvent['message_id'] ?? incomingEvent['messageId'];
     final callType = (incomingEvent['call_type'] ?? incomingEvent['callType']) as String? ?? 'audio';
     
-    dynamic rawOffer = incomingEvent['offer'];
+    dynamic rawOffer = incomingEvent['offer'] ?? incomingEvent['sdp'] ?? incomingEvent['offer_sdp'] ?? incomingEvent['offerSdp'];
+    if (rawOffer == null && incomingEvent['data'] is Map) {
+      rawOffer = incomingEvent['data']['offer'] ?? incomingEvent['data']['sdp'] ?? incomingEvent['data']['offer_sdp'];
+    }
+    
     Map<String, dynamic>? offerMap;
+    String? offerSdp;
     if (rawOffer is Map) {
       offerMap = Map<String, dynamic>.from(rawOffer);
-    } else if (rawOffer is String && rawOffer.isNotEmpty) {
-      try {
-        offerMap = jsonDecode(rawOffer) as Map<String, dynamic>?;
-      } catch (e) {
-        debugPrint('WebRTC: Error decoding offer string: $e');
+      if (offerMap['offer'] is Map) {
+        offerSdp = (offerMap['offer']['sdp'] ?? offerMap['offer']['description'])?.toString();
+      } else if (offerMap['offer'] is String) {
+        offerSdp = offerMap['offer'].toString();
+      }
+      offerSdp ??= (offerMap['sdp'] ?? offerMap['description'] ?? offerMap['offer_sdp'])?.toString();
+    } else if (rawOffer is String && rawOffer.trim().isNotEmpty) {
+      final trimmed = rawOffer.trim();
+      if (trimmed.startsWith('{')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is Map) {
+            offerMap = Map<String, dynamic>.from(decoded);
+            if (offerMap['offer'] is Map) {
+              offerSdp = (offerMap['offer']['sdp'] ?? offerMap['offer']['description'])?.toString();
+            }
+            offerSdp ??= (offerMap['sdp'] ?? offerMap['description'])?.toString();
+          }
+        } catch (e) {
+          debugPrint('WebRTC: Error decoding offer string: $e');
+        }
+      }
+      if (offerSdp == null && (trimmed.startsWith('v=') || trimmed.contains('v=0') || trimmed.contains('m=audio') || trimmed.contains('m=video'))) {
+        offerSdp = trimmed;
       }
     }
 
@@ -294,9 +323,9 @@ class WebRtcService {
     _setupConnectionCallbacks(repository);
 
     Map<String, dynamic>? answerData;
-    if (offerMap != null && offerMap['sdp'] != null && (offerMap['sdp'] as String).isNotEmpty) {
+    if (offerSdp != null && offerSdp.isNotEmpty) {
       // 3. Set remote description (the caller's SDP offer)
-      final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type'] ?? 'offer');
+      final remoteOffer = RTCSessionDescription(offerSdp, 'offer');
       await _peerConnection!.setRemoteDescription(remoteOffer);
       await _processRemoteCandidateQueue();
 
@@ -304,33 +333,45 @@ class WebRtcService {
       final answer = await _peerConnection!.createAnswer(offerConstraints);
       await _peerConnection!.setLocalDescription(answer);
       answerData = {
-        'type': answer.type,
+        'type': 'answer',
         'sdp': answer.sdp,
       };
     } else {
-      // Fallback: If no remote offer was provided, generate local offer/description
-      final offer = await _peerConnection!.createOffer(offerConstraints);
-      await _peerConnection!.setLocalDescription(offer);
-      answerData = {
-        'type': offer.type,
-        'sdp': offer.sdp,
-      };
+      debugPrint('WebRTC: Answering call without initial offer SDP. Leaving peerConnection in stable state to receive call_offer.');
+      answerData = null;
     }
 
     final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+    final targetId = (incomingEvent['sender_id'] ??
+            incomingEvent['senderId'] ??
+            incomingEvent['caller_id'] ??
+            incomingEvent['callerId'] ??
+            incomingEvent['user_id'] ??
+            incomingEvent['userId'])
+        ?.toString();
 
-    // 5. Send call_response with accept over WebSocket
-    repository.emit('message', {
+    final responsePayload = {
       'type': 'call_response',
       'conversation_id': conversationId,
       'message_id': messageId,
       'sender_id': myId,
       'senderId': myId,
+      'recipient_id': targetId,
+      'recipientId': targetId,
+      'target_user_id': targetId,
+      'receiver_id': targetId,
       'response': 'accept',
       'answer': answerData,
+    };
+
+    // 5. Send call_response and call_answered with accept over WebSocket
+    repository.emit('message', responsePayload);
+    repository.emit('message', {
+      ...responsePayload,
+      'type': 'call_answered',
     });
 
-    debugPrint('WebRTC: call_response (accept) sent for conv=$conversationId from $myId');
+    debugPrint('WebRTC: call_response & call_answered (accept) sent for conv=$conversationId from $myId to $targetId');
   }
 
   // ─────────────────────────────────────────────
@@ -362,9 +403,9 @@ class WebRtcService {
   // HANDLE CALL ANSWERED (Caller side receives SDP answer)
   // ─────────────────────────────────────────────
 
-  Future<void> handleCallAnswered(Map<String, dynamic> event) async {
-    final response = event['response'] as String?;
-    if (response == 'reject' || response == 'busy') {
+  Future<void> handleCallAnswered(Map<String, dynamic> event, {ChatSocketRepository? repository}) async {
+    final response = (event['response'] ?? event['action'] ?? '').toString().toLowerCase();
+    if (response == 'reject' || response == 'rejected' || response == 'busy') {
       _callSignalController.add(
         response == 'busy' ? CallSignalState.busy : CallSignalState.rejected,
       );
@@ -372,14 +413,130 @@ class WebRtcService {
       return;
     }
 
-    final answerMap = event['answer'] as Map<String, dynamic>?;
-    if (answerMap == null || _peerConnection == null) return;
+    dynamic answerRaw = event['answer'] ?? event['sdp'] ?? event['answer_sdp'] ?? event['answerSdp'];
+    if (answerRaw == null && event['data'] is Map) {
+      answerRaw = event['data']['answer'] ?? event['data']['sdp'] ?? event['data']['answer_sdp'];
+    }
 
-    final remoteAnswer = RTCSessionDescription(answerMap['sdp'], answerMap['type']);
-    await _peerConnection!.setRemoteDescription(remoteAnswer);
-    await _processRemoteCandidateQueue();
-    _callSignalController.add(CallSignalState.active);
-    debugPrint('WebRTC: Remote answer set — call is ACTIVE');
+    Map<String, dynamic>? answerMap;
+    String? sdp;
+    if (answerRaw is Map) {
+      answerMap = Map<String, dynamic>.from(answerRaw);
+      if (answerMap['answer'] is Map) {
+        sdp = (answerMap['answer']['sdp'] ?? answerMap['answer']['description'])?.toString();
+      } else if (answerMap['answer'] is String) {
+        sdp = answerMap['answer'].toString();
+      }
+      sdp ??= (answerMap['sdp'] ?? answerMap['description'] ?? answerMap['answer_sdp'])?.toString();
+    } else if (answerRaw is String && answerRaw.trim().isNotEmpty) {
+      final trimmed = answerRaw.trim();
+      if (trimmed.startsWith('{')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is Map) {
+            if (decoded['answer'] is Map) {
+              sdp = (decoded['answer']['sdp'] ?? decoded['answer']['description'])?.toString();
+            }
+            sdp ??= (decoded['sdp'] ?? decoded['description'] ?? decoded['answer_sdp'])?.toString();
+          }
+        } catch (_) {}
+      }
+      if (sdp == null && (trimmed.startsWith('v=') || trimmed.contains('v=0') || trimmed.contains('m=audio') || trimmed.contains('m=video'))) {
+        sdp = trimmed;
+      }
+    }
+
+    if (sdp == null || sdp.isEmpty || _peerConnection == null) {
+      debugPrint('WebRTC: handleCallAnswered: callee accepted without SDP answer. Sending call_offer to callee.');
+      final currentOffer = await _peerConnection?.getLocalDescription();
+      final targetId = (event['sender_id'] ?? event['senderId'] ?? event['from'] ?? event['user_id'])?.toString() ?? '';
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+      final conversationId = (event['conversation_id'] ?? event['conversationId'] ?? _activeConversationId)?.toString() ?? '';
+      if (currentOffer != null && currentOffer.sdp != null && targetId.isNotEmpty) {
+        final repo = repository ?? getIt<ChatSocketRepository>();
+        repo.emit('message', {
+          'type': 'call_offer',
+          'conversation_id': conversationId,
+          'target_user_id': targetId,
+          'recipient_id': targetId,
+          'sender_id': myId,
+          'senderId': myId,
+          'from': myId,
+          'offer': {
+            'type': 'offer',
+            'sdp': currentOffer.sdp,
+          },
+        });
+        debugPrint('WebRTC: Re-sent call_offer to callee $targetId for conv=$conversationId');
+      }
+      return;
+    }
+
+    try {
+      // Caller is receiving the answer from callee; remote description MUST always be set as 'answer'
+      final remoteAnswer = RTCSessionDescription(sdp, 'answer');
+      await _peerConnection!.setRemoteDescription(remoteAnswer);
+      await _processRemoteCandidateQueue();
+      _callSignalController.add(CallSignalState.active);
+      debugPrint('WebRTC: Remote answer set successfully — call is ACTIVE');
+    } catch (e, st) {
+      debugPrint('WebRTC: Error setting remote description in handleCallAnswered: $e\n$st');
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // HANDLE OFFER FOR ACTIVE 1-TO-1 CALL
+  // ─────────────────────────────────────────────
+
+  Future<void> handleOfferForActiveCall({
+    required Map<String, dynamic> offerMap,
+    required String targetUserId,
+    required String conversationId,
+    required ChatSocketRepository repository,
+    bool isVideo = false,
+  }) async {
+    try {
+      dynamic rawOffer = offerMap['offer'] ?? offerMap['sdp'] ?? offerMap['description'] ?? offerMap;
+      String? offerSdp;
+      if (rawOffer is Map) {
+        offerSdp = (rawOffer['sdp'] ?? rawOffer['description'])?.toString();
+      } else if (rawOffer is String) {
+        offerSdp = rawOffer;
+      }
+
+      if (offerSdp == null || offerSdp.isEmpty || _peerConnection == null) {
+        debugPrint('WebRTC: handleOfferForActiveCall aborted: offerSdp=$offerSdp, pc=$_peerConnection');
+        return;
+      }
+
+      debugPrint('WebRTC: handleOfferForActiveCall: Setting remote offer description from $targetUserId');
+      final offerConstraints = _getOfferConstraints(isVideo: isVideo);
+      final remoteOffer = RTCSessionDescription(offerSdp, 'offer');
+      await _peerConnection!.setRemoteDescription(remoteOffer);
+      await _processRemoteCandidateQueue();
+
+      final answer = await _peerConnection!.createAnswer(offerConstraints);
+      await _peerConnection!.setLocalDescription(answer);
+
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
+      repository.emit('message', {
+        'type': 'call_answer',
+        'conversation_id': conversationId,
+        'sender_id': myId,
+        'senderId': myId,
+        'from': myId,
+        'recipient_id': targetUserId,
+        'target_user_id': targetUserId,
+        'answer': {
+          'type': 'answer',
+          'sdp': answer.sdp,
+        },
+      });
+      _callSignalController.add(CallSignalState.active);
+      debugPrint('WebRTC: Answered active 1-to-1 call with call_answer to $targetUserId');
+    } catch (e, st) {
+      debugPrint('WebRTC: Error in handleOfferForActiveCall: $e\n$st');
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -406,7 +563,8 @@ class WebRtcService {
         _peerConnections.remove(peerId);
       }
 
-      final pc = await createPeerConnection(_peerConfig, _offerConstraints);
+      final offerConstraints = _getOfferConstraints(isVideo: isVideo);
+      final pc = await createPeerConnection(_peerConfig, offerConstraints);
       _peerConnections[peerId] = pc;
       
       _localStream?.getTracks().forEach((track) {
@@ -478,7 +636,7 @@ class WebRtcService {
         _callSignalController.add(CallSignalState.active);
       };
 
-      final offer = await pc.createOffer(_offerConstraints);
+      final offer = await pc.createOffer(offerConstraints);
       await pc.setLocalDescription(offer);
 
       repository.emit('message', {
@@ -491,7 +649,7 @@ class WebRtcService {
         'from': myId,
         'user_id': myId,
         'offer': {
-          'type': offer.type,
+          'type': 'offer',
           'sdp': offer.sdp,
         },
       });
@@ -521,7 +679,8 @@ class WebRtcService {
         _peerConnections.remove(peerId);
       }
 
-      final pc = await createPeerConnection(_peerConfig, _offerConstraints);
+      final offerConstraints = _getOfferConstraints(isVideo: isVideo);
+      final pc = await createPeerConnection(_peerConfig, offerConstraints);
       _peerConnections[peerId] = pc;
 
       _localStream?.getTracks().forEach((track) {
@@ -593,8 +752,11 @@ class WebRtcService {
         _callSignalController.add(CallSignalState.active);
       };
 
-      final remoteOffer = RTCSessionDescription(offerMap['sdp'], offerMap['type'] ?? 'offer');
-      await pc.setRemoteDescription(remoteOffer);
+      final offerSdp = (offerMap['sdp'] ?? offerMap['description'])?.toString() ?? '';
+      if (offerSdp.isNotEmpty) {
+        final remoteOffer = RTCSessionDescription(offerSdp, 'offer');
+        await pc.setRemoteDescription(remoteOffer);
+      }
 
       // Process any queued candidates for this peer
       final queued = _peerCandidateQueues[peerId];
@@ -609,7 +771,7 @@ class WebRtcService {
         _peerCandidateQueues.remove(peerId);
       }
 
-      final answer = await pc.createAnswer(_offerConstraints);
+      final answer = await pc.createAnswer(offerConstraints);
       await pc.setLocalDescription(answer);
 
       repository.emit('message', {
@@ -622,7 +784,7 @@ class WebRtcService {
         'from': myId,
         'user_id': myId,
         'answer': {
-          'type': answer.type,
+          'type': 'answer',
           'sdp': answer.sdp,
         },
       });
@@ -641,8 +803,11 @@ class WebRtcService {
       final pc = _peerConnections[peerId] ?? _peerConnection;
       if (pc == null) return;
 
-      final remoteAnswer = RTCSessionDescription(answerMap['sdp'], answerMap['type'] ?? 'answer');
-      await pc.setRemoteDescription(remoteAnswer);
+      final answerSdp = (answerMap['sdp'] ?? answerMap['description'])?.toString() ?? '';
+      if (answerSdp.isNotEmpty) {
+        final remoteAnswer = RTCSessionDescription(answerSdp, 'answer');
+        await pc.setRemoteDescription(remoteAnswer);
+      }
 
       final queued = _peerCandidateQueues[peerId];
       if (queued != null && queued.isNotEmpty) {
@@ -728,20 +893,53 @@ class WebRtcService {
     }
   }
 
-  Future<void> _processRemoteCandidateQueue() async {
-    if (_peerConnection == null || _remoteCandidateQueue.isEmpty) return;
-    debugPrint('WebRTC: Processing ${_remoteCandidateQueue.length} queued ICE candidates');
-    
-    final List<dynamic> candidates = List.from(_remoteCandidateQueue);
-    _remoteCandidateQueue.clear();
+  Future<void> _processRemoteCandidateQueue([String? peerId]) async {
+    if (_peerConnection == null) return;
 
-    for (var candidate in candidates) {
-      try {
-        await _peerConnection!.addCandidate(candidate);
-        debugPrint('WebRTC: Queued ICE candidate added successfully');
-      } catch (e) {
-        debugPrint('WebRTC: Error adding queued ICE candidate: $e');
-        _remoteCandidateQueue.add(candidate);
+    if (_remoteCandidateQueue.isNotEmpty) {
+      debugPrint('WebRTC: Processing ${_remoteCandidateQueue.length} queued ICE candidates on _peerConnection');
+      final List<dynamic> candidates = List.from(_remoteCandidateQueue);
+      _remoteCandidateQueue.clear();
+
+      for (var candidate in candidates) {
+        try {
+          await _peerConnection!.addCandidate(candidate);
+          debugPrint('WebRTC: Queued ICE candidate added successfully');
+        } catch (e) {
+          debugPrint('WebRTC: Error adding queued ICE candidate: $e');
+          _remoteCandidateQueue.add(candidate);
+        }
+      }
+    }
+
+    if (peerId != null && peerId.isNotEmpty && _peerCandidateQueues.containsKey(peerId)) {
+      final queued = _peerCandidateQueues.remove(peerId);
+      if (queued != null && queued.isNotEmpty) {
+        debugPrint('WebRTC: Processing ${queued.length} queued peer ICE candidates for $peerId on _peerConnection');
+        for (final candidate in queued) {
+          try {
+            await _peerConnection!.addCandidate(candidate);
+          } catch (e) {
+            debugPrint('WebRTC: Error adding queued peer ICE candidate: $e');
+            _peerCandidateQueues.putIfAbsent(peerId, () => []).add(candidate);
+          }
+        }
+      }
+    } else if (_peerCandidateQueues.isNotEmpty && _peerConnections.isEmpty) {
+      final keys = List<String>.from(_peerCandidateQueues.keys);
+      for (final key in keys) {
+        final queued = _peerCandidateQueues.remove(key);
+        if (queued != null && queued.isNotEmpty) {
+          debugPrint('WebRTC: Processing ${queued.length} queued ICE candidates from peer queue $key on _peerConnection');
+          for (final candidate in queued) {
+            try {
+              await _peerConnection!.addCandidate(candidate);
+            } catch (e) {
+              debugPrint('WebRTC: Error adding queued candidate: $e');
+              _peerCandidateQueues.putIfAbsent(key, () => []).add(candidate);
+            }
+          }
+        }
       }
     }
   }
@@ -1021,6 +1219,98 @@ class WebRtcService {
     }
   }
 
+  /// Restores audio and video tracks and sender pipeline after a cellular phone call or OS interruption
+  Future<void> reacquireMediaAfterInterruption({
+    required bool isVideo,
+    required ChatSocketRepository repository,
+    bool? isSpeakerOn,
+  }) async {
+    debugPrint('WebRTC: reacquireMediaAfterInterruption started (isVideo=$isVideo, isSpeakerOn=$isSpeakerOn)');
+    if (_peerConnection == null) {
+      debugPrint('WebRTC: Cannot reacquire media - peerConnection is null');
+      return;
+    }
+
+    try {
+      // 1. Cleanly stop old local stream and tracks
+      if (_localStream != null) {
+        for (var track in _localStream!.getTracks()) {
+          try {
+            track.stop();
+          } catch (_) {}
+        }
+        try {
+          await _localStream?.dispose();
+        } catch (_) {}
+        _localStream = null;
+      }
+
+      // 2. Re-acquire fresh getUserMedia
+      _localStream = await _getUserMedia(isVideo: isVideo);
+      localRenderer.srcObject = _localStream;
+      _localStreamController.add(_localStream);
+
+      // 3. Replace tracks on existing senders or re-add
+      final senders = await _peerConnection!.getSenders();
+      final audioTracks = _localStream!.getAudioTracks();
+      final videoTracks = _localStream!.getVideoTracks();
+
+      RTCRtpSender? audioSender;
+      RTCRtpSender? videoSender;
+
+      for (var sender in senders) {
+        if (sender.track?.kind == 'audio') {
+          audioSender = sender;
+        } else if (sender.track?.kind == 'video') {
+          videoSender = sender;
+        }
+      }
+
+      if (audioTracks.isNotEmpty) {
+        if (audioSender != null) {
+          debugPrint('WebRTC: Replacing audio track on existing sender');
+          await audioSender.replaceTrack(audioTracks.first);
+        } else {
+          debugPrint('WebRTC: Adding new audio track to peer connection');
+          await _peerConnection!.addTrack(audioTracks.first, _localStream!);
+        }
+      }
+
+      if (isVideo && videoTracks.isNotEmpty) {
+        if (videoSender != null) {
+          debugPrint('WebRTC: Replacing video track on existing sender');
+          await videoSender.replaceTrack(videoTracks.first);
+        } else {
+          debugPrint('WebRTC: Adding new video track to peer connection');
+          await _peerConnection!.addTrack(videoTracks.first, _localStream!);
+        }
+      }
+
+      // 4. Restore audio mode and speakerphone
+      final speaker = isSpeakerOn ?? isVideo;
+      await toggleSpeaker(speaker);
+
+      // 5. Trigger ICE restart to re-establish broken media transport
+      try {
+        await _peerConnection?.restartIce();
+      } catch (e) {
+        debugPrint('WebRTC: restartIce failed during reacquire: $e');
+      }
+
+      // 6. Broadcast socket event to other peer
+      if (_activeConversationId != null) {
+        repository.emit('message', {
+          'type': 'call_media_restored',
+          'conversation_id': _activeConversationId,
+        });
+      }
+
+      debugPrint('WebRTC: reacquireMediaAfterInterruption completed successfully');
+    } catch (e, st) {
+      debugPrint('WebRTC: Error in reacquireMediaAfterInterruption: $e\n$st');
+    }
+  }
+
   // ─────────────────────────────────────────────
   // CLEANUP
   // ─────────────────────────────────────────────
@@ -1120,7 +1410,12 @@ class WebRtcService {
 
   Future<MediaStream> _getUserMedia({required bool isVideo}) async {
     final constraints = <String, dynamic>{
-      'audio': true,
+      'audio': {
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+        'highpassFilter': true,
+      },
       'video': isVideo
           ? {
               'facingMode': 'user',
@@ -1142,7 +1437,11 @@ class WebRtcService {
         debugPrint('WebRTC: Retrying getUserMedia with standard video constraints...');
         try {
           final stream = await navigator.mediaDevices.getUserMedia({
-            'audio': true,
+            'audio': {
+              'echoCancellation': true,
+              'noiseSuppression': true,
+              'autoGainControl': true,
+            },
             'video': {
               'width': {'ideal': 640},
               'height': {'ideal': 480},
@@ -1181,6 +1480,7 @@ class WebRtcService {
 
   void _attachLocalTracks() {
     _localStream?.getTracks().forEach((track) {
+      track.enabled = true;
       _peerConnection?.addTrack(track, _localStream!);
     });
   }
@@ -1207,11 +1507,16 @@ class WebRtcService {
     };
 
     // Receive remote media track → render on remote renderer
-    _peerConnection?.onTrack = (RTCTrackEvent event) {
+    _peerConnection?.onTrack = (RTCTrackEvent event) async {
       debugPrint('WebRTC: onTrack event - kind: ${event.track.kind}, id: ${event.track.id}, streams: ${event.streams.length}');
       event.track.enabled = true;
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
+      } else {
+        if (_remoteStream == null) {
+          _remoteStream = await createLocalMediaStream('remote_stream_${DateTime.now().millisecondsSinceEpoch}');
+        }
+        _remoteStream?.addTrack(event.track);
       }
       if (_remoteStream != null) {
         remoteRenderer.srcObject = _remoteStream;

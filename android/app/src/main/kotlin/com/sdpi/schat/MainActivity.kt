@@ -34,6 +34,9 @@ class MainActivity : FlutterActivity() {
     private var fileObservers: MutableList<FileObserver> = mutableListOf()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastScreenshotTimestamp = 0L
+    private var wasPhoneCallActive = false
+    private var telephonyCallback: Any? = null
+    private var phoneStateListener: android.telephony.PhoneStateListener? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         if (isVoiceOrAssistantTrigger(intent)) {
@@ -207,36 +210,71 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        setupPhoneStateListener()
+    }
+
+    private fun setupPhoneStateListener() {
+        try {
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val callback = object : android.telephony.TelephonyCallback(), android.telephony.TelephonyCallback.CallStateListener {
+                    override fun onCallStateChanged(state: Int) {
+                        handleCallStateChange(state)
+                    }
+                }
+                telephonyCallback = callback
+                telephonyManager.registerTelephonyCallback(mainExecutor, callback)
+            } else {
+                @Suppress("DEPRECATION")
+                phoneStateListener = object : android.telephony.PhoneStateListener() {
+                    @Deprecated("Deprecated in Java")
+                    override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                        super.onCallStateChanged(state, phoneNumber)
+                        handleCallStateChange(state)
+                    }
+                }
+                @Suppress("DEPRECATION")
+                telephonyManager.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun handleCallStateChange(state: Int) {
+        val isActive = state == TelephonyManager.CALL_STATE_OFFHOOK || state == TelephonyManager.CALL_STATE_RINGING
+        if (isActive && !wasPhoneCallActive) {
+            wasPhoneCallActive = true
+            mainHandler.post {
+                phoneCallChannel?.invokeMethod("onPhoneCallStarted", null)
+            }
+        } else if (!isActive && wasPhoneCallActive) {
+            wasPhoneCallActive = false
+            mainHandler.post {
+                phoneCallChannel?.invokeMethod("onPhoneCallEnded", null)
+            }
+        }
     }
 
     private fun isSystemPhoneCallActive(): Boolean {
         try {
-            // 1. Check TelecomManager (Android 6.0+)
+            // Check TelecomManager & TelephonyManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
                 if (telecomManager != null && telecomManager.isInCall) {
                     return true
                 }
             }
-            // 2. Check TelephonyManager
             val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             if (telephonyManager != null) {
                 @Suppress("DEPRECATION")
                 val callState = telephonyManager.callState
-                if (callState != TelephonyManager.CALL_STATE_IDLE) {
-                    return true
-                }
-            }
-            // 3. Check AudioManager
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            if (audioManager != null) {
-                val mode = audioManager.mode
-                if (!isCallActive && (mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION || mode == AudioManager.MODE_RINGTONE)) {
+                if (callState == TelephonyManager.CALL_STATE_OFFHOOK || callState == TelephonyManager.CALL_STATE_RINGING) {
                     return true
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // ignore silently
         }
         return false
     }
@@ -430,6 +468,21 @@ class MainActivity : FlutterActivity() {
             }
         }
         fileObservers.clear()
+
+        try {
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            if (telephonyManager != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && telephonyCallback != null) {
+                    telephonyManager.unregisterTelephonyCallback(telephonyCallback as android.telephony.TelephonyCallback)
+                } else if (phoneStateListener != null) {
+                    @Suppress("DEPRECATION")
+                    telephonyManager.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_NONE)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         super.onDestroy()
     }
 }

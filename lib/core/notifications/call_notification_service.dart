@@ -452,20 +452,31 @@ class CallNotificationService {
       return;
     }
 
-    final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
-    final bool isSchatActive = getIt.isRegistered<CallWebRtcBloc>() &&
-        (getIt<CallWebRtcBloc>().state is CallActive ||
-         getIt<CallWebRtcBloc>().state is CallConnecting ||
-         getIt<CallWebRtcBloc>().state is CallRinging);
+    final String conversationId = (data['conversation_id'] ?? data['conversationId'] ?? '').toString();
+    final String senderId = (data['sender_id'] ?? data['senderId'] ?? data['caller_id'] ?? data['callerId'])?.toString() ?? '';
 
-    if (isPhoneActive || isSchatActive) {
-      debugPrint('CallNotificationService: Suppressing incoming call heads-up UI because user is currently in another call (phone: $isPhoneActive, schat: $isSchatActive)');
+    final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
+    bool isDifferentSchatCallActive = false;
+
+    if (getIt.isRegistered<CallWebRtcBloc>()) {
+      final currentState = getIt<CallWebRtcBloc>().state;
+      if (currentState is CallActive) {
+        if (conversationId.isNotEmpty && currentState.conversationId != conversationId) {
+          isDifferentSchatCallActive = true;
+        }
+      } else if (currentState is CallConnecting) {
+        if (conversationId.isNotEmpty && currentState.conversationId != conversationId) {
+          isDifferentSchatCallActive = true;
+        }
+      }
+    }
+
+    if (isPhoneActive || isDifferentSchatCallActive) {
+      debugPrint('CallNotificationService: Suppressing incoming call heads-up UI because user is currently in another call (phone: $isPhoneActive, diffSchat: $isDifferentSchatCallActive)');
       if (getIt.isRegistered<ChatSocketRepository>()) {
-        final convoId = (data['conversation_id'] ?? data['conversationId'])?.toString() ?? '';
-        final senderId = (data['sender_id'] ?? data['senderId'] ?? data['caller_id'] ?? data['callerId'])?.toString() ?? '';
         getIt<ChatSocketRepository>().emit('message', {
           'type': 'call_response',
-          'conversation_id': convoId,
+          'conversation_id': conversationId,
           'recipient_id': senderId,
           'response': 'busy',
           'reason': 'busy',
@@ -481,7 +492,6 @@ class CallNotificationService {
     final callerInfo = _extractCallerInfo(data);
     final String callerName = callerInfo.name;
     final String profilePicUrl = callerInfo.avatar;
-    final String conversationId = (data['conversation_id'] ?? data['conversationId'] ?? '').toString();
     final bool isVideo = data['call_type'] == 'video' || data['callType'] == 'video';
     final bool isGroup = data['is_group'] == true ||
         data['is_group'] == 'true' ||
@@ -493,8 +503,12 @@ class CallNotificationService {
         ? '$callerName started a group ${isVideo ? 'video' : 'voice'} call'
         : 'Incoming ${isVideo ? 'video' : 'voice'} call';
 
-    // FCM delivers all payload values as Strings — parse `offer` to a Map.
-    final dynamic offerParsed = _tryParseJson(data['offer']);
+    // FCM delivers all payload values as Strings — parse `offer` to a Map/SDP string safely.
+    dynamic rawOffer = data['offer'] ?? data['sdp'] ?? data['offer_sdp'] ?? data['offerSdp'];
+    if (rawOffer == null && data['data'] is Map) {
+      rawOffer = data['data']['offer'] ?? data['data']['sdp'];
+    }
+    final dynamic offerParsed = _tryParseJson(rawOffer);
 
     final Map<String, dynamic> extra = {
       ...data,
@@ -511,9 +525,7 @@ class CallNotificationService {
     };
 
     final isForeground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    // On Android, CallkitNotificationService natively presents the heads-up CallKit banner.
-    // Avoid double-showing local notifications when CallKit is active.
-    if (!isForeground && Platform.isIOS) {
+    if (!isForeground) {
       printCallLog(
         stage: 'DISPLAYING HEADS-UP CALL NOTIFICATION (BACKGROUND)',
         callerName: notificationTitle,
@@ -521,7 +533,7 @@ class CallNotificationService {
         conversationId: conversationId,
         availableButtons: ['Accept (Green Button)', 'Decline (Red Button)'],
         payload: extra,
-        note: 'Showing heads-up notification with Accept / Decline action buttons (iOS)',
+        note: 'Showing heads-up notification with Accept / Decline action buttons',
       );
       await _showLocalCallNotification(uuid, notificationTitle, callSubtitle, extra);
     }
@@ -560,6 +572,7 @@ class CallNotificationService {
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.call,
+        fullScreenIntent: true,
         playSound: true,
         enableVibration: true,
         ongoing: true,
@@ -783,7 +796,7 @@ class CallNotificationService {
 
       try {
         final instance = getIt<CallNotificationService>();
-        instance.dismissAllIncomingCalls();
+        instance.cancelNotificationBannerOnly();
         final normalised = instance._normaliseExtra(extra);
         final webrtcBloc = getIt<CallWebRtcBloc>();
         webrtcBloc.add(AnswerCallEvent(normalised));
@@ -840,22 +853,30 @@ class CallNotificationService {
     }
   }
 
-  /// Normalises extras from CallKit, ensuring `offer` is a [Map] not a JSON string.
+  /// Normalises extras from CallKit, ensuring `offer` is preserved as Map or String.
   Map<String, dynamic> _normaliseExtra(Map<String, dynamic> extra) {
+    dynamic rawOffer = extra['offer'] ?? extra['sdp'] ?? extra['offer_sdp'] ?? extra['offerSdp'];
+    if (rawOffer == null && extra['data'] is Map) {
+      rawOffer = extra['data']['offer'] ?? extra['data']['sdp'];
+    }
     return {
       ...extra,
-      'offer': _tryParseJson(extra['offer']),
+      'offer': _tryParseJson(rawOffer),
     };
   }
 
   /// If [value] is a JSON string, decode it to a [Map]/[List]; otherwise return as-is.
   static dynamic _tryParseJson(dynamic value) {
     if (value is String && value.isNotEmpty) {
-      try {
-        return jsonDecode(value);
-      } catch (_) {
-        return null;
+      final trimmed = value.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          return jsonDecode(trimmed);
+        } catch (_) {
+          return value;
+        }
       }
+      return value;
     }
     return value;
   }
@@ -959,7 +980,11 @@ class CallNotificationService {
           ? '$callerName started a group ${isVideo ? 'video' : 'voice'} call'
           : 'Incoming ${isVideo ? 'video' : 'voice'} call';
 
-      final dynamic offerParsed = _tryParseJson(data['offer']);
+      dynamic rawOffer = data['offer'] ?? data['sdp'] ?? data['offer_sdp'] ?? data['offerSdp'];
+      if (rawOffer == null && data['data'] is Map) {
+        rawOffer = data['data']['offer'] ?? data['data']['sdp'];
+      }
+      final dynamic offerParsed = _tryParseJson(rawOffer);
 
       final Map<String, dynamic> extra = {
         ...data,
@@ -982,11 +1007,7 @@ class CallNotificationService {
         note: 'CallKit handles native heads-up banner on Android without duplicate local notification',
       );
 
-      // On Android, CallkitNotificationService natively presents the heads-up CallKit banner.
-      // Avoid double-showing local notifications when CallKit is active.
-      if (Platform.isIOS) {
-        await _showLocalCallNotification(callUuid, notificationTitle, callSubtitle, extra);
-      }
+      await _showLocalCallNotification(callUuid, notificationTitle, callSubtitle, extra);
       return;
     }
 
