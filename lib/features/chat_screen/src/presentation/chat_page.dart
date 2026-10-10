@@ -5062,6 +5062,7 @@ class _ChatPageState extends State<ChatPage> {
       titleSpacing: 0,
       title: GestureDetector(
         onTap: () {
+          if (widget.isReadOnly) return;
           if (isGroup) {
             Navigator.push(
               context,
@@ -5341,11 +5342,12 @@ class _ChatPageState extends State<ChatPage> {
               }
             },
           ),
-        PopupMenuButton<String>(
-          icon: Icon(CommonIcons.moreVert),
-          color: context.colors.scaffoldBackground,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        if (!widget.isReadOnly)
+          PopupMenuButton<String>(
+            icon: Icon(CommonIcons.moreVert),
+            color: context.colors.scaffoldBackground,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (value) async {
             if (value == 'background_color') {
               _showBackgroundColorBottomSheet(context);
