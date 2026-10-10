@@ -374,7 +374,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           break;
         case 'ice_candidate':
         case 'ice_candidate_received':
-          if (state is CallActive || state is CallConnecting) {
+          if (state is CallActive || state is CallConnecting || state is CallRinging) {
             add(HandleIceCandidateEvent(Map<String, dynamic>.from(data)));
           }
           break;

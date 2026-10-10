@@ -32,6 +32,7 @@ class WebRtcService {
   final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
 
   String? _activeConversationId;
+  String? _activeRecipientId;
   bool _renderersInitialized = false;
   bool _isCleaningUp = false;
   bool _isSwitchingCamera = false;
@@ -148,6 +149,7 @@ class WebRtcService {
     String? groupName,
   }) async {
     _activeConversationId = conversationId;
+    _activeRecipientId = recipientId;
     await initRenderers();
     _callSignalController.add(CallSignalState.connecting);
 
@@ -349,6 +351,7 @@ class WebRtcService {
             incomingEvent['user_id'] ??
             incomingEvent['userId'])
         ?.toString();
+    _activeRecipientId = targetId;
 
     final responsePayload = {
       'type': 'call_response',
@@ -473,8 +476,12 @@ class WebRtcService {
     }
 
     try {
+      String cleanSdp = sdp;
+      if (cleanSdp.contains('a=setup:actpass')) {
+        cleanSdp = cleanSdp.replaceAll('a=setup:actpass', 'a=setup:active');
+      }
       // Caller is receiving the answer from callee; remote description MUST always be set as 'answer'
-      final remoteAnswer = RTCSessionDescription(sdp, 'answer');
+      final remoteAnswer = RTCSessionDescription(cleanSdp, 'answer');
       await _peerConnection!.setRemoteDescription(remoteAnswer);
       await _processRemoteCandidateQueue();
       _callSignalController.add(CallSignalState.active);
@@ -827,7 +834,10 @@ class WebRtcService {
       final pc = _peerConnections[peerId] ?? _peerConnection;
       if (pc == null) return;
 
-      final answerSdp = (answerMap['sdp'] ?? answerMap['description'])?.toString() ?? '';
+      String answerSdp = (answerMap['sdp'] ?? answerMap['description'])?.toString() ?? '';
+      if (answerSdp.contains('a=setup:actpass')) {
+        answerSdp = answerSdp.replaceAll('a=setup:actpass', 'a=setup:active');
+      }
       if (answerSdp.isNotEmpty) {
         final remoteAnswer = RTCSessionDescription(answerSdp, 'answer');
         await pc.setRemoteDescription(remoteAnswer);
@@ -1474,6 +1484,7 @@ class WebRtcService {
       _peerConnections.clear();
 
       _activeConversationId = null;
+      _activeRecipientId = null;
       _remoteCandidateQueue.clear();
       _peerCandidateQueues.clear();
 
@@ -1575,6 +1586,12 @@ class WebRtcService {
         repository.emit('message', {
           'type': 'ice_candidate',
           'conversation_id': _activeConversationId,
+          if (_activeRecipientId != null && _activeRecipientId!.isNotEmpty) ...{
+            'target_user_id': _activeRecipientId,
+            'targetUserId': _activeRecipientId,
+            'recipient_id': _activeRecipientId,
+            'recipientId': _activeRecipientId,
+          },
           'sender_id': myId,
           'senderId': myId,
           'from': myId,
