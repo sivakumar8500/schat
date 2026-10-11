@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 
@@ -124,7 +123,7 @@ class _MultiImageGalleryPageState extends State<MultiImageGalleryPage> {
               onPressed: _downloadCurrentImage,
               tooltip: 'Download',
             ),
-          if (currentMsg.allowShare || widget.isMe)
+          if (currentMsg.allowShare)
             IconButton(
               icon: const Icon(Icons.share_rounded, color: Colors.white),
               onPressed: () {

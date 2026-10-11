@@ -45,8 +45,10 @@
             android:resource="@mipmap/launcher_icon" />
         <activity
             android:name=".MainActivity"
+            android:label="S-CHAT"
+            android:icon="@mipmap/launcher_icon"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -73,43 +75,43 @@
 
             <!-- Intent filters for receiving shared content from other apps -->
             <!-- Receive Text / Links -->
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/*" />
             </intent-filter>
 
             <!-- Receive Images (Single and Multiple) -->
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
             </intent-filter>
 
             <!-- Receive Videos (Single and Multiple) -->
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="video/*" />
             </intent-filter>
 
             <!-- Receive General Files (Single and Multiple, includes documents/vcf contacts) -->
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:label="S-CHAT" android:icon="@mipmap/launcher_icon">
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />

@@ -72,6 +72,33 @@ class ScreenProtectionService {
     }
   }
 
+  /// Sets screen recording only mode on Android native layer so any screenshot
+  /// attempted during recording time is immediately restricted and deleted.
+  Future<void> setScreenRecordingMode(bool isRecording) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await _androidScreenshotChannel.invokeMethod('setScreenRecordingMode', {
+        'isRecording': isRecording,
+      });
+      debugPrint('ScreenProtection: setScreenRecordingMode($isRecording) applied');
+    } catch (e) {
+      debugPrint('ScreenProtection: Error setting screen recording mode: $e');
+    }
+  }
+
+  /// Calls Android native layer to delete any screenshot file captured.
+  Future<bool> deleteLastScreenshot() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _androidScreenshotChannel.invokeMethod<bool>('deleteLastScreenshot');
+      debugPrint('ScreenProtection: deleteLastScreenshot() result=$res');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error deleting screenshot: $e');
+      return false;
+    }
+  }
+
   void dispose() {
     ScreenProtector.removeListener();
     if (Platform.isAndroid) {

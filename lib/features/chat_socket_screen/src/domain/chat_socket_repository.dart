@@ -46,6 +46,7 @@ abstract class ChatSocketRepository {
     Map<String, dynamic>? viewControl,
     Map<String, dynamic>? expiry,
     Map<String, dynamic>? callMeta,
+    Map<String, dynamic>? liveMeta,
   });
   void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
@@ -370,6 +371,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     Map<String, dynamic>? viewControl,
     Map<String, dynamic>? expiry,
     Map<String, dynamic>? callMeta,
+    Map<String, dynamic>? liveMeta,
   }) {
     final Map<String, dynamic> content = {};
     if (text != null) content['text'] = text;
@@ -384,6 +386,20 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     if (longitude != null) content['longitude'] = longitude;
     if (address != null) content['address'] = address;
     if (title != null) content['title'] = title;
+
+    if (liveMeta != null) {
+      content['liveMeta'] = liveMeta;
+      content['isLive'] = liveMeta['isLive'] ?? true;
+      content['is_live'] = liveMeta['isLive'] ?? true;
+      content['isLiveActive'] = liveMeta['isLiveActive'] ?? true;
+      content['is_live_active'] = liveMeta['isLiveActive'] ?? true;
+      content['liveDurationSeconds'] = liveMeta['liveDurationSeconds'];
+      content['live_duration_seconds'] = liveMeta['liveDurationSeconds'];
+      content['liveExpiresAt'] = liveMeta['liveExpiresAt'];
+      content['live_expires_at'] = liveMeta['liveExpiresAt'];
+      content['liveComment'] = liveMeta['liveComment'];
+      content['live_comment'] = liveMeta['liveComment'];
+    }
 
     String payloadType = type;
     if (type == 'voice_note' || (mimeType != null && mimeType.startsWith('audio/'))) {
@@ -446,6 +462,16 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     if (resolvedViewControl != null) payload['viewControl'] = resolvedViewControl;
     if (expiry != null) payload['expiry'] = expiry;
     if (callMeta != null) payload['callMeta'] = callMeta;
+    if (liveMeta != null) {
+      payload['isLive'] = liveMeta['isLive'] ?? true;
+      payload['is_live'] = liveMeta['isLive'] ?? true;
+      payload['isLiveActive'] = liveMeta['isLiveActive'] ?? true;
+      payload['is_live_active'] = liveMeta['isLiveActive'] ?? true;
+      payload['liveDurationSeconds'] = liveMeta['liveDurationSeconds'];
+      payload['liveExpiresAt'] = liveMeta['liveExpiresAt'];
+      payload['liveComment'] = liveMeta['liveComment'];
+      payload['liveMeta'] = liveMeta;
+    }
 
     emit('message', payload);
   }

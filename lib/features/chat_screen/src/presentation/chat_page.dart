@@ -46,6 +46,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_
 import 'widgets/message_bubble.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
+import 'package:schat/core/services/live_location_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
 import 'widgets/chat_lock_bottom_sheet.dart';
@@ -141,6 +142,7 @@ class _ChatPageState extends State<ChatPage> {
   List<MessageModel> _apiSearchResults = [];
   Timer? _searchDebounceTimer;
   final FocusNode _inputFocusNode = FocusNode();
+  bool _isReloadingChats = false;
 
   late ChatBloc _chatBloc;
   Timer? _typingIndicatorTimer;
@@ -333,10 +335,18 @@ class _ChatPageState extends State<ChatPage> {
           }
 
           _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
-        } else if (state.activeScreenPermission?.isScreenRecord == true && _isScreenRecordingActive) {
-          debugPrint('ScreenProtection: Screenshot taken during active screen record session.');
+        } else if (_isScreenRecordingActive || state.activeScreenPermission?.isScreenRecord == true) {
+          debugPrint('ScreenProtection: Screenshot attempted during screen recording! Restricting screenshot.');
+          // Immediately re-enable protection (FLAG_SECURE) to block all further screen capture
+          getIt<ScreenProtectionService>().enableProtection();
+          // Request native deletion of the unauthorized screenshot
+          getIt<ScreenProtectionService>().deleteLastScreenshot();
+          // Immediately stop and revoke the recording session
+          if (_activeScreenRecordPermissionId != null) {
+            _stopScreenRecording(_activeScreenRecordPermissionId!, completedByTimer: false);
+          }
           if (mounted) {
-            context.showInfoNotification('Screenshot captured during active screen recording.');
+            context.showErrorNotification('Screenshots are restricted. During screen recording, only recording is accepted.');
           }
         }
       }
@@ -758,6 +768,37 @@ class _ChatPageState extends State<ChatPage> {
       }
     } else {
       context.showInfoNotification('Message not found in current view');
+    }
+  }
+
+  Future<void> _reloadChats() async {
+    if (_isReloadingChats) return;
+    setState(() => _isReloadingChats = true);
+    try {
+      final chatRepo = getIt<ChatRepository>();
+      final freshMessages = await chatRepo.getMessages(widget.conversationId, limit: 100, skip: 0);
+      _chatBloc.add(ReloadChatMessagesEvent(
+        conversationId: widget.conversationId,
+        freshMessages: freshMessages,
+        isReadOnly: widget.isReadOnly,
+      ));
+      if (mounted) {
+        context.showSuccessNotification('Latest chats pulled successfully');
+      }
+    } catch (e) {
+      debugPrint('Error reloading chats: $e');
+      _chatBloc.add(LoadMessagesEvent(
+        conversationId: widget.conversationId,
+        recipientId: widget.recipientId,
+        isReadOnly: widget.isReadOnly,
+      ));
+      if (mounted) {
+        context.showSuccessNotification('Chats refreshed');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isReloadingChats = false);
+      }
     }
   }
 
@@ -2528,6 +2569,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _showForwardBottomSheet(BuildContext context, MessageModel msg) async {
+    if (!msg.allowShare) {
+      context.showErrorNotification('Sharing has been turned off for this file by the owner.');
+      return;
+    }
     final messageId = msg.id;
 
     showDialog(
@@ -3081,6 +3126,7 @@ class _ChatPageState extends State<ChatPage> {
     _screenshotAutoExpireTimer?.cancel();
     _screenshotAutoExpireTimer = null;
     _highlightTimer?.cancel();
+    getIt<ScreenProtectionService>().setScreenRecordingMode(false);
     getIt<ScreenProtectionService>().enableProtection();
     _stopTypingTimer();
     _messageController.dispose();
@@ -4374,7 +4420,10 @@ class _ChatPageState extends State<ChatPage> {
                         }
                         return false;
                       },
-                      child: isLoading
+                      child: RefreshIndicator(
+                        onRefresh: _reloadChats,
+                        color: context.colors.primary,
+                        child: isLoading
                           ? Center(child: CircularProgressIndicator(color: context.colors.primary))
                           : displayedMessages.isEmpty 
                               ? SingleChildScrollView(
@@ -4547,7 +4596,7 @@ class _ChatPageState extends State<ChatPage> {
                                           isFileViewed: msg.isFileViewed,
                                           isFileDownloaded: msg.isFileDownloaded,
                                           isFileShared: msg.isFileShared,
-                                          onSharePressed: () => _showForwardBottomSheet(context, msg),
+                                          onSharePressed: msg.allowShare ? () => _showForwardBottomSheet(context, msg) : null,
                                           fileSize: msg.fileSize,
                                           callMeta: msg.callMeta,
                                           expiry: msg.expiry,
@@ -4561,6 +4610,12 @@ class _ChatPageState extends State<ChatPage> {
                                           },
                                           isRecipientOnline: state is ChatLoaded ? state.isRecipientOnline : false,
                                           onMentionTap: (mention) => _handleMentionTap(context, mention),
+                                          isLive: msg.isLive,
+                                          isLiveActive: msg.isLiveActive,
+                                          liveDurationSeconds: msg.liveDurationSeconds,
+                                          liveExpiresAt: msg.liveExpiresAt,
+                                          liveComment: msg.liveComment,
+                                          onStopLiveLocation: () => _stopLiveLocation(msg.id),
                                         ),
                                       ),
                                     );
@@ -4579,6 +4634,7 @@ class _ChatPageState extends State<ChatPage> {
                                 );
                               },
                             ),
+                      ),
                     ),
                   ),
                   Container(
@@ -4919,7 +4975,7 @@ class _ChatPageState extends State<ChatPage> {
       final isSingleMe = singleMsg != null && (singleMsg.senderId == myId || singleMsg.senderId == 'me');
       final isSingleText = singleMsg != null && (singleMsg.mediaType == null || singleMsg.mediaType == 'text');
       final hasAnyText = selectedMsgs.any((m) => (m.mediaType == null || m.mediaType == 'text') && m.content.isNotEmpty);
-      final canForward = selectedMsgs.isNotEmpty && selectedMsgs.every((m) => m.senderId == myId || m.senderId == 'me' || m.allowShare);
+      final canForward = selectedMsgs.isNotEmpty && selectedMsgs.every((m) => m.allowShare);
       final isRecipientOnline = state is ChatLoaded ? state.isRecipientOnline : false;
 
       return AppBar(
@@ -5226,10 +5282,10 @@ class _ChatPageState extends State<ChatPage> {
         ),
       ),
       actions: [
-        if (widget.isReadOnly)
+        if (widget.isReadOnly) ...[
           Center(
             child: Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 4),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: context.colors.primary.withValues(alpha: 0.15),
@@ -5255,6 +5311,31 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+          PopupMenuButton<String>(
+            icon: Icon(CommonIcons.moreVert),
+            color: context.colors.scaffoldBackground,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onSelected: (value) async {
+              if (value == 'reload_chats') {
+                _reloadChats();
+              } else if (value == 'search') {
+                setState(() => _isSearching = true);
+              } else if (value == 'media') {
+                if (state is ChatLoaded) {
+                  _navigateToSharedMedia(context, state);
+                }
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                _buildMenuItem('reload_chats', Icons.refresh_rounded, 'Reload chat'),
+                _buildMenuItem('search', CommonIcons.search, 'Search message'),
+                _buildMenuItem('media', CommonIcons.gallery, widget.isGroup ? 'Group media' : 'Media, links, and docs'),
+              ];
+            },
+          ),
+        ],
         if (!widget.isReadOnly)
           IconButton(
             icon: Icon(CommonIcons.videocam),
@@ -5358,7 +5439,9 @@ class _ChatPageState extends State<ChatPage> {
             elevation: 4,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (value) async {
-            if (value == 'background_color') {
+            if (value == 'reload_chats') {
+              _reloadChats();
+            } else if (value == 'background_color') {
               _showBackgroundColorBottomSheet(context);
             } else if (value == 'search') {
               setState(() => _isSearching = true);
@@ -5470,6 +5553,7 @@ class _ChatPageState extends State<ChatPage> {
 
             if (widget.isGroup) {
               return [
+                _buildMenuItem('reload_chats', Icons.refresh_rounded, 'Reload chat'),
                 _buildMenuItem('search', CommonIcons.search, 'Search'),
                 _buildMenuItem('group_info', CommonIcons.infoOutline, 'Group info'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Group media'),
@@ -5484,6 +5568,7 @@ class _ChatPageState extends State<ChatPage> {
               ];
             } else {
               return [
+                _buildMenuItem('reload_chats', Icons.refresh_rounded, 'Reload chat'),
                 _buildMenuItem('search', CommonIcons.search, 'Search message'),
                 _buildMenuItem('view_contact', CommonIcons.personOutline, 'View contact'),
                 _buildMenuItem('media', CommonIcons.gallery, 'Media, links, and docs'),
@@ -7415,8 +7500,90 @@ class _ChatPageState extends State<ChatPage> {
           });
           if (mounted) _uploadAndSendAttachment(context);
         },
+        onSendLiveLocation: (lat, lng, durationSeconds, comment, [address]) {
+          _sendLiveLocation(
+            lat: lat,
+            lng: lng,
+            durationSeconds: durationSeconds,
+            comment: comment,
+            address: address,
+          );
+        },
       ),
     );
+  }
+
+  void _sendLiveLocation({
+    required double lat,
+    required double lng,
+    required int durationSeconds,
+    String? comment,
+    String? address,
+  }) {
+    final int expiresAt = DateTime.now().millisecondsSinceEpoch + (durationSeconds * 1000);
+    final String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+
+    _chatBloc.add(SendMessageEvent(
+      conversationId: widget.conversationId,
+      text: comment ?? '',
+      type: 'live_location',
+      latitude: lat,
+      longitude: lng,
+      title: address,
+      messageId: tempId,
+      isLive: true,
+      isLiveActive: true,
+      liveDurationSeconds: durationSeconds,
+      liveExpiresAt: expiresAt,
+      liveComment: comment,
+    ));
+
+    context.read<ChatSocketBloc>().add(SendMessage(
+      conversationId: widget.conversationId,
+      type: 'live_location',
+      text: comment ?? '',
+      latitude: lat,
+      longitude: lng,
+      title: address,
+      liveMeta: {
+        'isLive': true,
+        'isLiveActive': true,
+        'durationSeconds': durationSeconds,
+        'expiresAt': expiresAt,
+        'comment': comment,
+      },
+    ));
+
+    LiveLocationService.instance.startLiveSharing(
+      conversationId: widget.conversationId,
+      messageId: tempId,
+      durationSeconds: durationSeconds,
+      initialLatitude: lat,
+      initialLongitude: lng,
+      comment: comment,
+      onLocationUpdate: (session, currentLat, currentLng) {
+        _chatBloc.add(UpdateLiveLocationEvent(
+          conversationId: widget.conversationId,
+          messageId: tempId,
+          latitude: currentLat,
+          longitude: currentLng,
+        ));
+      },
+      onSessionEnded: (session) {
+        _chatBloc.add(StopLiveLocationEvent(
+          conversationId: widget.conversationId,
+          messageId: tempId,
+        ));
+      },
+    );
+  }
+
+  void _stopLiveLocation(String messageId) {
+    LiveLocationService.instance.stopLiveSharing(widget.conversationId, messageId);
+    _chatBloc.add(StopLiveLocationEvent(
+      conversationId: widget.conversationId,
+      messageId: messageId,
+    ));
   }
 
   void _showContactPicker(BuildContext ctx) {
@@ -7979,6 +8146,8 @@ class _ChatPageState extends State<ChatPage> {
       _activeScreenRecordPermissionId = perm.id;
     });
 
+    // Enable screen recording mode on native layer so any screenshot is strictly restricted
+    await getIt<ScreenProtectionService>().setScreenRecordingMode(true);
     // Disable screen protection so recording is allowed
     await getIt<ScreenProtectionService>().disableProtection();
 
@@ -8028,6 +8197,8 @@ class _ChatPageState extends State<ChatPage> {
       _activeScreenRecordPermissionId = null;
     }
 
+    // Disable screen recording mode on native layer
+    await getIt<ScreenProtectionService>().setScreenRecordingMode(false);
     // Immediately re-enable protection
     await getIt<ScreenProtectionService>().enableProtection();
 

@@ -223,6 +223,7 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
   }
 
   void _onCancelClose() {
+    ShareReceiverService().onShareScreenClosed();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     } else {
@@ -399,12 +400,17 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
       if (mounted) {
         final count = _selectedTargets.length;
         _showToast('Sent successfully to $count ${count == 1 ? 'chat' : 'chats'}');
+        ShareReceiverService().onShareScreenClosed();
         
-        // Navigate directly to Dashboard Home screen
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const DashboardPage()),
-          (route) => false,
-        );
+        // Return to Dashboard Home screen
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        } else {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const DashboardPage()),
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error sending shared message: $e');
@@ -429,16 +435,24 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
           (t.subtitle != null && t.subtitle!.toLowerCase().contains(_searchQuery.toLowerCase()));
     }).toList();
 
-    return Scaffold(
-      backgroundColor: context.colors.scaffoldBackground,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isSending,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (!_isSending) {
+          _onCancelClose();
+        }
+      },
+      child: Scaffold(
         backgroundColor: context.colors.scaffoldBackground,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.close_rounded, color: context.colors.textPrimary, size: 28),
-          onPressed: _onCancelClose,
-          tooltip: 'Cancel',
-        ),
+        appBar: AppBar(
+          backgroundColor: context.colors.scaffoldBackground,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.close_rounded, color: context.colors.textPrimary, size: 28),
+            onPressed: _onCancelClose,
+            tooltip: 'Cancel',
+          ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -628,7 +642,8 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildMediaPreviewHeader() {

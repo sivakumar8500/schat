@@ -37,6 +37,9 @@ class MainActivity : FlutterActivity() {
     private var wasPhoneCallActive = false
     private var telephonyCallback: Any? = null
     private var phoneStateListener: android.telephony.PhoneStateListener? = null
+    private var isScreenRecordingOnlyMode = false
+    private var lastScreenshotUri: Uri? = null
+    private var lastScreenshotPath: String? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         if (isVoiceOrAssistantTrigger(intent)) {
@@ -149,6 +152,19 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        methodChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setScreenRecordingMode" -> {
+                    isScreenRecordingOnlyMode = call.argument<Boolean>("isRecording") ?: false
+                    result.success(true)
+                }
+                "deleteLastScreenshot" -> {
+                    val deleted = deleteLastScreenshot()
+                    result.success(deleted)
+                }
+                else -> result.notImplemented()
+            }
+        }
         setupScreenshotDetection()
 
         pipMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PIP_CHANNEL)
@@ -397,6 +413,17 @@ class MainActivity : FlutterActivity() {
         if (uri != null) {
             val uriStr = uri.toString().lowercase()
             if (uriStr.contains("screenshot") || uriStr.contains("media")) {
+                lastScreenshotUri = uri
+                if (isScreenRecordingOnlyMode) {
+                    deleteLastScreenshot()
+                    mainHandler.post {
+                        try {
+                            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
                 notifyScreenshotTaken()
                 return
             }
@@ -404,6 +431,7 @@ class MainActivity : FlutterActivity() {
 
         try {
             val projection = arrayOf(
+                MediaStore.Images.Media._ID,
                 MediaStore.Images.Media.DISPLAY_NAME,
                 MediaStore.Images.Media.DATA,
                 MediaStore.Images.Media.DATE_ADDED
@@ -417,12 +445,31 @@ class MainActivity : FlutterActivity() {
             )
             cursor?.use {
                 if (it.moveToFirst()) {
+                    val idIndex = it.getColumnIndex(MediaStore.Images.Media._ID)
                     val nameIndex = it.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
                     val dataIndex = it.getColumnIndex(MediaStore.Images.Media.DATA)
                     val name = if (nameIndex >= 0) it.getString(nameIndex)?.lowercase() ?: "" else ""
-                    val path = if (dataIndex >= 0) it.getString(dataIndex)?.lowercase() ?: "" else ""
+                    val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
 
-                    if (name.contains("screenshot") || path.contains("screenshot")) {
+                    if (name.contains("screenshot") || path.lowercase().contains("screenshot")) {
+                        lastScreenshotPath = path
+                        if (idIndex >= 0) {
+                            val id = it.getLong(idIndex)
+                            lastScreenshotUri = android.content.ContentUris.withAppendedId(
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                id
+                            )
+                        }
+                        if (isScreenRecordingOnlyMode) {
+                            deleteLastScreenshot()
+                            mainHandler.post {
+                                try {
+                                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
                         notifyScreenshotTaken()
                     }
                 }
@@ -441,6 +488,33 @@ class MainActivity : FlutterActivity() {
         mainHandler.post {
             methodChannel?.invokeMethod("onScreenshot", null)
         }
+    }
+
+    private fun deleteLastScreenshot(): Boolean {
+        var deleted = false
+        try {
+            val path = lastScreenshotPath
+            if (!path.isNullOrEmpty()) {
+                val f = File(path)
+                if (f.exists()) {
+                    deleted = f.delete() || deleted
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            val uri = lastScreenshotUri
+            if (uri != null) {
+                val rows = contentResolver.delete(uri, null, null)
+                if (rows > 0) deleted = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        lastScreenshotPath = null
+        lastScreenshotUri = null
+        return deleted
     }
 
     override fun onDestroy() {

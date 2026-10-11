@@ -32,7 +32,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   Future<void> _goToDashboardOrPermissions() async {
     final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
     if (!mounted) return;
-    if (showPermissions) {
+    if (showPermissions && !ShareReceiverService().hasPendingShare) {
       await Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const PermissionsPage()),
@@ -43,9 +43,6 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         MaterialPageRoute(builder: (context) => const DashboardPage()),
       );
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ShareReceiverService().checkAndPresentPendingShare();
-    });
   }
 
   @override
@@ -97,8 +94,10 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
   }
 
   Future<void> _navigateToNextScreen() async {
-    // Wait for 2 seconds for branding
-    await Future.delayed(const Duration(seconds: 2));
+    // If pending share from other app, skip branding delay to present user selection immediately
+    if (!ShareReceiverService().hasPendingShare) {
+      await Future.delayed(const Duration(seconds: 2));
+    }
 
     if (!mounted) return;
 

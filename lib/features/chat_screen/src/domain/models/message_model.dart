@@ -97,6 +97,13 @@ class MessageModel {
   final String? address;
   final String? locationTitle;
 
+  // Live Location support
+  final bool isLive;
+  final bool isLiveActive;
+  final int? liveDurationSeconds;
+  final int? liveExpiresAt;
+  final String? liveComment;
+
   // Background upload tracking
   final Uint8List? attachmentBytes;
   final String? attachmentName;
@@ -165,6 +172,11 @@ class MessageModel {
     this.longitude,
     this.address,
     this.locationTitle,
+    this.isLive = false,
+    this.isLiveActive = true,
+    this.liveDurationSeconds,
+    this.liveExpiresAt,
+    this.liveComment,
     this.attachmentBytes,
     this.attachmentName,
     this.isUploading = false,
@@ -520,6 +532,34 @@ class MessageModel {
       locationTitle = json['title']?.toString();
     }
 
+    // Extract live location data if present
+    bool isLive = (json['isLive'] ?? json['is_live']) as bool? ?? false;
+    bool isLiveActive = (json['isLiveActive'] ?? json['is_live_active']) as bool? ?? true;
+    int? liveDurationSeconds = int.tryParse((json['liveDurationSeconds'] ?? json['live_duration_seconds'])?.toString() ?? '');
+    int? liveExpiresAt = int.tryParse((json['liveExpiresAt'] ?? json['live_expires_at'])?.toString() ?? '');
+    String? liveComment = (json['liveComment'] ?? json['live_comment'])?.toString();
+
+    if (contentData is Map) {
+      if (contentData['isLive'] == true || contentData['is_live'] == true) isLive = true;
+      if (contentData['isLiveActive'] != null) isLiveActive = contentData['isLiveActive'] as bool;
+      else if (contentData['is_live_active'] != null) isLiveActive = contentData['is_live_active'] as bool;
+      if (contentData['liveDurationSeconds'] != null) liveDurationSeconds = int.tryParse(contentData['liveDurationSeconds'].toString());
+      else if (contentData['live_duration_seconds'] != null) liveDurationSeconds = int.tryParse(contentData['live_duration_seconds'].toString());
+      if (contentData['liveExpiresAt'] != null) liveExpiresAt = int.tryParse(contentData['liveExpiresAt'].toString());
+      else if (contentData['live_expires_at'] != null) liveExpiresAt = int.tryParse(contentData['live_expires_at'].toString());
+      if (contentData['liveComment'] != null) liveComment = contentData['liveComment']?.toString();
+      else if (contentData['live_comment'] != null) liveComment = contentData['live_comment']?.toString();
+    }
+
+    final parsedMsgType = (json['messageType'] ?? json['message_type'] ?? json['type'] ?? 'text').toString();
+    if (parsedMsgType == 'live_location' || (mediaType != null && mediaType == 'live_location')) {
+      isLive = true;
+    }
+
+    if (isLive && liveExpiresAt != null && DateTime.now().millisecondsSinceEpoch > liveExpiresAt) {
+      isLiveActive = false;
+    }
+
     String? parsedSenderName = (json['senderName'] ?? json['sender_name'] ?? json['sender_username'] ?? json['senderUsername'])?.toString();
     String? parsedSenderProfilePic = (json['senderProfilePictureUrl'] ?? json['sender_profile_picture_url'] ?? json['senderProfilePic'] ?? json['sender_profile_pic'] ?? json['profile_picture_url'] ?? json['profilePictureUrl'])?.toString();
     if (parsedSenderName == null || parsedSenderName.isEmpty || parsedSenderProfilePic == null || parsedSenderProfilePic.isEmpty) {
@@ -637,6 +677,11 @@ class MessageModel {
       longitude: longitude,
       address: address,
       locationTitle: locationTitle,
+      isLive: isLive,
+      isLiveActive: isLiveActive,
+      liveDurationSeconds: liveDurationSeconds,
+      liveExpiresAt: liveExpiresAt,
+      liveComment: liveComment,
       attachmentBytes: null,
       attachmentName: parsedAttachmentName,
       isUploading: false,
@@ -724,7 +769,17 @@ class MessageModel {
       if (longitude != null) 'longitude': longitude,
       if (address != null) 'address': address,
       if (locationTitle != null) 'title': locationTitle,
+      if (isLive) 'isLive': isLive,
+      if (isLive) 'isLiveActive': isLiveActive,
+      if (liveDurationSeconds != null) 'liveDurationSeconds': liveDurationSeconds,
+      if (liveExpiresAt != null) 'liveExpiresAt': liveExpiresAt,
+      if (liveComment != null) 'liveComment': liveComment,
     },
+    'isLive': isLive,
+    'isLiveActive': isLiveActive,
+    if (liveDurationSeconds != null) 'liveDurationSeconds': liveDurationSeconds,
+    if (liveExpiresAt != null) 'liveExpiresAt': liveExpiresAt,
+    if (liveComment != null) 'liveComment': liveComment,
     'mediaUrl': mediaUrl,
     'media_url': mediaUrl,
     'fileKey': mediaUrl,
@@ -842,6 +897,11 @@ class MessageModel {
     double? longitude,
     String? address,
     String? locationTitle,
+    bool? isLive,
+    bool? isLiveActive,
+    int? liveDurationSeconds,
+    int? liveExpiresAt,
+    String? liveComment,
     String? userView,
   }) {
     return MessageModel(
@@ -892,6 +952,11 @@ class MessageModel {
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,
       locationTitle: locationTitle ?? this.locationTitle,
+      isLive: isLive ?? this.isLive,
+      isLiveActive: isLiveActive ?? this.isLiveActive,
+      liveDurationSeconds: liveDurationSeconds ?? this.liveDurationSeconds,
+      liveExpiresAt: liveExpiresAt ?? this.liveExpiresAt,
+      liveComment: liveComment ?? this.liveComment,
       userView: userView ?? this.userView,
     );
   }

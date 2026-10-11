@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/theme_color_model.dart';
 
 abstract class ChatEvent {
@@ -37,6 +38,18 @@ class LoadMessagesEvent extends ChatEvent {
   });
 }
 
+class ReloadChatMessagesEvent extends ChatEvent {
+  final String conversationId;
+  final List<MessageModel>? freshMessages;
+  final bool isReadOnly;
+
+  const ReloadChatMessagesEvent({
+    required this.conversationId,
+    this.freshMessages,
+    this.isReadOnly = false,
+  });
+}
+
 class UpdateBlockStatusEvent extends ChatEvent {
   final bool isBlocked;
   final bool isBlockedByMe;
@@ -68,6 +81,11 @@ class SendMessageEvent extends ChatEvent {
   final double? longitude;
   final String? address;
   final String? title;
+  final bool isLive;
+  final bool isLiveActive;
+  final int? liveDurationSeconds;
+  final int? liveExpiresAt;
+  final String? liveComment;
 
   const SendMessageEvent({
     required this.conversationId,
@@ -89,6 +107,37 @@ class SendMessageEvent extends ChatEvent {
     this.longitude,
     this.address,
     this.title,
+    this.isLive = false,
+    this.isLiveActive = true,
+    this.liveDurationSeconds,
+    this.liveExpiresAt,
+    this.liveComment,
+  });
+}
+
+class UpdateLiveLocationEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final double latitude;
+  final double longitude;
+  final String? address;
+
+  const UpdateLiveLocationEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.latitude,
+    required this.longitude,
+    this.address,
+  });
+}
+
+class StopLiveLocationEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+
+  const StopLiveLocationEvent({
+    required this.messageId,
+    required this.conversationId,
   });
 }
 

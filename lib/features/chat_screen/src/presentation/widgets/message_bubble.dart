@@ -43,6 +43,8 @@ import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/status_screen/src/presentation/status_view_page.dart';
 import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
 import 'package:schat/features/status_screen/src/domain/status_model.dart';
+import 'package:intl/intl.dart';
+import 'package:schat/features/chat_screen/src/presentation/live_location_viewer_page.dart';
 
 class MessageBubble extends StatefulWidget {
   final String messageId;
@@ -97,6 +99,12 @@ class MessageBubble extends StatefulWidget {
   final List<MessageReaction> reactions;
   final void Function(String emoji)? onReactionTap;
   final String? searchQuery;
+  final bool isLive;
+  final bool isLiveActive;
+  final int? liveDurationSeconds;
+  final int? liveExpiresAt;
+  final String? liveComment;
+  final VoidCallback? onStopLiveLocation;
 
   const MessageBubble({
     super.key,
@@ -153,6 +161,12 @@ class MessageBubble extends StatefulWidget {
     this.onReactionTap,
     this.onMentionTap,
     this.searchQuery,
+    this.isLive = false,
+    this.isLiveActive = true,
+    this.liveDurationSeconds,
+    this.liveExpiresAt,
+    this.liveComment,
+    this.onStopLiveLocation,
   });
 
   final void Function(String mention)? onMentionTap;
@@ -276,6 +290,12 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get locationTitle => widget.locationTitle;
   int? get expiry => widget.expiry;
   String? get senderName => widget.senderName;
+  bool get isLive => widget.isLive;
+  bool get isLiveActive => widget.isLiveActive;
+  int? get liveDurationSeconds => widget.liveDurationSeconds;
+  int? get liveExpiresAt => widget.liveExpiresAt;
+  String? get liveComment => widget.liveComment;
+  VoidCallback? get onStopLiveLocation => widget.onStopLiveLocation;
   bool get _isStatusReply {
     if (isDeleted) return false;
     final trimmed = message.trim();
@@ -538,7 +558,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (isDeleted) return false;
     if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'voice_note' || type == 'document' || type == 'call') return true;
     if ((attachmentPath != null && attachmentPath!.isNotEmpty) || attachmentBytes != null) {
-      if (type != 'call' && type != 'location' && type != 'contact') {
+      if (type != 'call' && type != 'location' && type != 'live_location' && type != 'contact') {
         return true;
       }
     }
@@ -1000,9 +1020,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                                   fontSize: 16,
                                   color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
                                 ),
-                                (type == 'location' || type == 'call') ? '' : message,
+                                (type == 'location' || type == 'live_location' || type == 'call') ? '' : message,
                               ),
-                              if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted) CommonSpaces.h6,
+                              if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && type != 'live_location' && !isDeleted) CommonSpaces.h6,
                               _buildDefaultTimestampRow(context),
                             ],
                           ],
@@ -1404,33 +1424,13 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    // 3. Share Action: Toggles permission if sender (isMe), triggers share if recipient
-    if (isMe || allowShare) {
-      final isShareActive = allowShare;
-      final iconColor = isMe
-          ? (isShareActive ? accentGreen : disabledRed)
-          : (isShareActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = isMe
-          ? (isShareActive ? textColor : disabledRed)
-          : textColor;
-
+    // 3. Share Action: Only shown when allowShare is true
+    if (allowShare) {
       actionButtons.add(
         Expanded(
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: () {
-              if (isMe) {
-                final nextVal = !allowShare;
-                _updatePermissions(context, share: nextVal);
-                context.showSuccessNotification(
-                  nextVal ? 'Share enabled for recipient' : 'Share disabled for recipient',
-                );
-                return;
-              }
-              if (!allowShare) {
-                context.showInfoNotification('Share permission is locked by sender');
-                return;
-              }
               _triggerShare(context);
             },
             child: Padding(
@@ -1439,10 +1439,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    isShareActive ? Icons.share_outlined : Icons.block_outlined,
+                  const Icon(
+                    Icons.share_outlined,
                     size: 13,
-                    color: iconColor,
+                    color: accentGreen,
                   ),
                   const SizedBox(width: 3),
                   Flexible(
@@ -1452,11 +1452,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                         'Share',
                         maxLines: 1,
                         style: context.bodySmall.copyWith(
-                          color: labelColor,
+                          color: textColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 10.0,
-                          decoration: (!isShareActive && isMe) ? TextDecoration.lineThrough : null,
-                          decorationColor: disabledRed,
                         ),
                       ),
                     ),
@@ -1504,7 +1502,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    final bool showShareDetails = isMe && !isGroup && _isMediaMessage && allowView && allowShare;
+    final bool showShareDetails = isMe && !isGroup && _isMediaMessage && allowView;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
@@ -1675,9 +1673,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildAttachment(BuildContext context) {
     final effectivePath = (attachmentPath != null && attachmentPath!.isNotEmpty)
         ? attachmentPath!
-        : ((type != 'call' && type != 'location' && type != 'text' && message.isNotEmpty && message != '[View Restricted]') ? message : null);
+        : ((type != 'call' && type != 'location' && type != 'live_location' && type != 'text' && message.isNotEmpty && message != '[View Restricted]') ? message : null);
 
-    if (effectivePath == null && attachmentBytes == null && type != 'call' && type != 'location') {
+    if (effectivePath == null && attachmentBytes == null && type != 'call' && type != 'location' && type != 'live_location') {
       return const SizedBox.shrink();
     }
 
@@ -1688,7 +1686,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         images: widget.groupedImages!,
         isMe: isMe,
         contactName: widget.senderName ?? 'Photo',
-        onSharePressed: widget.onSharePressed != null ? (_) => widget.onSharePressed!() : null,
+        onSharePressed: (allowShare && widget.onSharePressed != null) ? (_) => widget.onSharePressed!() : null,
       );
     }
 
@@ -1864,7 +1862,12 @@ class _MessageBubbleState extends State<MessageBubble> {
       } else {
         result = _buildFileBubbleCard(context);
       }
-    } else if (type == 'location') {
+    } else if (type == 'location' || type == 'live_location' || isLive) {
+      final bool isLiveLoc = type == 'live_location' || isLive;
+      final bool isCurrentlyActive = isLiveLoc &&
+          isLiveActive &&
+          (liveExpiresAt == null || liveExpiresAt! > DateTime.now().millisecondsSinceEpoch);
+
       double lat = latitude ?? 0.0;
       double lng = longitude ?? 0.0;
       
@@ -1891,7 +1894,30 @@ class _MessageBubbleState extends State<MessageBubble> {
         }
       }
 
-      Future<void> openMap() async {
+      Future<void> openMapOrViewer() async {
+        if (isLiveLoc) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LiveLocationViewerPage(
+                messageId: messageId,
+                conversationId: widget.conversationId,
+                initialLatitude: lat,
+                initialLongitude: lng,
+                address: displayAddress,
+                senderName: widget.senderName ?? (isMe ? 'You' : 'Sender'),
+                senderAvatarUrl: widget.senderProfilePictureUrl,
+                isMe: isMe,
+                isLiveActive: isCurrentlyActive,
+                liveExpiresAt: liveExpiresAt,
+                comment: liveComment ?? (message.isNotEmpty && message != '[View Restricted]' && message != displayAddress ? message : null),
+                onStopSharing: widget.onStopLiveLocation,
+              ),
+            ),
+          );
+          return;
+        }
+
         if (lat != 0.0 && lng != 0.0) {
           final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
           try {
@@ -1904,11 +1930,18 @@ class _MessageBubbleState extends State<MessageBubble> {
         }
       }
 
+      final liveColor = const Color(0xFF25D366);
+      final String liveStatusText = isCurrentlyActive
+          ? (liveExpiresAt != null
+              ? 'Live until ${DateFormat('h:mm a').format(DateTime.fromMillisecondsSinceEpoch(liveExpiresAt!))}'
+              : 'Live location')
+          : 'Live location ended';
+
       result = Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: openMap,
+          onTap: openMapOrViewer,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Container(
@@ -1963,13 +1996,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  CommonIcons.location,
-                                  color: context.colors.error,
+                                  isLiveLoc ? Icons.sensors : CommonIcons.location,
+                                  color: isLiveLoc ? liveColor : context.colors.error,
                                   size: 36,
                                 ),
                                 CommonSpaces.h8,
                                 Text(
-                                  'Location',
+                                  isLiveLoc ? 'Live Location' : 'Location',
                                   style: context.bodySmall.copyWith(
                                     fontSize: 11,
                                     color: context.colors.textPrimary,
@@ -1978,10 +2011,61 @@ class _MessageBubbleState extends State<MessageBubble> {
                               ],
                             ),
                           ),
+                        if (isLiveLoc)
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isCurrentlyActive ? liveColor : Colors.black54,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isCurrentlyActive) ...[
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Text(
+                                    isCurrentlyActive ? 'LIVE LOCATION' : 'LIVE LOCATION ENDED',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
-                  // Address Banner at the bottom of the card
+                  // If live comment exists
+                  if (isLiveLoc && liveComment != null && liveComment!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+                      child: Text(
+                        liveComment!.trim(),
+                        style: TextStyle(
+                          color: isMe ? Colors.white : context.colors.textPrimary,
+                          fontSize: 13,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  // Bottom banner
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                     color: isMe
@@ -1991,16 +2075,18 @@ class _MessageBubbleState extends State<MessageBubble> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(
-                          CommonIcons.location,
+                          isLiveLoc ? Icons.sensors : CommonIcons.location,
                           size: 16,
-                          color: context.colors.primary,
+                          color: isLiveLoc ? (isCurrentlyActive ? liveColor : Colors.grey) : context.colors.primary,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            (displayAddress != null && displayAddress.isNotEmpty)
-                                ? displayAddress
-                                : (lat != 0.0 ? 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}' : 'Location'),
+                            isLiveLoc
+                                ? liveStatusText
+                                : ((displayAddress != null && displayAddress.isNotEmpty)
+                                    ? displayAddress
+                                    : (lat != 0.0 ? 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}' : 'Location')),
                             style: TextStyle(
                               color: isMe ? Colors.white : context.colors.textPrimary,
                               fontSize: 12,
@@ -2013,6 +2099,28 @@ class _MessageBubbleState extends State<MessageBubble> {
                       ],
                     ),
                   ),
+                  // Stop sharing button for sender if active
+                  if (isLiveLoc && isMe && isCurrentlyActive) ...[
+                    const Divider(height: 1, thickness: 0.5),
+                    InkWell(
+                      onTap: () {
+                        widget.onStopLiveLocation?.call();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        alignment: Alignment.center,
+                        color: Colors.red.withValues(alpha: 0.1),
+                        child: Text(
+                          'Stop sharing',
+                          style: TextStyle(
+                            color: Colors.red.shade400,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2562,6 +2670,22 @@ class _MessageBubbleState extends State<MessageBubble> {
       ).catchError((e) {
         debugPrint('Failed to persist security permissions: $e');
       });
+
+      if (!newShare) {
+        getIt<ChatRepository>().revokeAllMediaShares(messageId).catchError((e) {
+          debugPrint('Failed to revoke downstream shares: $e');
+          return false;
+        });
+      }
+    }
+
+    if (attachmentPath != null && attachmentPath!.isNotEmpty) {
+      getIt<ChatSocketRepository>().sendFileAction(
+        type: newShare ? 'media_permissions_updated' : 'media_access_revoked',
+        conversationId: conversationId,
+        messageId: messageId,
+        fileKey: attachmentPath!,
+      );
     }
   }
 
@@ -2734,8 +2858,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _triggerShare(BuildContext context) {
-    if (!isMe && !allowShare) {
-      context.showInfoNotification('Share permission is locked');
+    if (!allowShare) {
+      context.showInfoNotification('Share permission is locked by sender');
       return;
     }
     if (onSharePressed != null) {

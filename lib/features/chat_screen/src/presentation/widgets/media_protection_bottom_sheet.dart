@@ -47,6 +47,8 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
   Future<MediaAccessTreeModel?>? _accessTreeFuture;
   bool _isLoading = true;
   bool _isActionProcessing = false;
+  bool _allExpanded = true;
+  int _expansionVersion = 0;
   String? _errorMessage;
 
   @override
@@ -360,7 +362,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.88,
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -814,28 +816,75 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'SHARE & ACCESS LINEAGE',
-                    style: context.bodySmall.copyWith(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.1,
-                      color: context.colors.textSecondary,
-                    ),
-                  ),
-                  if (!isWaiting)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: brandGreen.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '$totalGrants ${totalGrants == 1 ? 'Share' : 'Shares'}',
-                        style: TextStyle(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'SHARE & ACCESS LINEAGE',
+                        style: context.bodySmall.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: brandGreen,
+                          letterSpacing: 1.1,
+                          color: context.colors.textSecondary,
+                        ),
+                      ),
+                      if (!isWaiting) ...[
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: brandGreen.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '$totalGrants ${totalGrants == 1 ? 'Share' : 'Shares'} across lineage',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                              color: brandGreen,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (!isWaiting && grants.isNotEmpty)
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _allExpanded = !_allExpanded;
+                          _expansionVersion++;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: brandGreen.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: brandGreen.withValues(alpha: 0.3),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _allExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded,
+                              size: 14,
+                              color: brandGreen,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _allExpanded ? 'Collapse All' : 'Expanded View',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: brandGreen,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -877,14 +926,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 )
               else
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: grants
-                      .map((node) => _buildAccessTreeNodeItem(
-                            context: context,
-                            node: node,
-                            isDark: isDark,
-                            brandGreen: brandGreen,
-                            isOwner: isOwner,
-                            level: 0,
+                      .map((node) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: _AccessTreeNodeWidget(
+                              key: ValueKey(node.grantId),
+                              node: node,
+                              isDark: isDark,
+                              brandGreen: brandGreen,
+                              isOwner: isOwner,
+                              level: 0,
+                              initiallyExpanded: _allExpanded,
+                              expansionVersion: _expansionVersion,
+                              onEdit: _showEditPermissionsModal,
+                              onRevoke: _revokeSingleGrant,
+                            ),
                           ))
                       .toList(),
                 ),
@@ -894,157 +951,293 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       },
     );
   }
+}
 
-  Widget _buildAccessTreeNodeItem({
-    required BuildContext context,
-    required AccessTreeNode node,
-    required bool isDark,
-    required Color brandGreen,
-    required bool isOwner,
-    required int level,
-  }) {
-    final isActive = node.status.toLowerCase() == 'active';
-    final perms = node.effectivePermissions;
-    final itemBg = isDark ? const Color(0xFF1E2830) : const Color(0xFFF0F3F2);
+class _AccessTreeNodeWidget extends StatefulWidget {
+  final AccessTreeNode node;
+  final bool isDark;
+  final Color brandGreen;
+  final bool isOwner;
+  final int level;
+  final bool initiallyExpanded;
+  final int expansionVersion;
+  final void Function(AccessTreeNode node)? onEdit;
+  final void Function(String grantId, String displayName)? onRevoke;
 
-    return Padding(
-      padding: EdgeInsets.only(left: level * 16.0, bottom: 8.0),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: itemBg,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isDark ? Colors.white12 : Colors.black12,
-            width: 0.8,
+  const _AccessTreeNodeWidget({
+    super.key,
+    required this.node,
+    required this.isDark,
+    required this.brandGreen,
+    required this.isOwner,
+    this.level = 0,
+    required this.initiallyExpanded,
+    required this.expansionVersion,
+    this.onEdit,
+    this.onRevoke,
+  });
+
+  @override
+  State<_AccessTreeNodeWidget> createState() => _AccessTreeNodeWidgetState();
+}
+
+class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
+  late bool _isExpanded;
+  late int _lastVersion;
+
+  @override
+  void initState() {
+    super.initState();
+    _isExpanded = widget.initiallyExpanded;
+    _lastVersion = widget.expansionVersion;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AccessTreeNodeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expansionVersion != _lastVersion) {
+      _lastVersion = widget.expansionVersion;
+      _isExpanded = widget.initiallyExpanded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = widget.node.status.toLowerCase() == 'active';
+    final perms = widget.node.effectivePermissions;
+    final itemBg = widget.isDark ? const Color(0xFF1E2830) : const Color(0xFFF0F3F2);
+    final borderColor = widget.isDark ? Colors.white12 : Colors.black12;
+    final hasChildren = widget.node.downstreamShares.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Node card - takes FULL available width
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: itemBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: borderColor,
+              width: 0.8,
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (level > 0)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 6),
-                    child: Text('↳', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
-                  ),
-                CircleAvatar(
-                  radius: 13,
-                  backgroundColor: brandGreen.withValues(alpha: 0.15),
-                  child: Text(
-                    node.grantee.initials,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: brandGreen),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        node.grantee.displayName,
-                        style: context.bodySmall.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: context.colors.textPrimary,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  if (widget.level > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: widget.brandGreen.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.subdirectory_arrow_right_rounded, size: 10, color: widget.brandGreen),
+                            Text(
+                              ' L${widget.level}',
+                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: widget.brandGreen),
+                            ),
+                          ],
+                        ),
                       ),
-                      if (node.granter.displayName.isNotEmpty)
+                    ),
+                  CircleAvatar(
+                    radius: 13,
+                    backgroundColor: widget.brandGreen.withValues(alpha: 0.15),
+                    child: Text(
+                      widget.node.grantee.initials,
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: widget.brandGreen),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          'Shared by ${node.granter.displayName}',
+                          widget.node.grantee.displayName,
                           style: context.bodySmall.copyWith(
-                            fontSize: 10,
-                            color: context.colors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: context.colors.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: (isActive ? brandGreen : Colors.redAccent).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    node.status.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
-                      color: isActive ? brandGreen : Colors.redAccent,
+                        if (widget.node.granter.displayName.isNotEmpty)
+                          Text(
+                            'Shared by ${widget.node.granter.displayName}',
+                            style: context.bodySmall.copyWith(
+                              fontSize: 10,
+                              color: context.colors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
                   ),
-                ),
-                if (isOwner) ...[
-                  PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
-                    padding: EdgeInsets.zero,
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.tune_rounded, size: 16),
-                            SizedBox(width: 8),
-                            Text('Edit Permissions', style: TextStyle(fontSize: 13)),
-                          ],
-                        ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: (isActive ? widget.brandGreen : Colors.redAccent).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      widget.node.status.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: isActive ? widget.brandGreen : Colors.redAccent,
                       ),
-                      if (isActive)
+                    ),
+                  ),
+                  if (widget.isOwner) ...[
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
+                      padding: EdgeInsets.zero,
+                      itemBuilder: (ctx) => [
                         const PopupMenuItem(
-                          value: 'revoke',
+                          value: 'edit',
                           child: Row(
                             children: [
-                              Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                              Icon(Icons.tune_rounded, size: 16),
                               SizedBox(width: 8),
-                              Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                              Text('Edit Permissions', style: TextStyle(fontSize: 13)),
                             ],
                           ),
                         ),
-                    ],
-                    onSelected: (val) {
-                      if (val == 'edit') {
-                        _showEditPermissionsModal(node);
-                      } else if (val == 'revoke') {
-                        _revokeSingleGrant(node.grantId, node.grantee.displayName);
-                      }
-                    },
-                  ),
+                        if (isActive)
+                          const PopupMenuItem(
+                            value: 'revoke',
+                            child: Row(
+                              children: [
+                                Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                                SizedBox(width: 8),
+                                Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                      ],
+                      onSelected: (val) {
+                        if (val == 'edit') {
+                          widget.onEdit?.call(widget.node);
+                        } else if (val == 'revoke') {
+                          widget.onRevoke?.call(widget.node.grantId, widget.node.grantee.displayName);
+                        }
+                      },
+                    ),
+                  ],
                 ],
+              ),
+              const SizedBox(height: 6),
+              // Permission Badges wrapped horizontally
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  _buildPermissionChip(context, 'View', perms.canView, widget.isDark),
+                  _buildPermissionChip(context, 'Download', perms.canDownload, widget.isDark),
+                  _buildPermissionChip(context, 'Share', perms.canShare, widget.isDark),
+                ],
+              ),
+              if (hasChildren) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () => setState(() => _isExpanded = !_isExpanded),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: widget.brandGreen.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                              size: 16,
+                              color: widget.brandGreen,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${widget.node.downstreamShares.length} downstream ${widget.node.downstreamShares.length == 1 ? 'share' : 'shares'}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: widget.brandGreen,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          _isExpanded ? 'Hide' : 'Expand view',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: widget.brandGreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 6),
-            // Permission Badges
-            Row(
-              children: [
-                _buildPermissionChip(context, 'View', perms.canView, isDark),
-                const SizedBox(width: 4),
-                _buildPermissionChip(context, 'Download', perms.canDownload, isDark),
-                const SizedBox(width: 4),
-                _buildPermissionChip(context, 'Share', perms.canShare, isDark),
-              ],
-            ),
-            if (node.downstreamShares.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ...node.downstreamShares.map(
-                (child) => _buildAccessTreeNodeItem(
-                  context: context,
-                  node: child,
-                  isDark: isDark,
-                  brandGreen: brandGreen,
-                  isOwner: isOwner,
-                  level: level + 1,
+            ],
+          ),
+        ),
+
+        // Downstream shares - clean timeline connector with minimal left indent so child cards keep full width
+        if (hasChildren && _isExpanded) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                    color: widget.brandGreen.withValues(alpha: 0.35),
+                    width: 1.5,
+                  ),
                 ),
               ),
-            ],
-          ],
-        ),
-      ),
+              padding: const EdgeInsets.only(left: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: widget.node.downstreamShares
+                    .map((child) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6.0),
+                          child: _AccessTreeNodeWidget(
+                            key: ValueKey(child.grantId),
+                            node: child,
+                            isDark: widget.isDark,
+                            brandGreen: widget.brandGreen,
+                            isOwner: widget.isOwner,
+                            level: widget.level + 1,
+                            initiallyExpanded: widget.initiallyExpanded,
+                            expansionVersion: widget.expansionVersion,
+                            onEdit: widget.onEdit,
+                            onRevoke: widget.onRevoke,
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

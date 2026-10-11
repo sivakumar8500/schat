@@ -41,7 +41,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         _socketRepository = socketRepository ?? getIt<ChatSocketRepository>(),
         super(const ChatInitial()) {
     on<LoadMessagesEvent>(_onLoadMessages);
+    on<ReloadChatMessagesEvent>(_onReloadChatMessages);
     on<SendMessageEvent>(_onSendMessage);
+    on<UpdateLiveLocationEvent>(_onUpdateLiveLocation);
+    on<StopLiveLocationEvent>(_onStopLiveLocation);
     on<ReceiveMessageEvent>(_onReceiveMessage);
     on<ToggleMuteEvent>(_onToggleMute);
     on<ToggleLockEvent>(_onToggleLock);
@@ -295,6 +298,30 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             } else if (msgId != null) {
               add(MarkMessageDeliveredEvent(messageId: msgId, conversationId: convId!, recipientId: deliveryUserId));
             }
+          }
+        } else if (type == 'live_location_update' || type == 'location_update') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          final lat = double.tryParse((cleanData['latitude'] ?? cleanData['lat'])?.toString() ?? '');
+          final lng = double.tryParse((cleanData['longitude'] ?? cleanData['lng'])?.toString() ?? '');
+          final addr = cleanData['address']?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null && lat != null && lng != null) {
+            add(UpdateLiveLocationEvent(
+              messageId: msgId,
+              conversationId: convId!,
+              latitude: lat,
+              longitude: lng,
+              address: addr,
+            ));
+          }
+        } else if (type == 'live_location_stop' || type == 'stop_live_location') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(StopLiveLocationEvent(
+              messageId: msgId,
+              conversationId: convId!,
+            ));
           }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -1064,6 +1091,76 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  Future<void> _onReloadChatMessages(ReloadChatMessagesEvent event, Emitter<ChatState> emit) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) {
+      add(LoadMessagesEvent(conversationId: event.conversationId, isReadOnly: event.isReadOnly));
+      return;
+    }
+
+    try {
+      final rawApiMessages = event.freshMessages ??
+          await _chatRepository.getMessages(event.conversationId, limit: 100, skip: 0);
+      _messagesSkip = rawApiMessages.length;
+      _hasReachedMax = rawApiMessages.length < 100;
+      var messages = _applyPersistentViewOnceStates(rawApiMessages, currentState.messages);
+
+      final existingMap = <String, MessageModel>{};
+      for (final m in currentState.messages) {
+        if (m.id.isNotEmpty) existingMap[m.id] = m;
+      }
+
+      final freshMap = <String, MessageModel>{};
+      for (var m in messages) {
+        if (m.id.isNotEmpty) {
+          if (existingMap.containsKey(m.id)) {
+            final existing = existingMap[m.id]!;
+            final keepRead = m.isRead || existing.isRead || m.status == 'read' || existing.status == 'read';
+            final keepDelivered = keepRead || m.isDelivered || existing.isDelivered || m.status == 'delivered' || existing.status == 'delivered';
+            final mergedReadBy = <String>{...m.readBy, ...existing.readBy}.toList();
+            final mergedDeliveredTo = <String>{...m.deliveredTo, ...existing.deliveredTo}.toList();
+            m = m.copyWith(
+              isRead: keepRead,
+              isDelivered: keepDelivered,
+              readBy: mergedReadBy,
+              deliveredTo: mergedDeliveredTo,
+            );
+          }
+          freshMap[m.id] = m;
+        }
+      }
+
+      for (final m in currentState.messages) {
+        if (m.id.startsWith('temp_') && !freshMap.containsKey(m.id)) {
+          freshMap[m.id] = m;
+        }
+      }
+
+      messages = freshMap.values.toList()
+        ..sort((a, b) {
+          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final cmp = dtA.compareTo(dtB);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        });
+
+      List<MessageModel> pinnedMessages = currentState.pinnedMessages;
+      try {
+        pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
+      } catch (_) {}
+
+      _saveToCache(event.conversationId, messages);
+
+      emit(currentState.copyWith(
+        messages: messages,
+        pinnedMessages: pinnedMessages,
+      ));
+    } catch (e) {
+      debugPrint('Error reloading chat messages: $e');
+    }
+  }
+
   Future<void> _onLoadMoreMessages(LoadMoreMessagesEvent event, Emitter<ChatState> emit) async {
     final currentState = state;
     if (currentState is! ChatLoaded || _hasReachedMax || _isFetchingMore) {
@@ -1164,6 +1261,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         longitude: event.longitude,
         address: event.address,
         locationTitle: event.title,
+        isLive: event.isLive || event.type == 'live_location',
+        isLiveActive: event.isLiveActive,
+        liveDurationSeconds: event.liveDurationSeconds,
+        liveExpiresAt: event.liveExpiresAt,
+        liveComment: event.liveComment,
         isDeleted: false,
         createdAt: now,
         updatedAt: now,
@@ -1172,7 +1274,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         replyMessageBody: event.replyMessageBody,
         attachmentBytes: event.attachmentBytes,
         attachmentName: event.attachmentName,
-        isUploading: event.type != 'text' && event.type != 'location' && event.type != 'contact',
+        isUploading: event.type != 'text' && event.type != 'location' && event.type != 'live_location' && event.type != 'contact',
         allowShare: event.allowShare,
         allowDownload: event.allowDownload,
         allowView: event.allowView,
@@ -1186,6 +1288,40 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final updatedMessages = _filterExpiredMessages(List<MessageModel>.from(currentState.messages)..add(newMessage));
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
+    }
+  }
+
+  void _onUpdateLiveLocation(UpdateLiveLocationEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = List<MessageModel>.from(currentState.messages);
+      final idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      if (idx != -1) {
+        final existing = updatedMessages[idx];
+        updatedMessages[idx] = existing.copyWith(
+          latitude: event.latitude,
+          longitude: event.longitude,
+          address: event.address ?? existing.address,
+        );
+        emit(currentState.copyWith(messages: updatedMessages));
+        _saveToCache(event.conversationId, updatedMessages);
+      }
+    }
+  }
+
+  void _onStopLiveLocation(StopLiveLocationEvent event, Emitter<ChatState> emit) {
+    final currentState = state;
+    if (currentState is ChatLoaded) {
+      final updatedMessages = List<MessageModel>.from(currentState.messages);
+      final idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      if (idx != -1) {
+        final existing = updatedMessages[idx];
+        updatedMessages[idx] = existing.copyWith(
+          isLiveActive: false,
+        );
+        emit(currentState.copyWith(messages: updatedMessages));
+        _saveToCache(event.conversationId, updatedMessages);
+      }
     }
   }
 

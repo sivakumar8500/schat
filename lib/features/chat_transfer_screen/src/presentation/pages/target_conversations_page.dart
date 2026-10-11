@@ -10,6 +10,7 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
+import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 
 class TargetConversationsPage extends StatefulWidget {
@@ -25,6 +26,9 @@ class TargetConversationsPage extends StatefulWidget {
 }
 
 class _TargetConversationsPageState extends State<TargetConversationsPage> {
+  int _selectedFilterIndex = 0; // 0 = All, 1 = One to One, 2 = Groups
+  bool _isRefreshing = false;
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +38,22 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
             targetUser: widget.targetUser,
           ),
         );
+  }
+
+  Future<void> _refreshChats() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    context.read<ChatTransferBloc>().add(
+          LoadTargetConversations(
+            targetUserId: widget.targetUser.id,
+            targetUser: widget.targetUser,
+          ),
+        );
+    await Future.delayed(const Duration(milliseconds: 650));
+    if (mounted) {
+      setState(() => _isRefreshing = false);
+      context.showSuccessNotification('Latest chats updated');
+    }
   }
 
   @override
@@ -122,46 +142,76 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
                       }
 
                       final conversations = state.monitoredConversations;
-                      if (conversations.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  width: 80,
-                                  height: 80,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFFE8F5E9),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.chat_bubble_outline_rounded, size: 40, color: Color(0xFF00873C)),
-                                ),
-                                CommonSpaces.h16,
-                                Text(
-                                  'No Active Conversations',
-                                  style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                CommonSpaces.h8,
-                                Text(
-                                  '$title does not have any active conversations yet.',
-                                  style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
+                      final oneToOneChats = conversations.where((c) => !c.isGroup).toList();
+                      final groupChats = conversations.where((c) => c.isGroup).toList();
+                      final displayedConversations = _selectedFilterIndex == 1
+                          ? oneToOneChats
+                          : (_selectedFilterIndex == 2 ? groupChats : conversations);
 
-                      return ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
-                        itemCount: conversations.length,
-                        itemBuilder: (context, index) {
-                          final chat = conversations[index];
-                          return _buildConversationCard(context, chat, isDark);
-                        },
+                      return RefreshIndicator(
+                        onRefresh: _refreshChats,
+                        color: const Color(0xFF00873C),
+                        child: Column(
+                          children: [
+                            if (conversations.isNotEmpty)
+                              _buildFilterTabs(conversations),
+                            Expanded(
+                              child: displayedConversations.isEmpty
+                                  ? Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(32.0),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Container(
+                                              width: 80,
+                                              height: 80,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFFE8F5E9),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                _selectedFilterIndex == 2
+                                                    ? Icons.group_outlined
+                                                    : Icons.chat_bubble_outline_rounded,
+                                                size: 40,
+                                                color: const Color(0xFF00873C),
+                                              ),
+                                            ),
+                                            CommonSpaces.h16,
+                                            Text(
+                                              _selectedFilterIndex == 1
+                                                  ? 'No One-to-One Chats'
+                                                  : (_selectedFilterIndex == 2
+                                                      ? 'No Group Chats'
+                                                      : 'No Active Conversations'),
+                                              style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                                            ),
+                                            CommonSpaces.h8,
+                                            Text(
+                                              _selectedFilterIndex == 1
+                                                  ? '$title does not have any 1-on-1 chats yet.'
+                                                  : (_selectedFilterIndex == 2
+                                                      ? '$title is not in any groups yet.'
+                                                      : '$title does not have any active conversations yet.'),
+                                              style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+                                      itemCount: displayedConversations.length,
+                                      itemBuilder: (context, index) {
+                                        final chat = displayedConversations[index];
+                                        return _buildConversationCard(context, chat, isDark);
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -170,6 +220,100 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterTabs(List<ChatModel> allConversations) {
+    final oneToOneCount = allConversations.where((c) => !c.isGroup).length;
+    final groupCount = allConversations.where((c) => c.isGroup).length;
+
+    final filters = [
+      ('All', allConversations.length),
+      ('One to One', oneToOneCount),
+      ('Group', groupCount),
+    ];
+
+    return Container(
+      height: 38,
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: context.colors.cardBackground.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: context.colors.border.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: List.generate(filters.length, (index) {
+          final (label, count) = filters[index];
+          final isSelected = _selectedFilterIndex == index;
+
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilterIndex = index;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFF00873C) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFF00873C).withValues(alpha: 0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : context.colors.textPrimary.withValues(alpha: 0.8),
+                        ),
+                      ),
+                      if (count > 0) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.white.withValues(alpha: 0.25)
+                                : context.colors.border.withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : context.colors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
@@ -247,16 +391,18 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
             ),
             child: IconButton(
               padding: EdgeInsets.zero,
-              icon: const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 19),
-              tooltip: 'Refresh',
-              onPressed: () {
-                context.read<ChatTransferBloc>().add(
-                      LoadTargetConversations(
-                        targetUserId: widget.targetUser.id,
-                        targetUser: widget.targetUser,
+              icon: _isRefreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF00873C),
                       ),
-                    );
-              },
+                    )
+                  : const Icon(Icons.refresh_rounded, color: Color(0xFF00873C), size: 19),
+              tooltip: 'Pull latest chats',
+              onPressed: _isRefreshing ? null : _refreshChats,
             ),
           ),
         ],

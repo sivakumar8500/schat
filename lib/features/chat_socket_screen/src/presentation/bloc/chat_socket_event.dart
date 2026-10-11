@@ -29,6 +29,7 @@ class SendMessage extends ChatSocketEvent {
   final Map<String, dynamic>? viewControl;
   final Map<String, dynamic>? expiry;
   final Map<String, dynamic>? callMeta;
+  final Map<String, dynamic>? liveMeta;
 
   const SendMessage({
     required this.conversationId,
@@ -49,6 +50,7 @@ class SendMessage extends ChatSocketEvent {
     this.viewControl,
     this.expiry,
     this.callMeta,
+    this.liveMeta,
   });
 }
 

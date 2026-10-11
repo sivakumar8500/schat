@@ -5,6 +5,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:schat/main.dart'; // For navigatorKey
 import 'package:schat/injection.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/share_forward_target_page.dart';
 
 class ShareReceiverService {
@@ -121,6 +122,13 @@ class ShareReceiverService {
     final storage = getIt<StorageService>();
     if (!storage.hasToken()) {
       debugPrint("ShareReceiverService: User is not authenticated. Share ignored.");
+      return;
+    }
+
+    // Only present once Dashboard is ready, so Splash never prematurely replaces the share screen
+    final pushService = getIt<PushNotificationService>();
+    if (!pushService.isDashboardReady) {
+      debugPrint("ShareReceiverService: Dashboard not ready yet, deferring until Dashboard mounts.");
       return;
     }
 

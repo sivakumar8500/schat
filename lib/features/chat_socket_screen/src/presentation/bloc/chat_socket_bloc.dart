@@ -65,6 +65,7 @@ class ChatSocketBloc extends Bloc<ChatSocketEvent, ChatSocketState> {
       viewControl: event.viewControl,
       expiry: event.expiry,
       callMeta: event.callMeta,
+      liveMeta: event.liveMeta,
     );
   }
 
