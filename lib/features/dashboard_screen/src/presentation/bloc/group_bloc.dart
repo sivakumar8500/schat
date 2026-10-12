@@ -24,8 +24,12 @@ class GroupBloc extends Bloc<GroupEvent, GroupState> {
     );
 
     result.when(
-      success: (chat) => emit(GroupSuccess(chat)),
-      failure: (message, _) => emit(GroupError(message)),
+      success: (chat) {
+        emit(GroupSuccess(chat));
+      },
+      failure: (message, _) {
+        emit(GroupError(message));
+      },
     );
   }
 }

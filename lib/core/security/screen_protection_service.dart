@@ -99,6 +99,32 @@ class ScreenProtectionService {
     }
   }
 
+  /// Copies the latest screen recording video to Download/Schat folder
+  Future<String?> saveLatestScreenRecordingToSchat({int? recordedSinceTimestamp}) async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final res = await _androidScreenshotChannel.invokeMethod<String>(
+        'saveLatestScreenRecordingToSchat',
+        {
+          'recordedSinceTimestamp': recordedSinceTimestamp ??
+              (DateTime.now().millisecondsSinceEpoch - 10 * 60 * 1000),
+        },
+      );
+      debugPrint('ScreenProtection: saveLatestScreenRecordingToSchat() result=$res');
+      return res;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error saving screen recording to Schat: $e');
+      return null;
+    }
+  }
+
+  ScreenRecordingSession? _activeRecordingSession;
+  ScreenRecordingSession? get activeRecordingSession => _activeRecordingSession;
+
+  void setActiveRecordingSession(ScreenRecordingSession? session) {
+    _activeRecordingSession = session;
+  }
+
   void dispose() {
     ScreenProtector.removeListener();
     if (Platform.isAndroid) {
@@ -107,4 +133,24 @@ class ScreenProtectionService {
     _screenshotController.close();
     _screenRecordController.close();
   }
+}
+
+class ScreenRecordingSession {
+  final String permissionId;
+  final String conversationId;
+  final int totalDurationSeconds;
+  int remainingSeconds;
+  bool isPaused;
+  bool isSystemRecordingStarted;
+  final DateTime startedAt;
+
+  ScreenRecordingSession({
+    required this.permissionId,
+    required this.conversationId,
+    required this.totalDurationSeconds,
+    required this.remainingSeconds,
+    this.isPaused = false,
+    this.isSystemRecordingStarted = false,
+    required this.startedAt,
+  });
 }

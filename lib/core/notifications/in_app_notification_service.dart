@@ -180,6 +180,12 @@ class InAppNotificationService {
       return;
     }
 
+    // Suppress notification if this individual chat is hidden
+    if (convId != null && _storageService.isChatHidden(convId)) {
+      debugPrint('InAppNotificationService: Suppressing in-app notification because chat $convId is hidden');
+      return;
+    }
+
     // CRITICAL: Suppress in-app notification if user is currently chatting with this person / in this conversation
     if (isChatActive(conversationId: convId, senderId: senderId)) {
       debugPrint('InAppNotificationService: Suppressing in-app notification because user is actively in chat with $senderId / conv $convId');

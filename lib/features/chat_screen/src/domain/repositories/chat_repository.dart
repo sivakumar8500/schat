@@ -23,8 +23,8 @@ abstract class ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = true,
-    bool allowShare = true,
+    bool allowDownload = false,
+    bool allowShare = false,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);

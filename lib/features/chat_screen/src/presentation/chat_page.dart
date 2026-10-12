@@ -28,6 +28,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:schat/main.dart' show routeObserver;
 import 'package:video_player/video_player.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -130,7 +131,7 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteAware {
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -154,6 +155,7 @@ class _ChatPageState extends State<ChatPage> {
   Timer? _screenRecordCountdownTimer;
   Timer? _screenRecordPrepTimer;
   bool _isScreenRecordingActive = false;
+  bool _isScreenRecordingPaused = false;
   bool _isSystemRecordingStarted = false;
   int _screenRecordRemainingSeconds = 0;
   String? _activeScreenRecordPermissionId;
@@ -188,8 +190,8 @@ class _ChatPageState extends State<ChatPage> {
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
-  bool _attachmentAllowShare = true;
-  bool _attachmentAllowDownload = true;
+  bool _attachmentAllowShare = false;
+  bool _attachmentAllowDownload = false;
   bool _attachmentAllowView = true;
   bool _attachmentIsViewOnce = false;
   int _attachmentViewCount = 1;
@@ -221,6 +223,10 @@ class _ChatPageState extends State<ChatPage> {
   bool _showMentionSuggestions = false;
   String _mentionQuery = '';
   bool _showUnknownContactBanner = false;
+  bool _isChatAccepted = true;
+
+  bool get _isChatUnaccepted =>
+      !widget.isGroup && !widget.isReadOnly && (_showUnknownContactBanner || !_isChatAccepted);
 
   late String _effectiveContactName;
   late String? _effectiveProfilePic;
@@ -229,10 +235,12 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _effectiveContactName = widget.contactName;
     _effectiveProfilePic = widget.profilePictureUrl;
     _effectiveIsGroup = widget.isGroup;
     _resolveConversationDetails();
+    _checkUnknownContactStatus();
 
     if (widget.isGroup) {
       _checkIfAdmin();
@@ -371,13 +379,68 @@ class _ChatPageState extends State<ChatPage> {
         } else if (perm.isScreenRecord && _isScreenRecordingActive) {
           if (isCaptured) {
             _onSystemScreenRecordStarted(perm);
+          } else {
+            getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat();
           }
         }
       } else if (isCaptured && !_isScreenRecordingActive) {
         // No active screen record permission, enforce protection immediately
         getIt<ScreenProtectionService>().enableProtection();
+      } else if (!isCaptured) {
+        getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final modalRoute = ModalRoute.of(context);
+    if (modalRoute is PageRoute) {
+      routeObserver.subscribe(this, modalRoute);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    debugPrint('ChatPage: didPushNext - navigated away to another screen');
+    if (_isScreenRecordingActive && !_isScreenRecordingPaused) {
+      _pauseScreenRecording();
+    }
+  }
+
+  @override
+  void didPopNext() {
+    debugPrint('ChatPage: didPopNext - returned back to ChatPage');
+    if (_isScreenRecordingActive && _isScreenRecordingPaused && _screenRecordRemainingSeconds > 0) {
+      _resumeScreenRecording();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_isScreenRecordingActive && !_isScreenRecordingPaused) {
+        _pauseScreenRecording();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      final isCurrent = ModalRoute.of(context)?.isCurrent ?? false;
+      if (isCurrent && _isScreenRecordingActive && _isScreenRecordingPaused && _screenRecordRemainingSeconds > 0) {
+        _resumeScreenRecording();
+      }
+    }
+  }
+
+  bool _isGenericName(String? name) {
+    if (name == null) return true;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return true;
+    final lower = trimmed.toLowerCase();
+    return lower == 'schat' ||
+        lower == 'chat' ||
+        lower == 'user' ||
+        lower == 'new message' ||
+        lower == 'null';
   }
 
   Future<void> _resolveConversationDetails() async {
@@ -387,17 +450,17 @@ class _ChatPageState extends State<ChatPage> {
         final chatsBloc = getIt<ChatsBloc>();
         final state = chatsBloc.state;
         if (state is ChatsLoaded) {
-          final matched = state.chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+          final matched = state.chats.firstWhereOrNull((c) =>
+              c.id.trim() == widget.conversationId.trim() ||
+              (widget.recipientId.isNotEmpty && c.recipient.id.trim() == widget.recipientId.trim()));
           if (matched != null) {
             final resolvedName = matched.isGroup
                 ? (matched.groupName ?? 'Group')
                 : matched.recipient.displayName;
             if (mounted &&
                 resolvedName.isNotEmpty &&
-                (resolvedName != _effectiveContactName ||
-                    _effectiveContactName == 'sChat' ||
-                    _effectiveContactName == 'Chat' ||
-                    _effectiveContactName == 'New Message')) {
+                !_isGenericName(resolvedName) &&
+                (resolvedName != _effectiveContactName || _isGenericName(_effectiveContactName))) {
               setState(() {
                 _effectiveContactName = resolvedName;
                 _effectiveIsGroup = matched.isGroup;
@@ -409,20 +472,47 @@ class _ChatPageState extends State<ChatPage> {
         }
       } catch (_) {}
 
-      // 2. Fetch from backend if name is missing/generic or to guarantee up-to-date group info
-      if (_effectiveContactName.isEmpty ||
-          _effectiveContactName == 'sChat' ||
-          _effectiveContactName == 'Chat' ||
-          _effectiveContactName == 'New Message') {
+      // 2. Try to match from locked chats
+      if (_isGenericName(_effectiveContactName)) {
+        try {
+          final lockedRes = await getIt<DashboardRepository>().getLockedChats();
+          lockedRes.when(
+            success: (chats) {
+              final matched = chats.firstWhereOrNull((c) =>
+                  c.id.trim() == widget.conversationId.trim() ||
+                  (widget.recipientId.isNotEmpty && c.recipient.id.trim() == widget.recipientId.trim()));
+              if (matched != null && mounted) {
+                final resolvedName = matched.isGroup
+                    ? (matched.groupName ?? 'Group')
+                    : matched.recipient.displayName;
+                if (resolvedName.isNotEmpty && !_isGenericName(resolvedName)) {
+                  setState(() {
+                    _effectiveContactName = resolvedName;
+                    _effectiveIsGroup = matched.isGroup;
+                    _effectiveProfilePic = matched.recipient.profilePictureUrl ?? _effectiveProfilePic;
+                  });
+                }
+              }
+            },
+            failure: (_, __) {},
+          );
+          if (!_isGenericName(_effectiveContactName)) return;
+        } catch (_) {}
+      }
+
+      // 3. Fetch from backend chats if name is missing/generic or to guarantee up-to-date group info
+      if (_isGenericName(_effectiveContactName)) {
         final result = await getIt<DashboardRepository>().getChats();
         result.when(
           success: (chats) {
-            final matched = chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+            final matched = chats.firstWhereOrNull((c) =>
+                c.id.trim() == widget.conversationId.trim() ||
+                (widget.recipientId.isNotEmpty && c.recipient.id.trim() == widget.recipientId.trim()));
             if (matched != null && mounted) {
               final resolvedName = matched.isGroup
                   ? (matched.groupName ?? 'Group')
                   : matched.recipient.displayName;
-              if (resolvedName.isNotEmpty) {
+              if (resolvedName.isNotEmpty && !_isGenericName(resolvedName)) {
                 setState(() {
                   _effectiveContactName = resolvedName;
                   _effectiveIsGroup = matched.isGroup;
@@ -433,6 +523,41 @@ class _ChatPageState extends State<ChatPage> {
           },
           failure: (error, code) {},
         );
+        if (!_isGenericName(_effectiveContactName)) return;
+      }
+
+      // 4. Try local cached contacts
+      if (_isGenericName(_effectiveContactName) && widget.recipientId.isNotEmpty) {
+        try {
+          final contacts = await getIt<ContactsRepository>().getCachedContacts();
+          final matchedUser = contacts.firstWhereOrNull((u) => u.id.trim() == widget.recipientId.trim());
+          if (matchedUser != null && matchedUser.displayName.isNotEmpty && !_isGenericName(matchedUser.displayName) && mounted) {
+            setState(() {
+              _effectiveContactName = matchedUser.displayName;
+              _effectiveProfilePic = matchedUser.profilePictureUrl ?? _effectiveProfilePic;
+            });
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // 5. Try fetching profile by recipientId as last resort
+      if (_isGenericName(_effectiveContactName) && widget.recipientId.isNotEmpty) {
+        try {
+          final profileResult = await getIt<ProfileRepository>().getUserById(widget.recipientId);
+          profileResult.when(
+            success: (user) {
+              final name = user.displayName;
+              if (name.isNotEmpty && !_isGenericName(name) && mounted) {
+                setState(() {
+                  _effectiveContactName = name;
+                  _effectiveProfilePic = user.profilePictureUrl ?? _effectiveProfilePic;
+                });
+              }
+            },
+            failure: (_, __) {},
+          );
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('Error resolving conversation details in ChatPage: $e');
@@ -1387,19 +1512,37 @@ class _ChatPageState extends State<ChatPage> {
                   icon: _attachmentAllowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
                   label: 'View',
                   isActive: _attachmentAllowView,
-                  onTap: () => setState(() => _attachmentAllowView = !_attachmentAllowView),
+                  onTap: () => setState(() {
+                    _attachmentAllowView = !_attachmentAllowView;
+                    if (!_attachmentAllowView) {
+                      _attachmentAllowDownload = false;
+                      _attachmentAllowShare = false;
+                    }
+                  }),
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                   label: 'Download',
                   isActive: _attachmentAllowDownload,
-                  onTap: () => setState(() => _attachmentAllowDownload = !_attachmentAllowDownload),
+                  onTap: () {
+                    if (!_attachmentAllowView) {
+                      context.showInfoNotification('Enable View first to allow Download');
+                      return;
+                    }
+                    setState(() => _attachmentAllowDownload = !_attachmentAllowDownload);
+                  },
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowShare ? CommonIcons.share : CommonIcons.shareOff,
                   label: 'Share',
                   isActive: _attachmentAllowShare,
-                  onTap: () => setState(() => _attachmentAllowShare = !_attachmentAllowShare),
+                  onTap: () {
+                    if (!_attachmentAllowView) {
+                      context.showInfoNotification('Enable View first to allow Share');
+                      return;
+                    }
+                    setState(() => _attachmentAllowShare = !_attachmentAllowShare);
+                  },
                 ),
               ],
             ),
@@ -2555,6 +2698,8 @@ class _ChatPageState extends State<ChatPage> {
       fileName: msg.attachmentName,
       fileSize: msg.fileSize,
       mimeType: msg.attachmentName != null ? _getMimeType(msg.attachmentName!, msg.mediaType ?? 'file') : null,
+      isForwarded: true,
+      forwardedFromMessageId: msg.id,
       security: {
         'allowShare': msg.allowShare,
         'allowDownload': msg.allowDownload,
@@ -3112,6 +3257,11 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     getIt<InAppNotificationService>().clearActiveChat();
+    routeObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
+    if (_isScreenRecordingActive) {
+      _pauseScreenRecording(isPageDisposing: true);
+    }
     _callSocketSubscription?.cancel();
     _screenshotSubscription?.cancel();
     _screenRecordSubscription?.cancel();
@@ -3122,6 +3272,7 @@ class _ChatPageState extends State<ChatPage> {
     _screenRecordPrepTimer?.cancel();
     _screenRecordPrepTimer = null;
     _isScreenRecordingActive = false;
+    _isScreenRecordingPaused = false;
     _isSystemRecordingStarted = false;
     _screenshotAutoExpireTimer?.cancel();
     _screenshotAutoExpireTimer = null;
@@ -3273,8 +3424,8 @@ class _ChatPageState extends State<ChatPage> {
       _recordedPath = null;
       _recordedName = null;
       _recordedDurationSecs = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
     });
 
@@ -3415,8 +3566,8 @@ class _ChatPageState extends State<ChatPage> {
         _recordedPath = null;
         _recordedName = null;
         _recordedDurationSecs = 0;
-        _attachmentAllowShare = true;
-        _attachmentAllowDownload = true;
+        _attachmentAllowShare = false;
+        _attachmentAllowDownload = false;
         _attachmentAllowView = true;
       });
     }
@@ -3456,6 +3607,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _sendTypingStatus(bool isTyping) {
+    if (_isChatUnaccepted) return;
     if (isTyping && !_isTypingIndicatorEnabled()) return;
     context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: isTyping));
   }
@@ -3755,8 +3907,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
       _attachmentIsViewOnce = false;
       _attachmentViewCount = 1;
@@ -4131,8 +4283,8 @@ class _ChatPageState extends State<ChatPage> {
                     _selectedAttachmentName = null;
                     _selectedAttachmentType = null;
                     _selectedAttachmentSize = 0;
-                    _attachmentAllowShare = true;
-                    _attachmentAllowDownload = true;
+                    _attachmentAllowShare = false;
+                    _attachmentAllowDownload = false;
                     _attachmentAllowView = true;
                     _isTyping = _messageController.text.trim().isNotEmpty;
                   });
@@ -4152,19 +4304,37 @@ class _ChatPageState extends State<ChatPage> {
                   icon: _attachmentAllowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
                   label: 'View',
                   isActive: _attachmentAllowView,
-                  onTap: () => setState(() => _attachmentAllowView = !_attachmentAllowView),
+                  onTap: () => setState(() {
+                    _attachmentAllowView = !_attachmentAllowView;
+                    if (!_attachmentAllowView) {
+                      _attachmentAllowDownload = false;
+                      _attachmentAllowShare = false;
+                    }
+                  }),
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                   label: 'Download',
                   isActive: _attachmentAllowDownload,
-                  onTap: () => setState(() => _attachmentAllowDownload = !_attachmentAllowDownload),
+                  onTap: () {
+                    if (!_attachmentAllowView) {
+                      context.showInfoNotification('Enable View first to allow Download');
+                      return;
+                    }
+                    setState(() => _attachmentAllowDownload = !_attachmentAllowDownload);
+                  },
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowShare ? CommonIcons.share : CommonIcons.shareOff,
                   label: 'Share',
                   isActive: _attachmentAllowShare,
-                  onTap: () => setState(() => _attachmentAllowShare = !_attachmentAllowShare),
+                  onTap: () {
+                    if (!_attachmentAllowView) {
+                      context.showInfoNotification('Enable View first to allow Share');
+                      return;
+                    }
+                    setState(() => _attachmentAllowShare = !_attachmentAllowShare);
+                  },
                 ),
               ],
             ),
@@ -4258,6 +4428,18 @@ class _ChatPageState extends State<ChatPage> {
 
           if (state is ChatLoaded) {
             _checkUnknownContactStatus(state.messages);
+
+            // Dynamically resolve contact name from loaded messages if currently generic
+            if (!_effectiveIsGroup && !widget.isGroup && _isGenericName(_effectiveContactName)) {
+              final senderMsg = state.messages.firstWhereOrNull(
+                (m) => !_isMessageFromMe(m, state.myId) && (m.senderName != null && !_isGenericName(m.senderName!.trim())),
+              );
+              if (senderMsg != null && mounted) {
+                setState(() {
+                  _effectiveContactName = senderMsg.senderName!.trim();
+                });
+              }
+            }
             final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
                 (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot
                     ? state.activeScreenPermission
@@ -4296,8 +4478,15 @@ class _ChatPageState extends State<ChatPage> {
                 });
               }
             } else if (isScreenRecordAllowed) {
-              // Screen recording approved: automatically start screen recording session
-              if (!_isScreenRecordingActive || _activeScreenRecordPermissionId != activeRecordPerm.id) {
+              // Screen recording approved: check for existing paused session or start new one
+              final existingSession = getIt<ScreenProtectionService>().activeRecordingSession;
+              if (existingSession != null &&
+                  existingSession.permissionId == activeRecordPerm.id &&
+                  existingSession.conversationId == widget.conversationId) {
+                if (_isScreenRecordingPaused || !_isScreenRecordingActive) {
+                  _resumeScreenRecording();
+                }
+              } else if (!_isScreenRecordingActive || _activeScreenRecordPermissionId != activeRecordPerm.id) {
                 _screenshotAutoExpireTimer?.cancel();
                 _screenshotAutoExpireTimer = null;
                 _activeScreenshotPermissionId = null;
@@ -4316,6 +4505,7 @@ class _ChatPageState extends State<ChatPage> {
               _screenshotAutoExpireTimer?.cancel();
               _screenshotAutoExpireTimer = null;
               _activeScreenshotPermissionId = null;
+              getIt<ScreenProtectionService>().setActiveRecordingSession(null);
               getIt<ScreenProtectionService>().enableProtection();
             }
           }
@@ -4333,7 +4523,7 @@ class _ChatPageState extends State<ChatPage> {
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
           final displayedMessages = _getDisplayedMessages(messages);
-          final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping;
+          final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping && !_isChatUnaccepted;
           // Custom Wallpaper or Color Theme
           final customWallpaperUrl = state is ChatLoaded ? state.customWallpaperUrl : null;
           final apiThemeColor = state is ChatLoaded ? state.themeColor?.toColor() : null;
@@ -4500,8 +4690,9 @@ class _ChatPageState extends State<ChatPage> {
 
                                     final bubble = Dismissible(
                                       key: ValueKey('dismiss_${msg.id}'),
-                                      direction: _isSystemMessage(msg) ? DismissDirection.none : DismissDirection.horizontal,
+                                      direction: (widget.isReadOnly || _isSystemMessage(msg)) ? DismissDirection.none : DismissDirection.horizontal,
                                       confirmDismiss: (direction) async {
+                                        if (widget.isReadOnly) return false;
                                         if (direction == DismissDirection.startToEnd) {
                                           // Swipe right to delete
                                           _showDeleteDialog(context, isGrouped ? groupedList! : [msg]);
@@ -4535,7 +4726,7 @@ class _ChatPageState extends State<ChatPage> {
                                           _tapPosition = details.globalPosition;
                                         },
                                         onLongPress: () {
-                                          if (msg.isDeleted) return;
+                                          if (widget.isReadOnly || msg.isDeleted) return;
                                           setState(() {
                                             _selectedMessageIds.clear();
                                             _selectedMessageIds.addAll(allGroupIds);
@@ -4543,7 +4734,7 @@ class _ChatPageState extends State<ChatPage> {
                                           _showMessageMenu(context, msg, isMe, _tapPosition, state is ChatLoaded ? state.isRecipientOnline : false);
                                         },
                                         onTap: () {
-                                          if (msg.isDeleted) return;
+                                          if (widget.isReadOnly || msg.isDeleted) return;
                                           if (_selectedMessageIds.isNotEmpty) {
                                             setState(() {
                                               if (isSelected) {
@@ -4564,6 +4755,8 @@ class _ChatPageState extends State<ChatPage> {
                                           isDelivered: msg.isDelivered,
                                           isDeleted: msg.isDeleted,
                                           isGroup: widget.isGroup,
+                                          isForwarded: msg.isForwarded,
+                                          forwardedFromMessageId: msg.forwardedFromMessageId,
                                           recipientId: widget.recipientId.isNotEmpty ? widget.recipientId : (isMe ? null : msg.senderId),
                                           senderName: widget.isGroup && !isMe ? _resolveSenderName(msg.senderId, msg.senderName) : null,
                                           senderProfilePictureUrl: widget.isGroup && !isMe ? _resolveSenderProfilePic(msg.senderId, msg.senderProfilePictureUrl) : null,
@@ -4587,8 +4780,8 @@ class _ChatPageState extends State<ChatPage> {
                                           isUploading: msg.isUploading,
                                           isFailed: msg.isFailed,
                                           onResendPressed: () => _resendMessage(msg),
-                                          allowShare: msg.allowShare,
-                                          allowDownload: msg.allowDownload,
+                                          allowShare: widget.isReadOnly ? false : msg.allowShare,
+                                          allowDownload: widget.isReadOnly ? false : msg.allowDownload,
                                           allowView: msg.allowView,
                                           isViewOnce: msg.isViewOnce,
                                           maxViews: msg.maxViews,
@@ -4596,9 +4789,10 @@ class _ChatPageState extends State<ChatPage> {
                                           isFileViewed: msg.isFileViewed,
                                           isFileDownloaded: msg.isFileDownloaded,
                                           isFileShared: msg.isFileShared,
-                                          onSharePressed: msg.allowShare ? () => _showForwardBottomSheet(context, msg) : null,
+                                          onSharePressed: (widget.isReadOnly || !msg.allowShare) ? null : () => _showForwardBottomSheet(context, msg),
                                           fileSize: msg.fileSize,
                                           callMeta: msg.callMeta,
+                                          isReadOnly: widget.isReadOnly,
                                           expiry: msg.expiry,
                                           reactions: msg.reactions,
                                           onReactionTap: (emoji) {
@@ -5109,16 +5303,27 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     final isBlocked = state is ChatLoaded && state.isBlocked;
-    final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked;
-    final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked;
-    final lastSeen = isBlocked ? null : (state is ChatLoaded ? state.lastSeen : null);
+    final isUnaccepted = _isChatUnaccepted;
+    final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked && !isUnaccepted;
+    final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked && !isUnaccepted;
+    final lastSeen = (isBlocked || isUnaccepted) ? null : (state is ChatLoaded ? state.lastSeen : null);
     final effectivePicUrl = isBlocked ? null : (_effectiveProfilePic ?? widget.profilePictureUrl);
     final isGroup = _effectiveIsGroup || widget.isGroup;
-    final displayTitle = _effectiveContactName.isNotEmpty && _effectiveContactName != 'sChat' && _effectiveContactName != 'Chat' && _effectiveContactName != 'New Message'
+    String? fallbackSenderName;
+    if (state is ChatLoaded && !isGroup) {
+      final senderMsg = state.messages.firstWhereOrNull(
+        (m) => !_isMessageFromMe(m, state.myId) && (m.senderName != null && !_isGenericName(m.senderName!.trim())),
+      );
+      fallbackSenderName = senderMsg?.senderName?.trim();
+    }
+
+    final displayTitle = !_isGenericName(_effectiveContactName)
         ? _effectiveContactName
-        : (widget.contactName.isNotEmpty && widget.contactName != 'sChat' && widget.contactName != 'Chat' && widget.contactName != 'New Message'
+        : (!_isGenericName(widget.contactName)
             ? widget.contactName
-            : (isGroup ? 'Group Chat' : 'User'));
+            : (fallbackSenderName != null && fallbackSenderName.isNotEmpty
+                ? fallbackSenderName
+                : (isGroup ? 'Group Chat' : 'Chat')));
 
     return AppBar(
       backgroundColor: context.colors.scaffoldBackground,
@@ -5256,7 +5461,7 @@ class _ChatPageState extends State<ChatPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (!isGroup && isBlocked)
+                  if (!isGroup && (isBlocked || isUnaccepted))
                     const SizedBox.shrink()
                   else
                     Text(
@@ -5508,6 +5713,9 @@ class _ChatPageState extends State<ChatPage> {
               );
               if (chat != null && context.mounted) {
                 context.showSuccessNotification('Group created successfully');
+                if (getIt.isRegistered<ChatsBloc>()) {
+                  getIt<ChatsBloc>().add(const FetchChats());
+                }
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -5520,7 +5728,11 @@ class _ChatPageState extends State<ChatPage> {
                       isGroup: true,
                     ),
                   ),
-                );
+                ).then((_) {
+                  if (getIt.isRegistered<ChatsBloc>()) {
+                    getIt<ChatsBloc>().add(const FetchChats());
+                  }
+                });
               }
             } else if (value == 'clear_chat') {
               _showClearChatBottomSheet(context);
@@ -5694,15 +5906,21 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _checkUnknownContactStatus([List<MessageModel>? messageList]) async {
     // Never show in read-only / chat monitoring mode, group chats, or invalid recipient
     if (widget.isReadOnly || widget.targetUserId != null || widget.isGroup || widget.recipientId.isEmpty) {
-      if (mounted && _showUnknownContactBanner) {
-        setState(() => _showUnknownContactBanner = false);
+      if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+        setState(() {
+          _showUnknownContactBanner = false;
+          _isChatAccepted = true;
+        });
       }
       return;
     }
     final chatState = _chatBloc.state;
     if (chatState is! ChatLoaded) {
-      if (mounted && _showUnknownContactBanner) {
-        setState(() => _showUnknownContactBanner = false);
+      if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+        setState(() {
+          _showUnknownContactBanner = false;
+          _isChatAccepted = true;
+        });
       }
       return;
     }
@@ -5710,8 +5928,11 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final box = await Hive.openBox('accepted_unknown_contacts');
       if (box.get(widget.recipientId) == true || box.get(widget.conversationId) == true) {
-        if (mounted && _showUnknownContactBanner) {
-          setState(() => _showUnknownContactBanner = false);
+        if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+          setState(() {
+            _showUnknownContactBanner = false;
+            _isChatAccepted = true;
+          });
         }
         return;
       }
@@ -5726,8 +5947,11 @@ class _ChatPageState extends State<ChatPage> {
         if (isKnown) {
           await box.put(widget.recipientId, true);
           await box.put(widget.conversationId, true);
-          if (mounted && _showUnknownContactBanner) {
-            setState(() => _showUnknownContactBanner = false);
+          if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+            setState(() {
+              _showUnknownContactBanner = false;
+              _isChatAccepted = true;
+            });
           }
           return;
         }
@@ -5740,8 +5964,11 @@ class _ChatPageState extends State<ChatPage> {
       if (_hasUserSentAnyMessage(msgs, myId) || _hasBothSentMessages(msgs, myId)) {
         await box.put(widget.recipientId, true);
         await box.put(widget.conversationId, true);
-        if (mounted && _showUnknownContactBanner) {
-          setState(() => _showUnknownContactBanner = false);
+        if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+          setState(() {
+            _showUnknownContactBanner = false;
+            _isChatAccepted = true;
+          });
         }
         return;
       }
@@ -5757,17 +5984,21 @@ class _ChatPageState extends State<ChatPage> {
       );
 
       if (!hasIncomingMessage) {
-        if (mounted && _showUnknownContactBanner) {
-          setState(() => _showUnknownContactBanner = false);
+        if (mounted && (_showUnknownContactBanner || !_isChatAccepted)) {
+          setState(() {
+            _showUnknownContactBanner = false;
+            _isChatAccepted = true;
+          });
         }
         return;
       }
 
       final isBlocked = chatState.isBlocked;
       if (!isBlocked && mounted) {
-        if (!_showUnknownContactBanner) {
+        if (!_showUnknownContactBanner || _isChatAccepted) {
           setState(() {
             _showUnknownContactBanner = true;
+            _isChatAccepted = false;
           });
         }
       }
@@ -5776,7 +6007,7 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  Future<void> _continueUnknownContact() async {
+  Future<void> _continueUnknownContact({String action = 'continued'}) async {
     try {
       final box = await Hive.openBox('accepted_unknown_contacts');
       await box.put(widget.recipientId, true);
@@ -5785,8 +6016,13 @@ class _ChatPageState extends State<ChatPage> {
     if (mounted) {
       setState(() {
         _showUnknownContactBanner = false;
+        _isChatAccepted = true;
       });
-      context.showSuccessNotification('Chat continued with ${_effectiveContactName.isNotEmpty ? _effectiveContactName : 'contact'}');
+      context.showSuccessNotification(
+        action == 'accepted'
+            ? 'Chat accepted with ${_effectiveContactName.isNotEmpty ? _effectiveContactName : 'contact'}'
+            : 'Chat continued with ${_effectiveContactName.isNotEmpty ? _effectiveContactName : 'contact'}'
+      );
     }
   }
 
@@ -5924,7 +6160,7 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'This sender is not in your contacts. Choose to continue or block them.',
+                      'This sender is not in your contacts. Choose to continue, accept, or block them.',
                       style: TextStyle(
                         color: context.colors.textSecondary,
                         fontSize: 11.5,
@@ -5943,17 +6179,17 @@ class _ChatPageState extends State<ChatPage> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _showBlockConfirmationDialog(context),
-                  icon: const Icon(Icons.block_rounded, size: 16, color: Colors.redAccent),
+                  icon: const Icon(Icons.block_rounded, size: 15, color: Colors.redAccent),
                   label: const Text(
                     'Block',
                     style: TextStyle(
                       color: Colors.redAccent,
                       fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
                     side: const BorderSide(color: Colors.redAccent, width: 1),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -5961,24 +6197,47 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               // Continue Button
               Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _continueUnknownContact,
-                  icon: const Icon(Icons.check_circle_outline, size: 16, color: Colors.white),
-                  label: const Text(
+                child: OutlinedButton.icon(
+                  onPressed: () => _continueUnknownContact(action: 'continued'),
+                  icon: Icon(Icons.arrow_forward_rounded, size: 15, color: context.colors.primary),
+                  label: Text(
                     'Continue',
+                    style: TextStyle(
+                      color: context.colors.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+                    side: BorderSide(color: context.colors.primary, width: 1),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Accept Button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _continueUnknownContact(action: 'accepted'),
+                  icon: const Icon(Icons.check_circle_outline, size: 15, color: Colors.white),
+                  label: const Text(
+                    'Accept',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: context.colors.primary,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -6812,8 +7071,8 @@ class _ChatPageState extends State<ChatPage> {
       _selectedAttachmentType = 'contact';
       _selectedAttachmentBytes = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = false;
+      _attachmentAllowDownload = false;
       _attachmentAllowView = true;
       _isTyping = true;
     });
@@ -6898,8 +7157,8 @@ class _ChatPageState extends State<ChatPage> {
               _selectedAttachmentName = name;
               _selectedAttachmentType = fileType;
               _selectedAttachmentSize = sendBytes.length;
-              _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+              _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
               _attachmentAllowView = (result['allowView'] as bool?) ?? true;
               _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
               _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -6948,8 +7207,8 @@ class _ChatPageState extends State<ChatPage> {
 
           if (result != null && result['send'] == true && mounted) {
             final caption = (result['caption'] as String?) ?? '';
-            final allowShare = (result['allowShare'] as bool?) ?? true;
-            final allowDownload = (result['allowDownload'] as bool?) ?? true;
+            final allowShare = (result['allowShare'] as bool?) ?? false;
+            final allowDownload = (result['allowDownload'] as bool?) ?? false;
             final allowView = (result['allowView'] as bool?) ?? true;
             final isViewOnce = (result['isViewOnce'] as bool?) ?? false;
             final maxViews = (result['maxViews'] as int?) ?? 1;
@@ -7034,8 +7293,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentName = name;
             _selectedAttachmentType = 'image';
             _selectedAttachmentSize = sendBytes.length;
-            _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+            _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
             _attachmentAllowView = (result['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7197,8 +7456,8 @@ class _ChatPageState extends State<ChatPage> {
           _selectedAttachmentName = name;
           _selectedAttachmentType = 'video';
           _selectedAttachmentSize = size;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7341,8 +7600,8 @@ class _ChatPageState extends State<ChatPage> {
             _selectedAttachmentName = file.name;
             _selectedAttachmentType = fileType;
             _selectedAttachmentSize = sendBytes?.length ?? file.size;
-            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? true;
-            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? true;
+            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? false;
+            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? false;
             _attachmentAllowView = (previewResult['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (previewResult['maxViews'] as int?) ?? 1;
@@ -7425,8 +7684,8 @@ class _ChatPageState extends State<ChatPage> {
 
         if (previewResult != null && previewResult['send'] == true && mounted) {
           final caption = (previewResult['caption'] as String?) ?? '';
-          final allowShare = (previewResult['allowShare'] as bool?) ?? true;
-          final allowDownload = (previewResult['allowDownload'] as bool?) ?? true;
+          final allowShare = (previewResult['allowShare'] as bool?) ?? false;
+          final allowDownload = (previewResult['allowDownload'] as bool?) ?? false;
           final allowView = (previewResult['allowView'] as bool?) ?? true;
           final isViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
           final maxViews = (previewResult['maxViews'] as int?) ?? 1;
@@ -8105,6 +8364,10 @@ class _ChatPageState extends State<ChatPage> {
     if (!_isSystemRecordingStarted) {
       _screenRecordPrepTimer?.cancel();
       _screenRecordCountdownTimer?.cancel();
+      final session = getIt<ScreenProtectionService>().activeRecordingSession;
+      if (session != null) {
+        session.isSystemRecordingStarted = true;
+      }
       if (mounted) {
         setState(() {
           _isSystemRecordingStarted = true;
@@ -8116,21 +8379,97 @@ class _ChatPageState extends State<ChatPage> {
         _screenRecordRemainingSeconds = duration;
       }
 
-      _screenRecordCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
-        if (_screenRecordRemainingSeconds <= 1) {
-          timer.cancel();
-          _stopScreenRecording(perm.id, completedByTimer: true);
-        } else {
-          setState(() {
-            _screenRecordRemainingSeconds--;
-          });
-        }
-      });
+      _startCountdownTicker(perm.id);
     }
+  }
+
+  void _startCountdownTicker(String permId) {
+    _screenRecordCountdownTimer?.cancel();
+    _screenRecordCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_isScreenRecordingPaused) {
+        timer.cancel();
+        return;
+      }
+      if (_screenRecordRemainingSeconds <= 1) {
+        timer.cancel();
+        _stopScreenRecording(permId, completedByTimer: true);
+      } else {
+        setState(() {
+          _screenRecordRemainingSeconds--;
+        });
+        final session = getIt<ScreenProtectionService>().activeRecordingSession;
+        if (session != null) {
+          session.remainingSeconds = _screenRecordRemainingSeconds;
+        }
+      }
+    });
+  }
+
+  void _pauseScreenRecording({bool isPageDisposing = false}) async {
+    _screenRecordCountdownTimer?.cancel();
+    _screenRecordCountdownTimer = null;
+    _screenRecordPrepTimer?.cancel();
+    _screenRecordPrepTimer = null;
+    _screenRecordTimer?.cancel();
+    _screenRecordTimer = null;
+
+    final session = getIt<ScreenProtectionService>().activeRecordingSession;
+    if (session != null) {
+      session.isPaused = true;
+      session.remainingSeconds = _screenRecordRemainingSeconds;
+      session.isSystemRecordingStarted = _isSystemRecordingStarted;
+    }
+
+    if (mounted && !isPageDisposing) {
+      setState(() {
+        _isScreenRecordingPaused = true;
+      });
+      context.showInfoNotification(
+        'Screen recording paused (${_screenRecordRemainingSeconds}s remaining). Other screens are protected.',
+      );
+    } else {
+      _isScreenRecordingPaused = true;
+    }
+
+    // Immediately enable protection so other screens cannot be recorded!
+    await getIt<ScreenProtectionService>().setScreenRecordingMode(false);
+    await getIt<ScreenProtectionService>().enableProtection();
+  }
+
+  void _resumeScreenRecording() async {
+    final session = getIt<ScreenProtectionService>().activeRecordingSession;
+    if (session != null && session.remainingSeconds > 0) {
+      _screenRecordRemainingSeconds = session.remainingSeconds;
+      _isSystemRecordingStarted = session.isSystemRecordingStarted;
+      session.isPaused = false;
+    }
+
+    if (_screenRecordRemainingSeconds <= 0) {
+      _stopScreenRecording(_activeScreenRecordPermissionId ?? session?.permissionId ?? '', completedByTimer: true);
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isScreenRecordingActive = true;
+        _isScreenRecordingPaused = false;
+      });
+      context.showSuccessNotification(
+        'Screen recording resumed! ${_screenRecordRemainingSeconds}s remaining.',
+      );
+    } else {
+      _isScreenRecordingActive = true;
+      _isScreenRecordingPaused = false;
+    }
+
+    await getIt<ScreenProtectionService>().setScreenRecordingMode(true);
+    await getIt<ScreenProtectionService>().disableProtection();
+
+    _startCountdownTicker(session?.permissionId ?? _activeScreenRecordPermissionId ?? '');
   }
 
   void _startScreenRecording(ScreenPermissionModel perm) async {
@@ -8139,8 +8478,20 @@ class _ChatPageState extends State<ChatPage> {
     _screenRecordCountdownTimer?.cancel();
     _screenRecordPrepTimer?.cancel();
 
+    final session = ScreenRecordingSession(
+      permissionId: perm.id,
+      conversationId: widget.conversationId,
+      totalDurationSeconds: duration,
+      remainingSeconds: duration,
+      startedAt: DateTime.now(),
+      isSystemRecordingStarted: false,
+      isPaused: false,
+    );
+    getIt<ScreenProtectionService>().setActiveRecordingSession(session);
+
     setState(() {
       _isScreenRecordingActive = true;
+      _isScreenRecordingPaused = false;
       _isSystemRecordingStarted = false;
       _screenRecordRemainingSeconds = duration;
       _activeScreenRecordPermissionId = perm.id;
@@ -8161,14 +8512,14 @@ class _ChatPageState extends State<ChatPage> {
     // If isCaptured is detected, _onSystemScreenRecordStarted takes over with full duration.
     // Otherwise fallback after 5s to run the countdown timer directly.
     _screenRecordPrepTimer = Timer(const Duration(seconds: 5), () {
-      if (!mounted || !_isScreenRecordingActive) return;
+      if (!mounted || !_isScreenRecordingActive || _isScreenRecordingPaused) return;
       if (!_isSystemRecordingStarted) {
         _onSystemScreenRecordStarted(perm);
       }
     });
 
-    // Safety timeout: if recording is left running and forgotten, auto-cancel after duration + 60s
-    _screenRecordTimer = Timer(Duration(seconds: duration + 60), () {
+    // Safety timeout: if recording is left running and forgotten, auto-cancel after duration + 120s
+    _screenRecordTimer = Timer(Duration(seconds: duration + 120), () {
       if (_isScreenRecordingActive) {
         _stopScreenRecording(perm.id, completedByTimer: true);
       }
@@ -8176,6 +8527,10 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _stopScreenRecording(String permId, {bool completedByTimer = false}) async {
+    final session = getIt<ScreenProtectionService>().activeRecordingSession;
+    final sessionStartMs = session?.startedAt.millisecondsSinceEpoch ??
+        (DateTime.now().millisecondsSinceEpoch - 60000);
+
     _screenRecordTimer?.cancel();
     _screenRecordCountdownTimer?.cancel();
     _screenRecordPrepTimer?.cancel();
@@ -8183,15 +8538,19 @@ class _ChatPageState extends State<ChatPage> {
     _screenRecordCountdownTimer = null;
     _screenRecordPrepTimer = null;
 
+    getIt<ScreenProtectionService>().setActiveRecordingSession(null);
+
     if (mounted) {
       setState(() {
         _isScreenRecordingActive = false;
+        _isScreenRecordingPaused = false;
         _isSystemRecordingStarted = false;
         _screenRecordRemainingSeconds = 0;
         _activeScreenRecordPermissionId = null;
       });
     } else {
       _isScreenRecordingActive = false;
+      _isScreenRecordingPaused = false;
       _isSystemRecordingStarted = false;
       _screenRecordRemainingSeconds = 0;
       _activeScreenRecordPermissionId = null;
@@ -8202,17 +8561,45 @@ class _ChatPageState extends State<ChatPage> {
     // Immediately re-enable protection
     await getIt<ScreenProtectionService>().enableProtection();
 
-    if (mounted) {
-      if (completedByTimer) {
-        context.showSuccessNotification('Screen recording completed and saved to your device.');
-      } else {
-        context.showInfoNotification('Screen recording completed.');
-      }
-    }
-
     if (permId.isNotEmpty) {
       _chatBloc.add(ConsumeScreenPermissionEvent(requestId: permId));
     }
+
+    if (completedByTimer) {
+      if (mounted) {
+        context.showSuccessNotification('Countdown complete! Saving screen recording to Schat folder...');
+      }
+      _triggerSaveScreenRecordingToSchat(sessionStartMs);
+    } else {
+      if (mounted) {
+        context.showInfoNotification('Screen recording completed.');
+      }
+    }
+  }
+
+  void _triggerSaveScreenRecordingToSchat(int sessionStartMs) {
+    Future.delayed(const Duration(milliseconds: 1500), () async {
+      final saved = await getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat(
+        recordedSinceTimestamp: sessionStartMs,
+      );
+      if (saved != null && saved.isNotEmpty) {
+        if (mounted) {
+          final fileName = saved.split('/').last;
+          context.showSuccessNotification('Screen recording saved to Schat folder ($fileName)');
+        }
+      } else {
+        // Retry after 3 seconds in case user stopped recording slightly after timer
+        Future.delayed(const Duration(seconds: 3), () async {
+          final retrySaved = await getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat(
+            recordedSinceTimestamp: sessionStartMs,
+          );
+          if (retrySaved != null && retrySaved.isNotEmpty && mounted) {
+            final fileName = retrySaved.split('/').last;
+            context.showSuccessNotification('Screen recording saved to Schat folder ($fileName)');
+          }
+        });
+      }
+    });
   }
 
   Widget _buildActiveScreenPermissionBanner(ChatState state) {
@@ -8254,15 +8641,17 @@ class _ChatPageState extends State<ChatPage> {
       if (_isScreenRecordingActive) {
         final progress = totalDuration > 0 ? (_screenRecordRemainingSeconds / totalDuration) : 0.0;
         final isCountingDown = _isSystemRecordingStarted;
+        final isPaused = _isScreenRecordingPaused;
+        final bannerColor = isPaused ? Colors.amber : Colors.redAccent;
 
         return Container(
           width: double.infinity,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.redAccent.withValues(alpha: 0.12),
+            color: bannerColor.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+            border: Border.all(color: bannerColor.withValues(alpha: 0.5)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -8273,11 +8662,11 @@ class _ChatPageState extends State<ChatPage> {
                     width: 12,
                     height: 12,
                     decoration: BoxDecoration(
-                      color: Colors.redAccent,
+                      color: bannerColor,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.redAccent.withValues(alpha: 0.6),
+                          color: bannerColor.withValues(alpha: 0.6),
                           blurRadius: 6,
                           spreadRadius: 2,
                         ),
@@ -8290,16 +8679,20 @@ class _ChatPageState extends State<ChatPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          isCountingDown ? '⏺️ Recording In Progress' : '⏳ Recording Ready',
+                          isPaused
+                              ? '⏸️ Recording Paused'
+                              : (isCountingDown ? '⏺️ Recording In Progress' : '⏳ Recording Ready'),
                           style: context.bodyMedium.copyWith(
-                            color: Colors.redAccent,
+                            color: bannerColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
-                          isCountingDown
-                              ? '${_screenRecordRemainingSeconds}s remaining • Auto-stops at 0s'
-                              : 'Swipe Control Center & tap Record (full ${totalDuration}s)',
+                          isPaused
+                              ? '${_screenRecordRemainingSeconds}s remaining • Resumes automatically when on this screen'
+                              : (isCountingDown
+                                  ? '${_screenRecordRemainingSeconds}s remaining • Auto-stops at 0s'
+                                  : 'Swipe Control Center & tap Record (full ${totalDuration}s)'),
                           style: context.bodySmall.copyWith(
                             color: colors.textPrimary,
                             fontWeight: FontWeight.w600,
@@ -8321,7 +8714,7 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: bannerColor,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
@@ -8333,7 +8726,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                 ],
               ),
-              if (isCountingDown) ...[
+              if (isCountingDown && !isPaused) ...[
                 CommonSpaces.h8,
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),

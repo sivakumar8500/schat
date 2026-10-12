@@ -15,8 +15,9 @@ import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
-import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/services/livekit_call_service.dart';
 
 /// 1-to-1 Audio Call Page — wired to WebRTC via CallWebRtcBloc.
 /// mason make page --name audio_call
@@ -76,6 +77,9 @@ class _AudioCallPageState extends State<AudioCallPage>
     } catch (e) {
       debugPrint('Wakelock error in AudioCallPage: $e');
     }
+
+    LiveKitCallService.instance.participantsNotifier.addListener(_onLiveKitParticipantsUpdated);
+    LiveKitCallService.instance.isConnectedNotifier.addListener(_onLiveKitParticipantsUpdated);
 
     getIt<ConnectivityRepository>().currentConnectivity.then((result) {
       final connected = result.any((r) => r != ConnectivityResult.none);
@@ -142,11 +146,17 @@ class _AudioCallPageState extends State<AudioCallPage>
     });
   }
 
+  void _onLiveKitParticipantsUpdated() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     CallWebRtcBloc.isCallScreenMounted = false;
     _timer?.cancel();
     _connectivitySubscription?.cancel();
+    LiveKitCallService.instance.participantsNotifier.removeListener(_onLiveKitParticipantsUpdated);
+    LiveKitCallService.instance.isConnectedNotifier.removeListener(_onLiveKitParticipantsUpdated);
     
     // Notify bloc that page is being closed (minimized if call still active)
     if (!_isNavigating) {
@@ -178,7 +188,12 @@ class _AudioCallPageState extends State<AudioCallPage>
       }
     }
     if (state is CallConnecting) return 'Calling...';
-    if (state is CallActive) return _formattedTime;
+    if (state is CallActive) {
+      if (state.isGroup && state.connectedParticipantIds.isEmpty) {
+        return 'All members left • Ending in 30s';
+      }
+      return _formattedTime;
+    }
     if (state is CallEnded) return 'Call Ended';
     if (state is CallRejected) return state.reason;
     if (state is CallError) return 'Connection Error';
@@ -433,6 +448,9 @@ class _AudioCallPageState extends State<AudioCallPage>
     final List<Widget> connectedCards = [];
     final List<_ParticipantInfo> allParticipants = [];
 
+    final liveKitService = LiveKitCallService.instance;
+    final bool isLiveKitActive = liveKitService.isConnected;
+
     // Local user card ("You")
     final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
     final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
@@ -457,7 +475,33 @@ class _AudioCallPageState extends State<AudioCallPage>
       isMuted: isMuted,
     ));
 
-    // Extra participants
+    // Participants from LiveKit if active, otherwise fallback to mesh
+    if (isLiveKitActive && (liveKitService.room?.remoteParticipants.isNotEmpty ?? false)) {
+      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
+      for (final p in remoteParticipants) {
+        final name = p.name.isNotEmpty ? p.name : p.identity;
+        final isRemoteSpeaking = p.isSpeaking;
+        final isUserMuted = p.isMuted;
+
+        allParticipants.add(_ParticipantInfo(
+          id: p.identity,
+          name: name,
+          avatarUrl: null,
+          isConnected: true,
+          isDisconnected: false,
+          isMuted: isUserMuted,
+          isSpeaking: isRemoteSpeaking,
+        ));
+
+        connectedCards.add(_buildAudioUserCard(
+          name: name,
+          avatarUrl: null,
+          isMuted: isUserMuted,
+          status: isRemoteSpeaking ? 'Speaking' : (isUserMuted ? 'Muted' : 'Connected'),
+          isSpeaking: isRemoteSpeaking,
+        ));
+      }
+    } else {
     final extra = state is CallActive
         ? state.extraParticipants
         : (state is CallConnecting ? state.extraParticipants : widget.extraParticipants);
@@ -522,6 +566,7 @@ class _AudioCallPageState extends State<AudioCallPage>
           isSpeaking: isRemoteSpeaking,
         ));
       }
+    }
     }
 
     final connectedCount = allParticipants.where((p) => p.isConnected).length;

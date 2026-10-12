@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   flutter_webrtc
   geolocator_windows
+  livekit_client
   permission_handler_windows
   record_windows
   share_plus

@@ -8,6 +8,7 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/core/network/connectivity_repository.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/services/livekit_call_service.dart';
 import 'package:schat/injection.dart';
 
 /// Represents the signaling state of the WebRTC call.
@@ -133,6 +134,8 @@ class WebRtcService {
   RTCVideoRenderer? getPeerRenderer(String peerId) {
     return _peerRenderers[peerId];
   }
+
+  Map<String, RTCVideoRenderer> get peerRenderers => _peerRenderers;
 
   // ─────────────────────────────────────────────
   // MAKE CALL (Caller side)
@@ -1608,7 +1611,13 @@ class WebRtcService {
     // Receive remote media track → render on remote renderer
     _peerConnection?.onTrack = (RTCTrackEvent event) async {
       debugPrint('WebRTC: onTrack event - kind: ${event.track.kind}, id: ${event.track.id}, streams: ${event.streams.length}');
-      event.track.enabled = true;
+      final bool isLkConnected = LiveKitCallService.instance.isConnected;
+      if (event.track.kind == 'audio' && isLkConnected) {
+        event.track.enabled = false;
+        debugPrint('WebRTC: LiveKit is active — disabling P2P audio track to prevent echo');
+      } else {
+        event.track.enabled = true;
+      }
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
       } else {
@@ -1619,7 +1628,11 @@ class WebRtcService {
       }
       if (_remoteStream != null) {
         for (var track in _remoteStream!.getTracks()) {
-          track.enabled = true;
+          if (track.kind == 'audio' && isLkConnected) {
+            track.enabled = false;
+          } else {
+            track.enabled = true;
+          }
         }
         remoteRenderer.srcObject = null;
         remoteRenderer.srcObject = _remoteStream;
@@ -1632,9 +1645,14 @@ class WebRtcService {
 
     _peerConnection?.onAddStream = (MediaStream stream) {
       debugPrint('WebRTC: onAddStream event - id: ${stream.id}, tracks: ${stream.getTracks().length}');
+      final bool isLkConnected = LiveKitCallService.instance.isConnected;
       _remoteStream = stream;
       for (var track in _remoteStream!.getTracks()) {
-        track.enabled = true;
+        if (track.kind == 'audio' && isLkConnected) {
+          track.enabled = false;
+        } else {
+          track.enabled = true;
+        }
       }
       remoteRenderer.srcObject = null;
       remoteRenderer.srcObject = _remoteStream;

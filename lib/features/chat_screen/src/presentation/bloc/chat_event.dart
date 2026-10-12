@@ -293,18 +293,18 @@ class ReceiveMediaPermissionsUpdatedEvent extends ChatEvent {
   final String mediaId;
   final String? fileKey;
   final String? fileName;
-  final bool allowShare;
-  final bool allowDownload;
-  final bool allowView;
+  final bool? allowShare;
+  final bool? allowDownload;
+  final bool? allowView;
   final bool isRevoked;
 
   const ReceiveMediaPermissionsUpdatedEvent({
     required this.mediaId,
     this.fileKey,
     this.fileName,
-    required this.allowShare,
-    required this.allowDownload,
-    required this.allowView,
+    this.allowShare,
+    this.allowDownload,
+    this.allowView,
     this.isRevoked = false,
   });
 }

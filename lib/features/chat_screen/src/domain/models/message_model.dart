@@ -147,6 +147,14 @@ class MessageModel {
   final String? userView;
   bool get isGuardianView => userView == 'view';
 
+  // Forwarding support & chain lineage
+  final bool isForwarded;
+  final String? forwardedFromMessageId;
+  final int? forwardCount;
+
+  /// True if this message was sent as an initial share (not a forwarded / reshared copy)
+  bool get isInitialShare => !isForwarded && (forwardedFromMessageId == null || forwardedFromMessageId!.isEmpty);
+
   const MessageModel({
     required this.id,
     required this.conversationId,
@@ -201,6 +209,9 @@ class MessageModel {
     this.readBy = const [],
     this.deliveredTo = const [],
     this.userView,
+    this.isForwarded = false,
+    this.forwardedFromMessageId,
+    this.forwardCount,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -377,6 +388,31 @@ class MessageModel {
       else if (perms['can_view'] != null) allowView = perms['can_view'] as bool;
     }
 
+    final dynamic attachment = json['attachment'];
+    if (attachment is Map) {
+      if (mediaUrl == null || mediaUrl.isEmpty) {
+        mediaUrl = (attachment['url'] ?? attachment['fileKey'] ?? attachment['file_key'] ?? attachment['media_id'] ?? attachment['mediaId'])?.toString();
+      }
+      final dynamic attSecurity = attachment['security'] ?? attachment['permissions'];
+      if (attSecurity is Map) {
+        if (attSecurity['allowShare'] != null) allowShare = attSecurity['allowShare'] == true;
+        else if (attSecurity['allow_share'] != null) allowShare = attSecurity['allow_share'] == true;
+        else if (attSecurity['canShare'] != null) allowShare = attSecurity['canShare'] == true;
+        else if (attSecurity['can_share'] != null) allowShare = attSecurity['can_share'] == true;
+
+        if (attSecurity['allowDownload'] != null) allowDownload = attSecurity['allowDownload'] == true;
+        else if (attSecurity['allow_download'] != null) allowDownload = attSecurity['allow_download'] == true;
+        else if (attSecurity['canDownload'] != null) allowDownload = attSecurity['canDownload'] == true;
+        else if (attSecurity['can_download'] != null) allowDownload = attSecurity['can_download'] == true;
+
+        if (attSecurity['allowView'] != null) allowView = attSecurity['allowView'] == true;
+        else if (attSecurity['allow_view'] != null) allowView = attSecurity['allow_view'] == true;
+        else if (attSecurity['canView'] != null) allowView = attSecurity['canView'] == true;
+        else if (attSecurity['can_view'] != null) allowView = attSecurity['can_view'] == true;
+      }
+    }
+
+
     if (json['allowShare'] != null) {
       allowShare = json['allowShare'] as bool;
     } else if (json['allow_share'] != null) {
@@ -409,6 +445,11 @@ class MessageModel {
 
     if (json['isRevoked'] == true || json['is_revoked'] == true || json['revoked'] == true) {
       allowView = false;
+      allowDownload = false;
+      allowShare = false;
+    }
+
+    if (!allowView) {
       allowDownload = false;
       allowShare = false;
     }
@@ -646,6 +687,14 @@ class MessageModel {
       }
     }
 
+    final dynamic rawForwarded = json['isForwarded'] ?? json['is_forwarded'] ?? 
+        (contentData is Map ? (contentData['isForwarded'] ?? contentData['is_forwarded']) : null);
+    final String? parsedForwardedFromId = (json['forwardedFromMessageId'] ?? json['forwarded_from_message_id'] ?? 
+        (contentData is Map ? (contentData['forwardedFromMessageId'] ?? contentData['forwarded_from_message_id']) : null))?.toString();
+    final bool isForwarded = (rawForwarded == true) || (parsedForwardedFromId != null && parsedForwardedFromId.isNotEmpty);
+    final int? forwardCount = int.tryParse((json['forwardCount'] ?? json['forward_count'] ?? 
+        (contentData is Map ? (contentData['forwardCount'] ?? contentData['forward_count']) : null))?.toString() ?? '');
+
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
       conversationId: (json['conversationId'] ?? json['conversation_id'] ?? json['conversation'])?.toString() ?? '',
@@ -729,6 +778,9 @@ class MessageModel {
         return null;
       }(),
       userView: (json['userView'] ?? json['user_view'])?.toString(),
+      isForwarded: isForwarded,
+      forwardedFromMessageId: parsedForwardedFromId,
+      forwardCount: forwardCount,
     );
   }
 
@@ -774,6 +826,9 @@ class MessageModel {
       if (liveDurationSeconds != null) 'liveDurationSeconds': liveDurationSeconds,
       if (liveExpiresAt != null) 'liveExpiresAt': liveExpiresAt,
       if (liveComment != null) 'liveComment': liveComment,
+      if (isForwarded) 'isForwarded': isForwarded,
+      if (forwardedFromMessageId != null) 'forwardedFromMessageId': forwardedFromMessageId,
+      if (forwardCount != null) 'forwardCount': forwardCount,
     },
     'isLive': isLive,
     'isLiveActive': isLiveActive,
@@ -847,6 +902,9 @@ class MessageModel {
     if (expiry != null) 'expiry': expiry,
     if (senderName != null) 'senderName': senderName,
     if (senderProfilePictureUrl != null) 'senderProfilePictureUrl': senderProfilePictureUrl,
+    'isForwarded': isForwarded,
+    if (forwardedFromMessageId != null) 'forwardedFromMessageId': forwardedFromMessageId,
+    if (forwardCount != null) 'forwardCount': forwardCount,
   };
 
   MessageModel copyWith({
@@ -903,6 +961,9 @@ class MessageModel {
     int? liveExpiresAt,
     String? liveComment,
     String? userView,
+    bool? isForwarded,
+    String? forwardedFromMessageId,
+    int? forwardCount,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -958,6 +1019,9 @@ class MessageModel {
       liveExpiresAt: liveExpiresAt ?? this.liveExpiresAt,
       liveComment: liveComment ?? this.liveComment,
       userView: userView ?? this.userView,
+      isForwarded: isForwarded ?? this.isForwarded,
+      forwardedFromMessageId: forwardedFromMessageId ?? this.forwardedFromMessageId,
+      forwardCount: forwardCount ?? this.forwardCount,
     );
   }
 }

@@ -248,13 +248,45 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogCtx);
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (loadingCtx) => Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        CircularProgressIndicator(
+                          strokeWidth: 3.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00873C)),
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Deleting...',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
               try {
                 await getIt<ChatRepository>().deleteGroup(widget.conversationId);
                 if (mounted) {
+                  Navigator.pop(context); // Close loading dialog
                   Navigator.pop(context); // Close group info page using outer context
                   Navigator.pop(context); // Close chat page using outer context
                 }
               } catch (e) {
+                if (mounted) {
+                  Navigator.pop(context); // Close loading dialog
+                }
                 debugPrint('Failed to delete group: $e');
               }
             },

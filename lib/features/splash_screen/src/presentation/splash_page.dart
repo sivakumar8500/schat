@@ -33,14 +33,16 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
     final showPermissions = await PermissionHelper.shouldShowPermissionsScreen();
     if (!mounted) return;
     if (showPermissions && !ShareReceiverService().hasPendingShare) {
-      await Navigator.pushReplacement(
+      await Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const PermissionsPage()),
+        (route) => false,
       );
     } else {
-      await Navigator.pushReplacement(
+      await Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const DashboardPage()),
+        (route) => false,
       );
     }
   }

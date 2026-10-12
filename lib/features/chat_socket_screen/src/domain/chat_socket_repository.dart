@@ -47,6 +47,8 @@ abstract class ChatSocketRepository {
     Map<String, dynamic>? expiry,
     Map<String, dynamic>? callMeta,
     Map<String, dynamic>? liveMeta,
+    bool? isForwarded,
+    String? forwardedFromMessageId,
   });
   void sendTypingIndicator(String conversationId, {bool isTyping = true});
   void sendReadReceipt(String conversationId, String messageId);
@@ -67,6 +69,7 @@ abstract class ChatSocketRepository {
     required String conversationId,
     required String messageId,
     required String fileKey,
+    Map<String, dynamic>? permissions,
   });
   void sendLocationMessage({
     required String conversationId,
@@ -372,6 +375,8 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     Map<String, dynamic>? expiry,
     Map<String, dynamic>? callMeta,
     Map<String, dynamic>? liveMeta,
+    bool? isForwarded,
+    String? forwardedFromMessageId,
   }) {
     final Map<String, dynamic> content = {};
     if (text != null) content['text'] = text;
@@ -386,6 +391,15 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     if (longitude != null) content['longitude'] = longitude;
     if (address != null) content['address'] = address;
     if (title != null) content['title'] = title;
+
+    if (isForwarded != null) {
+      content['isForwarded'] = isForwarded;
+      content['is_forwarded'] = isForwarded;
+    }
+    if (forwardedFromMessageId != null) {
+      content['forwardedFromMessageId'] = forwardedFromMessageId;
+      content['forwarded_from_message_id'] = forwardedFromMessageId;
+    }
 
     if (liveMeta != null) {
       content['liveMeta'] = liveMeta;
@@ -414,10 +428,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         'accessUsers': security['accessUsers'],
       if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
         'access_users': security['access_users'],
-      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
-      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
-      'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
-      'allow_share': security['allowShare'] ?? security['allow_share'] ?? true,
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
       'allowView': security['allowView'] ?? security['allow_view'] ?? true,
       'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
       'canView': security['allowView'] ?? security['allow_view'] ?? true,
@@ -431,10 +445,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       'max_views': viewControl['maxViews'] ?? viewControl['max_views'] ?? 1,
       'isViewOnce': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
       'is_view_once': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
-      'allowDownload': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true,
-      'allow_download': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true,
-      'allowShare': viewControl['allowShare'] ?? viewControl['allow_share'] ?? true,
-      'allow_share': viewControl['allowShare'] ?? viewControl['allow_share'] ?? true,
+      'allowDownload': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
+      'allow_download': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
+      'allowShare': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
+      'allow_share': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
       'allowView': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
       'allow_view': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
     } : null;
@@ -551,10 +565,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         'accessUsers': security['accessUsers'],
       if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
         'access_users': security['access_users'],
-      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
-      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
-      'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
-      'allow_share': security['allowShare'] ?? security['allow_share'] ?? true,
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
       'allowView': security['allowView'] ?? security['allow_view'] ?? true,
       'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
       'canView': security['allowView'] ?? security['allow_view'] ?? true,
@@ -600,6 +614,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     required String conversationId,
     required String messageId,
     required String fileKey,
+    Map<String, dynamic>? permissions,
   }) {
     final Map<String, dynamic> payload = {
       "type": type,
@@ -609,6 +624,8 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       "message_id": messageId,
       "fileKey": fileKey,
       "file_key": fileKey,
+      if (permissions != null) "permissions": permissions,
+      if (permissions != null) "security": permissions,
     };
     emit('message', payload);
   }

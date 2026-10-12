@@ -47,6 +47,8 @@ class CommonEndpoints {
   static String updateScheduledMessage(String id) => '/messages/scheduled/$id';
   static const String getCalls = '/messages/calls';
   static String getCallHistory({int limit = 50}) => '/messages/calls?limit=$limit';
+  static const String liveKitToken = '/calls/token';
+  static const String liveKitConfig = '/calls/config';
   static String getGroupDetails(String groupId) => '/groups/$groupId';
   static String updateGroup(String groupId) => '/groups/$groupId';
   static String deleteGroup(String groupId) => '/groups/$groupId';
@@ -98,11 +100,17 @@ class CommonEndpoints {
   static String completeUpload(String mediaId) => '/media/$mediaId/complete';
   static String getConversationMedia(String conversationId) => '/chats/$conversationId/media';
   static String mediaPermissions(String mediaId) => '/media/$mediaId/permissions';
+  static String mediaPermission(String mediaId) => '/media/$mediaId/permission';
   static String mediaAccessTree(String mediaId) => '/media/$mediaId/access-tree';
+  static String mediaShares(String mediaId) => '/media/$mediaId/shares';
   static String shareMedia(String mediaId) => '/media/$mediaId/share';
   static String mediaOwnerOverride(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId/override';
   static String mediaRevokeGrant(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId';
+  static String mediaRevokeShare(String mediaId, String shareId) => '/media/$mediaId/shares/$shareId/revoke';
   static String mediaRevokeAll(String mediaId) => '/media/$mediaId/revoke-all';
+  static String mediaViewUrl(String mediaId) => '/media/$mediaId/view-url';
+  static String mediaDownloadUrl(String mediaId) => '/media/$mediaId/download-url';
+
 
   // User Lookup
   static const String lookupUser = '/users/lookup';

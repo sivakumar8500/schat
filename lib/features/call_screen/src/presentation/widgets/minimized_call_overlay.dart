@@ -16,6 +16,8 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/main.dart';
+import 'package:livekit_client/livekit_client.dart' show VideoTrack, VideoTrackRenderer;
+import 'package:schat/services/livekit_call_service.dart';
 
 class MinimizedCallOverlay extends StatefulWidget {
   const MinimizedCallOverlay({super.key});
@@ -101,13 +103,34 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
               : null;
 
           final webRtcService = getIt<WebRtcService>();
+          RTCVideoRenderer? activeRemoteRenderer;
+          if (isGroup && webRtcService.peerRenderers.isNotEmpty) {
+            for (final r in webRtcService.peerRenderers.values) {
+              if (r.srcObject != null) {
+                activeRemoteRenderer = r;
+                break;
+              }
+            }
+          }
+          activeRemoteRenderer ??= webRtcService.remoteRenderer;
+
+          final liveKitService = LiveKitCallService.instance;
+          final VideoTrack? liveKitRemoteTrack = (isGroup && liveKitService.isConnected)
+              ? liveKitService.getActiveRemoteVideoTrack()
+              : null;
+          final bool hasLiveKitVideo = isVideo && !isRemoteVideoOff && liveKitRemoteTrack != null;
+
           final bool hasRemoteVideo = isVideo &&
               isConnected &&
               !isRemoteVideoOff &&
-              webRtcService.remoteRenderer.srcObject != null;
+              activeRemoteRenderer.srcObject != null;
           final bool hasLocalVideo = isVideo &&
               !isLocalVideoOff &&
               webRtcService.localRenderer.srcObject != null;
+
+          final String displayName = isGroup
+              ? (groupName != null && groupName.isNotEmpty ? groupName : contactName)
+              : contactName;
 
           void onTapAction() {
             context.read<CallWebRtcBloc>().add(const SetCallMinimizedEvent(false));
@@ -191,11 +214,18 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                     clipBehavior: Clip.hardEdge,
                     child: Stack(
                       children: [
-                        if (hasRemoteVideo)
+                        if (hasLiveKitVideo)
+                          Positioned.fill(
+                            child: VideoTrackRenderer(
+                              liveKitRemoteTrack,
+                              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            ),
+                          )
+                        else if (hasRemoteVideo)
                           Positioned.fill(
                             child: RTCVideoView(
-                              webRtcService.remoteRenderer,
-                              key: ValueKey('overlay_remote_${webRtcService.remoteRenderer.textureId}'),
+                              activeRemoteRenderer,
+                              key: ValueKey('overlay_remote_${activeRemoteRenderer.textureId}'),
                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                               mirror: false,
                             ),
@@ -217,7 +247,7 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                                   colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
-                                ),
+                                  ),
                               ),
                               child: Center(
                                 child: Column(
@@ -230,22 +260,24 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                                           ? NetworkImage(profilePictureUrl)
                                           : null,
                                       child: (profilePictureUrl == null || profilePictureUrl.isEmpty)
-                                          ? Text(
-                                              contactName.isNotEmpty ? contactName[0].toUpperCase() : '?',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 22,
-                                                fontWeight: FontWeight.bold,
-                                                decoration: TextDecoration.none,
-                                              ),
-                                            )
+                                          ? (isGroup
+                                              ? const Icon(Icons.group, color: Colors.white, size: 24)
+                                              : Text(
+                                                  displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 22,
+                                                    fontWeight: FontWeight.bold,
+                                                    decoration: TextDecoration.none,
+                                                  ),
+                                                ))
                                           : null,
                                     ),
                                     CommonSpaces.h8,
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 4),
                                       child: Text(
-                                        contactName,
+                                        displayName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
@@ -310,7 +342,7 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                                 ),
                                 const SizedBox(width: 3),
                                 Text(
-                                  isConnected ? 'Live' : 'Calling',
+                                  isGroup ? 'Group' : (isConnected ? 'Live' : 'Calling'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 9,

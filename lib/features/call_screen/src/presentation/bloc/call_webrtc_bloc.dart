@@ -17,13 +17,14 @@ import 'package:schat/features/call_screen/src/presentation/audio_call_page.dart
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/main.dart';
 import 'package:schat/injection.dart';
-import 'package:injectable/injectable.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/call_screen/src/domain/models/ongoing_group_call.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/core/services/phone_call_state_service.dart';
+import 'package:schat/services/livekit_call_service.dart';
 import 'call_webrtc_event.dart';
 import 'call_webrtc_state.dart';
+import 'package:injectable/injectable.dart';
 
 @lazySingleton
 class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with WidgetsBindingObserver {
@@ -48,6 +49,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
   StreamSubscription? _webRtcSignalSubscription;
   StreamSubscription? _phoneCallEndedSubscription;
   Timer? _callTimeoutTimer;
+  Timer? _lastPersonTimeoutTimer;
   String? _activeCallMessageId;
   DateTime? _activeCallStart;
   final Map<String, OngoingGroupCall> _ongoingGroupCalls = {};
@@ -112,6 +114,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       _updateCallActive(true);
     } else if (next is CallEnded || next is CallError || next is CallIdle || next is CallRejected) {
       _updateCallActive(false);
+      LiveKitCallService.instance.disconnect();
     }
   }
 
@@ -391,11 +394,53 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         case 'call_timeout':
         case 'call_missed':
         case 'missed_call':
-          final isGroup = data['is_group'] == true || data['isGroup'] == true;
+          final eventConvoId = (data['conversation_id'] ?? data['conversationId'])?.toString();
+          final currentState = state;
+          String? currentConvoId;
+          bool isCallGroup = false;
+          if (currentState is CallActive) {
+            currentConvoId = currentState.conversationId;
+            isCallGroup = currentState.isGroup;
+          } else if (currentState is CallConnecting) {
+            currentConvoId = currentState.conversationId;
+            isCallGroup = currentState.isGroup;
+          } else if (currentState is CallRinging) {
+            currentConvoId = (currentState.incomingEvent['conversation_id'] ?? currentState.incomingEvent['conversationId'])?.toString();
+            isCallGroup = currentState.isGroup;
+          }
+
+          // Ignore disconnect messages belonging to a completely different conversation
+          if (eventConvoId != null && eventConvoId.isNotEmpty && currentConvoId != null && currentConvoId.isNotEmpty && eventConvoId != currentConvoId) {
+            debugPrint('CallWebRtcBloc: Disconnect event for convo $eventConvoId does not match current convo $currentConvoId - ignoring');
+            break;
+          }
+
+          // Ignore echoes of self disconnect
+          final myId = getIt<StorageService>().getUserId()?.toString().toLowerCase();
           final partId = (data['participant_id'] ?? data['sender_id'] ?? data['senderId'] ?? data['user_id'])?.toString();
-          if (isGroup && partId != null && partId.isNotEmpty) {
+          if (partId != null && myId != null && partId.toLowerCase() == myId) {
+            debugPrint('CallWebRtcBloc: Disconnect event originating from self ($partId) - ignoring');
+            break;
+          }
+
+          final isGroupFromData = data['is_group'] == true || data['isGroup'] == true;
+          final isGroupFromOngoing = eventConvoId != null && _ongoingGroupCalls.containsKey(eventConvoId);
+          final isGroup = isGroupFromData || isCallGroup || isGroupFromOngoing;
+
+          final isEntireCallEnded = data['type'] == 'call_ended' ||
+              data['type'] == 'call_end' ||
+              data['end_entire_call'] == true;
+
+          if (isGroup && !isEntireCallEnded && partId != null && partId.isNotEmpty) {
             add(HandleCallParticipantLeftEvent(Map<String, dynamic>.from(data)));
+          } else if (currentState is CallRinging && isGroup && !isEntireCallEnded) {
+            // Group call is ringing: do not dismiss dialog on a generic disconnect without participant id
+            debugPrint('CallWebRtcBloc: Received generic disconnect without participant id during group CallRinging - ignoring');
           } else {
+            if (eventConvoId != null) {
+              _ongoingGroupCalls.remove(eventConvoId);
+            }
+            _cancelLastPersonTimer();
             add(const HandleCallDisconnectedEvent());
           }
           break;
@@ -489,6 +534,24 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
   void _cancelCallTimeoutTimer() {
     _callTimeoutTimer?.cancel();
     _callTimeoutTimer = null;
+  }
+
+  void _startLastPersonTimeoutTimer(String conversationId) {
+    _cancelLastPersonTimer();
+    debugPrint('CallWebRtcBloc: User is sole remaining participant in group call $conversationId. Starting 30-second auto-end timer.');
+    _lastPersonTimeoutTimer = Timer(const Duration(seconds: 30), () {
+      debugPrint('CallWebRtcBloc: 30 seconds elapsed as sole participant in $conversationId. Ending call permanently.');
+      _cancelLastPersonTimer();
+      add(HangUpCallEvent(conversationId));
+    });
+  }
+
+  void _cancelLastPersonTimer() {
+    if (_lastPersonTimeoutTimer != null) {
+      debugPrint('CallWebRtcBloc: Cancelling last person timeout timer');
+      _lastPersonTimeoutTimer?.cancel();
+      _lastPersonTimeoutTimer = null;
+    }
   }
 
   /// Navigates to the call page once the navigator context is ready.
@@ -633,6 +696,89 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       _cachedProfilePictureUrl = event.profilePictureUrl;
       _cachedExtraParticipants = List.from(event.extraParticipants);
 
+      final storage = getIt<StorageService>();
+      final myId = storage.getUserId()?.toString() ?? '';
+      final myName = storage.getUsername();
+      final myPic = storage.getProfilePic();
+
+      // Check if this group call is already active with other participants
+      final ongoingCall = _ongoingGroupCalls[event.conversationId];
+      final bool isCallAlreadyActive = event.isGroup &&
+          ongoingCall != null &&
+          ongoingCall.connectedParticipantIds.any((id) => id.toLowerCase() != myId.toLowerCase());
+
+      if (isCallAlreadyActive) {
+        debugPrint('CallWebRtcBloc: Group call is already active with participants (${ongoingCall.connectedParticipantIds}). Rejoining directly without ringing others.');
+        _cancelCallTimeoutTimer();
+        _cancelAllParticipantTimers();
+        _cancelLastPersonTimer();
+        _soundService.stopAll();
+
+        // 1. Join LiveKit room directly
+        LiveKitCallService.instance.joinCall(
+          conversationId: event.conversationId,
+          isVideo: event.isVideo,
+        );
+
+        // 2. Notify other participants via socket that this user joined
+        _repository.emit('message', {
+          'type': 'call_participant_joined',
+          'conversation_id': event.conversationId,
+          'user_id': myId,
+          'participant_id': myId,
+          'sender_id': myId,
+          'senderId': myId,
+          'user': {
+            'id': myId,
+            'name': myName,
+            'username': myName,
+            'phone_number': storage.getPhoneNumber() ?? '',
+            'profile_picture_url': myPic,
+          },
+          'is_group': true,
+          'isGroup': true,
+        });
+
+        // 3. Update ongoing record with this user
+        final updatedConnected = {...ongoingCall.connectedParticipantIds, myId};
+        _ongoingGroupCalls[event.conversationId] = ongoingCall.copyWith(
+          connectedParticipantIds: updatedConnected,
+        );
+
+        _activeCallStart = ongoingCall.startedAt;
+
+        // 4. Emit CallActive state directly so user immediately enters active call without ringing
+        emit(CallActive(
+          conversationId: event.conversationId,
+          isVideo: event.isVideo,
+          contactName: event.contactName,
+          recipientId: event.recipientId,
+          isMinimized: false,
+          profilePictureUrl: event.profilePictureUrl,
+          isGroup: true,
+          groupName: event.groupName,
+          extraParticipants: ongoingCall.participants.isNotEmpty ? ongoingCall.participants : event.extraParticipants,
+          connectedParticipantIds: updatedConnected,
+          startedAt: _activeCallStart,
+          isSpeakerOn: event.isVideo,
+        ));
+
+        // 5. Connect P2P offers to existing participants
+        for (final peerId in ongoingCall.connectedParticipantIds) {
+          if (peerId.toLowerCase() != myId.toLowerCase()) {
+            _webRtcService.createOfferForPeer(
+              peerId: peerId,
+              conversationId: event.conversationId,
+              repository: _repository,
+              isVideo: event.isVideo,
+            );
+          }
+        }
+        await _webRtcService.toggleSpeaker(event.isVideo);
+        debugPrint('CallWebRtcBloc: Rejoined active group call successfully without ringing other participants');
+        return;
+      }
+
       if (event.isGroup) {
         _ongoingGroupCalls[event.conversationId] = OngoingGroupCall(
           conversationId: event.conversationId,
@@ -663,15 +809,16 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       // Start 90-second unanswered timeout timer
       _startCallTimeoutTimer(event.conversationId, isOutgoing: true);
 
+      LiveKitCallService.instance.joinCall(
+        conversationId: event.conversationId,
+        isVideo: event.isVideo,
+      );
+
       if (event.isGroup) {
         for (final participant in event.extraParticipants) {
           _startParticipantTimeout(participant.id, conversationId: event.conversationId);
         }
       }
-
-      final storage = getIt<StorageService>();
-      final myName = storage.getUsername();
-      final myPic = storage.getProfilePic();
 
       await _webRtcService.makeCall(
         conversationId: event.conversationId,
@@ -873,6 +1020,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         startedAt: _activeCallStart,
       ));
 
+      if (convoId.isNotEmpty) {
+        LiveKitCallService.instance.joinCall(
+          conversationId: convoId,
+          isVideo: isVideo,
+        );
+      }
+
       if (isGroup && convoId.isNotEmpty) {
         final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
         final myName = getIt<StorageService>().getUsername() ?? '';
@@ -950,6 +1104,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     _cancelCallTimeoutTimer();
     _soundService.stopAll();
     _notificationService.dismissAllIncomingCalls();
+    LiveKitCallService.instance.disconnect();
 
     final currentState = state;
     final isGroupCall = (currentState is CallActive && currentState.isGroup) ||
@@ -969,9 +1124,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       final List<UserModel> parts = currentState is CallActive ? currentState.extraParticipants : (currentState as CallConnecting).extraParticipants;
       final Set<String> connected = currentState is CallActive ? currentState.connectedParticipantIds : (currentState as CallConnecting).connectedParticipantIds;
 
-      final remainingConnected = connected.where((id) => id != myId).toSet();
+      final remainingConnected = connected.where((id) => id.toLowerCase() != myId.toLowerCase()).toSet();
+      _cancelLastPersonTimer();
       
-      // Update ongoing group call record so user can rejoin anytime under Calls tab
+      // If there are still participants remaining in call, only local user leaves
       if (remainingConnected.isNotEmpty) {
         _ongoingGroupCalls[convoId] = OngoingGroupCall(
           conversationId: convoId,
@@ -982,25 +1138,46 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           connectedParticipantIds: remainingConnected,
           startedAt: (currentState is CallActive ? currentState.startedAt : null) ?? DateTime.now(),
         );
+
+        // Inform other group members that only this participant has left
+        _repository.emit('message', {
+          'type': 'call_participant_left',
+          'conversation_id': event.conversationId,
+          'participant_id': myId,
+          'sender_id': myId,
+          'is_group': true,
+          'isGroup': true,
+        });
+
+        await _webRtcService.cleanup();
+        _activeCallMessageId = null;
+        _activeCallStart = null;
+        emit(const CallEnded());
+        return;
       } else {
+        // Last person in group call is exiting: end the call permanently for everyone!
+        debugPrint('CallWebRtcBloc: Last participant exited group call $convoId. Ending call permanently.');
         _ongoingGroupCalls.remove(convoId);
+
+        _repository.emit('message', {
+          'type': 'call_ended',
+          'conversation_id': event.conversationId,
+          'sender_id': myId,
+          'is_group': true,
+          'isGroup': true,
+          'end_entire_call': true,
+        });
+
+        await _webRtcService.endCall(
+          conversationId: event.conversationId,
+          messageId: event.messageId ?? _activeCallMessageId,
+          repository: _repository,
+        );
+        _activeCallMessageId = null;
+        _activeCallStart = null;
+        emit(const CallEnded());
+        return;
       }
-
-      // Inform other group members that only this participant has left
-      _repository.emit('message', {
-        'type': 'call_participant_left',
-        'conversation_id': event.conversationId,
-        'participant_id': myId,
-        'sender_id': myId,
-        'is_group': true,
-        'isGroup': true,
-      });
-
-      await _webRtcService.cleanup();
-      _activeCallMessageId = null;
-      _activeCallStart = null;
-      emit(const CallEnded());
-      return;
     }
 
     _cancelAllParticipantTimers();
@@ -1027,8 +1204,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
   ) {
     _cancelCallTimeoutTimer();
     _cancelAllParticipantTimers();
+    _cancelLastPersonTimer();
     _soundService.stopAll();
     _notificationService.dismissAllIncomingCalls();
+    LiveKitCallService.instance.disconnect();
     _webRtcService.rejectCall(
       conversationId: event.conversationId,
       messageId: event.messageId ?? _activeCallMessageId,
@@ -1055,6 +1234,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     final groupName = (event.incomingEvent['group_name'] ?? event.incomingEvent['groupName'])?.toString();
 
     final currentState = state;
+
+    // Disconnect any leftover LiveKit room session before handling incoming call
+    if (LiveKitCallService.instance.isConnected) {
+      debugPrint('CallWebRtcBloc: Disconnecting leftover LiveKit session before handling incoming call');
+      await LiveKitCallService.instance.disconnect();
+    }
+
     if (currentState is CallConnecting) {
       if (currentState.conversationId.isNotEmpty && currentState.conversationId != incomingConvoId) {
         debugPrint('CallWebRtcBloc: User is currently initiating an outgoing call. Replying busy to $senderId for $incomingConvoId');
@@ -1421,8 +1607,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         speaker = currentState.isSpeakerOn;
       }
       
-      await _webRtcService.toggleSpeaker(speaker);
-      
+      if (!LiveKitCallService.instance.isConnected && conversationId.isNotEmpty) {
+        LiveKitCallService.instance.joinCall(
+          conversationId: conversationId,
+          isVideo: isVideo,
+        );
+      }
+
       if (isGroup && conversationId.isNotEmpty && senderId.isNotEmpty) {
         _repository.emit('message', {
           'type': 'call_participant_joined',
@@ -1645,6 +1836,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     }
 
     if (state is CallActive) {
+      _cancelLastPersonTimer();
       final current = state as CallActive;
       final existingIds = current.extraParticipants.map((u) => u.id.toLowerCase()).toSet();
       final updatedList = current.extraParticipants.map((u) {
@@ -1758,6 +1950,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     _participantTimeoutTimers[userId]?.cancel();
     _webRtcService.removePeer(userId);
     final convoId = (event.event['conversation_id'] ?? event.event['conversationId'])?.toString() ?? '';
+    final myId = getIt<StorageService>().getUserId()?.toString().toLowerCase();
     if (convoId.isNotEmpty && _ongoingGroupCalls.containsKey(convoId)) {
       final currentOngoing = _ongoingGroupCalls[convoId]!;
       final updatedOngoingConnected = currentOngoing.connectedParticipantIds
@@ -1790,15 +1983,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
 
     if (state is CallActive) {
       final current = state as CallActive;
+      final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
       final updatedConnected = current.connectedParticipantIds
-          .where((id) => id.toLowerCase() != userId.toLowerCase())
+          .where((id) => id.toLowerCase() != userId.toLowerCase() && id.toLowerCase() != myId.toLowerCase())
           .toSet();
       final updatedDisconnected = {...current.disconnectedParticipantIds, userId};
 
       if (updatedConnected.isEmpty) {
-        debugPrint('CallWebRtcBloc: All remote participants left, auto-cutting call for ${current.conversationId}');
+        debugPrint('CallWebRtcBloc: All remote participants left. User is the last person in group call ${current.conversationId}. Starting 30s auto-end countdown.');
         _ongoingGroupCalls.remove(current.conversationId);
-        add(HangUpCallEvent(current.conversationId));
+        emit(current.copyWith(
+          connectedParticipantIds: const {},
+          disconnectedParticipantIds: updatedDisconnected,
+        ));
+        _startLastPersonTimeoutTimer(current.conversationId);
         return;
       }
 
@@ -1828,6 +2026,17 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           .where((id) => id.toLowerCase() != userId.toLowerCase())
           .toSet();
       final updatedDisconnected = {...current.disconnectedParticipantIds, userId};
+
+      final ongoing = convoId.isNotEmpty ? _ongoingGroupCalls[convoId] : null;
+      final bool hasOtherOngoingParticipants = ongoing != null &&
+          ongoing.connectedParticipantIds.any((id) => id.toLowerCase() != userId.toLowerCase() && id.toLowerCase() != (myId ?? '').toLowerCase());
+
+      if (updatedConnected.isEmpty && !hasOtherOngoingParticipants) {
+        debugPrint('CallWebRtcBloc: All participants left during CallRinging for $convoId. Ending incoming call ringing.');
+        add(const HandleCallDisconnectedEvent());
+        return;
+      }
+
       emit(current.copyWith(
         connectedParticipantIds: updatedConnected,
         disconnectedParticipantIds: updatedDisconnected,
@@ -1858,10 +2067,19 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       debugPrint('CallWebRtcBloc: Remote party disconnected from group call. Remaining in call.');
       return;
     }
+    if (currentState is CallRinging && currentState.isGroup) {
+      final convoId = (currentState.incomingEvent['conversation_id'] ?? currentState.incomingEvent['conversationId'])?.toString() ?? '';
+      final ongoing = convoId.isNotEmpty ? _ongoingGroupCalls[convoId] : null;
+      if (ongoing != null && ongoing.connectedParticipantIds.isNotEmpty) {
+        debugPrint('CallWebRtcBloc: Remote party disconnected from group call, but group call is ongoing. Remaining in CallRinging.');
+        return;
+      }
+    }
 
     _activeCallStart = null;
     _cancelCallTimeoutTimer();
     _cancelAllParticipantTimers();
+    _cancelLastPersonTimer();
     _soundService.stopAll();
     _notificationService.dismissAllIncomingCalls();
     // Dismiss any system/CallKit notification on both platforms
@@ -1873,6 +2091,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       }
     }
     await _webRtcService.cleanup();
+    LiveKitCallService.instance.disconnect();
     emit(const CallEnded(reason: 'The call has ended'));
     try {
       getIt<CallHistoryCubit>().fetchCallHistory();
@@ -1887,6 +2106,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       final current = state as CallActive;
       final newMuted = !current.isMuted;
       _webRtcService.toggleMute(newMuted);
+      LiveKitCallService.instance.toggleMicrophone(!newMuted);
 
       // Send signaling to remote peer
       _repository.emit('message', {
@@ -1906,6 +2126,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       final current = state as CallActive;
       final newVideoOff = !current.isVideoOff;
       _webRtcService.toggleVideo(newVideoOff);
+      LiveKitCallService.instance.toggleCamera(!newVideoOff);
       
       // Send signaling to remote peer
       _repository.emit('message', {
@@ -1964,6 +2185,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
   Future<void> _onSwitchCamera(
       SwitchCameraCallEvent event, Emitter<CallWebRtcState> emit) async {
     await _webRtcService.switchCamera();
+    LiveKitCallService.instance.switchCamera();
     if (state is CallActive) {
       final current = state as CallActive;
       emit(current.copyWith(isFrontCamera: !current.isFrontCamera));
@@ -2016,10 +2238,12 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     WidgetsBinding.instance.removeObserver(this);
     _phoneCallEndedSubscription?.cancel();
     _callTimeoutTimer?.cancel();
+    _cancelLastPersonTimer();
     _cancelAllParticipantTimers();
     _notificationSubscription?.cancel();
     _socketSubscription?.cancel();
     _webRtcSignalSubscription?.cancel();
+    LiveKitCallService.instance.disconnect();
     _webRtcService.cleanup();
     return super.close();
   }
@@ -2172,6 +2396,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       emit(currentState.copyWith(extraParticipants: updated, isGroup: true));
     } else if (currentState is CallConnecting) {
       emit(currentState.copyWith(extraParticipants: updated, isGroup: true));
+    }
+
+    if (!LiveKitCallService.instance.isConnected) {
+      LiveKitCallService.instance.joinGroupCall(
+        conversationId: conversationId,
+        isVideo: isVideo,
+      );
     }
 
     final offerData = await _webRtcService.getCurrentOrNewOffer(isVideo: isVideo);

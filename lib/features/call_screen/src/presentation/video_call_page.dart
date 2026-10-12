@@ -19,8 +19,10 @@ import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
-import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:livekit_client/livekit_client.dart' show VideoTrack, VideoTrackRenderer;
+import 'package:schat/services/livekit_call_service.dart';
 
 /// 1-to-1 & Group Video Call Page — renders RTCVideoView with sleek participant sheet,
 /// compact action buttons, and active speaker glow matching AudioCallPage design.
@@ -101,6 +103,9 @@ class _VideoCallPageState extends State<VideoCallPage>
       _webRtcService.remoteRenderer.srcObject = null;
       _webRtcService.remoteRenderer.srcObject = _webRtcService.currentRemoteStream;
     }
+
+    LiveKitCallService.instance.participantsNotifier.addListener(_onLiveKitParticipantsUpdated);
+    LiveKitCallService.instance.isConnectedNotifier.addListener(_onLiveKitParticipantsUpdated);
 
     _fadeController = AnimationController(
       vsync: this,
@@ -221,6 +226,10 @@ class _VideoCallPageState extends State<VideoCallPage>
     context.read<CallWebRtcBloc>().add(HangUpCallEvent(widget.conversationId));
   }
 
+  void _onLiveKitParticipantsUpdated() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     CallWebRtcBloc.isCallScreenMounted = false;
@@ -231,6 +240,8 @@ class _VideoCallPageState extends State<VideoCallPage>
     _localStreamSubscription?.cancel();
     _remoteStreamSubscription?.cancel();
     _callSignalSubscription?.cancel();
+    LiveKitCallService.instance.participantsNotifier.removeListener(_onLiveKitParticipantsUpdated);
+    LiveKitCallService.instance.isConnectedNotifier.removeListener(_onLiveKitParticipantsUpdated);
 
     // Notify bloc that page is being closed (minimized if call still active)
     if (!_isNavigating) {
@@ -329,6 +340,11 @@ class _VideoCallPageState extends State<VideoCallPage>
               (state is CallActive && state.isGroup) ||
               (state is CallConnecting && state.isGroup);
 
+          final liveKitService = LiveKitCallService.instance;
+          final bool isLiveKitActive = liveKitService.isConnected;
+          final lkLocalTrack = isLiveKitActive ? liveKitService.getLocalVideoTrack() : null;
+          final lkRemoteTrack = isLiveKitActive ? liveKitService.getActiveRemoteVideoTrack() : null;
+
           return PopScope(
             canPop: true,
             onPopInvokedWithResult: (didPop, result) {
@@ -357,28 +373,43 @@ class _VideoCallPageState extends State<VideoCallPage>
                                   ? (_isLocalVideoSmall
                                       ? (state.isRemoteVideoOff
                                           ? _buildRemoteVideoOffPlaceholder(state)
-                                          : RTCVideoView(
-                                              _webRtcService.remoteRenderer,
-                                              key: const Key('main_remote_video'),
-                                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                              mirror: false,
-                                            ))
+                                          : (isLiveKitActive && lkRemoteTrack != null
+                                              ? VideoTrackRenderer(
+                                                  lkRemoteTrack,
+                                                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                                )
+                                              : RTCVideoView(
+                                                  _webRtcService.remoteRenderer,
+                                                  key: const Key('main_remote_video'),
+                                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                                  mirror: false,
+                                                )))
                                       : (isVideoOff
                                           ? _buildLocalVideoOffPlaceholder()
+                                          : (isLiveKitActive && lkLocalTrack != null
+                                              ? VideoTrackRenderer(
+                                                  lkLocalTrack,
+                                                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                                )
+                                              : RTCVideoView(
+                                                  _webRtcService.localRenderer,
+                                                  key: const Key('main_local_video'),
+                                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                                  mirror: isFrontCamera,
+                                                ))))
+                                  : (isVideoOff
+                                      ? _buildWaitingScreen()
+                                      : (isLiveKitActive && lkLocalTrack != null
+                                          ? VideoTrackRenderer(
+                                              lkLocalTrack,
+                                              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                            )
                                           : RTCVideoView(
                                               _webRtcService.localRenderer,
                                               key: const Key('main_local_video'),
                                               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                               mirror: isFrontCamera,
-                                            )))
-                                  : (isVideoOff
-                                      ? _buildWaitingScreen()
-                                      : RTCVideoView(
-                                          _webRtcService.localRenderer,
-                                          key: const Key('main_local_video'),
-                                          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                          mirror: isFrontCamera,
-                                        )))),
+                                            ))))),
                     ),
 
                     // ─── Gradient overlays ───
@@ -503,7 +534,9 @@ class _VideoCallPageState extends State<VideoCallPage>
     final statusText = !_isNetworkConnected
         ? (state is CallActive ? 'Reconnecting...' : 'Waiting for network...')
         : state is CallActive
-            ? _formattedTime
+            ? (state.isGroup && state.connectedParticipantIds.isEmpty
+                ? 'All members left • Ending in 30s'
+                : _formattedTime)
             : state is CallConnecting
                 ? 'Calling...'
                 : 'Ringing';
@@ -700,20 +733,30 @@ class _VideoCallPageState extends State<VideoCallPage>
                   : (_isLocalVideoSmall
                       ? (isVideoOff
                           ? _buildLocalVideoOffPlaceholder()
-                          : RTCVideoView(
-                              _webRtcService.localRenderer,
-                              key: const Key('inset_local_video'),
-                              mirror: isFrontCamera,
-                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                            ))
+                          : (LiveKitCallService.instance.isConnected && LiveKitCallService.instance.getLocalVideoTrack() != null
+                              ? VideoTrackRenderer(
+                                  LiveKitCallService.instance.getLocalVideoTrack()!,
+                                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                )
+                              : RTCVideoView(
+                                  _webRtcService.localRenderer,
+                                  key: const Key('inset_local_video'),
+                                  mirror: isFrontCamera,
+                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                )))
                       : (state == null || state.isRemoteVideoOff
                           ? _buildRemoteVideoOffPlaceholder(state)
-                          : RTCVideoView(
-                              _webRtcService.remoteRenderer,
-                              key: const Key('inset_remote_video'),
-                              mirror: false,
-                              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                            ))),
+                          : (LiveKitCallService.instance.isConnected && LiveKitCallService.instance.getActiveRemoteVideoTrack() != null
+                              ? VideoTrackRenderer(
+                                  LiveKitCallService.instance.getActiveRemoteVideoTrack()!,
+                                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                )
+                              : RTCVideoView(
+                                  _webRtcService.remoteRenderer,
+                                  key: const Key('inset_remote_video'),
+                                  mirror: false,
+                                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                                )))),
             ),
           ),
         ),
@@ -950,6 +993,9 @@ class _VideoCallPageState extends State<VideoCallPage>
     final List<Widget> connectedTiles = [];
     final List<_ParticipantInfo> allParticipants = [];
 
+    final liveKitService = LiveKitCallService.instance;
+    final bool isLiveKitActive = liveKitService.isConnected;
+
     // Local user ("You")
     final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
     final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
@@ -967,15 +1013,21 @@ class _VideoCallPageState extends State<VideoCallPage>
       isVideoOff: isVideoOff,
     ));
 
+    final lkLocalTrack = isLiveKitActive ? liveKitService.getLocalVideoTrack() : null;
     connectedTiles.add(_buildGridTile(
       child: isVideoOff
           ? _buildLocalVideoOffPlaceholder()
-          : RTCVideoView(
-              _webRtcService.localRenderer,
-              key: ValueKey('grid_local_${_webRtcService.localRenderer.textureId}'),
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-              mirror: isFrontCamera,
-            ),
+          : (isLiveKitActive && lkLocalTrack != null
+              ? VideoTrackRenderer(
+                  lkLocalTrack,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                )
+              : RTCVideoView(
+                  _webRtcService.localRenderer,
+                  key: ValueKey('grid_local_${_webRtcService.localRenderer.textureId}'),
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  mirror: isFrontCamera,
+                )),
       label: 'You',
       isMuted: isMuted,
       avatarUrl: myPic,
@@ -983,6 +1035,40 @@ class _VideoCallPageState extends State<VideoCallPage>
     ));
 
     // Participants
+    if (isLiveKitActive && (liveKitService.room?.remoteParticipants.isNotEmpty ?? false)) {
+      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
+      for (final p in remoteParticipants) {
+        final name = p.name.isNotEmpty ? p.name : p.identity;
+        final videoPub = p.videoTrackPublications.firstOrNull;
+        final hasVideo = videoPub != null && !videoPub.muted && videoPub.track is VideoTrack;
+        final isRemoteSpeaking = p.isSpeaking;
+        final isUserMuted = p.isMuted;
+
+        allParticipants.add(_ParticipantInfo(
+          id: p.identity,
+          name: name,
+          avatarUrl: null,
+          isConnected: true,
+          isDisconnected: false,
+          isMuted: isUserMuted,
+          isVideoOff: !hasVideo,
+          isSpeaking: isRemoteSpeaking,
+        ));
+
+        connectedTiles.add(_buildGridTile(
+          child: hasVideo
+              ? VideoTrackRenderer(
+                  videoPub.track as VideoTrack,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                )
+              : _buildRemoteParticipantPlaceholder(name, null, isSpeaking: isRemoteSpeaking),
+          label: name,
+          isMuted: isUserMuted,
+          avatarUrl: null,
+          isSpeaking: isRemoteSpeaking,
+        ));
+      }
+    } else {
     final extra = state is CallActive
         ? state.extraParticipants
         : (state is CallConnecting ? state.extraParticipants : widget.extraParticipants);
@@ -1071,6 +1157,7 @@ class _VideoCallPageState extends State<VideoCallPage>
           isSpeaking: isRemoteSpeaking,
         ));
       }
+    }
     }
 
     final connectedCount = allParticipants.where((p) => p.isConnected).length;

@@ -291,6 +291,53 @@ class CallNotificationService {
                  type == 'call_timeout' ||
                  type == 'call_missed' ||
                  type == 'missed_call') {
+        final webrtcBloc = getIt<CallWebRtcBloc>();
+        final currentState = webrtcBloc.state;
+        final eventConvoId = (data['conversation_id'] ?? data['conversationId'])?.toString();
+
+        String? currentConvoId;
+        bool isCallGroup = false;
+        if (currentState is CallActive) {
+          currentConvoId = currentState.conversationId;
+          isCallGroup = currentState.isGroup;
+        } else if (currentState is CallConnecting) {
+          currentConvoId = currentState.conversationId;
+          isCallGroup = currentState.isGroup;
+        } else if (currentState is CallRinging) {
+          currentConvoId = (currentState.incomingEvent['conversation_id'] ?? currentState.incomingEvent['conversationId'])?.toString();
+          isCallGroup = currentState.isGroup;
+        }
+
+        // 1. Ignore if conversation IDs don't match
+        if (eventConvoId != null && eventConvoId.isNotEmpty && currentConvoId != null && currentConvoId.isNotEmpty && eventConvoId != currentConvoId) {
+          debugPrint('CallNotificationService: Received $type for convo $eventConvoId, but active call is $currentConvoId - ignoring');
+          return;
+        }
+
+        // 2. Ignore if echoed from self
+        final myId = _storageService.getUserId()?.toString().toLowerCase();
+        final partId = (data['participant_id'] ?? data['sender_id'] ?? data['senderId'] ?? data['user_id'])?.toString();
+        if (partId != null && myId != null && partId.toLowerCase() == myId) {
+          debugPrint('CallNotificationService: Termination event originated from self ($partId) - ignoring');
+          return;
+        }
+
+        // 3. If group call, check if this is just a single participant leaving
+        final isGroup = data['is_group'] == true || data['isGroup'] == true || isCallGroup;
+        if (isGroup && partId != null && partId.isNotEmpty) {
+          debugPrint('CallNotificationService: Participant $partId left group call. Not dismissing incoming call dialog.');
+          try {
+            webrtcBloc.add(HandleCallParticipantLeftEvent(Map<String, dynamic>.from(data)));
+          } catch (_) {}
+          return;
+        }
+
+        // 4. If in CallRinging and it's a group call, do not dismiss on generic disconnect
+        if (currentState is CallRinging && isGroup && (type == 'call_disconnected' || type == 'call_disconnect' || type == 'call_rejected')) {
+          debugPrint('CallNotificationService: Received $type during group CallRinging - ignoring');
+          return;
+        }
+
         printCallLog(
           stage: 'FOREGROUND CALL TERMINATED / CANCELLED',
           callerName: callerInfo.name,
@@ -301,7 +348,7 @@ class CallNotificationService {
         dismissAllIncomingCalls();
         try {
           getIt<CallSoundService>().stopAll();
-          getIt<CallWebRtcBloc>().add(const HandleCallDisconnectedEvent());
+          webrtcBloc.add(const HandleCallDisconnectedEvent());
         } catch (e, st) {
           printCallLog(
             stage: 'ERROR STOPPING CALL ON FCM CANCEL',

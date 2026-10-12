@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
 @LazySingleton(as: DashboardRepository)
@@ -89,6 +91,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     String? groupImageUrl,
     required List<String> participantIds,
   }) async {
+    debugPrint('DEBUG: DashboardRepository.createGroup called with name=$groupName, participants=$participantIds');
     final result = await _apiService.post<ChatModel>(
       CommonEndpoints.createGroup,
       data: {
@@ -98,16 +101,28 @@ class DashboardRepositoryImpl implements DashboardRepository {
         'groupImageUrl': groupImageUrl ?? '',
         'participant_ids': participantIds,
       },
-      mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
+      mapper: (json) {
+        debugPrint('DEBUG: DashboardRepository.createGroup mapper received json: $json');
+        return ChatModel.fromJson(json as Map<String, dynamic>);
+      },
     );
     return result.when(
-      success: (chat) => ApiResult.success(chat),
-      failure: (message, statusCode) => ApiResult.failure(message, statusCode: statusCode),
+      success: (chat) {
+        debugPrint('DEBUG: DashboardRepository.createGroup SUCCESS: chat.id=${chat.id}, group_name=${chat.groupName}');
+        return ApiResult.success(chat);
+      },
+      failure: (message, statusCode) {
+        debugPrint('DEBUG: DashboardRepository.createGroup FAILURE: $message (code: $statusCode)');
+        return ApiResult.failure(message, statusCode: statusCode);
+      },
     );
   }
 
   @override
   Future<ApiResult<void>> hideChat(String conversationId) async {
+    try {
+      getIt<StorageService>().saveChatHidden(conversationId, true);
+    } catch (_) {}
     return _apiService.post<void>(
       CommonEndpoints.hideChat(conversationId),
       mapper: (_) {},
@@ -116,6 +131,9 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ApiResult<void>> unhideChat(String conversationId) async {
+    try {
+      getIt<StorageService>().saveChatHidden(conversationId, false);
+    } catch (_) {}
     return _apiService.post<void>(
       CommonEndpoints.unhideChat(conversationId),
       mapper: (_) {},
@@ -136,7 +154,15 @@ class DashboardRepositoryImpl implements DashboardRepository {
                   json['hidedConversations']) as List? ??
               [];
         }
-        return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        final chats = list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        for (final c in chats) {
+          if (c.id.isNotEmpty) {
+            try {
+              getIt<StorageService>().saveChatHidden(c.id, true);
+            } catch (_) {}
+          }
+        }
+        return chats;
       },
     );
     return result;
@@ -154,7 +180,15 @@ class DashboardRepositoryImpl implements DashboardRepository {
         } else if (json is Map && (json['locked_conversations'] ?? json['lockedConversations'] ?? json['conversations']) is List) {
           list = (json['locked_conversations'] ?? json['lockedConversations'] ?? json['conversations']) as List;
         }
-        return list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        final chats = list.map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        for (final c in chats) {
+          if (c.id.isNotEmpty) {
+            try {
+              getIt<StorageService>().saveChatLocked(c.id, true);
+            } catch (_) {}
+          }
+        }
+        return chats;
       },
     );
     return result;

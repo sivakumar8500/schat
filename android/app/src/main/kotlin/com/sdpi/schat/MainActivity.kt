@@ -20,6 +20,10 @@ import android.content.Context
 import android.telephony.TelephonyManager
 import android.telecom.TelecomManager
 import java.io.File
+import android.media.MediaScannerConnection
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
@@ -161,6 +165,11 @@ class MainActivity : FlutterActivity() {
                 "deleteLastScreenshot" -> {
                     val deleted = deleteLastScreenshot()
                     result.success(deleted)
+                }
+                "saveLatestScreenRecordingToSchat" -> {
+                    val recordedSinceTimestamp = call.argument<Long>("recordedSinceTimestamp") ?: (System.currentTimeMillis() - 10 * 60 * 1000L)
+                    val savedPath = saveLatestScreenRecordingToSchat(recordedSinceTimestamp)
+                    result.success(savedPath)
                 }
                 else -> result.notImplemented()
             }
@@ -515,6 +524,129 @@ class MainActivity : FlutterActivity() {
         lastScreenshotPath = null
         lastScreenshotUri = null
         return deleted
+    }
+
+    private fun saveLatestScreenRecordingToSchat(recordedSinceTimestamp: Long): String? {
+        try {
+            val schatFolder = File("/storage/emulated/0/Download/Schat")
+            if (!schatFolder.exists()) {
+                schatFolder.mkdirs()
+            }
+
+            var latestUri: Uri? = null
+            var latestFile: File? = null
+            var newestTimestamp = 0L
+
+            // 1. Check direct directories on storage
+            val candidateDirs = listOf(
+                File("/storage/emulated/0/Movies/Screenrecords"),
+                File("/storage/emulated/0/Movies"),
+                File("/storage/emulated/0/DCIM/Screenrecords"),
+                File("/storage/emulated/0/DCIM/Screenshots"),
+                File("/storage/emulated/0/DCIM"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Screenrecords"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), ""),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenrecords"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "")
+            )
+
+            for (dir in candidateDirs) {
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles() ?: continue
+                    for (f in files) {
+                        if (f.isFile && f.extension.equals("mp4", ignoreCase = true)) {
+                            val lm = f.lastModified()
+                            if (lm > newestTimestamp && lm >= (recordedSinceTimestamp - 120000L)) {
+                                newestTimestamp = lm
+                                latestFile = f
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Also query MediaStore.Video.Media
+            try {
+                val projection = arrayOf(
+                    MediaStore.Video.Media._ID,
+                    MediaStore.Video.Media.DISPLAY_NAME,
+                    MediaStore.Video.Media.DATA,
+                    MediaStore.Video.Media.DATE_ADDED,
+                    MediaStore.Video.Media.DATE_MODIFIED
+                )
+                val cursor = contentResolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val idIndex = it.getColumnIndex(MediaStore.Video.Media._ID)
+                        val dataIndex = it.getColumnIndex(MediaStore.Video.Media.DATA)
+                        val dateIndex = it.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+
+                        val id = if (idIndex >= 0) it.getLong(idIndex) else -1L
+                        val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
+                        val date = if (dateIndex >= 0) it.getLong(dateIndex) * 1000L else 0L
+
+                        if (date > newestTimestamp && date >= (recordedSinceTimestamp - 120000L)) {
+                            newestTimestamp = date
+                            latestFile = if (path.isNotEmpty()) File(path) else null
+                            if (id >= 0) {
+                                latestUri = android.content.ContentUris.withAppendedId(
+                                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                                    id
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 3. Copy to Schat folder
+            val timeStampStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val destFile = File(schatFolder, "Schat_ScreenRecord_$timeStampStr.mp4")
+
+            var copied = false
+            if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
+                try {
+                    latestFile.copyTo(destFile, overwrite = true)
+                    copied = destFile.exists() && destFile.length() > 0
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (!copied && latestUri != null) {
+                try {
+                    contentResolver.openInputStream(latestUri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    copied = destFile.exists() && destFile.length() > 0
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (copied) {
+                MediaScannerConnection.scanFile(
+                    applicationContext,
+                    arrayOf(destFile.absolutePath),
+                    arrayOf("video/mp4"),
+                    null
+                )
+                return destFile.absolutePath
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
     }
 
     override fun onDestroy() {

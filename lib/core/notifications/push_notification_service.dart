@@ -16,6 +16,13 @@ import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/unlock_chat_bottom_sheet.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:collection/collection.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 
 @lazySingleton
 class PushNotificationService {
@@ -259,6 +266,17 @@ class PushNotificationService {
       return;
     }
 
+    final bool isHidden = message.data['is_hidden'] == 'true' ||
+        message.data['is_hidden'] == true ||
+        message.data['isHidden'] == 'true' ||
+        message.data['isHidden'] == true ||
+        (convId != null && storage.isChatHidden(convId));
+
+    if (isHidden) {
+      debugPrint('PushNotificationService: Suppressing foreground notification because chat $convId is hidden');
+      return;
+    }
+
     try {
       final inAppService = getIt<InAppNotificationService>();
       if (inAppService.isChatActive(conversationId: convId, senderId: senderId)) {
@@ -424,7 +442,8 @@ class PushNotificationService {
     final convId = rawConvId?.toString();
     final messageId = (data['messageId'] ?? data['message_id'] ?? data['msg_id'] ?? data['msgId'])?.toString();
 
-    String senderName = (data['sender_name'] ??
+    String senderName = (data['actual_sender_name'] ??
+            data['sender_name'] ??
             data['senderName'] ??
             data['contact_name'] ??
             data['contactName'] ??
@@ -436,6 +455,13 @@ class PushNotificationService {
             '')
         .toString()
         .trim();
+    if (senderName == 'sChat' || senderName == 'New Message' || senderName == 'Chat' || senderName == 'User') {
+      if (data['actual_sender_name'] != null && data['actual_sender_name'].toString().trim().isNotEmpty) {
+        senderName = data['actual_sender_name'].toString().trim();
+      } else {
+        senderName = '';
+      }
+    }
     final senderId = (data['sender_id'] ??
             data['senderId'] ??
             data['recipient_id'] ??
@@ -456,14 +482,255 @@ class PushNotificationService {
             data['avatar'])
         ?.toString();
 
+    final storage = getIt<StorageService>();
+    final bool isLocked = data['is_locked'] == 'true' ||
+        data['is_locked'] == true ||
+        data['isLocked'] == 'true' ||
+        data['isLocked'] == true ||
+        (convId != null && storage.isChatLocked(convId));
+
+    final bool isHidden = data['is_hidden'] == 'true' ||
+        data['is_hidden'] == true ||
+        data['isHidden'] == 'true' ||
+        data['isHidden'] == true ||
+        (convId != null && storage.isChatHidden(convId));
+
+    if (isHidden) {
+      debugPrint('PushNotificationService: Suppressing pending notification because chat $convId is hidden');
+      return;
+    }
+
     if (convId != null && convId.isNotEmpty) {
+      if (isLocked) {
+        _promptUnlockAndNavigate(
+          convId,
+          senderName,
+          senderId,
+          isGroup: isGroup,
+          profilePic: profilePic,
+          targetMessageId: messageId,
+        );
+      } else {
+        _navigateToConversation(
+          convId,
+          senderName,
+          senderId,
+          isGroup: isGroup,
+          profilePic: profilePic,
+          targetMessageId: messageId,
+        );
+      }
+    }
+  }
+
+  Future<Map<String, String?>> _resolveConversationMetadata({
+    required String convId,
+    String? contactName,
+    String? recipientId,
+    String? profilePic,
+    bool isGroup = false,
+  }) async {
+    bool isGeneric(String? n) {
+      if (n == null) return true;
+      final t = n.trim().toLowerCase();
+      return t.isEmpty || t == 'schat' || t == 'chat' || t == 'user' || t == 'new message' || t == 'null';
+    }
+
+    String resolvedName = (contactName ?? '').trim();
+    if (isGeneric(resolvedName)) {
+      resolvedName = '';
+    }
+    String? resolvedRecipientId = recipientId;
+    String? resolvedProfilePic = profilePic;
+    bool resolvedIsGroup = isGroup;
+
+    // 1. Try getLockedChats()
+    try {
+      final lockedRes = await getIt<DashboardRepository>().getLockedChats();
+      lockedRes.when(
+        success: (lockedChats) {
+          final match = lockedChats.firstWhereOrNull((c) =>
+              c.id.trim() == convId.trim() ||
+              (resolvedRecipientId != null && resolvedRecipientId!.isNotEmpty && c.recipient.id.trim() == resolvedRecipientId!.trim()));
+          if (match != null) {
+            final cand = match.isGroup
+                ? (match.groupName ?? 'Group')
+                : match.recipient.displayName;
+            if (resolvedName.isEmpty || isGeneric(resolvedName)) {
+              if (!isGeneric(cand)) {
+                resolvedName = cand;
+              }
+            }
+            if (resolvedRecipientId == null || resolvedRecipientId!.isEmpty) {
+              resolvedRecipientId = match.recipient.id;
+            }
+            if (resolvedProfilePic == null || resolvedProfilePic!.isEmpty) {
+              resolvedProfilePic = match.recipient.profilePictureUrl;
+            }
+            resolvedIsGroup = match.isGroup;
+          }
+        },
+        failure: (_, __) {},
+      );
+    } catch (_) {}
+
+    // 2. Try ChatsBloc
+    if (resolvedName.isEmpty || isGeneric(resolvedName) || resolvedRecipientId == null || resolvedRecipientId!.isEmpty) {
+      try {
+        final chatsBloc = getIt<ChatsBloc>();
+        if (chatsBloc.state is ChatsLoaded) {
+          final chats = (chatsBloc.state as ChatsLoaded).chats;
+          final match = chats.firstWhereOrNull((c) =>
+              c.id.trim() == convId.trim() ||
+              (resolvedRecipientId != null && resolvedRecipientId!.isNotEmpty && c.recipient.id.trim() == resolvedRecipientId!.trim()));
+          if (match != null) {
+            final cand = match.isGroup
+                ? (match.groupName ?? 'Group')
+                : match.recipient.displayName;
+            if (resolvedName.isEmpty || isGeneric(resolvedName)) {
+              if (!isGeneric(cand)) {
+                resolvedName = cand;
+              }
+            }
+            if (resolvedRecipientId == null || resolvedRecipientId!.isEmpty) {
+              resolvedRecipientId = match.recipient.id;
+            }
+            if (resolvedProfilePic == null || resolvedProfilePic!.isEmpty) {
+              resolvedProfilePic = match.recipient.profilePictureUrl;
+            }
+            resolvedIsGroup = match.isGroup;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Try DashboardRepository.getChats()
+    if (resolvedName.isEmpty || isGeneric(resolvedName) || resolvedRecipientId == null || resolvedRecipientId!.isEmpty) {
+      try {
+        final chatsRes = await getIt<DashboardRepository>().getChats();
+        chatsRes.when(
+          success: (chats) {
+            final match = chats.firstWhereOrNull((c) =>
+                c.id.trim() == convId.trim() ||
+                (resolvedRecipientId != null && resolvedRecipientId!.isNotEmpty && c.recipient.id.trim() == resolvedRecipientId!.trim()));
+            if (match != null) {
+              final cand = match.isGroup
+                  ? (match.groupName ?? 'Group')
+                  : match.recipient.displayName;
+              if (resolvedName.isEmpty || isGeneric(resolvedName)) {
+                if (!isGeneric(cand)) {
+                  resolvedName = cand;
+                }
+              }
+              if (resolvedRecipientId == null || resolvedRecipientId!.isEmpty) {
+                resolvedRecipientId = match.recipient.id;
+              }
+              if (resolvedProfilePic == null || resolvedProfilePic!.isEmpty) {
+                resolvedProfilePic = match.recipient.profilePictureUrl;
+              }
+              resolvedIsGroup = match.isGroup;
+            }
+          },
+          failure: (_, __) {},
+        );
+      } catch (_) {}
+    }
+
+    // 4. Try ContactsRepository.getCachedContacts()
+    if ((resolvedName.isEmpty || isGeneric(resolvedName) || resolvedProfilePic == null || resolvedProfilePic!.isEmpty) &&
+        resolvedRecipientId != null &&
+        resolvedRecipientId!.isNotEmpty) {
+      try {
+        final cached = await getIt<ContactsRepository>().getCachedContacts();
+        final match = cached.firstWhereOrNull((c) => c.id.trim() == resolvedRecipientId!.trim());
+        if (match != null) {
+          if ((resolvedName.isEmpty || isGeneric(resolvedName)) && match.displayName.isNotEmpty && !isGeneric(match.displayName)) {
+            resolvedName = match.displayName;
+          }
+          if (resolvedProfilePic == null || resolvedProfilePic!.isEmpty) {
+            resolvedProfilePic = match.profilePictureUrl;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 5. Try ProfileRepository.getUserById()
+    if ((resolvedName.isEmpty || isGeneric(resolvedName)) && resolvedRecipientId != null && resolvedRecipientId!.isNotEmpty) {
+      try {
+        final userRes = await getIt<ProfileRepository>().getUserById(resolvedRecipientId!);
+        userRes.when(
+          success: (u) {
+            if (u.displayName.isNotEmpty && !isGeneric(u.displayName)) {
+              resolvedName = u.displayName;
+              if (resolvedProfilePic == null || resolvedProfilePic!.isEmpty) {
+                resolvedProfilePic = u.profilePictureUrl;
+              }
+            }
+          },
+          failure: (_, __) {},
+        );
+      } catch (_) {}
+    }
+
+    return {
+      'name': resolvedName,
+      'recipientId': resolvedRecipientId,
+      'profilePic': resolvedProfilePic,
+      'isGroup': resolvedIsGroup ? 'true' : 'false',
+    };
+  }
+
+  Future<void> _promptUnlockAndNavigate(
+    String convId,
+    String contactName,
+    String recipientId, {
+    bool isGroup = false,
+    String? profilePic,
+    String? targetMessageId,
+  }) async {
+    final navContext = navigatorKey.currentContext;
+    if (navContext == null) {
+      debugPrint('PushNotificationService: Navigator context is null, retrying unlock prompt after frame');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _promptUnlockAndNavigate(
+          convId,
+          contactName,
+          recipientId,
+          isGroup: isGroup,
+          profilePic: profilePic,
+          targetMessageId: targetMessageId,
+        );
+      });
+      return;
+    }
+
+    final meta = await _resolveConversationMetadata(
+      convId: convId,
+      contactName: contactName,
+      recipientId: recipientId,
+      profilePic: profilePic,
+      isGroup: isGroup,
+    );
+    final resolvedName = (meta['name'] ?? '').isNotEmpty ? meta['name']! : '';
+    final resolvedRecipientId = (meta['recipientId'] ?? '').isNotEmpty ? meta['recipientId']! : recipientId;
+    final resolvedProfilePic = meta['profilePic'] ?? profilePic;
+    final resolvedIsGroup = meta['isGroup'] == 'true';
+
+    final bool unlocked = await UnlockChatBottomSheet.show(
+      navContext,
+      conversationId: convId,
+      contactName: resolvedName,
+    );
+
+    if (unlocked) {
       _navigateToConversation(
         convId,
-        senderName,
-        senderId,
-        isGroup: isGroup,
-        profilePic: profilePic,
-        targetMessageId: messageId,
+        resolvedName,
+        resolvedRecipientId,
+        isGroup: resolvedIsGroup,
+        profilePic: resolvedProfilePic,
+        targetMessageId: targetMessageId,
+        isLocked: true,
       );
     }
   }
@@ -475,20 +742,40 @@ class PushNotificationService {
     bool isGroup = false,
     String? profilePic,
     String? targetMessageId,
-  }) {
+    bool isLocked = false,
+  }) async {
     final navState = navigatorKey.currentState;
     if (navState == null) {
       debugPrint('PushNotificationService: NavigatorState is null cannot navigate to conversation $convId');
       return;
     }
 
-    String resolvedName = contactName.trim();
-    if (resolvedName == 'sChat' || resolvedName == 'New Message') {
-      resolvedName = '';
+    var resolvedName = contactName.trim();
+    var resolvedRecipientId = recipientId;
+    var resolvedProfilePic = profilePic;
+    var resolvedIsGroup = isGroup;
+
+    if (resolvedName.isEmpty ||
+        resolvedName == 'sChat' ||
+        resolvedName == 'New Message' ||
+        resolvedName == 'Chat' ||
+        resolvedName == 'User' ||
+        resolvedRecipientId.isEmpty) {
+      final meta = await _resolveConversationMetadata(
+        convId: convId,
+        contactName: resolvedName,
+        recipientId: resolvedRecipientId,
+        profilePic: resolvedProfilePic,
+        isGroup: resolvedIsGroup,
+      );
+      if ((meta['name'] ?? '').isNotEmpty) resolvedName = meta['name']!;
+      if ((meta['recipientId'] ?? '').isNotEmpty) resolvedRecipientId = meta['recipientId']!;
+      if ((meta['profilePic'] ?? '').isNotEmpty) resolvedProfilePic = meta['profilePic'];
+      if (meta['isGroup'] != null) resolvedIsGroup = meta['isGroup'] == 'true';
     }
 
     clearAllNotifications();
-    debugPrint('PushNotificationService: Navigating to ChatPage convId=$convId contact=$resolvedName recipient=$recipientId isGroup=$isGroup');
+    debugPrint('PushNotificationService: Navigating to ChatPage convId=$convId contact=$resolvedName recipient=$resolvedRecipientId isGroup=$resolvedIsGroup isLocked=$isLocked');
     navState.push(
       MaterialPageRoute(
         builder: (_) => ChatPage(
@@ -496,10 +783,11 @@ class PushNotificationService {
           contactName: resolvedName.isNotEmpty ? resolvedName : 'Chat',
           contactColor: const Color(0xFF00873C),
           isOnline: true,
-          recipientId: recipientId,
-          profilePictureUrl: profilePic,
-          isGroup: isGroup,
+          recipientId: resolvedRecipientId,
+          profilePictureUrl: resolvedProfilePic,
+          isGroup: resolvedIsGroup,
           initialTargetMessageId: targetMessageId,
+          initialIsLocked: isLocked,
         ),
       ),
     );
@@ -530,7 +818,12 @@ class PushNotificationService {
         message.data['isHidden'] == true ||
         (convId != null && storage.isChatHidden(convId));
 
-    if (isLocked || isHidden) {
+    if (isHidden) {
+      debugPrint('PushNotificationService: Suppressing local notification because chat $convId is hidden');
+      return;
+    }
+
+    if (isLocked) {
       title = 'sChat';
       body = 'New message';
     } else {
@@ -599,15 +892,15 @@ class PushNotificationService {
         message.messageId?.hashCode ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
     final payloadMap = Map<String, dynamic>.from(message.data);
-    if (isLocked || isHidden) {
+    if (isLocked) {
       payloadMap['title'] = 'sChat';
       payloadMap['sender_name'] = 'sChat';
       payloadMap['senderName'] = 'sChat';
       payloadMap['contact_name'] = 'sChat';
       payloadMap['contactName'] = 'sChat';
       payloadMap['body'] = 'New message';
-      payloadMap['is_locked'] = isLocked ? 'true' : 'false';
-      payloadMap['is_hidden'] = isHidden ? 'true' : 'false';
+      payloadMap['content'] = 'New message';
+      payloadMap['is_locked'] = 'true';
     } else {
       if (!payloadMap.containsKey('title') || payloadMap['title'] == null) {
         payloadMap['title'] = title;

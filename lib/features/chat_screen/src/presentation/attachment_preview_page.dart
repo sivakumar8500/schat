@@ -56,8 +56,8 @@ class AttachmentPreviewPage extends StatefulWidget {
     required this.size,
     required this.contactName,
     this.initialAllowView = true,
-    this.initialAllowDownload = true,
-    this.initialAllowShare = true,
+    this.initialAllowDownload = false,
+    this.initialAllowShare = false,
     this.initialIsViewOnce = false,
     this.initialViewCount = 1,
     this.extraItems,
@@ -514,8 +514,8 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       'path': _activePath,
       'items': widget.extraItems,
       'allowView': _allowView,
-      'allowDownload': _isViewOnce ? false : _allowDownload,
-      'allowShare': _isViewOnce ? false : _allowShare,
+      'allowDownload': (!_allowView || _isViewOnce) ? false : _allowDownload,
+      'allowShare': (!_allowView || _isViewOnce) ? false : _allowShare,
       'isViewOnce': _isViewOnce,
       'maxViews': 1,
     });
@@ -1345,25 +1345,49 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
                     icon: _allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
                     label: 'View',
                     isActive: _allowView,
-                    onTap: () => setState(() => _allowView = !_allowView),
+                    onTap: () {
+                      setState(() {
+                        _allowView = !_allowView;
+                        if (!_allowView) {
+                          _allowDownload = false;
+                          _allowShare = false;
+                        }
+                      });
+                    },
                   ),
                   CommonSpaces.w8,
                   _buildPermissionToggle(
                     icon: _allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                     label: 'Download',
-                    isActive: _isViewOnce ? false : _allowDownload,
-                    onTap: _isViewOnce
-                        ? () => context.showInfoNotification('Download is disabled for View Once')
-                        : () => setState(() => _allowDownload = !_allowDownload),
+                    isActive: (_isViewOnce || !_allowView) ? false : _allowDownload,
+                    onTap: () {
+                      if (_isViewOnce) {
+                        context.showInfoNotification('Download is disabled for View Once');
+                        return;
+                      }
+                      if (!_allowView) {
+                        context.showInfoNotification('Enable View first to allow Download');
+                        return;
+                      }
+                      setState(() => _allowDownload = !_allowDownload);
+                    },
                   ),
                   CommonSpaces.w8,
                   _buildPermissionToggle(
                     icon: _allowShare ? CommonIcons.share : CommonIcons.shareOff,
                     label: 'Share',
-                    isActive: _isViewOnce ? false : _allowShare,
-                    onTap: _isViewOnce
-                        ? () => context.showInfoNotification('Share is disabled for View Once')
-                        : () => setState(() => _allowShare = !_allowShare),
+                    isActive: (_isViewOnce || !_allowView) ? false : _allowShare,
+                    onTap: () {
+                      if (_isViewOnce) {
+                        context.showInfoNotification('Share is disabled for View Once');
+                        return;
+                      }
+                      if (!_allowView) {
+                        context.showInfoNotification('Enable View first to allow Share');
+                        return;
+                      }
+                      setState(() => _allowShare = !_allowShare);
+                    },
                   ),
                 ],
               ),

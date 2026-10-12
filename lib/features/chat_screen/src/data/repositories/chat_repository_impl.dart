@@ -147,8 +147,8 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = true,
-    bool allowShare = true,
+    bool allowDownload = false,
+    bool allowShare = false,
   }) async {
     try {
       if (!kIsWeb) {

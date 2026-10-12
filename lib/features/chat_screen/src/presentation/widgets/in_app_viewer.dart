@@ -27,6 +27,7 @@ class InAppViewer extends StatefulWidget {
   final bool allowDownload;
   final bool isViewOnce;
   final bool isMe;
+  final bool isForwarded;
   final VoidCallback? onSharePressed;
   final VoidCallback? onDownloadPressed;
   final VoidCallback? onViewed;
@@ -41,6 +42,7 @@ class InAppViewer extends StatefulWidget {
     this.allowDownload = true,
     this.isViewOnce = false,
     this.isMe = false,
+    this.isForwarded = false,
     this.onSharePressed,
     this.onDownloadPressed,
     this.onViewed,
@@ -56,6 +58,7 @@ class InAppViewer extends StatefulWidget {
     bool allowDownload = true,
     bool isViewOnce = false,
     bool isMe = false,
+    bool isForwarded = false,
     VoidCallback? onSharePressed,
     VoidCallback? onDownloadPressed,
     VoidCallback? onViewed,
@@ -72,6 +75,7 @@ class InAppViewer extends StatefulWidget {
           allowDownload: allowDownload,
           isViewOnce: isViewOnce,
           isMe: isMe,
+          isForwarded: isForwarded,
           onSharePressed: onSharePressed,
           onDownloadPressed: onDownloadPressed,
           onViewed: onViewed,
@@ -497,7 +501,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                 overflow: TextOverflow.ellipsis,
               ),
         actions: [
-          if (!widget.isViewOnce && widget.isMe)
+          if (!widget.isViewOnce && widget.isMe && !widget.isForwarded)
             IconButton(
               icon: const Icon(Icons.shield_outlined, color: Colors.white),
               tooltip: 'Security & Protection',

@@ -11,6 +11,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/group_bloc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/group_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/group_state.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -43,13 +44,16 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
   Future<void> _loadLocalContacts() async {
     try {
       final repository = getIt<ContactsRepository>();
+      final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
       final users = await repository.getCachedContacts();
-      users.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
+      final filteredUsers = users.where((u) => u.id.trim().isNotEmpty && (myId == null || u.id != myId)).toList();
+      filteredUsers.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
       setState(() {
-        _cachedUsers = users;
+        _cachedUsers = filteredUsers;
         _isLoadingContacts = false;
       });
     } catch (e) {
+      debugPrint('DEBUG: CreateGroupBottomSheet._loadLocalContacts error: $e');
       setState(() {
         _isLoadingContacts = false;
       });
@@ -80,8 +84,10 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
       child: BlocConsumer<GroupBloc, GroupState>(
         listener: (context, state) {
           if (state is GroupSuccess) {
+            debugPrint('DEBUG: CreateGroupBottomSheet GroupSuccess received: ${state.chat.id}');
             Navigator.pop(context, state.chat);
           } else if (state is GroupError) {
+            debugPrint('DEBUG: CreateGroupBottomSheet GroupError: ${state.message}');
             context.showErrorNotification(state.message);
           }
         },
@@ -190,7 +196,9 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
                   ),
                   CommonSpaces.h16,
                   Text(
-                    'Select Members (Min 3)',
+                    _selectedUserIds.isEmpty
+                        ? 'Select Members'
+                        : 'Select Members (${_selectedUserIds.length} selected)',
                     style: context.bodySmall.copyWith(fontWeight: FontWeight.bold),
                   ),
                   CommonSpaces.h8,
@@ -314,8 +322,9 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
       context.showErrorNotification('Please enter group name');
       return;
     }
-    if (_selectedUserIds.length < 3) {
-      context.showErrorNotification('Please select at least 3 members');
+    final validParticipantIds = _selectedUserIds.where((id) => id.trim().isNotEmpty).toList();
+    if (validParticipantIds.isEmpty) {
+      context.showErrorNotification('Please select at least 1 member');
       return;
     }
 
@@ -334,6 +343,7 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
           fileBytes: bytes,
         );
       } catch (e) {
+        debugPrint('DEBUG: CreateGroupBottomSheet uploadProfilePicture error: $e');
         if (mounted && context.mounted) {
           context.showErrorNotification('Failed to upload group image: $e');
           setState(() {
@@ -350,10 +360,11 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
     }
 
     if (mounted && context.mounted) {
+      debugPrint('DEBUG: CreateGroupBottomSheet dispatching CreateGroupEvent: name=$name, participants=$validParticipantIds');
       context.read<GroupBloc>().add(CreateGroupEvent(
         name: name,
         description: _descriptionController.text.trim(),
-        participantIds: _selectedUserIds.toList(),
+        participantIds: validParticipantIds,
         groupPictureUrl: uploadedUrl,
         groupImageUrl: uploadedUrl,
       ));

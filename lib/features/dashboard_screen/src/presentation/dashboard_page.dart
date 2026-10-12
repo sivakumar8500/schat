@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -62,8 +64,11 @@ class _DashboardPageState extends State<DashboardPage> {
   final Set<String> _deletedChatIds = {};
   final Set<String> _selectedChatIds = {};
   final Set<String> _mutedChatIds = {};
+  bool _isDeleting = false;
   bool _shouldSyncContacts = false;
   bool _onlyShowSynced = false;
+  DateTime? _lastBackPressTime;
+  bool _isExitDialogOpen = false;
 
   @override
   void initState() {
@@ -437,6 +442,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final selectedIds = Set<String>.from(_selectedChatIds);
 
     setState(() {
+      _isDeleting = true;
       _deletedChatIds.addAll(selectedIds);
       _selectedChatIds.clear();
     });
@@ -467,6 +473,12 @@ class _DashboardPageState extends State<DashboardPage> {
       }
     } catch (e) {
       debugPrint('Error deleting chats: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+      }
     }
   }
 
@@ -525,12 +537,162 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _handleBackPress() async {
+    // 1. If currently performing deletion, ignore
+    if (_isDeleting) return;
+
+    // 2. If chat selection mode is active, dismiss selection
+    if (_selectedChatIds.isNotEmpty) {
+      setState(() {
+        _selectedChatIds.clear();
+      });
+      return;
+    }
+
+    // 3. If on a sub-tab (Status, Calls, Contacts), return to Chats tab (Home)
+    if (_currentIndex != 0) {
+      setState(() {
+        _currentIndex = 0;
+      });
+      return;
+    }
+
+    // 4. If exit dialog is already showing, ignore
+    if (_isExitDialogOpen) return;
+
+    // 5. Check for double tap back (within 2 seconds) to exit directly
+    final now = DateTime.now();
+    if (_lastBackPressTime != null && now.difference(_lastBackPressTime!) < const Duration(seconds: 2)) {
+      await _exitApp();
+      return;
+    }
+
+    _lastBackPressTime = now;
+    await _showExitDialog();
+  }
+
+  Future<void> _showExitDialog() async {
+    _isExitDialogOpen = true;
+
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        final colors = context.colors;
+        return AlertDialog(
+          backgroundColor: Theme.of(ctx).colorScheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.power_settings_new_rounded,
+                  color: Colors.redAccent,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Exit S-CHAT',
+                  style: context.titleLarge.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to close and exit the app?',
+                style: context.bodyMedium.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tip: Double tap back anytime to exit directly.',
+                style: context.bodySmall.copyWith(
+                  color: colors.textSecondary.withValues(alpha: 0.7),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text(
+                'Exit App',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    _isExitDialogOpen = false;
+
+    if (shouldExit == true) {
+      await _exitApp();
+    }
+  }
+
+  Future<void> _exitApp() async {
+    try {
+      await SystemNavigator.pop();
+    } catch (_) {
+      exit(0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint('DEBUG: Building DashboardPage');
     final isDark = context.colors.isDark;
 
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
@@ -559,6 +721,83 @@ class _DashboardPageState extends State<DashboardPage> {
         ],
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+
+    final mainWidget = !_isDeleting
+        ? content
+        : Stack(
+            children: [
+              content,
+              Positioned.fill(
+                child: ModalBarrier(
+                  dismissible: false,
+                  color: Colors.black.withValues(alpha: 0.45),
+                ),
+              ),
+              Positioned.fill(
+                child: Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E2922) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.25),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00873C)),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'Deleting...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: context.colors.textPrimary,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Please wait while deleting completes',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: context.colors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBackPress();
+      },
+      child: mainWidget,
     );
   }
 
@@ -839,6 +1078,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 );
                 if (chat != null && mounted) {
                   context.showSuccessNotification('Group created successfully');
+                  context.read<ChatsBloc>().add(const FetchChats());
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -853,7 +1093,11 @@ class _DashboardPageState extends State<DashboardPage> {
                         initialDisappearingTimer: chat.disappearingTimer,
                       ),
                     ),
-                  );
+                  ).then((_) {
+                    if (mounted) {
+                      context.read<ChatsBloc>().add(const FetchChats());
+                    }
+                  });
                 }
               } else if (value == 'settings') {
                 final result = await Navigator.push(

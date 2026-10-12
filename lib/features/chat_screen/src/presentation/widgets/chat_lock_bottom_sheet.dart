@@ -335,10 +335,20 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                 _isChangingPassword
                     ? 'Enter your current secret code and choose a new one. Supports words, emojis, symbols, and numbers.'
                     : widget.isCurrentlyLocked
-                        ? 'Enter your secret code to unlock chat with ${widget.contactName}.'
+                        ? ((widget.contactName.trim().isNotEmpty &&
+                                widget.contactName.trim().toLowerCase() != 'user' &&
+                                widget.contactName.trim().toLowerCase() != 'chat' &&
+                                widget.contactName.trim().toLowerCase() != 'schat')
+                            ? 'Enter your secret code to unlock chat with ${widget.contactName}.'
+                            : 'Enter your secret code to unlock this chat.')
                         : !_hasPassword
                             ? 'Keep this chat hidden and secured. Create a secret code (use words, emojis 🔒🍕, symbols @#\$, or numbers). Type this code into the search bar to reveal locked chats.'
-                            : 'Enter your secret code to lock and hide chat with ${widget.contactName}.',
+                            : ((widget.contactName.trim().isNotEmpty &&
+                                    widget.contactName.trim().toLowerCase() != 'user' &&
+                                    widget.contactName.trim().toLowerCase() != 'chat' &&
+                                    widget.contactName.trim().toLowerCase() != 'schat')
+                                ? 'Enter your secret code to lock and hide chat with ${widget.contactName}.'
+                                : 'Enter your secret code to lock and hide this chat.'),
                 style: context.bodyMedium.copyWith(
                   color: context.colors.textSecondary,
                   height: 1.4,
