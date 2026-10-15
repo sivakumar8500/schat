@@ -2,13 +2,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:schat/core/network/connectivity_repository.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/services/livekit_call_service.dart';
 import 'package:schat/injection.dart';
 
 /// Represents the signaling state of the WebRTC call.
@@ -18,6 +18,7 @@ enum CallSignalState { idle, connecting, ringing, active, ended, rejected, busy 
 /// mason make usecase --name web_rtc_service
 @lazySingleton
 class WebRtcService {
+  static const MethodChannel _nativeAudioChannel = MethodChannel('com.sdpi.schat/audio_routing');
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStream? _remoteStream;
@@ -63,6 +64,15 @@ class WebRtcService {
       {'urls': 'stun:stun2.l.google.com:19302'},
       {'urls': 'stun:stun3.l.google.com:19302'},
       {'urls': 'stun:stun4.l.google.com:19302'},
+      {
+        'urls': [
+          'turn:openrelay.metered.ca:80',
+          'turn:openrelay.metered.ca:443',
+          'turn:openrelay.metered.ca:443?transport=tcp',
+        ],
+        'username': 'openrelay',
+        'credential': 'openrelay',
+      },
     ],
     'sdpSemantics': 'unified-plan',
     'bundlePolicy': 'max-bundle',
@@ -156,6 +166,25 @@ class WebRtcService {
     await initRenderers();
     _callSignalController.add(CallSignalState.connecting);
 
+    if (_peerConnection != null) {
+      debugPrint('WebRTC: Disposing previous PeerConnection before initiating new call');
+      try {
+        await _peerConnection!.close();
+        await _peerConnection!.dispose();
+      } catch (_) {}
+      _peerConnection = null;
+    }
+
+    if (_localStream != null) {
+      try {
+        await _localStream!.dispose();
+      } catch (_) {}
+      _localStream = null;
+    }
+    _remoteStream = null;
+    remoteRenderer.srcObject = null;
+    _remoteCandidateQueue.clear();
+
     // 1. Capture local media
     _localStream = await _getUserMedia(isVideo: isVideo);
     
@@ -174,7 +203,10 @@ class WebRtcService {
     _setupConnectionCallbacks(repository);
 
     // 3. Create and set local SDP offer
-    final offer = await _peerConnection!.createOffer(offerConstraints);
+    var offer = await _peerConnection!.createOffer(offerConstraints);
+    if (offer.sdp != null) {
+      offer = RTCSessionDescription(_optimizeOpusAudio(offer.sdp!), offer.type);
+    }
     await _peerConnection!.setLocalDescription(offer);
 
     final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
@@ -335,7 +367,10 @@ class WebRtcService {
       await _processRemoteCandidateQueue();
 
       // 4. Create and set local SDP answer
-      final answer = await _peerConnection!.createAnswer(offerConstraints);
+      var answer = await _peerConnection!.createAnswer(offerConstraints);
+      if (answer.sdp != null) {
+        answer = RTCSessionDescription(_optimizeOpusAudio(answer.sdp!), answer.type);
+      }
       await _peerConnection!.setLocalDescription(answer);
       answerData = {
         'type': 'answer',
@@ -658,7 +693,10 @@ class WebRtcService {
         _callSignalController.add(CallSignalState.active);
       };
 
-      final offer = await pc.createOffer(offerConstraints);
+      var offer = await pc.createOffer(offerConstraints);
+      if (offer.sdp != null) {
+        offer = RTCSessionDescription(_optimizeOpusAudio(offer.sdp!), offer.type);
+      }
       await pc.setLocalDescription(offer);
 
       repository.emit('message', {
@@ -766,6 +804,11 @@ class WebRtcService {
           _remoteStreams[peerId] = stream;
           for (var track in stream.getTracks()) {
             track.enabled = true;
+            if (track.kind == 'audio') {
+              try {
+                await Helper.setVolume(1.0, track);
+              } catch (_) {}
+            }
           }
           final renderer = await getOrCreatePeerRenderer(peerId);
           renderer.srcObject = stream;
@@ -779,6 +822,11 @@ class WebRtcService {
         _remoteStreams[peerId] = stream;
         for (var track in stream.getTracks()) {
           track.enabled = true;
+          if (track.kind == 'audio') {
+            try {
+              await Helper.setVolume(1.0, track);
+            } catch (_) {}
+          }
         }
         final renderer = await getOrCreatePeerRenderer(peerId);
         renderer.srcObject = stream;
@@ -805,7 +853,10 @@ class WebRtcService {
         _peerCandidateQueues.remove(peerId);
       }
 
-      final answer = await pc.createAnswer(offerConstraints);
+      var answer = await pc.createAnswer(offerConstraints);
+      if (answer.sdp != null) {
+        answer = RTCSessionDescription(_optimizeOpusAudio(answer.sdp!), answer.type);
+      }
       await pc.setLocalDescription(answer);
 
       repository.emit('message', {
@@ -915,7 +966,7 @@ class WebRtcService {
     }
 
     if (pc == null) {
-      if (senderId.isNotEmpty) {
+      if (senderId.isNotEmpty && _peerConnections.containsKey(senderId)) {
         _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
       } else {
         _remoteCandidateQueue.add(candidate);
@@ -924,11 +975,21 @@ class WebRtcService {
     }
 
     try {
+      final remoteDesc = await pc.getRemoteDescription();
+      if (remoteDesc == null || remoteDesc.sdp == null || remoteDesc.sdp!.isEmpty) {
+        // Remote description has not been set yet; queue candidate until setRemoteDescription
+        if (senderId.isNotEmpty && _peerConnections.containsKey(senderId)) {
+          _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
+        } else {
+          _remoteCandidateQueue.add(candidate);
+        }
+        return;
+      }
       await pc.addCandidate(candidate);
       debugPrint('WebRTC: Remote ICE candidate added for peer=$senderId');
     } catch (e) {
       debugPrint('WebRTC: Error adding remote ICE candidate for peer=$senderId: $e');
-      if (senderId.isNotEmpty) {
+      if (senderId.isNotEmpty && _peerConnections.containsKey(senderId)) {
         _peerCandidateQueues.putIfAbsent(senderId, () => []).add(candidate);
       } else {
         _remoteCandidateQueue.add(candidate);
@@ -1064,22 +1125,39 @@ class WebRtcService {
     _isTogglingSpeaker = true;
     try {
       await Helper.setSpeakerphoneOn(speakerOn);
-      _localStream?.getAudioTracks().forEach((track) {
-        try {
-          track.enableSpeakerphone(speakerOn);
-        } catch (_) {}
-      });
-      _remoteStream?.getAudioTracks().forEach((track) {
-        try {
-          track.enableSpeakerphone(speakerOn);
-        } catch (_) {}
-      });
-      for (final stream in _remoteStreams.values) {
-        stream.getAudioTracks().forEach((track) {
-          try {
-            track.enableSpeakerphone(speakerOn);
-          } catch (_) {}
+      try {
+        await WebRTC.invokeMethod('setAudioConfiguration', <String, dynamic>{
+          'manageAudioFocus': true,
+          'androidAudioMode': 'inCommunication',
+          'androidAudioFocusMode': 'gain',
+          'androidAudioStreamType': 'voiceCall',
+          'forceHandleAudioRouting': true,
         });
+      } catch (e) {
+        debugPrint('WebRTC: setAudioConfiguration error: $e');
+      }
+      try {
+        await _nativeAudioChannel.invokeMethod('setCallAudioMode', {
+          'speakerOn': speakerOn,
+        });
+      } catch (_) {}
+
+      // Ensure remote audio tracks play at full volume
+      if (_remoteStream != null) {
+        for (var track in _remoteStream!.getAudioTracks()) {
+          track.enabled = true;
+          try {
+            await Helper.setVolume(1.0, track);
+          } catch (_) {}
+        }
+      }
+      for (final stream in _remoteStreams.values) {
+        for (var track in stream.getAudioTracks()) {
+          track.enabled = true;
+          try {
+            await Helper.setVolume(1.0, track);
+          } catch (_) {}
+        }
       }
       debugPrint('WebRTC: Speakerphone set to $speakerOn (updated ${_remoteStreams.length} mesh peers)');
     } catch (e) {
@@ -1494,6 +1572,10 @@ class WebRtcService {
       _localStreamController.add(null);
       _remoteStreamController.add(null);
 
+      try {
+        await _nativeAudioChannel.invokeMethod('resetAudioMode');
+      } catch (_) {}
+
       debugPrint('WebRTC: Multi-peer cleanup complete');
     } finally {
       _isCleaningUp = false;
@@ -1504,20 +1586,37 @@ class WebRtcService {
   // PRIVATE HELPERS
   // ─────────────────────────────────────────────
 
+  String _optimizeOpusAudio(String sdp) {
+    if (sdp.contains('a=fmtp:111')) {
+      return sdp.replaceAllMapped(
+        RegExp(r'a=fmtp:111 ([^\r\n]+)'),
+        (match) {
+          final existing = match.group(1) ?? '';
+          if (!existing.contains('maxaveragebitrate')) {
+            return 'a=fmtp:111 $existing;maxaveragebitrate=64000;stereo=0;sprop-stereo=0;cbr=0';
+          }
+          return match.group(0)!;
+        },
+      );
+    }
+    return sdp;
+  }
+
   Future<MediaStream> _getUserMedia({required bool isVideo}) async {
     final constraints = <String, dynamic>{
       'audio': {
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
-        'highpassFilter': true,
+        'highpassFilter': false,
+        'typingNoiseDetection': false,
       },
       'video': isVideo
           ? {
               'facingMode': 'user',
-              'width': {'ideal': 640},
-              'height': {'ideal': 480},
-              'frameRate': {'ideal': 30},
+              'width': {'ideal': 640, 'max': 1280},
+              'height': {'ideal': 480, 'max': 720},
+              'frameRate': {'ideal': 24, 'max': 30},
             }
           : false,
     };
@@ -1537,6 +1636,7 @@ class WebRtcService {
               'echoCancellation': true,
               'noiseSuppression': true,
               'autoGainControl': true,
+              'highpassFilter': false,
             },
             'video': {
               'width': {'ideal': 640},
@@ -1611,12 +1711,12 @@ class WebRtcService {
     // Receive remote media track → render on remote renderer
     _peerConnection?.onTrack = (RTCTrackEvent event) async {
       debugPrint('WebRTC: onTrack event - kind: ${event.track.kind}, id: ${event.track.id}, streams: ${event.streams.length}');
-      final bool isLkConnected = LiveKitCallService.instance.isConnected;
-      if (event.track.kind == 'audio' && isLkConnected) {
-        event.track.enabled = false;
-        debugPrint('WebRTC: LiveKit is active — disabling P2P audio track to prevent echo');
-      } else {
-        event.track.enabled = true;
+      // On 1-to-1 WebRTC peer connection, remote audio/video tracks must ALWAYS remain enabled
+      event.track.enabled = true;
+      if (event.track.kind == 'audio') {
+        try {
+          await Helper.setVolume(1.0, event.track);
+        } catch (_) {}
       }
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
@@ -1628,10 +1728,11 @@ class WebRtcService {
       }
       if (_remoteStream != null) {
         for (var track in _remoteStream!.getTracks()) {
-          if (track.kind == 'audio' && isLkConnected) {
-            track.enabled = false;
-          } else {
-            track.enabled = true;
+          track.enabled = true;
+          if (track.kind == 'audio') {
+            try {
+              await Helper.setVolume(1.0, track);
+            } catch (_) {}
           }
         }
         remoteRenderer.srcObject = null;
@@ -1643,15 +1744,15 @@ class WebRtcService {
       debugPrint('WebRTC: Remote track received (${event.track.kind}) — rendering remote stream');
     };
 
-    _peerConnection?.onAddStream = (MediaStream stream) {
+    _peerConnection?.onAddStream = (MediaStream stream) async {
       debugPrint('WebRTC: onAddStream event - id: ${stream.id}, tracks: ${stream.getTracks().length}');
-      final bool isLkConnected = LiveKitCallService.instance.isConnected;
       _remoteStream = stream;
       for (var track in _remoteStream!.getTracks()) {
-        if (track.kind == 'audio' && isLkConnected) {
-          track.enabled = false;
-        } else {
-          track.enabled = true;
+        track.enabled = true;
+        if (track.kind == 'audio') {
+          try {
+            await Helper.setVolume(1.0, track);
+          } catch (_) {}
         }
       }
       remoteRenderer.srcObject = null;
@@ -1660,19 +1761,34 @@ class WebRtcService {
       _callSignalController.add(CallSignalState.active);
     };
 
+    _peerConnection?.onConnectionState = (RTCPeerConnectionState state) {
+      debugPrint('WebRTC Peer Connection State: $state');
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        _callSignalController.add(CallSignalState.active);
+      }
+    };
+
     _peerConnection?.onIceConnectionState = (RTCIceConnectionState state) {
       debugPrint('WebRTC ICE State: $state');
-      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
-          state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
         try {
           _peerConnection?.restartIce();
         } catch (e) {
           debugPrint('WebRTC: restartIce failed: $e');
         }
         if (_reconnectTimer == null) {
-          debugPrint('WebRTC: Connection disrupted. Starting 30-second reconnection timer.');
-          _reconnectTimer = Timer(const Duration(seconds: 30), () {
+          debugPrint('WebRTC: ICE connection failed. Starting 20-second grace reconnection timer.');
+          _reconnectTimer = Timer(const Duration(seconds: 20), () {
             debugPrint('WebRTC: Reconnection timer expired. Ending call.');
+            _callSignalController.add(CallSignalState.ended);
+          });
+        }
+      } else if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+        // Disconnected is often temporary during mobile handovers (WiFi-to-LTE). Give grace period.
+        if (_reconnectTimer == null) {
+          debugPrint('WebRTC: ICE disconnected. Starting grace reconnection timer.');
+          _reconnectTimer = Timer(const Duration(seconds: 25), () {
+            debugPrint('WebRTC: Disconnect grace timer expired. Ending call.');
             _callSignalController.add(CallSignalState.ended);
           });
         }

@@ -118,13 +118,19 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
           final VideoTrack? liveKitRemoteTrack = (isGroup && liveKitService.isConnected)
               ? liveKitService.getActiveRemoteVideoTrack()
               : null;
+          final VideoTrack? liveKitLocalTrack = (isGroup && liveKitService.isConnected)
+              ? liveKitService.getLocalVideoTrack()
+              : null;
           final bool hasLiveKitVideo = isVideo && !isRemoteVideoOff && liveKitRemoteTrack != null;
+          final bool hasLiveKitLocalVideo = isVideo && !isLocalVideoOff && liveKitLocalTrack != null;
 
-          final bool hasRemoteVideo = isVideo &&
+          final bool hasRemoteVideo = !isGroup &&
+              isVideo &&
               isConnected &&
               !isRemoteVideoOff &&
               activeRemoteRenderer.srcObject != null;
-          final bool hasLocalVideo = isVideo &&
+          final bool hasLocalVideo = !isGroup &&
+              isVideo &&
               !isLocalVideoOff &&
               webRtcService.localRenderer.srcObject != null;
 
@@ -218,6 +224,13 @@ class _MinimizedCallOverlayState extends State<MinimizedCallOverlay> {
                           Positioned.fill(
                             child: VideoTrackRenderer(
                               liveKitRemoteTrack,
+                              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            ),
+                          )
+                        else if (isGroup && hasLiveKitLocalVideo)
+                          Positioned.fill(
+                            child: VideoTrackRenderer(
+                              liveKitLocalTrack,
                               fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                             ),
                           )

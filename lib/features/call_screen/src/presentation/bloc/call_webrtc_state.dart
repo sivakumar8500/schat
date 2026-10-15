@@ -39,7 +39,7 @@ class CallConnecting extends CallWebRtcState {
     this.extraParticipants = const [],
     this.connectedParticipantIds = const {},
     this.disconnectedParticipantIds = const {},
-  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
+  }) : isSpeakerOn = isSpeakerOn ?? true;
 
   CallConnecting copyWith({
     String? contactName,
@@ -102,7 +102,7 @@ class CallRinging extends CallWebRtcState {
     this.extraParticipants = const [],
     this.connectedParticipantIds = const {},
     this.disconnectedParticipantIds = const {},
-  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
+  }) : isSpeakerOn = isSpeakerOn ?? true;
   
   CallRinging copyWith({
     bool? isSpeakerOn,
@@ -165,7 +165,7 @@ class CallActive extends CallWebRtcState {
     this.isFrontCamera = true,
     this.isRemoteMuted = false,
     this.isRemoteVideoOff = false,
-    this.isSpeakerOn = false,
+    this.isSpeakerOn = true,
     this.isMinimized = false,
     this.isSystemPip = false,
     this.isGroup = false,

@@ -27,7 +27,7 @@ class CallSoundService {
           stayAwake: true,
           contentType: AndroidContentType.sonification,
           usageType: AndroidUsageType.notificationRingtone,
-          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioFocus: AndroidAudioFocus.gainTransient,
           audioMode: AndroidAudioMode.ringtone,
         ),
         iOS: AudioContextIOS(
@@ -45,7 +45,7 @@ class CallSoundService {
           stayAwake: false,
           contentType: AndroidContentType.sonification,
           usageType: AndroidUsageType.notification,
-          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioFocus: AndroidAudioFocus.gainTransient,
           audioMode: AndroidAudioMode.normal,
         ),
         iOS: AudioContextIOS(
@@ -63,7 +63,7 @@ class CallSoundService {
           stayAwake: true,
           contentType: AndroidContentType.music,
           usageType: AndroidUsageType.media,
-          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+          audioFocus: AndroidAudioFocus.gainTransient,
           audioMode: AndroidAudioMode.normal,
         ),
         iOS: AudioContextIOS(
@@ -164,14 +164,16 @@ class CallSoundService {
     try {
       if (_ringtonePlayer.state != PlayerState.stopped) {
         await _ringtonePlayer.stop();
+        await _ringtonePlayer.release();
       }
       if (_backRingPlayer.state != PlayerState.stopped) {
         await _backRingPlayer.stop();
+        await _backRingPlayer.release();
       }
       if (_messageTonePlayer.state != PlayerState.stopped) {
         await _messageTonePlayer.stop();
       }
-      debugPrint('CallSoundService: Stopped all sounds');
+      debugPrint('CallSoundService: Stopped all sounds and released audio focus');
     } catch (e) {
       debugPrint('CallSoundService: Error stopping sounds: $e');
     }

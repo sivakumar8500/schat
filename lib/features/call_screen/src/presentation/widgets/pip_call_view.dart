@@ -12,6 +12,8 @@ import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_sta
 import 'package:schat/features/call_screen/src/presentation/video_call_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/main.dart';
+import 'package:livekit_client/livekit_client.dart' show VideoTrack, VideoTrackRenderer;
+import 'package:schat/services/livekit_call_service.dart';
 
 /// Full-frame edge-to-edge PiP view that renders ONLY the active call window.
 /// Displays video stream (or caller avatar + duration for audio / camera off calls)
@@ -116,12 +118,28 @@ class PipCallView extends StatelessWidget {
             DateTime.now())
         : null;
 
+    final bool isGroup = state is CallActive
+        ? (state as CallActive).isGroup
+        : (state as CallConnecting).isGroup;
+
+    final liveKitService = LiveKitCallService.instance;
+    final VideoTrack? liveKitRemoteTrack = (isGroup && liveKitService.isConnected)
+        ? liveKitService.getActiveRemoteVideoTrack()
+        : null;
+    final VideoTrack? liveKitLocalTrack = (isGroup && liveKitService.isConnected)
+        ? liveKitService.getLocalVideoTrack()
+        : null;
+    final bool hasLiveKitVideo = isVideo && !isRemoteVideoOff && liveKitRemoteTrack != null;
+    final bool hasLiveKitLocalVideo = isVideo && !isLocalVideoOff && liveKitLocalTrack != null;
+
     final webRtcService = getIt<WebRtcService>();
-    final bool hasRemoteVideo = isVideo &&
+    final bool hasRemoteVideo = !isGroup &&
+        isVideo &&
         isConnected &&
         !isRemoteVideoOff &&
         webRtcService.remoteRenderer.srcObject != null;
-    final bool hasLocalVideo = isVideo &&
+    final bool hasLocalVideo = !isGroup &&
+        isVideo &&
         !isLocalVideoOff &&
         webRtcService.localRenderer.srcObject != null;
 
@@ -136,7 +154,21 @@ class PipCallView extends StatelessWidget {
           fit: StackFit.expand,
           children: [
           // ─── Main Content (Video or Audio Call Card) ───
-          if (hasRemoteVideo)
+          if (hasLiveKitVideo)
+            Positioned.fill(
+              child: VideoTrackRenderer(
+                liveKitRemoteTrack,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              ),
+            )
+          else if (isGroup && hasLiveKitLocalVideo)
+            Positioned.fill(
+              child: VideoTrackRenderer(
+                liveKitLocalTrack,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+              ),
+            )
+          else if (hasRemoteVideo)
             Positioned.fill(
               child: RTCVideoView(
                 webRtcService.remoteRenderer,

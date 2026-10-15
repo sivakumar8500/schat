@@ -651,7 +651,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               add(ReceiveScreenPermissionResponseEvent(requestData: Map<String, dynamic>.from(req), action: action));
             }
           }
+        } else if (type == 'screen_permission_revoked') {
+          final permId = (cleanData['permissionId'] ?? cleanData['permission_id'] ?? cleanData['requestId'] ?? cleanData['request_id'])?.toString();
+          if (permId != null && permId.isNotEmpty) {
+            add(ConsumeScreenPermissionEvent(requestId: permId));
+          }
         } else if (type == 'message_reaction' || type == 'reaction' || type == 'message_reacted' || type == 'reaction_added' || type == 'reaction_removed') {
+
           final payload = (cleanData['data'] is Map)
               ? Map<String, dynamic>.from(cleanData['data'] as Map)
               : ((cleanData['payload'] is Map)
@@ -2679,9 +2685,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             .where((p) =>
                 !p.isCompleted &&
                 !p.isRejected &&
+                !p.isRevoked &&
+                !p.isExpired &&
                 ((p.isScreenshot && (p.remainingCount ?? p.allowedCount ?? 1) > 0) ||
-                    (p.isScreenRecord && p.durationSeconds != null)))
+                    (p.isScreenRecord && (p.expiresAt == null || p.computedRemainingSeconds > 0))))
             .toList();
+
 
         emit(currentState.copyWith(
           messages: updatedMessages,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:injectable/injectable.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:screen_protector/screen_protector.dart';
 
 @lazySingleton
@@ -118,6 +119,69 @@ class ScreenProtectionService {
     }
   }
 
+  /// Triggers Android MediaScanner so newly copied/saved files appear immediately in Downloads and File Manager
+  Future<bool> scanFile(String path, {String? mimeType}) async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _androidScreenshotChannel.invokeMethod<bool>('scanFile', {
+        'path': path,
+        if (mimeType != null) 'mimeType': mimeType,
+      });
+      return res ?? false;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error scanning file $path: $e');
+      return false;
+    }
+  }
+
+  /// Saves screenshot PNG bytes to local device storage (Pictures/Schat) and gallery
+  Future<String?> saveScreenshot({
+    required Uint8List bytes,
+    String? fileName,
+  }) async {
+    if (kIsWeb) return null;
+    try {
+      if (Platform.isAndroid) {
+        final res = await _androidScreenshotChannel.invokeMethod<String>(
+          'saveScreenshot',
+          {
+            'bytes': bytes,
+            'fileName': fileName,
+          },
+        );
+        if (res != null && res.isNotEmpty) {
+          debugPrint('ScreenProtection: Screenshot saved natively at $res');
+          return res;
+        }
+      }
+
+      // Fallback via path_provider or direct file
+      Directory? targetDir;
+      if (Platform.isAndroid) {
+        final schatDir = Directory('/storage/emulated/0/Pictures/Schat');
+        if (!await schatDir.exists()) {
+          try {
+            await schatDir.create(recursive: true);
+          } catch (_) {}
+        }
+        if (await schatDir.exists()) {
+          targetDir = schatDir;
+        }
+      }
+      targetDir ??= await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+
+      final actualFileName = fileName ??
+          'Screenshot_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File('${targetDir.path}/$actualFileName');
+      await file.writeAsBytes(bytes, flush: true);
+      debugPrint('ScreenProtection: Screenshot saved via fallback at ${file.path}');
+      return file.path;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error saving screenshot: $e');
+      return null;
+    }
+  }
+
   ScreenRecordingSession? _activeRecordingSession;
   ScreenRecordingSession? get activeRecordingSession => _activeRecordingSession;
 
@@ -143,6 +207,7 @@ class ScreenRecordingSession {
   bool isPaused;
   bool isSystemRecordingStarted;
   final DateTime startedAt;
+  final DateTime? expiresAt;
 
   ScreenRecordingSession({
     required this.permissionId,
@@ -152,5 +217,10 @@ class ScreenRecordingSession {
     this.isPaused = false,
     this.isSystemRecordingStarted = false,
     required this.startedAt,
+    this.expiresAt,
   });
+
+  int get computedRemainingSeconds {
+    return remainingSeconds > 0 ? remainingSeconds : 0;
+  }
 }

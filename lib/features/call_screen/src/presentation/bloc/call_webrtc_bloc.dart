@@ -679,12 +679,28 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     try {
       debugPrint('CallWebRtcBloc: _onInitiateCall started (isGroup=${event.isGroup})');
 
-      // Prevent starting a call if user is already in another call (cellular or VoIP)
+      // Prevent starting a call if user is already in another cellular call
       final bool isPhoneActive = await PhoneCallStateService.isPhoneCallActive();
-      if (isPhoneActive || state is CallActive || state is CallConnecting || state is CallRinging) {
-        debugPrint('CallWebRtcBloc: Cannot start call while already in another call (cellularActive=$isPhoneActive, state=$state)');
+      if (isPhoneActive) {
+        debugPrint('CallWebRtcBloc: Cannot start call while already on cellular call');
         emit(const CallError('Cannot start call while on another call'));
         return;
+      }
+
+      if (state is CallActive || state is CallConnecting || state is CallRinging) {
+        final currentConvoId = state is CallActive
+            ? (state as CallActive).conversationId
+            : (state is CallConnecting
+                ? (state as CallConnecting).conversationId
+                : (state as CallRinging).incomingEvent['conversation_id']?.toString());
+        if (currentConvoId == event.conversationId) {
+          debugPrint('CallWebRtcBloc: Call already in progress for this conversation ($currentConvoId). Not re-initiating.');
+          return;
+        } else {
+          debugPrint('CallWebRtcBloc: Cannot start call while already in another call (state=$state)');
+          emit(const CallError('Cannot start call while on another call'));
+          return;
+        }
       }
       
       _cachedConversationId = event.conversationId;
@@ -715,10 +731,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         _soundService.stopAll();
 
         // 1. Join LiveKit room directly
-        LiveKitCallService.instance.joinCall(
+        await LiveKitCallService.instance.joinGroupCall(
           conversationId: event.conversationId,
           isVideo: event.isVideo,
         );
+        await LiveKitCallService.instance.setSpeakerphoneOn(true);
 
         // 2. Notify other participants via socket that this user joined
         _repository.emit('message', {
@@ -760,22 +777,10 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           extraParticipants: ongoingCall.participants.isNotEmpty ? ongoingCall.participants : event.extraParticipants,
           connectedParticipantIds: updatedConnected,
           startedAt: _activeCallStart,
-          isSpeakerOn: event.isVideo,
+          isSpeakerOn: true,
         ));
 
-        // 5. Connect P2P offers to existing participants
-        for (final peerId in ongoingCall.connectedParticipantIds) {
-          if (peerId.toLowerCase() != myId.toLowerCase()) {
-            _webRtcService.createOfferForPeer(
-              peerId: peerId,
-              conversationId: event.conversationId,
-              repository: _repository,
-              isVideo: event.isVideo,
-            );
-          }
-        }
-        await _webRtcService.toggleSpeaker(event.isVideo);
-        debugPrint('CallWebRtcBloc: Rejoined active group call successfully without ringing other participants');
+        debugPrint('CallWebRtcBloc: Rejoined active group call successfully');
         return;
       }
 
@@ -801,6 +806,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         isGroup: event.isGroup,
         groupName: event.groupName,
         extraParticipants: event.extraParticipants,
+        isSpeakerOn: true,
       ));
       
       // Start back ring early so the caller hears it immediately
@@ -809,28 +815,61 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       // Start 90-second unanswered timeout timer
       _startCallTimeoutTimer(event.conversationId, isOutgoing: true);
 
-      LiveKitCallService.instance.joinCall(
-        conversationId: event.conversationId,
-        isVideo: event.isVideo,
-      );
-
       if (event.isGroup) {
+        // Clean up any leftover 1-to-1 WebRTC session
+        await _webRtcService.cleanup();
+
+        // 1. Join LiveKit room for group audio & video media
+        LiveKitCallService.instance.joinGroupCall(
+          conversationId: event.conversationId,
+          isVideo: event.isVideo,
+        );
+
+        // 2. Start timeout for all invited participants
         for (final participant in event.extraParticipants) {
           _startParticipantTimeout(participant.id, conversationId: event.conversationId);
         }
-      }
 
-      await _webRtcService.makeCall(
-        conversationId: event.conversationId,
-        isVideo: event.isVideo,
-        recipientId: event.recipientId,
-        repository: _repository,
-        callerName: myName,
-        profilePictureUrl: myPic,
-        isGroup: event.isGroup,
-        groupName: event.groupName,
-      );
-      debugPrint('CallWebRtcBloc: makeCall completed');
+        // 3. Broadcast group call_initiate via WebSocket (without recipient_id so all group members receive it)
+        _repository.emit('message', {
+          'type': 'call_initiate',
+          'conversation_id': event.conversationId,
+          'call_type': event.isVideo ? 'video' : 'audio',
+          'sender_id': myId,
+          'senderId': myId,
+          'caller_name': myName,
+          'profile_picture_url': myPic,
+          'is_group': true,
+          'isGroup': true,
+          'group_name': event.groupName ?? event.contactName,
+          'groupName': event.groupName ?? event.contactName,
+          'extra_participants': event.extraParticipants.map((u) => {
+            'id': u.id,
+            'name': u.displayName,
+            'username': u.username,
+            'phone_number': u.phoneNumber,
+            'profile_picture_url': u.profilePictureUrl,
+          }).toList(),
+        });
+        debugPrint('CallWebRtcBloc: Group call initiated for conv=${event.conversationId}');
+      } else {
+        // Pure 1-to-1 call: ensure any leftover LiveKit room is disconnected
+        if (LiveKitCallService.instance.isConnected) {
+          await LiveKitCallService.instance.disconnect();
+        }
+
+        await _webRtcService.makeCall(
+          conversationId: event.conversationId,
+          isVideo: event.isVideo,
+          recipientId: event.recipientId,
+          repository: _repository,
+          callerName: myName,
+          profilePictureUrl: myPic,
+          isGroup: false,
+          groupName: null,
+        );
+        debugPrint('CallWebRtcBloc: 1-to-1 makeCall completed');
+      }
     } catch (e) {
       _cancelCallTimeoutTimer();
       _cancelAllParticipantTimers();
@@ -953,7 +992,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       if (callerId.isNotEmpty) {
         connectedSet.add(callerId);
       }
-      bool ringingSpeaker = isVideo;
+      bool ringingSpeaker = true;
       if (state is CallRinging) {
         connectedSet.addAll((state as CallRinging).connectedParticipantIds);
         ringingSpeaker = (state as CallRinging).isSpeakerOn;
@@ -997,58 +1036,39 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         connectedParticipantIds: connectedSet,
       ));
 
-      await _webRtcService.answerCall(
-        incomingEvent: safeEvent,
-        repository: _repository,
-      );
-      _soundService.stopAll();
+      if (isGroup && convoId.isNotEmpty) {
+        await _webRtcService.cleanup();
+        _soundService.stopAll();
 
-      await _webRtcService.toggleSpeaker(ringingSpeaker);
-
-      _activeCallStart = DateTime.now();
-      emit(CallActive(
-        conversationId: convoId,
-        contactName: callerName,
-        recipientId: recipientId,
-        isVideo: isVideo,
-        isSpeakerOn: ringingSpeaker,
-        profilePictureUrl: profilePic,
-        isGroup: isGroup,
-        groupName: groupName,
-        extraParticipants: extraParticipants,
-        connectedParticipantIds: connectedSet,
-        startedAt: _activeCallStart,
-      ));
-
-      if (convoId.isNotEmpty) {
-        LiveKitCallService.instance.joinCall(
+        // 1. Connect to LiveKit room for group call
+        await LiveKitCallService.instance.joinGroupCall(
           conversationId: convoId,
           isVideo: isVideo,
         );
-      }
+        await LiveKitCallService.instance.setSpeakerphoneOn(ringingSpeaker);
 
-      if (isGroup && convoId.isNotEmpty) {
         final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
         final myName = getIt<StorageService>().getUsername() ?? '';
         final myPic = getIt<StorageService>().getProfilePic();
 
-        // Process any offers received from other members while ringing
-        if (_pendingGroupOffers.isNotEmpty) {
-          final pending = Map<String, Map<String, dynamic>>.from(_pendingGroupOffers);
-          _pendingGroupOffers.clear();
-          for (final entry in pending.entries) {
-            if (entry.key != callerId && entry.key != myId) {
-              await _webRtcService.handlePeerOffer(
-                peerId: entry.key,
-                conversationId: convoId,
-                offerMap: entry.value,
-                repository: _repository,
-                isVideo: isVideo,
-              );
-            }
-          }
-        }
+        // 2. Notify backend that call was accepted
+        final responsePayload = {
+          'type': 'call_response',
+          'conversation_id': convoId,
+          'message_id': _activeCallMessageId,
+          'sender_id': myId,
+          'senderId': myId,
+          'response': 'accept',
+          'is_group': true,
+          'isGroup': true,
+        };
+        _repository.emit('message', responsePayload);
+        _repository.emit('message', {
+          ...responsePayload,
+          'type': 'call_answered',
+        });
 
+        // 3. Notify group participants that this user joined
         _repository.emit('message', {
           'type': 'call_participant_joined',
           'conversation_id': convoId,
@@ -1066,19 +1086,48 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
           'isGroup': true,
         });
 
-        // Ensure connection to all connected participants in the group
-        for (final p in extraParticipants) {
-          if (p.id.isNotEmpty && p.id != myId && p.id != callerId) {
-            if (!_webRtcService.peerConnections.containsKey(p.id)) {
-              _webRtcService.createOfferForPeer(
-                peerId: p.id,
-                conversationId: convoId,
-                repository: _repository,
-                isVideo: isVideo,
-              );
-            }
-          }
+        _activeCallStart = DateTime.now();
+        emit(CallActive(
+          conversationId: convoId,
+          contactName: callerName,
+          recipientId: recipientId,
+          isVideo: isVideo,
+          isSpeakerOn: ringingSpeaker,
+          profilePictureUrl: profilePic,
+          isGroup: true,
+          groupName: groupName,
+          extraParticipants: extraParticipants,
+          connectedParticipantIds: connectedSet,
+          startedAt: _activeCallStart,
+        ));
+      } else {
+        // Pure 1-to-1 call: ensure LiveKit is disconnected
+        if (LiveKitCallService.instance.isConnected) {
+          await LiveKitCallService.instance.disconnect();
         }
+
+        await _webRtcService.answerCall(
+          incomingEvent: safeEvent,
+          repository: _repository,
+        );
+        _soundService.stopAll();
+
+        await _webRtcService.toggleSpeaker(ringingSpeaker);
+
+        _activeCallStart = DateTime.now();
+        emit(CallActive(
+          conversationId: convoId,
+          contactName: callerName,
+          recipientId: recipientId,
+          isVideo: isVideo,
+          isSpeakerOn: ringingSpeaker,
+          profilePictureUrl: profilePic,
+          isGroup: false,
+          groupName: null,
+          extraParticipants: extraParticipants,
+          connectedParticipantIds: connectedSet,
+          startedAt: _activeCallStart,
+        ));
       }
 
       try {
@@ -1602,42 +1651,25 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         disconnectedSet.remove(senderId);
       }
       
-      bool speaker = isVideo;
+      bool speaker = true;
       if (currentState is CallConnecting) {
         speaker = currentState.isSpeakerOn;
       }
+      if (isGroup) {
+        await LiveKitCallService.instance.setSpeakerphoneOn(speaker);
+      } else {
+        await _webRtcService.toggleSpeaker(speaker);
+      }
       
-      if (!LiveKitCallService.instance.isConnected && conversationId.isNotEmpty) {
-        LiveKitCallService.instance.joinCall(
+      if (isGroup && !LiveKitCallService.instance.isConnected && conversationId.isNotEmpty) {
+        await LiveKitCallService.instance.joinGroupCall(
           conversationId: conversationId,
           isVideo: isVideo,
         );
+        await LiveKitCallService.instance.setSpeakerphoneOn(speaker);
       }
 
-      if (isGroup && conversationId.isNotEmpty && senderId.isNotEmpty) {
-        _repository.emit('message', {
-          'type': 'call_participant_joined',
-          'conversation_id': conversationId,
-          'user_id': senderId,
-          'participant_id': senderId,
-          'sender_id': senderId,
-          'user': {
-            'id': senderId,
-            'name': contactName,
-            'username': contactName,
-            'profile_picture_url': profilePic,
-          },
-          'connected_participant_ids': connectedSet.toList(),
-          'extra_participants': extraParticipants.map((u) => {
-            'id': u.id,
-            'name': u.displayName,
-            'username': u.username,
-            'profile_picture_url': u.profilePictureUrl,
-          }).toList(),
-          'is_group': true,
-          'isGroup': true,
-        });
-      }
+      _soundService.stopAll();
 
       _activeCallStart = DateTime.now();
       emit(CallActive(
@@ -2105,8 +2137,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     if (state is CallActive) {
       final current = state as CallActive;
       final newMuted = !current.isMuted;
-      _webRtcService.toggleMute(newMuted);
-      LiveKitCallService.instance.toggleMicrophone(!newMuted);
+      if (current.isGroup) {
+        LiveKitCallService.instance.toggleMicrophone(!newMuted);
+      } else {
+        _webRtcService.toggleMute(newMuted);
+      }
 
       // Send signaling to remote peer
       _repository.emit('message', {
@@ -2125,8 +2160,11 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     if (state is CallActive) {
       final current = state as CallActive;
       final newVideoOff = !current.isVideoOff;
-      _webRtcService.toggleVideo(newVideoOff);
-      LiveKitCallService.instance.toggleCamera(!newVideoOff);
+      if (current.isGroup) {
+        LiveKitCallService.instance.toggleCamera(!newVideoOff);
+      } else {
+        _webRtcService.toggleVideo(newVideoOff);
+      }
       
       // Send signaling to remote peer
       _repository.emit('message', {
@@ -2184,8 +2222,13 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
 
   Future<void> _onSwitchCamera(
       SwitchCameraCallEvent event, Emitter<CallWebRtcState> emit) async {
-    await _webRtcService.switchCamera();
-    LiveKitCallService.instance.switchCamera();
+    final bool isGroupCall = (state is CallActive && (state as CallActive).isGroup) ||
+        (state is CallConnecting && (state as CallConnecting).isGroup);
+    if (isGroupCall) {
+      await LiveKitCallService.instance.switchCamera();
+    } else {
+      await _webRtcService.switchCamera();
+    }
     if (state is CallActive) {
       final current = state as CallActive;
       emit(current.copyWith(isFrontCamera: !current.isFrontCamera));
@@ -2200,12 +2243,20 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
     if (state is CallActive) {
       final current = state as CallActive;
       final newSpeakerState = !current.isSpeakerOn;
-      _webRtcService.toggleSpeaker(newSpeakerState);
+      if (current.isGroup) {
+        LiveKitCallService.instance.setSpeakerphoneOn(newSpeakerState);
+      } else {
+        _webRtcService.toggleSpeaker(newSpeakerState);
+      }
       emit(current.copyWith(isSpeakerOn: newSpeakerState));
     } else if (state is CallConnecting) {
       final current = state as CallConnecting;
       final newSpeakerState = !current.isSpeakerOn;
-      _webRtcService.toggleSpeaker(newSpeakerState);
+      if (current.isGroup) {
+        LiveKitCallService.instance.setSpeakerphoneOn(newSpeakerState);
+      } else {
+        _webRtcService.toggleSpeaker(newSpeakerState);
+      }
       emit(current.copyWith(isSpeakerOn: newSpeakerState));
     } else if (state is CallRinging) {
       final current = state as CallRinging;

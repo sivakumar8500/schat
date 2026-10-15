@@ -451,7 +451,7 @@ class _AudioCallPageState extends State<AudioCallPage>
     final liveKitService = LiveKitCallService.instance;
     final bool isLiveKitActive = liveKitService.isConnected;
 
-    // Local user card ("You")
+    // 1. Local user card ("You")
     final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
     final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
         ? widget.myProfilePictureUrl
@@ -475,33 +475,7 @@ class _AudioCallPageState extends State<AudioCallPage>
       isMuted: isMuted,
     ));
 
-    // Participants from LiveKit if active, otherwise fallback to mesh
-    if (isLiveKitActive && (liveKitService.room?.remoteParticipants.isNotEmpty ?? false)) {
-      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
-      for (final p in remoteParticipants) {
-        final name = p.name.isNotEmpty ? p.name : p.identity;
-        final isRemoteSpeaking = p.isSpeaking;
-        final isUserMuted = p.isMuted;
-
-        allParticipants.add(_ParticipantInfo(
-          id: p.identity,
-          name: name,
-          avatarUrl: null,
-          isConnected: true,
-          isDisconnected: false,
-          isMuted: isUserMuted,
-          isSpeaking: isRemoteSpeaking,
-        ));
-
-        connectedCards.add(_buildAudioUserCard(
-          name: name,
-          avatarUrl: null,
-          isMuted: isUserMuted,
-          status: isRemoteSpeaking ? 'Speaking' : (isUserMuted ? 'Muted' : 'Connected'),
-          isSpeaking: isRemoteSpeaking,
-        ));
-      }
-    } else {
+    // 2. Extra participants list from call state / widget
     final extra = state is CallActive
         ? state.extraParticipants
         : (state is CallConnecting ? state.extraParticipants : widget.extraParticipants);
@@ -513,60 +487,81 @@ class _AudioCallPageState extends State<AudioCallPage>
         ? state.disconnectedParticipantIds
         : (state is CallConnecting ? state.disconnectedParticipantIds : const <String>{});
 
-    if (extra.isNotEmpty) {
-      for (final user in extra) {
-        final isConnected = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
-        final isDisconnected = disconnectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
-        final isUserMuted = state is CallActive
-            ? state.mutedParticipantIds.contains(user.id)
-            : false;
-        final isRemoteSpeaking = isConnected && !isUserMuted;
+    final Set<String> processedUserIds = {};
 
-        allParticipants.add(_ParticipantInfo(
-          id: user.id,
-          name: user.displayName,
-          avatarUrl: user.profilePictureUrl,
-          isConnected: isConnected,
-          isDisconnected: isDisconnected,
-          isMuted: isUserMuted,
-          isSpeaking: isRemoteSpeaking,
-          rawUser: user,
-        ));
+    // 2a. Remote participants from LiveKit room
+    if (isLiveKitActive && liveKitService.room != null) {
+      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
+      for (final p in remoteParticipants) {
+        final pIdentity = p.identity;
+        processedUserIds.add(pIdentity.toLowerCase());
 
-        if (isConnected) {
-          connectedCards.add(_buildAudioUserCard(
-            name: user.displayName,
-            avatarUrl: user.profilePictureUrl,
-            isMuted: isUserMuted,
-            status: isRemoteSpeaking ? 'Speaking' : 'Muted',
-            isSpeaking: isRemoteSpeaking,
-          ));
+        UserModel? matchedUser;
+        for (final u in extra) {
+          if (u.id.toLowerCase() == pIdentity.toLowerCase()) {
+            matchedUser = u;
+            break;
+          }
         }
-      }
-    } else {
-      // Fallback if extra participants not yet populated
-      if (state is CallActive) {
-        final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
-        final isRemoteSpeaking = !isUserMuted;
+
+        final name = matchedUser != null && matchedUser.displayName.isNotEmpty
+            ? matchedUser.displayName
+            : (p.name.isNotEmpty ? p.name : 'Participant');
+        final avatar = matchedUser?.profilePictureUrl;
+        final isRemoteSpeaking = p.isSpeaking;
+        final isUserMuted = p.isMuted;
 
         allParticipants.add(_ParticipantInfo(
-          id: state.recipientId,
-          name: state.contactName,
-          avatarUrl: widget.profilePictureUrl,
+          id: pIdentity,
+          name: name,
+          avatarUrl: avatar,
           isConnected: true,
+          isDisconnected: false,
           isMuted: isUserMuted,
           isSpeaking: isRemoteSpeaking,
+          rawUser: matchedUser,
         ));
 
         connectedCards.add(_buildAudioUserCard(
-          name: state.contactName,
-          avatarUrl: widget.profilePictureUrl,
+          name: name,
+          avatarUrl: avatar,
           isMuted: isUserMuted,
-          status: isRemoteSpeaking ? 'Speaking' : 'Muted',
+          status: isRemoteSpeaking ? 'Speaking' : (isUserMuted ? 'Muted' : 'Connected'),
           isSpeaking: isRemoteSpeaking,
         ));
       }
     }
+
+    // 2b. Add remaining group members
+    for (final user in extra) {
+      if (processedUserIds.contains(user.id.toLowerCase())) continue;
+
+      final isConnected = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+      final isDisconnected = disconnectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+      final isUserMuted = state is CallActive
+          ? state.mutedParticipantIds.contains(user.id)
+          : false;
+
+      allParticipants.add(_ParticipantInfo(
+        id: user.id,
+        name: user.displayName,
+        avatarUrl: user.profilePictureUrl,
+        isConnected: isConnected,
+        isDisconnected: isDisconnected,
+        isMuted: isUserMuted,
+        isSpeaking: false,
+        rawUser: user,
+      ));
+
+      if (isConnected) {
+        connectedCards.add(_buildAudioUserCard(
+          name: user.displayName,
+          avatarUrl: user.profilePictureUrl,
+          isMuted: isUserMuted,
+          status: 'Joining...',
+          isSpeaking: false,
+        ));
+      }
     }
 
     final connectedCount = allParticipants.where((p) => p.isConnected).length;

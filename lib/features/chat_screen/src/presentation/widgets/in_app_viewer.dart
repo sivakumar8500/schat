@@ -15,7 +15,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
+import 'package:schat/features/chat_screen/src/presentation/share_forward_target_page.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:schat/injection.dart';
 
 class InAppViewer extends StatefulWidget {
@@ -188,27 +190,44 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       final resolvedUrl = SecureAttachmentService.resolveFullUrl(widget.url);
       final rawPath = widget.url.replaceAll('file://', '').trim();
 
-      // 1. If local file exists, use it directly
+      String targetLocalPath = '';
       if (!kIsWeb && File(resolvedUrl).existsSync()) {
-        if (mounted) {
-          setState(() {
-            _decryptedTempFile = File(resolvedUrl);
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-      if (!kIsWeb && File(rawPath).existsSync()) {
-        if (mounted) {
-          setState(() {
-            _decryptedTempFile = File(rawPath);
-            _isLoading = false;
-          });
-        }
-        return;
+        targetLocalPath = resolvedUrl;
+      } else if (!kIsWeb && File(rawPath).existsSync()) {
+        targetLocalPath = rawPath;
       }
 
-      // 2. Fetch and decrypt securely
+      if (targetLocalPath.isNotEmpty) {
+        // If local file is encrypted with .enc, decrypt it to temporary file first
+        if (targetLocalPath.toLowerCase().endsWith('.enc') || widget.fileName.toLowerCase().endsWith('.enc')) {
+          var cleanName = widget.fileName;
+          while (cleanName.toLowerCase().endsWith('.enc')) {
+            cleanName = cleanName.substring(0, cleanName.length - 4);
+          }
+          if (cleanName.isEmpty) cleanName = 'attachment';
+          final tempFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+            encryptedFilePath: targetLocalPath,
+            originalFileName: cleanName,
+          );
+          if (mounted) {
+            setState(() {
+              _decryptedTempFile = tempFile;
+              _isLoading = false;
+            });
+          }
+          return;
+        } else {
+          if (mounted) {
+            setState(() {
+              _decryptedTempFile = File(targetLocalPath);
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      }
+
+      // 2. Fetch and decrypt securely from remote URL
       final secureService = getIt<SecureAttachmentService>();
       final tempFile = await secureService.getDecryptedTempFileForViewing(
         url: resolvedUrl,
@@ -241,6 +260,50 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       getIt<SecureAttachmentService>().cleanupTempFile(_decryptedTempFile);
     }
     super.dispose();
+  }
+
+  void _sendOrForwardMedia(BuildContext context) {
+    final activePath = _decryptedTempFile?.path ?? (File(widget.url).existsSync() ? widget.url : widget.url);
+    var cleanName = widget.fileName;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    if (cleanName.isEmpty) cleanName = 'attachment';
+
+    var effectiveType = widget.type.toLowerCase();
+    final ext = cleanName.contains('.') ? cleanName.split('.').last.toLowerCase() : '';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(ext) || effectiveType == 'image') {
+      effectiveType = 'image';
+    } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(ext) || effectiveType == 'video') {
+      effectiveType = 'video';
+    } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext) || effectiveType == 'audio') {
+      effectiveType = 'audio';
+    } else {
+      effectiveType = 'file';
+    }
+
+    int fileSize = 0;
+    try {
+      if (File(activePath).existsSync()) {
+        fileSize = File(activePath).lengthSync();
+      }
+    } catch (_) {}
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ShareForwardTargetPage(
+          mediaItems: [
+            SharedMediaItem(
+              path: activePath,
+              name: cleanName,
+              type: effectiveType,
+              size: fileSize,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildZoomControls() {
@@ -351,8 +414,32 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       );
     } else {
       final activePath = _decryptedTempFile?.path ?? SecureAttachmentService.resolveFullUrl(widget.url);
+      var effectiveType = widget.type.toLowerCase();
 
-      if (widget.type == 'image') {
+      var nameCheck = widget.fileName.toLowerCase();
+      while (nameCheck.endsWith('.enc')) {
+        nameCheck = nameCheck.substring(0, nameCheck.length - 4);
+      }
+      var pathCheck = activePath.toLowerCase();
+      while (pathCheck.endsWith('.enc')) {
+        pathCheck = pathCheck.substring(0, pathCheck.length - 4);
+      }
+
+      final ext = nameCheck.contains('.')
+          ? nameCheck.split('.').last
+          : (pathCheck.contains('.') ? pathCheck.split('.').last : '');
+
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(ext) || effectiveType == 'image') {
+        effectiveType = 'image';
+      } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv'].contains(ext) || effectiveType == 'video') {
+        effectiveType = 'video';
+      } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext) || effectiveType == 'audio') {
+        effectiveType = 'audio';
+      } else if (ext == 'pdf' || effectiveType == 'pdf') {
+        effectiveType = 'pdf';
+      }
+
+      if (effectiveType == 'image') {
         final isLocal = !kIsWeb && File(activePath).existsSync();
         viewerWidget = GestureDetector(
           onDoubleTapDown: _handleDoubleTapDown,
@@ -405,7 +492,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             ),
           ),
         );
-      } else if (widget.type == 'video') {
+      } else if (effectiveType == 'video') {
         if (kIsWeb) {
           viewerWidget = Center(
             child: AspectRatio(
@@ -416,7 +503,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         } else {
           viewerWidget = _MobileVideoPlayer(url: activePath);
         }
-      } else if (widget.type == 'audio') {
+      } else if (effectiveType == 'audio') {
         viewerWidget = Center(
           child: Card(
             color: Colors.grey.shade900,
@@ -442,10 +529,23 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             ),
           ),
         );
+      } else if (effectiveType == 'pdf') {
+        final isLocalFile = !kIsWeb && File(activePath).existsSync();
+        if (isLocalFile) {
+          viewerWidget = _InAppPdfViewer(
+            filePath: activePath,
+            fileName: widget.fileName,
+          );
+        } else {
+          viewerWidget = _MobileDocumentViewer(
+            url: activePath,
+            fileName: widget.fileName,
+            allowDownload: widget.allowDownload,
+            onDownloadPressed: widget.onDownloadPressed,
+          );
+        }
       } else {
         // Document / other files
-        final isPdf = widget.fileName.toLowerCase().endsWith('.pdf') || activePath.toLowerCase().endsWith('.pdf');
-        final isLocalFile = !kIsWeb && File(activePath).existsSync();
         if (kIsWeb) {
           viewerWidget = Container(
             padding: const EdgeInsets.all(16),
@@ -453,11 +553,6 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
               borderRadius: BorderRadius.circular(12),
               child: createWebDocView(activePath),
             ),
-          );
-        } else if (isPdf && isLocalFile) {
-          viewerWidget = _InAppPdfViewer(
-            filePath: activePath,
-            fileName: widget.fileName,
           );
         } else {
           viewerWidget = _MobileDocumentViewer(
@@ -495,12 +590,24 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                 ],
               )
             : Text(
-                widget.fileName,
+                () {
+                  var clean = widget.fileName;
+                  while (clean.toLowerCase().endsWith('.enc')) {
+                    clean = clean.substring(0, clean.length - 4);
+                  }
+                  return clean.isEmpty ? widget.fileName : clean;
+                }(),
                 style: context.titleMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
         actions: [
+          if (!widget.isViewOnce)
+            IconButton(
+              icon: const Icon(Icons.send_rounded, color: Colors.white),
+              tooltip: 'Send / Forward to Chat',
+              onPressed: () => _sendOrForwardMedia(context),
+            ),
           if (!widget.isViewOnce && widget.isMe && !widget.isForwarded)
             IconButton(
               icon: const Icon(Icons.shield_outlined, color: Colors.white),
@@ -516,13 +623,28 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                 );
               },
             ),
-          if (!widget.isViewOnce && widget.allowShare && widget.onSharePressed != null)
+          if (!widget.isViewOnce && widget.allowShare)
             IconButton(
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: 'Share/Forward',
-              onPressed: () {
-                Navigator.pop(context);
-                widget.onSharePressed!();
+              onPressed: () async {
+                if (widget.onSharePressed != null) {
+                  Navigator.pop(context);
+                  widget.onSharePressed!();
+                } else {
+                  final shareFile = _decryptedTempFile != null && File(_decryptedTempFile!.path).existsSync()
+                      ? _decryptedTempFile!.path
+                      : (File(widget.url).existsSync() ? widget.url : null);
+                  if (shareFile != null) {
+                    try {
+                      await Share.shareXFiles([XFile(shareFile)], text: widget.fileName);
+                    } catch (e) {
+                      debugPrint('Error sharing file: $e');
+                    }
+                  } else {
+                    context.showInfoNotification('Preparing file for sharing...');
+                  }
+                }
               },
             ),
           if (!widget.isViewOnce && widget.allowDownload)
@@ -531,18 +653,15 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
               tooltip: 'Download',
               onPressed: () async {
                 try {
-                  File? fileToSave = _decryptedTempFile;
-                  if (fileToSave == null || !await fileToSave.exists()) {
-                    fileToSave = await getIt<SecureAttachmentService>().getDecryptedTempFileForViewing(
-                      url: widget.url,
-                      fileName: widget.fileName,
-                    );
-                  }
+                  final secureService = getIt<SecureAttachmentService>();
+                  final encFile = await secureService.downloadAndEncryptAttachment(
+                    url: widget.url,
+                    fileName: widget.fileName,
+                  );
 
-                  if (await fileToSave.exists()) {
-                    await saveFileToPublicDownloads(fileToSave, widget.fileName);
+                  if (await encFile.exists()) {
                     if (context.mounted) {
-                      context.showSuccessNotification('Saved to Downloads: ${widget.fileName}');
+                      context.showSuccessNotification('Encrypted and saved to Schat folder');
                     }
                   } else {
                     if (context.mounted) {
@@ -656,35 +775,95 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
   @override
   Widget build(BuildContext context) {
     if (_hasError) {
+      var clean = widget.fileName;
+      while (clean.toLowerCase().endsWith('.enc')) {
+        clean = clean.substring(0, clean.length - 4);
+      }
+      final ext = clean.contains('.') ? clean.split('.').last.toLowerCase() : '';
+      final isPdf = ext == 'pdf';
+      final isVideo = ['mp4', 'mov', 'mkv', 'avi', '3gp', 'webm', 'flv', 'm4v'].contains(ext);
+      final isAudio = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'amr'].contains(ext);
+      final isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'bmp', 'svg'].contains(ext);
+
+      final icon = isPdf
+          ? Icons.picture_as_pdf
+          : isVideo
+              ? Icons.videocam_rounded
+              : isAudio
+                  ? Icons.audio_file_rounded
+                  : isImage
+                      ? Icons.image_rounded
+                      : Icons.insert_drive_file_rounded;
+
+      final label = isPdf ? 'Open with External PDF Reader' : 'Save to Downloads';
+
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.picture_as_pdf, color: Colors.white54, size: 64),
-            const SizedBox(height: 16),
-            Text(
-              'Document: ${widget.fileName}',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap below to open or save the PDF file',
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Open with External PDF Reader'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: context.colors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white54, size: 64),
+              const SizedBox(height: 16),
+              Text(
+                'Document: $clean',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
               ),
-              onPressed: () {
-                downloadFile(widget.url, widget.fileName);
-              },
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                isPdf ? 'Tap below to open or save the PDF file' : 'Tap below to save the file to Downloads',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    icon: Icon(isPdf ? Icons.open_in_new : Icons.download),
+                    label: Text(label),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.colors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: () {
+                      downloadFile(widget.url, clean);
+                    },
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('Send / Forward'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white24,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ShareForwardTargetPage(
+                            mediaItems: [
+                              SharedMediaItem(
+                                path: widget.url,
+                                name: clean,
+                                type: isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'file',
+                                size: 0,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
     }

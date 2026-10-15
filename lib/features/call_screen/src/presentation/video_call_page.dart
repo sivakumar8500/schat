@@ -21,7 +21,7 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:livekit_client/livekit_client.dart' show VideoTrack, VideoTrackRenderer;
+import 'package:livekit_client/livekit_client.dart' show VideoTrackRenderer;
 import 'package:schat/services/livekit_call_service.dart';
 
 /// 1-to-1 & Group Video Call Page — renders RTCVideoView with sleek participant sheet,
@@ -996,7 +996,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     final liveKitService = LiveKitCallService.instance;
     final bool isLiveKitActive = liveKitService.isConnected;
 
-    // Local user ("You")
+    // 1. Local user ("You")
     final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
     final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
         ? widget.myProfilePictureUrl
@@ -1015,60 +1015,23 @@ class _VideoCallPageState extends State<VideoCallPage>
 
     final lkLocalTrack = isLiveKitActive ? liveKitService.getLocalVideoTrack() : null;
     connectedTiles.add(_buildGridTile(
+      key: const ValueKey('grid_tile_local_user'),
       child: isVideoOff
           ? _buildLocalVideoOffPlaceholder()
-          : (isLiveKitActive && lkLocalTrack != null
+          : (lkLocalTrack != null
               ? VideoTrackRenderer(
                   lkLocalTrack,
+                  key: ValueKey('grid_lk_local_${lkLocalTrack.sid ?? 'local'}'),
                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 )
-              : RTCVideoView(
-                  _webRtcService.localRenderer,
-                  key: ValueKey('grid_local_${_webRtcService.localRenderer.textureId}'),
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  mirror: isFrontCamera,
-                )),
+              : _buildLocalVideoOffPlaceholder()),
       label: 'You',
       isMuted: isMuted,
       avatarUrl: myPic,
       isSpeaking: localSpeaking,
     ));
 
-    // Participants
-    if (isLiveKitActive && (liveKitService.room?.remoteParticipants.isNotEmpty ?? false)) {
-      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
-      for (final p in remoteParticipants) {
-        final name = p.name.isNotEmpty ? p.name : p.identity;
-        final videoPub = p.videoTrackPublications.firstOrNull;
-        final hasVideo = videoPub != null && !videoPub.muted && videoPub.track is VideoTrack;
-        final isRemoteSpeaking = p.isSpeaking;
-        final isUserMuted = p.isMuted;
-
-        allParticipants.add(_ParticipantInfo(
-          id: p.identity,
-          name: name,
-          avatarUrl: null,
-          isConnected: true,
-          isDisconnected: false,
-          isMuted: isUserMuted,
-          isVideoOff: !hasVideo,
-          isSpeaking: isRemoteSpeaking,
-        ));
-
-        connectedTiles.add(_buildGridTile(
-          child: hasVideo
-              ? VideoTrackRenderer(
-                  videoPub.track as VideoTrack,
-                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                )
-              : _buildRemoteParticipantPlaceholder(name, null, isSpeaking: isRemoteSpeaking),
-          label: name,
-          isMuted: isUserMuted,
-          avatarUrl: null,
-          isSpeaking: isRemoteSpeaking,
-        ));
-      }
-    } else {
+    // 2. Extra participants list from call state / widget
     final extra = state is CallActive
         ? state.extraParticipants
         : (state is CallConnecting ? state.extraParticipants : widget.extraParticipants);
@@ -1080,84 +1043,93 @@ class _VideoCallPageState extends State<VideoCallPage>
         ? state.disconnectedParticipantIds
         : (state is CallConnecting ? state.disconnectedParticipantIds : const <String>{});
 
-    if (extra.isNotEmpty) {
-      for (final user in extra) {
-        final isConnectedPeer = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
-        final isDisconnectedPeer = disconnectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
-        final isUserMuted = state is CallActive
-            ? state.mutedParticipantIds.contains(user.id)
-            : false;
-        final isRemoteSpeaking = isConnectedPeer && !isUserMuted;
-        final isRemoteVidOff = state is CallActive
-            ? (state.videoOffParticipantIds.contains(user.id) || state.isRemoteVideoOff)
-            : false;
+    final Set<String> processedUserIds = {};
 
-        allParticipants.add(_ParticipantInfo(
-          id: user.id,
-          name: user.displayName,
-          avatarUrl: user.profilePictureUrl,
-          isConnected: isConnectedPeer,
-          isDisconnected: isDisconnectedPeer,
-          isMuted: isUserMuted,
-          isVideoOff: isRemoteVidOff,
-          isSpeaking: isRemoteSpeaking,
-          rawUser: user,
-        ));
+    // 2a. Remote participants from LiveKit room
+    if (isLiveKitActive && liveKitService.room != null) {
+      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
+      for (final p in remoteParticipants) {
+        final pIdentity = p.identity;
+        processedUserIds.add(pIdentity.toLowerCase());
 
-        if (isConnectedPeer) {
-          final peerRenderer = _webRtcService.getPeerRenderer(user.id);
-
-          connectedTiles.add(_buildGridTile(
-            child: (isRemoteVidOff || peerRenderer == null)
-                ? _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl, isSpeaking: isRemoteSpeaking)
-                : RTCVideoView(
-                    peerRenderer,
-                    key: Key('grid_peer_${user.id}'),
-                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                    mirror: false,
-                    filterQuality: FilterQuality.medium,
-                  ),
-            label: user.displayName,
-            isMuted: isUserMuted,
-            avatarUrl: user.profilePictureUrl,
-            isSpeaking: isRemoteSpeaking,
-          ));
+        UserModel? matchedUser;
+        for (final u in extra) {
+          if (u.id.toLowerCase() == pIdentity.toLowerCase()) {
+            matchedUser = u;
+            break;
+          }
         }
-      }
-    } else {
-      if (state is CallActive) {
-        final isUserMuted = state.mutedParticipantIds.contains(state.recipientId) || state.isRemoteMuted;
-        final isRemoteSpeaking = !isUserMuted;
-        final isRemoteVidOff = state.videoOffParticipantIds.contains(state.recipientId) || state.isRemoteVideoOff;
-        final peerRenderer = _webRtcService.getPeerRenderer(state.recipientId) ?? _webRtcService.remoteRenderer;
+
+        final name = matchedUser != null && matchedUser.displayName.isNotEmpty
+            ? matchedUser.displayName
+            : (p.name.isNotEmpty ? p.name : 'Participant');
+        final avatar = matchedUser?.profilePictureUrl;
+        final videoTrack = liveKitService.getRemoteVideoTrack(p);
+        final hasVideo = videoTrack != null;
+        final isRemoteSpeaking = p.isSpeaking;
+        final isUserMuted = p.isMuted;
 
         allParticipants.add(_ParticipantInfo(
-          id: state.recipientId,
-          name: state.contactName,
-          avatarUrl: widget.profilePictureUrl,
+          id: pIdentity,
+          name: name,
+          avatarUrl: avatar,
           isConnected: true,
+          isDisconnected: false,
           isMuted: isUserMuted,
-          isVideoOff: isRemoteVidOff,
+          isVideoOff: !hasVideo,
           isSpeaking: isRemoteSpeaking,
+          rawUser: matchedUser,
         ));
 
         connectedTiles.add(_buildGridTile(
-          child: isRemoteVidOff
-              ? _buildRemoteParticipantPlaceholder(state.contactName, widget.profilePictureUrl, isSpeaking: isRemoteSpeaking)
-              : RTCVideoView(
-                  peerRenderer,
-                  key: const Key('grid_single_remote_video'),
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                  mirror: false,
-                  filterQuality: FilterQuality.medium,
-                ),
-          label: state.contactName,
+          key: ValueKey('grid_tile_lk_$pIdentity'),
+          child: hasVideo
+              ? VideoTrackRenderer(
+                  videoTrack,
+                  key: ValueKey('grid_lk_track_${videoTrack.sid ?? pIdentity}'),
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                )
+              : _buildRemoteParticipantPlaceholder(name, avatar, isSpeaking: isRemoteSpeaking),
+          label: name,
           isMuted: isUserMuted,
-          avatarUrl: widget.profilePictureUrl,
+          avatarUrl: avatar,
           isSpeaking: isRemoteSpeaking,
         ));
       }
     }
+
+    // 2b. Add remaining group members
+    for (final user in extra) {
+      if (processedUserIds.contains(user.id.toLowerCase())) continue;
+
+      final isConnectedPeer = connectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+      final isDisconnectedPeer = disconnectedIds.any((id) => id.toLowerCase() == user.id.toLowerCase());
+      final isUserMuted = state is CallActive
+          ? state.mutedParticipantIds.contains(user.id)
+          : false;
+
+      allParticipants.add(_ParticipantInfo(
+        id: user.id,
+        name: user.displayName,
+        avatarUrl: user.profilePictureUrl,
+        isConnected: isConnectedPeer,
+        isDisconnected: isDisconnectedPeer,
+        isMuted: isUserMuted,
+        isVideoOff: true,
+        isSpeaking: false,
+        rawUser: user,
+      ));
+
+      if (isConnectedPeer) {
+        connectedTiles.add(_buildGridTile(
+          key: ValueKey('grid_tile_connecting_${user.id}'),
+          child: _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl, isSpeaking: false),
+          label: '${user.displayName} (Joining...)',
+          isMuted: isUserMuted,
+          avatarUrl: user.profilePictureUrl,
+          isSpeaking: false,
+        ));
+      }
     }
 
     final connectedCount = allParticipants.where((p) => p.isConnected).length;
@@ -1171,23 +1143,25 @@ class _VideoCallPageState extends State<VideoCallPage>
           children: [
             // ─── Top Main Grid: Connected Users ───
             Expanded(
-              child: count <= 1
-                  ? connectedTiles.first
-                  : (count == 2
-                      ? Column(
-                          children: [
-                            Expanded(child: connectedTiles[0]),
-                            const SizedBox(height: 10),
-                            Expanded(child: connectedTiles[1]),
-                          ],
-                        )
-                      : GridView.count(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: 0.88,
-                          children: connectedTiles,
-                        )),
+              child: count == 0
+                  ? _buildWaitingScreen()
+                  : (count == 1
+                      ? connectedTiles.first
+                      : (count == 2
+                          ? Column(
+                              children: [
+                                Expanded(child: connectedTiles[0]),
+                                const SizedBox(height: 10),
+                                Expanded(child: connectedTiles[1]),
+                              ],
+                            )
+                          : GridView.count(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 10,
+                              crossAxisSpacing: 10,
+                              childAspectRatio: 0.88,
+                              children: connectedTiles,
+                            ))),
             ),
 
             const SizedBox(height: 6),
@@ -1691,6 +1665,7 @@ class _VideoCallPageState extends State<VideoCallPage>
   }
 
   Widget _buildGridTile({
+    Key? key,
     required Widget child,
     required String label,
     required bool isMuted,
@@ -1698,6 +1673,7 @@ class _VideoCallPageState extends State<VideoCallPage>
     bool isSpeaking = false,
   }) {
     return AnimatedGlowingBorderCard(
+      key: key,
       isSpeaking: isSpeaking,
       borderRadius: 16,
       borderWidth: 2.5,

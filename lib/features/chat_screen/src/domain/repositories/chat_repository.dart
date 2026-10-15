@@ -169,6 +169,12 @@ abstract class ChatRepository {
 
   Future<ScreenPermissionModel> consumeScreenPermission(String requestId);
 
+  /// Phase 4 Standardized Recording Permission endpoints
+  Future<ScreenPermissionModel?> getRecordingPermissionMe(String chatId);
+  Future<ScreenPermissionModel> createRecordingPermission(String chatId, {int durationSeconds = 30});
+  Future<ScreenPermissionModel> revokeRecordingPermission(String chatId, String permissionId);
+  Future<Map<String, dynamic>> createRecordingSession(String chatId, {String? permissionId});
+
   /// Chat Lock & Secret Code endpoints
   Future<ChatLockStatusModel> getChatLockStatus();
   Future<bool> setChatLockPassword(String password, {String? oldPassword});

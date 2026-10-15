@@ -166,5 +166,12 @@ class CommonEndpoints {
   static const String screenPermissionPending = '/chats/screen-permission/pending';
   static String screenPermissionActive(String conversationId) => '/chats/screen-permission/active/$conversationId';
   static String screenPermissionConsume(String requestId) => '/chats/screen-permission/$requestId/consume';
+
+  // Phase 4: Standardized Recording Permissions & Sessions
+  static String recordingPermissions(String chatId) => '/chats/$chatId/recording-permissions';
+  static String recordingPermissionsMe(String chatId) => '/chats/$chatId/recording-permissions/me';
+  static String recordingPermissionRevoke(String chatId, String permissionId) => '/chats/$chatId/recording-permissions/$permissionId';
+  static String recordingSessions(String chatId) => '/chats/$chatId/recording-sessions';
 }
+
 

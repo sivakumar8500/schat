@@ -285,6 +285,20 @@ class StorageService {
     return getViewedStatusIds().contains(statusId);
   }
 
+  Future<void> savePermissionExpiration(String permId, DateTime expiresAt) async {
+    await _prefs.setString('recording_perm_exp_$permId', expiresAt.toUtc().toIso8601String());
+  }
+
+  DateTime? getPermissionExpiration(String permId) {
+    final str = _prefs.getString('recording_perm_exp_$permId');
+    if (str == null) return null;
+    return DateTime.tryParse(str);
+  }
+
+  Future<void> clearPermissionExpiration(String permId) async {
+    await _prefs.remove('recording_perm_exp_$permId');
+  }
+
   Future<void> clearAll() async {
     final hasSeenIntro = _prefs.getBool('hasSeenIntro') ?? true;
     await _prefs.clear();

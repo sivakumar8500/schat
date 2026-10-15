@@ -131,6 +131,13 @@ class LiveKitCallService {
         await _room!.localParticipant?.setCameraEnabled(true);
       }
 
+      // Route audio to speakerphone by default for calls
+      try {
+        await Hardware.instance.setSpeakerphoneOn(true);
+      } catch (e) {
+        debugPrint('LiveKit: Error setting speakerphone: $e');
+      }
+
       isConnectedNotifier.value = true;
       isConnectingNotifier.value = false;
       _updateParticipants();
@@ -148,7 +155,6 @@ class LiveKitCallService {
     if (_listener == null) return;
 
     _listener!
-      ..on<RoomEvent>((_) => _updateParticipants())
       ..on<ParticipantConnectedEvent>((_) => _updateParticipants())
       ..on<ParticipantDisconnectedEvent>((_) => _updateParticipants())
       ..on<TrackSubscribedEvent>((_) => _updateParticipants())
@@ -242,12 +248,29 @@ class LiveKitCallService {
     }
   }
 
+  /// Set Speakerphone On/Off
+  Future<void> setSpeakerphoneOn(bool enabled) async {
+    try {
+      await Hardware.instance.setSpeakerphoneOn(enabled);
+    } catch (e) {
+      debugPrint('LiveKit: setSpeakerphoneOn error: $e');
+    }
+  }
+
   /// Get active video track from first remote participant with active video
   VideoTrack? getActiveRemoteVideoTrack() {
     if (_room == null) return null;
     for (final participant in _room!.remoteParticipants.values) {
-      final pub = participant.videoTrackPublications.firstOrNull;
-      if (pub != null && !pub.muted && pub.track is VideoTrack) {
+      final track = getRemoteVideoTrack(participant);
+      if (track != null) return track;
+    }
+    return null;
+  }
+
+  /// Get video track for a specific participant
+  VideoTrack? getRemoteVideoTrack(Participant participant) {
+    for (final pub in participant.videoTrackPublications) {
+      if (!pub.muted && pub.track is VideoTrack) {
         return pub.track as VideoTrack;
       }
     }
@@ -256,9 +279,12 @@ class LiveKitCallService {
 
   /// Get local participant's video track
   VideoTrack? getLocalVideoTrack() {
-    final pub = _room?.localParticipant?.videoTrackPublications.firstOrNull;
-    if (pub != null && !pub.muted && pub.track is VideoTrack) {
-      return pub.track as VideoTrack;
+    final pubs = _room?.localParticipant?.videoTrackPublications;
+    if (pubs == null) return null;
+    for (final pub in pubs) {
+      if (!pub.muted && pub.track is VideoTrack) {
+        return pub.track as VideoTrack;
+      }
     }
     return null;
   }

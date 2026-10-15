@@ -9,6 +9,8 @@ import 'package:encrypt/encrypt.dart' as enc;
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/security/screen_protection_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 
@@ -95,6 +97,64 @@ class SecureAttachmentService {
     final rawSeed = 'schat_sec_attachment_${userId}_$deviceId';
     final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
     return enc.Key(Uint8List.fromList(keyBytes));
+  }
+
+  enc.Key _getFallbackKeyUserOnly() {
+    final userId = _storageService.getUserId() ?? 'guest_user';
+    final rawSeed = 'schat_sec_attachment_$userId';
+    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
+    return enc.Key(Uint8List.fromList(keyBytes));
+  }
+
+  enc.Key _getFallbackKeyCommon() {
+    const rawSeed = 'schat_sec_attachment_common_key';
+    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
+    return enc.Key(Uint8List.fromList(keyBytes));
+  }
+
+  bool _isPlaintextFile(Uint8List bytes, String safeName) {
+    if (bytes.length < 4) return false;
+    final lower = safeName.toLowerCase();
+
+    // MP3: ID3 header ('ID3') or sync word (0xFFE0 mask)
+    if (lower.endsWith('.mp3')) {
+      if (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) return true; // 'ID3'
+      if (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) return true; // MPEG frame sync
+    }
+
+    // WAV: 'RIFF' .... 'WAVE'
+    if (lower.endsWith('.wav')) {
+      if (bytes.length >= 12 &&
+          bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+          bytes[8] == 0x57 && bytes[9] == 0x41 && bytes[10] == 0x56 && bytes[11] == 0x45) {
+        return true;
+      }
+    }
+
+    // MP4 / M4A / MOV: ftyp box at byte 4
+    if (lower.endsWith('.mp4') || lower.endsWith('.m4a') || lower.endsWith('.mov')) {
+      if (bytes.length >= 8 &&
+          bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) {
+        return true; // 'ftyp'
+      }
+    }
+
+    // JPEG
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+    }
+
+    // PNG
+    if (lower.endsWith('.png')) {
+      if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+    }
+
+    // PDF
+    if (lower.endsWith('.pdf')) {
+      if (bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) return true; // '%PDF'
+    }
+
+    return false;
   }
 
   Future<Directory> _getSecureStorageDir() async {
@@ -218,6 +278,16 @@ class SecureAttachmentService {
       return targetFile;
     }
 
+    // Check legacy location
+    if (Platform.isAndroid) {
+      final legacyFile = File('/storage/emulated/0/Download/Schat/$encFileName');
+      if (await legacyFile.exists()) {
+        debugPrint('SecureAttachmentService: Found in legacy storage -> ${legacyFile.path}');
+        if (onProgress != null) onProgress(100, 100);
+        return legacyFile;
+      }
+    }
+
     Uint8List rawBytes;
     final bool isLocal = fullUrl.startsWith('file://') || File(fullUrl.replaceAll('file://', '')).existsSync();
     if (isLocal) {
@@ -265,7 +335,12 @@ class SecureAttachmentService {
       ..add(encryptedData.bytes);
 
     await targetFile.writeAsBytes(combinedBytes.toBytes(), flush: true);
-    debugPrint('SecureAttachmentService: Encrypted and saved to private storage -> ${targetFile.path}');
+    debugPrint('SecureAttachmentService: Encrypted and saved to storage -> ${targetFile.path}');
+    try {
+      if (getIt.isRegistered<ScreenProtectionService>()) {
+        await getIt<ScreenProtectionService>().scanFile(targetFile.path);
+      }
+    } catch (_) {}
     return targetFile;
   }
 
@@ -285,22 +360,6 @@ class SecureAttachmentService {
 
     try {
       final allBytes = await encFile.readAsBytes();
-      if (allBytes.length < 16) {
-        return encFile;
-      }
-
-      final ivBytes = allBytes.sublist(0, 16);
-      final cipherBytes = allBytes.sublist(16);
-
-      final key = _getEncryptionKey();
-      final iv = enc.IV(Uint8List.fromList(ivBytes));
-      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
-
-      final decryptedBytes = encrypter.decryptBytes(
-        enc.Encrypted(Uint8List.fromList(cipherBytes)),
-        iv: iv,
-      );
-
       var safeName = originalFileName.replaceAll(RegExp(r'[^\w\.\-]'), '_');
       while (safeName.endsWith('.enc')) {
         safeName = safeName.substring(0, safeName.length - 4);
@@ -309,11 +368,57 @@ class SecureAttachmentService {
       final tempDir = await _getTempDir();
       final tempFile = File('${tempDir.path}/temp_${DateTime.now().millisecondsSinceEpoch}_$safeName');
 
-      await tempFile.writeAsBytes(decryptedBytes, flush: true);
-      debugPrint('SecureAttachmentService: Decrypted temporary file -> ${tempFile.path}');
+      // 1. If file has less than 16 bytes, write clean temp file and return
+      if (allBytes.length < 16) {
+        await tempFile.writeAsBytes(allBytes, flush: true);
+        return tempFile;
+      }
+
+      // 2. Check if file is already unencrypted plaintext
+      if (_isPlaintextFile(allBytes, safeName)) {
+        await tempFile.writeAsBytes(allBytes, flush: true);
+        debugPrint('SecureAttachmentService: File is unencrypted plaintext, extracted as $safeName');
+        return tempFile;
+      }
+
+      final ivBytes = allBytes.sublist(0, 16);
+      final cipherBytes = allBytes.sublist(16);
+
+      // 3. Try candidate keys (user+device, user-only, common key)
+      final List<enc.Key> candidateKeys = [
+        _getEncryptionKey(),
+        _getFallbackKeyUserOnly(),
+        _getFallbackKeyCommon(),
+      ];
+
+      Uint8List? decryptedBytes;
+      for (final key in candidateKeys) {
+        try {
+          final iv = enc.IV(Uint8List.fromList(ivBytes));
+          final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
+          final res = encrypter.decryptBytes(
+            enc.Encrypted(Uint8List.fromList(cipherBytes)),
+            iv: iv,
+          );
+          if (res.isNotEmpty) {
+            decryptedBytes = Uint8List.fromList(res);
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (decryptedBytes != null && decryptedBytes.isNotEmpty) {
+        await tempFile.writeAsBytes(decryptedBytes, flush: true);
+        debugPrint('SecureAttachmentService: Decrypted temporary file -> ${tempFile.path}');
+        return tempFile;
+      }
+
+      // 4. If decryption failed or not encrypted with those keys, extract as clean file without .enc
+      await tempFile.writeAsBytes(allBytes, flush: true);
+      debugPrint('SecureAttachmentService: Extracted raw file with clean extension -> ${tempFile.path}');
       return tempFile;
     } catch (e) {
-      debugPrint('SecureAttachmentService: File not AES encrypted by Schat key, returning raw file: $e');
+      debugPrint('SecureAttachmentService: Error decrypting to temporary file: $e');
       return encFile;
     }
   }

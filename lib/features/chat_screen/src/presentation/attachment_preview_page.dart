@@ -16,6 +16,8 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor
 import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor_doodle_view.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/injection.dart';
 
 class AttachmentPreviewItem {
   final String? path;
@@ -130,6 +132,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
   // Temporary files to cleanup
   final List<File> _tempFilesToCleanup = [];
+  String? _resolvedActivePath;
 
   @override
   void initState() {
@@ -191,7 +194,10 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
   String _resolveEffectiveType() {
     final explicitType = _activeType.toLowerCase();
-    final nameLower = _activeName.toLowerCase();
+    var nameLower = _activeName.toLowerCase();
+    while (nameLower.endsWith('.enc')) {
+      nameLower = nameLower.substring(0, nameLower.length - 4);
+    }
     final ext = nameLower.contains('.') ? nameLower.split('.').last : '';
 
     if (explicitType == 'image' || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'].contains(ext)) {
@@ -200,7 +206,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     if (explicitType == 'video' || ['mp4', 'mov', 'mkv', 'avi', '3gp', 'webm', 'flv'].contains(ext)) {
       return 'video';
     }
-    if (explicitType == 'audio' || ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'amr'].contains(ext)) {
+    if (explicitType == 'audio' || ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'amr', 'wma'].contains(ext)) {
       return 'audio';
     }
     if (ext == 'pdf') {
@@ -216,44 +222,77 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   }
 
   Future<String?> _resolveTempFilePath() async {
-    if (_activePath != null && !kIsWeb && File(_activePath!).existsSync()) {
-      return _activePath;
+    var cleanName = _activeName;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
     }
+    if (cleanName.isEmpty) cleanName = 'attachment';
+
+    if (_activePath != null && !kIsWeb) {
+      final activeFile = File(_activePath!);
+      if (activeFile.existsSync()) {
+        if (_activePath!.toLowerCase().endsWith('.enc')) {
+          try {
+            final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+              encryptedFilePath: _activePath!,
+              originalFileName: cleanName,
+            );
+            _tempFilesToCleanup.add(decFile);
+            _resolvedActivePath = decFile.path;
+            return decFile.path;
+          } catch (e) {
+            debugPrint('Error decrypting .enc in _resolveTempFilePath: $e');
+            _resolvedActivePath = _activePath;
+            return _activePath;
+          }
+        } else {
+          _resolvedActivePath = _activePath;
+          return _activePath;
+        }
+      }
+    }
+
     try {
       final bytes = _currentBytes ?? _activeInitialBytes;
       if (bytes != null && bytes.isNotEmpty) {
         final tempDir = await getTemporaryDirectory();
-        final ext = _activeName.contains('.') ? _activeName.split('.').last : 'tmp';
+        final ext = cleanName.contains('.') ? cleanName.split('.').last : 'tmp';
         final tempFile = File('${tempDir.path}/schat_prev_${DateTime.now().millisecondsSinceEpoch}.$ext');
         await tempFile.writeAsBytes(bytes);
         _tempFilesToCleanup.add(tempFile);
+        _resolvedActivePath = tempFile.path;
         return tempFile.path;
       }
     } catch (e) {
       debugPrint('Error creating temp file for preview: $e');
     }
+    _resolvedActivePath = _activePath;
     return _activePath;
   }
 
   Future<void> _initImageBytes() async {
-    if (widget.bytes != null) {
-      if (mounted) {
-        setState(() {
-          _currentBytes = widget.bytes;
-          _originalBytes = widget.bytes;
-        });
-      }
-    } else if (widget.path != null && !kIsWeb) {
-      try {
-        final fileBytes = await File(widget.path!).readAsBytes();
+    try {
+      final imgPath = await _resolveTempFilePath();
+      if (imgPath != null && !kIsWeb && File(imgPath).existsSync()) {
+        final fileBytes = await File(imgPath).readAsBytes();
         if (mounted) {
           setState(() {
             _currentBytes = fileBytes;
             _originalBytes = fileBytes;
           });
         }
-      } catch (e) {
-        debugPrint('Error reading image bytes: $e');
+        return;
+      }
+    } catch (e) {
+      debugPrint('Error loading image bytes: $e');
+    }
+
+    if (widget.bytes != null) {
+      if (mounted) {
+        setState(() {
+          _currentBytes = widget.bytes;
+          _originalBytes = widget.bytes;
+        });
       }
     }
   }
@@ -507,11 +546,21 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   }
 
   void _onSend() {
+    var cleanName = _activeName;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    if (cleanName.isEmpty) cleanName = 'attachment';
+
+    final effectiveType = _resolveEffectiveType();
+
     Navigator.pop(context, {
       'send': true,
       'caption': _captionController.text.trim(),
       'bytes': _currentBytes ?? _activeInitialBytes,
-      'path': _activePath,
+      'path': _resolvedActivePath ?? _activePath,
+      'name': cleanName,
+      'type': effectiveType,
       'items': widget.extraItems,
       'allowView': _allowView,
       'allowDownload': (!_allowView || _isViewOnce) ? false : _allowDownload,
@@ -554,7 +603,13 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              widget.name,
+              () {
+                var clean = _activeName;
+                while (clean.toLowerCase().endsWith('.enc')) {
+                  clean = clean.substring(0, clean.length - 4);
+                }
+                return clean.isEmpty ? widget.name : clean;
+              }(),
               style: context.titleSmall.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -563,7 +618,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              _formatFileSize(widget.size),
+              _formatFileSize(_activeSize),
               style: context.bodySmall.copyWith(
                 color: Colors.white70,
                 fontSize: 11,
@@ -654,21 +709,70 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
   Widget _buildVideoPreview() {
     if (_videoHasError) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 56),
-          CommonSpaces.h12,
-          Text(
-            'Unable to preview video',
-            style: context.titleSmall.copyWith(color: Colors.white),
+      var clean = _activeName;
+      while (clean.toLowerCase().endsWith('.enc')) {
+        clean = clean.substring(0, clean.length - 4);
+      }
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white12),
           ),
-          CommonSpaces.h4,
-          Text(
-            widget.name,
-            style: context.bodySmall.copyWith(color: Colors.white70),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.videocam_rounded, color: Colors.orange, size: 38),
+              ),
+              CommonSpaces.h16,
+              Text(
+                clean,
+                style: context.titleSmall.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              CommonSpaces.h8,
+              Text(
+                'Video file • ${_formatFileSize(_activeSize)}',
+                style: context.bodySmall.copyWith(color: Colors.white60),
+              ),
+              CommonSpaces.h16,
+              Text(
+                'Ready to send securely. Tap the Send button below to send this video.',
+                style: context.bodySmall.copyWith(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              CommonSpaces.h16,
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry Preview'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white12,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _videoHasError = false;
+                    _isVideoInitialized = false;
+                  });
+                  _initVideo();
+                },
+              ),
+            ],
           ),
-        ],
+        ),
       );
     }
 
@@ -1140,7 +1244,13 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
             CommonSpaces.h12,
             // File Name
             Text(
-              _activeName,
+              () {
+                var clean = _activeName;
+                while (clean.toLowerCase().endsWith('.enc')) {
+                  clean = clean.substring(0, clean.length - 4);
+                }
+                return clean.isEmpty ? _activeName : clean;
+              }(),
               style: context.titleMedium.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -1183,7 +1293,10 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   }
 
   _DocMetadata _getDocumentMetadata() {
-    final nameLower = _activeName.toLowerCase();
+    var nameLower = _activeName.toLowerCase();
+    while (nameLower.endsWith('.enc')) {
+      nameLower = nameLower.substring(0, nameLower.length - 4);
+    }
     final ext = nameLower.contains('.') ? nameLower.split('.').last : 'file';
 
     if (ext == 'pdf') {

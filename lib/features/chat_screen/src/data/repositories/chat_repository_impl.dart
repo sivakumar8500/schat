@@ -1223,31 +1223,43 @@ class ChatRepositoryImpl implements ChatRepository {
     final result = await _apiService.get<List<ScreenPermissionModel>>(
       CommonEndpoints.screenPermissionActive(conversationId),
       mapper: (data) {
+        bool isValidPerm(ScreenPermissionModel p) {
+          if (p.isCompleted || p.isRejected || p.isRevoked || p.isExpired) return false;
+          if (p.isScreenshot) {
+            return (p.remainingCount ?? p.allowedCount ?? 1) > 0;
+          }
+          if (p.isScreenRecord) {
+            return p.expiresAt == null || p.computedRemainingSeconds > 0;
+          }
+          return false;
+        }
+
         if (data is List) {
           return data
               .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
-              .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+              .where(isValidPerm)
               .toList();
         } else if (data is Map) {
           if (data['permissions'] is List) {
             return (data['permissions'] as List)
                 .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
-                .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+                .where(isValidPerm)
                 .toList();
           }
           if (data['data'] is List) {
             return (data['data'] as List)
                 .map((e) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(e as Map)))
-                .where((p) => !p.isCompleted && !p.isRejected && ((p.remainingCount ?? p.allowedCount ?? 1) > 0 || (p.isScreenRecord && p.durationSeconds != null)))
+                .where(isValidPerm)
                 .toList();
           }
           final model = ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data));
-          if (!model.isCompleted && !model.isRejected && ((model.remainingCount ?? model.allowedCount ?? 1) > 0 || (model.isScreenRecord && model.durationSeconds != null))) {
+          if (isValidPerm(model)) {
             return [model];
           }
         }
         return [];
       },
+
     );
 
     return result.when(
@@ -1274,6 +1286,66 @@ class ChatRepositoryImpl implements ChatRepository {
       failure: (error, _) => throw Exception(error),
     );
   }
+
+  @override
+  Future<ScreenPermissionModel?> getRecordingPermissionMe(String chatId) async {
+    final result = await _apiService.get<ScreenPermissionModel?>(
+      CommonEndpoints.recordingPermissionsMe(chatId),
+      mapper: (data) {
+        if (data is Map) {
+          final model = ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data));
+          return model.isActive ? model : null;
+        }
+        return null;
+      },
+    );
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => null,
+    );
+  }
+
+  @override
+  Future<ScreenPermissionModel> createRecordingPermission(String chatId, {int durationSeconds = 30}) async {
+    final result = await _apiService.post<ScreenPermissionModel>(
+      CommonEndpoints.recordingPermissions(chatId),
+      data: {
+        'duration_seconds': durationSeconds,
+        'scope': 'chat:screen_record',
+      },
+      mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<ScreenPermissionModel> revokeRecordingPermission(String chatId, String permissionId) async {
+    final result = await _apiService.delete<ScreenPermissionModel>(
+      CommonEndpoints.recordingPermissionRevoke(chatId, permissionId),
+      mapper: (data) => ScreenPermissionModel.fromJson(Map<String, dynamic>.from(data as Map)),
+    );
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> createRecordingSession(String chatId, {String? permissionId}) async {
+    final result = await _apiService.post<Map<String, dynamic>>(
+      CommonEndpoints.recordingSessions(chatId),
+      data: permissionId != null ? {'permission_id': permissionId} : {},
+      mapper: (data) => Map<String, dynamic>.from(data as Map),
+    );
+    return result.when(
+      success: (data) => data,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
 
   @override
   Future<bool> deleteMessageForEveryone(String messageId) async {

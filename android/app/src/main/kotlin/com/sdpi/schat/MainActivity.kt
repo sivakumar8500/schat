@@ -29,9 +29,11 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
     private val PIP_CHANNEL = "com.sdpi.schat/pip"
     private val PHONE_CALL_CHANNEL = "com.sdpi.schat/phone_call_state"
+    private val AUDIO_ROUTING_CHANNEL = "com.sdpi.schat/audio_routing"
     private var methodChannel: MethodChannel? = null
     private var pipMethodChannel: MethodChannel? = null
     private var phoneCallChannel: MethodChannel? = null
+    private var audioRoutingChannel: MethodChannel? = null
     private var isCallActive = false
     private var contentObserver: ContentObserver? = null
     private var screenCaptureCallback: Any? = null
@@ -44,6 +46,7 @@ class MainActivity : FlutterActivity() {
     private var isScreenRecordingOnlyMode = false
     private var lastScreenshotUri: Uri? = null
     private var lastScreenshotPath: String? = null
+    private var lastScreenshotMediaId: Long = -1L
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         if (isVoiceOrAssistantTrigger(intent)) {
@@ -171,6 +174,31 @@ class MainActivity : FlutterActivity() {
                     val savedPath = saveLatestScreenRecordingToSchat(recordedSinceTimestamp)
                     result.success(savedPath)
                 }
+                "saveScreenshot" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val fileName = call.argument<String>("fileName")
+                    if (bytes != null) {
+                        val savedPath = saveScreenshotToStorage(bytes, fileName)
+                        result.success(savedPath)
+                    } else {
+                        result.error("INVALID_ARGS", "bytes cannot be null", null)
+                    }
+                }
+                "scanFile" -> {
+                    val path = call.argument<String>("path")
+                    val mimeType = call.argument<String>("mimeType")
+                    if (path != null) {
+                        MediaScannerConnection.scanFile(
+                            applicationContext,
+                            arrayOf(path),
+                            if (mimeType != null) arrayOf(mimeType) else null,
+                            null
+                        )
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -235,6 +263,36 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        audioRoutingChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_ROUTING_CHANNEL)
+        audioRoutingChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setCallAudioMode" -> {
+                    try {
+                        val speakerOn = call.argument<Boolean>("speakerOn") ?: true
+                        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                        audioManager.isSpeakerphoneOn = speakerOn
+                        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                        audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "resetAudioMode" -> {
+                    try {
+                        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        audioManager.isSpeakerphoneOn = false
+                        audioManager.mode = AudioManager.MODE_NORMAL
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         setupPhoneStateListener()
     }
 
@@ -282,14 +340,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun isSystemPhoneCallActive(): Boolean {
+        if (wasPhoneCallActive) return true
         try {
-            // Check TelecomManager & TelephonyManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
-                if (telecomManager != null && telecomManager.isInCall) {
-                    return true
-                }
-            }
             val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
             if (telephonyManager != null) {
                 @Suppress("DEPRECATION")
@@ -415,7 +467,7 @@ class MainActivity : FlutterActivity() {
 
     private fun checkAndNotifyScreenshot(uri: Uri?) {
         val now = System.currentTimeMillis()
-        if (now - lastScreenshotTimestamp < 1500) {
+        if (now - lastScreenshotTimestamp < 300) {
             return
         }
 
@@ -459,8 +511,14 @@ class MainActivity : FlutterActivity() {
                     val dataIndex = it.getColumnIndex(MediaStore.Images.Media.DATA)
                     val name = if (nameIndex >= 0) it.getString(nameIndex)?.lowercase() ?: "" else ""
                     val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
+                    val mediaId = if (idIndex >= 0) it.getLong(idIndex) else -1L
 
                     if (name.contains("screenshot") || path.lowercase().contains("screenshot")) {
+                        if (mediaId != -1L && mediaId == lastScreenshotMediaId && (now - lastScreenshotTimestamp < 1000)) {
+                            // Exact same MediaStore entry already handled within 1 second
+                            return
+                        }
+                        lastScreenshotMediaId = mediaId
                         lastScreenshotPath = path
                         if (idIndex >= 0) {
                             val id = it.getLong(idIndex)
@@ -490,7 +548,7 @@ class MainActivity : FlutterActivity() {
 
     private fun notifyScreenshotTaken() {
         val now = System.currentTimeMillis()
-        if (now - lastScreenshotTimestamp < 1500) {
+        if (now - lastScreenshotTimestamp < 300) {
             return
         }
         lastScreenshotTimestamp = now
@@ -537,13 +595,19 @@ class MainActivity : FlutterActivity() {
             var latestFile: File? = null
             var newestTimestamp = 0L
 
-            // 1. Check direct directories on storage
+            // 1. Check direct directories on storage (including Vivo/iQOO Pictures/Screenshots)
             val candidateDirs = listOf(
+                File("/storage/emulated/0/Pictures/Screenshots"),
+                File("/storage/emulated/0/Pictures/Screenrecords"),
+                File("/storage/emulated/0/Pictures"),
                 File("/storage/emulated/0/Movies/Screenrecords"),
                 File("/storage/emulated/0/Movies"),
                 File("/storage/emulated/0/DCIM/Screenrecords"),
                 File("/storage/emulated/0/DCIM/Screenshots"),
                 File("/storage/emulated/0/DCIM"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenrecords"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), ""),
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Screenrecords"),
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), ""),
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenrecords"),
@@ -556,7 +620,7 @@ class MainActivity : FlutterActivity() {
                     for (f in files) {
                         if (f.isFile && f.extension.equals("mp4", ignoreCase = true)) {
                             val lm = f.lastModified()
-                            if (lm > newestTimestamp && lm >= (recordedSinceTimestamp - 120000L)) {
+                            if (lm > newestTimestamp && lm >= (recordedSinceTimestamp - 180000L)) {
                                 newestTimestamp = lm
                                 latestFile = f
                             }
@@ -582,7 +646,7 @@ class MainActivity : FlutterActivity() {
                     "${MediaStore.Video.Media.DATE_ADDED} DESC"
                 )
                 cursor?.use {
-                    if (it.moveToFirst()) {
+                    while (it.moveToNext()) {
                         val idIndex = it.getColumnIndex(MediaStore.Video.Media._ID)
                         val dataIndex = it.getColumnIndex(MediaStore.Video.Media.DATA)
                         val dateIndex = it.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
@@ -591,7 +655,7 @@ class MainActivity : FlutterActivity() {
                         val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
                         val date = if (dateIndex >= 0) it.getLong(dateIndex) * 1000L else 0L
 
-                        if (date > newestTimestamp && date >= (recordedSinceTimestamp - 120000L)) {
+                        if (date > newestTimestamp && date >= (recordedSinceTimestamp - 180000L)) {
                             newestTimestamp = date
                             latestFile = if (path.isNotEmpty()) File(path) else null
                             if (id >= 0) {
@@ -643,6 +707,89 @@ class MainActivity : FlutterActivity() {
                 )
                 return destFile.absolutePath
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    private fun saveScreenshotToStorage(bytes: ByteArray, requestedFileName: String?): String? {
+        try {
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = requestedFileName ?: "Screenshot_$timeStamp.png"
+
+            // 1. Android 10+ (API 29+): MediaStore insert into Pictures/Schat
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = android.content.ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Schat")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+
+                val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(bytes)
+                        outputStream.flush()
+                    }
+                    contentValues.clear()
+                    contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    contentResolver.update(uri, contentValues, null, null)
+
+                    val destPath = "/storage/emulated/0/Pictures/Schat/$fileName"
+                    val destFile = File(destPath)
+                    if (destFile.exists()) {
+                        MediaScannerConnection.scanFile(
+                            applicationContext,
+                            arrayOf(destFile.absolutePath),
+                            arrayOf("image/png"),
+                            null
+                        )
+                    }
+
+                    // Also save directly to Download/Schat so it appears under Downloads/Schat
+                    try {
+                        val downloadFolder = File("/storage/emulated/0/Download/Schat")
+                        if (!downloadFolder.exists()) {
+                            downloadFolder.mkdirs()
+                        }
+                        val downloadFile = File(downloadFolder, fileName)
+                        downloadFile.outputStream().use { fos ->
+                            fos.write(bytes)
+                            fos.flush()
+                        }
+                        MediaScannerConnection.scanFile(
+                            applicationContext,
+                            arrayOf(downloadFile.absolutePath),
+                            arrayOf("image/png"),
+                            null
+                        )
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    return destPath
+                }
+            }
+
+            // 2. Direct filesystem fallback for pre-Android 10 or if MediaStore fails
+            val picturesFolder = File("/storage/emulated/0/Pictures/Schat")
+            if (!picturesFolder.exists()) {
+                picturesFolder.mkdirs()
+            }
+            val file = File(picturesFolder, fileName)
+            file.outputStream().use { fos ->
+                fos.write(bytes)
+                fos.flush()
+            }
+            MediaScannerConnection.scanFile(
+                applicationContext,
+                arrayOf(file.absolutePath),
+                arrayOf("image/png"),
+                null
+            )
+            return file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
         }
