@@ -1229,18 +1229,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     if (widget.isReadOnly) {
       // In chat transfer / read-only mode: only the View option is available
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.8),
-          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-          border: Border(
-            top: BorderSide(
-              color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05),
-              width: 0.8,
-            ),
-          ),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 2.0),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () {
@@ -1251,14 +1241,14 @@ class _MessageBubbleState extends State<MessageBubble> {
             _openInAppViewer(context);
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   allowView ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  size: 14,
+                  size: 13.5,
                   color: accentGreen,
                 ),
                 const SizedBox(width: 4),
@@ -1267,7 +1257,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   style: context.bodySmall.copyWith(
                     color: textColor,
                     fontWeight: FontWeight.w600,
-                    fontSize: 11.0,
+                    fontSize: 10.0,
                   ),
                 ),
               ],
@@ -1526,8 +1516,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    // Show share details ONLY for initial share person (original creator/sender of media and not in group, not a forwarded/reshared copy)
-    final bool showShareDetails = isMe && !isGroup && _isMediaMessage && !isForwarded;
+    // Show share details ONLY for initial share person (original creator/sender of media and not in group, not a forwarded/reshared copy) and NEVER in chat transfer / read-only mode
+    final bool showShareDetails = !widget.isReadOnly && isMe && !isGroup && _isMediaMessage && !isForwarded;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
