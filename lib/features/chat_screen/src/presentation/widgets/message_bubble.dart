@@ -20,6 +20,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/multi_image_grid_bubble.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
@@ -266,9 +267,52 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     return spans;
   }
-  bool get allowShare => widget.allowShare;
-  bool get allowDownload => widget.allowDownload;
-  bool get allowView => widget.allowView;
+  bool get allowView {
+    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
+      try {
+        final storage = getIt<StorageService>();
+        final saved = storage.getSenderMediaPermissions(messageId) ??
+            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        if (saved != null && saved['allowView'] != null) {
+          return saved['allowView']!;
+        }
+      } catch (_) {}
+    }
+    return widget.allowView;
+  }
+
+  bool get allowDownload {
+    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
+      if (!allowView) return false;
+      try {
+        final storage = getIt<StorageService>();
+        final saved = storage.getSenderMediaPermissions(messageId) ??
+            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        if (saved != null && saved['allowDownload'] != null) {
+          return saved['allowDownload']!;
+        }
+      } catch (_) {}
+    }
+    return widget.allowDownload;
+  }
+
+  bool get allowShare {
+    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
+      if (!allowView) return false;
+      try {
+        final storage = getIt<StorageService>();
+        final saved = storage.getSenderMediaPermissions(messageId) ??
+            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        if (saved != null && saved['allowShare'] != null) {
+          return saved['allowShare']!;
+        }
+      } catch (_) {}
+    }
+    return widget.allowShare;
+  }
   bool get isFileViewed => widget.isFileViewed;
   bool get isFileDownloaded => widget.isFileDownloaded;
   bool get isFileShared => widget.isFileShared;
@@ -861,56 +905,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 ),
                               ),
                             if (!isDeleted) _buildMediaActionBar(context),
-                            if (isUploading && !isDeleted)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: 10,
-                                              height: 10,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.5,
-                                                valueColor: AlwaysStoppedAnimation<Color>(
-                                                  isMe ? context.colors.primary : const Color(0xFF00D084),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              'Sending...',
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: isMe ? context.colors.primary : const Color(0xFF00D084),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        minHeight: 3.5,
-                                        backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          isMe ? context.colors.primary : const Color(0xFF00D084),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             if (_isDownloading)
                               Padding(
                                 padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
@@ -957,56 +951,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                           ] else ...[
                             if (!isDeleted) _buildAttachment(context),
                             if (!isDeleted) _buildPermissionControls(context),
-                            if (isUploading && !isDeleted)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 4.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: 10,
-                                              height: 10,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.5,
-                                                valueColor: AlwaysStoppedAnimation<Color>(
-                                                  isMe ? context.colors.primary : const Color(0xFF00D084),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              'Sending...',
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.w600,
-                                                color: isMe ? context.colors.primary : const Color(0xFF00D084),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        minHeight: 3.5,
-                                        backgroundColor: (isMe ? context.colors.primary : const Color(0xFF00D084)).withValues(alpha: 0.2),
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          isMe ? context.colors.primary : const Color(0xFF00D084),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             if (_isStatusReply && !isDeleted) ...[
                               _buildStatusQuoteBox(context),
                               if (_statusReplyText.isNotEmpty) ...[
@@ -2928,7 +2872,22 @@ class _MessageBubbleState extends State<MessageBubble> {
     final newShare = share ?? allowShare;
     final newDownload = download ?? allowDownload;
     final newView = view ?? allowView;
-    
+
+    try {
+      if (getIt.isRegistered<StorageService>()) {
+        final storage = getIt<StorageService>();
+        storage.saveSenderMediaPermissions(messageId, allowView: newView, allowDownload: newDownload, allowShare: newShare);
+        if (attachmentPath != null && attachmentPath!.isNotEmpty) {
+          storage.saveSenderMediaPermissions(attachmentPath!, allowView: newView, allowDownload: newDownload, allowShare: newShare);
+        }
+        if (attachmentName != null && attachmentName!.isNotEmpty) {
+          storage.saveSenderMediaPermissions(attachmentName!, allowView: newView, allowDownload: newDownload, allowShare: newShare);
+        }
+      }
+    } catch (_) {}
+
+    setState(() {});
+
     context.read<ChatBloc>().add(UpdateAttachmentPermissionsEvent(
       messageId: messageId,
       conversationId: conversationId,

@@ -130,10 +130,20 @@ class PushNotificationService {
         try {
           String? apnsToken = await _fcm.getAPNSToken();
           if (apnsToken == null) {
-            await Future.delayed(const Duration(milliseconds: 1000));
-            apnsToken = await _fcm.getAPNSToken();
+            for (int i = 0; i < 3; i++) {
+              await Future.delayed(const Duration(milliseconds: 1000));
+              apnsToken = await _fcm.getAPNSToken();
+              if (apnsToken != null) break;
+            }
           }
-        } catch (_) {}
+          if (apnsToken == null) {
+            debugPrint('⚠️ [FCM] APNS token not set yet (normal on iOS Simulator or pending APNS). Skipping FCM getToken.');
+            return;
+          }
+        } catch (e) {
+          debugPrint('⚠️ [FCM] Could not obtain APNS token on iOS: $e');
+          return;
+        }
       }
       final token = await _fcm.getToken();
       if (token != null) {

@@ -202,6 +202,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     if (msg.userView == 'receive') return false;
     return msg.senderId == myId;
   }
+
+  MessageModel _resolveSenderBubblePermissions(MessageModel msg) {
+    try {
+      if (!getIt.isRegistered<StorageService>()) return msg;
+      final storage = getIt<StorageService>();
+      final saved = storage.getSenderMediaPermissions(msg.id) ??
+          (msg.mediaUrl != null ? storage.getSenderMediaPermissions(msg.mediaUrl!) : null) ??
+          (msg.attachmentName != null ? storage.getSenderMediaPermissions(msg.attachmentName!) : null);
+      if (saved != null) {
+        final v = saved['allowView'] ?? msg.allowView;
+        final d = (!v) ? false : (saved['allowDownload'] ?? msg.allowDownload);
+        final s = (!v) ? false : (saved['allowShare'] ?? msg.allowShare);
+        return msg.copyWith(userView: 'send', allowView: v, allowDownload: d, allowShare: s);
+      }
+    } catch (_) {}
+    return msg;
+  }
   MessageModel? _editingMessage;
   
   String? _selectedAttachmentPath;
@@ -4040,6 +4057,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
     final String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
 
+    try {
+      final storage = getIt<StorageService>();
+      final effectiveDownload = isViewOnce ? false : allowDownload;
+      final effectiveShare = isViewOnce ? false : allowShare;
+      storage.saveSenderMediaPermissions(tempId, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
+      storage.saveSenderMediaPermissions(name, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
+      if (path != null && path.isNotEmpty) {
+        storage.saveSenderMediaPermissions(path, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
+      }
+    } catch (_) {}
+
     // 1. Send optimistic message event immediately to ChatBloc (shows loader)
     _chatBloc.add(SendMessageEvent(
       conversationId: widget.conversationId,
@@ -4118,6 +4146,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     }
 
     if (fileKey != null && context.mounted) {
+      try {
+        final storage = getIt<StorageService>();
+        storage.saveSenderMediaPermissions(fileKey, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
+        storage.saveSenderMediaPermissions(name, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
+      } catch (_) {}
+
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
       if (!isSocketConnected) {
         _chatBloc.add(MarkMessageFailedEvent(
@@ -4714,10 +4748,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
                                     final adjustedIndex = isOtherUserTyping ? index - 1 : index;
                                     final item = groupedItems[groupedItems.length - 1 - adjustedIndex];
-                                    final msg = item.primaryMessage;
-                                    final isMe = state is ChatLoaded && _isMessageFromMe(msg, state.myId);
+                                    final rawMsg = item.primaryMessage;
+                                    final isMe = state is ChatLoaded && _isMessageFromMe(rawMsg, state.myId);
+                                    final msg = (isMe && !rawMsg.isForwarded) ? _resolveSenderBubblePermissions(rawMsg) : rawMsg;
                                     final isGrouped = item.groupedImages != null && item.groupedImages!.length > 1;
-                                    final groupedList = item.groupedImages;
+                                    final groupedList = item.groupedImages?.map((m) {
+                                      final isM = state is ChatLoaded && _isMessageFromMe(m, state.myId);
+                                      return (isM && !m.isForwarded) ? _resolveSenderBubblePermissions(m) : m;
+                                    }).toList();
                                     final allGroupIds = isGrouped ? groupedList!.map((m) => m.id).toSet() : {msg.id};
                                     final isSelected = allGroupIds.any((id) => _selectedMessageIds.contains(id));
 
@@ -7298,6 +7336,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               final String tempId = 'temp_${batchBase}_$i';
               final itemCaption = (i == 0) ? caption : '';
 
+              try {
+                final storage = getIt<StorageService>();
+                final effDown = isViewOnce ? false : allowDownload;
+                final effShare = isViewOnce ? false : allowShare;
+                storage.saveSenderMediaPermissions(tempId, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+                storage.saveSenderMediaPermissions(item.name, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+                if (item.path != null && item.path!.isNotEmpty) {
+                  storage.saveSenderMediaPermissions(item.path!, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+                }
+              } catch (_) {}
+
               _chatBloc.add(SendMessageEvent(
                 conversationId: widget.conversationId,
                 text: itemCaption,
@@ -7787,6 +7836,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             final item = previewItems[i];
             final String tempId = 'temp_${batchBase}_$i';
             final itemCaption = (i == 0) ? caption : '';
+
+            try {
+              final storage = getIt<StorageService>();
+              final effDown = isViewOnce ? false : allowDownload;
+              final effShare = isViewOnce ? false : allowShare;
+              storage.saveSenderMediaPermissions(tempId, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+              storage.saveSenderMediaPermissions(item.name, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+              if (item.path != null && item.path!.isNotEmpty) {
+                storage.saveSenderMediaPermissions(item.path!, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+              }
+            } catch (_) {}
 
             _chatBloc.add(SendMessageEvent(
               conversationId: widget.conversationId,

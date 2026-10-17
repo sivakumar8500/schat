@@ -118,44 +118,46 @@ class CallHistoryRepositoryImpl implements CallHistoryRepository {
           }
         }
 
-        // Fetch messages for conversation to extract all call records
-        try {
-          final msgsEndpoint = '${CommonEndpoints.getMessages}$conversationId?limit=50';
-          final msgsResult = await _apiService.get<List<dynamic>>(
-            msgsEndpoint,
-            mapper: (data) => data is List ? data : [],
-          );
+        // If callsMap is still empty, check at most the top 3 active conversations to avoid network flooding
+        if (callsMap.isEmpty && conversations.indexOf(conv) < 3) {
+          try {
+            final msgsEndpoint = '${CommonEndpoints.getMessages}$conversationId?limit=20';
+            final msgsResult = await _apiService.get<List<dynamic>>(
+              msgsEndpoint,
+              mapper: (data) => data is List ? data : [],
+            );
 
-          final msgs = msgsResult.when(
-            success: (data) => data,
-            failure: (_, _) => <dynamic>[],
-          );
+            final msgs = msgsResult.when(
+              success: (data) => data,
+              failure: (_, _) => <dynamic>[],
+            );
 
-          for (final msg in msgs) {
-            if (msg is! Map) continue;
-            final type = (msg['type'] ?? msg['message_type'])?.toString().toLowerCase();
-            final callMeta = msg['callMeta'] ?? msg['call_meta'];
-            if (type == 'call' || (callMeta is Map && callMeta['callType'] != null)) {
-              final msgId = (msg['id'] ?? msg['_id'] ?? msg['message_id'])?.toString();
-              if (msgId != null && msgId.isNotEmpty && !callsMap.containsKey(msgId)) {
-                try {
-                  final synthesizedJson = <String, dynamic>{
-                    ...Map<String, dynamic>.from(msg),
-                    'conversationId': conversationId,
-                    'isGroup': isGroup,
-                    'groupName': ?groupName,
-                    'groupPictureUrl': ?groupPictureUrl,
-                    'otherParticipant': ?recipient,
-                  };
-                  callsMap[msgId] = CallHistoryModel.fromJson(synthesizedJson);
-                } catch (e) {
-                  debugPrint('CallHistoryRepositoryImpl: Error parsing conversation call: $e');
+            for (final msg in msgs) {
+              if (msg is! Map) continue;
+              final type = (msg['type'] ?? msg['message_type'])?.toString().toLowerCase();
+              final callMeta = msg['callMeta'] ?? msg['call_meta'];
+              if (type == 'call' || (callMeta is Map && callMeta['callType'] != null)) {
+                final msgId = (msg['id'] ?? msg['_id'] ?? msg['message_id'])?.toString();
+                if (msgId != null && msgId.isNotEmpty && !callsMap.containsKey(msgId)) {
+                  try {
+                    final synthesizedJson = <String, dynamic>{
+                      ...Map<String, dynamic>.from(msg),
+                      'conversationId': conversationId,
+                      'isGroup': isGroup,
+                      'groupName': ?groupName,
+                      'groupPictureUrl': ?groupPictureUrl,
+                      'otherParticipant': ?recipient,
+                    };
+                    callsMap[msgId] = CallHistoryModel.fromJson(synthesizedJson);
+                  } catch (e) {
+                    debugPrint('CallHistoryRepositoryImpl: Error parsing conversation call: $e');
+                  }
                 }
               }
             }
+          } catch (e) {
+            debugPrint('CallHistoryRepositoryImpl: Error fetching messages for $conversationId: $e');
           }
-        } catch (e) {
-          debugPrint('CallHistoryRepositoryImpl: Error fetching messages for $conversationId: $e');
         }
       }
     } catch (e) {

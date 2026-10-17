@@ -5,7 +5,6 @@ import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/multi_image_gallery_page.dart';
 import 'package:schat/utils/common_colors.dart';
-import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_icons.dart';
 
 class MultiImageGridBubble extends StatelessWidget {

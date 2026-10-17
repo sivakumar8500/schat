@@ -371,7 +371,14 @@ class CallNotificationService {
             await Future.delayed(const Duration(milliseconds: 1000));
             apnsToken = await _fcm.getAPNSToken();
           }
-        } catch (_) {}
+          if (apnsToken == null) {
+            debugPrint('CallNotificationService: APNS token not set yet (normal on iOS Simulator). Skipping FCM getToken.');
+            return;
+          }
+        } catch (e) {
+          debugPrint('CallNotificationService: Could not obtain APNS token on iOS: $e');
+          return;
+        }
       }
       final token = await _fcm.getToken();
       if (token != null) {

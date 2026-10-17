@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -297,6 +298,50 @@ class StorageService {
 
   Future<void> clearPermissionExpiration(String permId) async {
     await _prefs.remove('recording_perm_exp_$permId');
+  }
+
+  Future<void> saveSenderMediaPermissions(
+    String key, {
+    required bool allowView,
+    required bool allowDownload,
+    required bool allowShare,
+  }) async {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return;
+    final jsonStr = jsonEncode({
+      'allowView': allowView,
+      'allowDownload': allowDownload,
+      'allowShare': allowShare,
+    });
+    await _prefs.setString('sender_perms_$cleanKey', jsonStr);
+    final fileName = cleanKey.split('?').first.split('/').last.trim();
+    if (fileName.isNotEmpty && fileName != cleanKey) {
+      await _prefs.setString('sender_perms_$fileName', jsonStr);
+    }
+  }
+
+  Map<String, bool>? getSenderMediaPermissions(String key) {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return null;
+    String? jsonStr = _prefs.getString('sender_perms_$cleanKey');
+    if (jsonStr == null || jsonStr.isEmpty) {
+      final fileName = cleanKey.split('?').first.split('/').last.trim();
+      if (fileName.isNotEmpty && fileName != cleanKey) {
+        jsonStr = _prefs.getString('sender_perms_$fileName');
+      }
+    }
+    if (jsonStr == null || jsonStr.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is Map) {
+        return {
+          'allowView': decoded['allowView'] == true,
+          'allowDownload': decoded['allowDownload'] == true,
+          'allowShare': decoded['allowShare'] == true,
+        };
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<void> clearAll() async {
