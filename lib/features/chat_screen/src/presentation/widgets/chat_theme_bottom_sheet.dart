@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -81,12 +82,28 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
   final ImagePicker _picker = ImagePicker();
   bool _isUploading = false;
   List<String> _userUploadedWallpapers = [];
+  List<ThemeColorModel> _apiThemes = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadUserUploadedWallpapers();
+    _fetchApiThemes();
+  }
+
+  Future<void> _fetchApiThemes() async {
+    try {
+      final repo = getIt<ChatRepository>();
+      final themes = await repo.getThemes();
+      if (mounted) {
+        setState(() {
+          _apiThemes = themes;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading API themes in ChatThemeBottomSheet: $e');
+    }
   }
 
   Future<void> _loadUserUploadedWallpapers() async {
@@ -199,11 +216,13 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
     );
   }
 
-  void _onWallpaperSelected(String wallpaperUrl) {
+  void _onWallpaperSelected(String wallpaperUrl, {ThemeColorModel? matchedTheme}) {
     _showApplyScopeDialog(
       title: 'Apply Wallpaper',
       onApply: (applyToAll) {
         context.read<ChatBloc>().add(UpdateThemeEvent(
+          themeColorId: matchedTheme?.id,
+          themeColor: matchedTheme,
           customWallpaperUrl: wallpaperUrl,
           applyToAll: applyToAll,
         ));
@@ -402,10 +421,14 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
   Widget build(BuildContext context) {
     return BlocBuilder<ChatBloc, ChatState>(
       builder: (context, state) {
-        final loadedThemes = state is ChatLoaded ? state.availableThemes : <ThemeColorModel>[];
-        final List<ThemeColorModel> displayColors = loadedThemes.isNotEmpty
-            ? loadedThemes
+        final loadedThemes = (state is ChatLoaded && state.availableThemes.isNotEmpty)
+            ? state.availableThemes
+            : _apiThemes;
+        final solidColors = loadedThemes.where((t) => !t.isWallpaper).toList();
+        final List<ThemeColorModel> displayColors = solidColors.isNotEmpty
+            ? solidColors
             : kDefaultPresetColors;
+        final apiWallpapers = loadedThemes.where((t) => t.isWallpaper).toList();
         final selectedThemeId = state is ChatLoaded ? state.themeColor?.id : null;
         final currentWallpaper = state is ChatLoaded ? state.customWallpaperUrl : null;
 
@@ -583,6 +606,7 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
                         // ─── TAB 2: WALLPAPERS & GALLERY ───
                         _buildWallpapersTab(
                           currentWallpaper: currentWallpaper,
+                          apiWallpapers: apiWallpapers,
                         ),
                       ],
                     ),
@@ -720,7 +744,15 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
     );
   }
 
-  Widget _buildWallpapersTab({required String? currentWallpaper}) {
+  Widget _buildWallpapersTab({
+    required String? currentWallpaper,
+    required List<ThemeColorModel> apiWallpapers,
+  }) {
+    final List<Map<String, String>> allWallpapers = [
+      ...apiWallpapers.map((t) => {'name': t.name, 'url': t.bgImageUrl!}),
+      ...kPresetWallpapers.where((p) => !apiWallpapers.any((a) => a.bgImageUrl == p['url'])),
+    ];
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       children: [
@@ -791,9 +823,9 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
         ),
         CommonSpaces.h20,
 
-        // Curated Wallpapers Section
+        // Curated & Admin Wallpapers Section
         Text(
-          'CURATED WALLPAPERS',
+          'CURATED & ADMIN WALLPAPERS',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -812,15 +844,19 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
             crossAxisSpacing: 14,
             childAspectRatio: 0.68,
           ),
-          itemCount: kPresetWallpapers.length,
+          itemCount: allWallpapers.length,
           itemBuilder: (ctx, index) {
-            final item = kPresetWallpapers[index];
+            final item = allWallpapers[index];
             final url = item['url']!;
             final name = item['name']!;
             final isSelected = currentWallpaper == url;
+            final matchedTheme = apiWallpapers.cast<ThemeColorModel?>().firstWhere(
+              (a) => a?.bgImageUrl == url,
+              orElse: () => null,
+            );
 
             return GestureDetector(
-              onTap: () => _onWallpaperSelected(url),
+              onTap: () => _onWallpaperSelected(url, matchedTheme: matchedTheme),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -847,17 +883,7 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              url,
-                              fit: BoxFit.cover,
-                              errorBuilder: (ctx, err, stack) => Container(
-                                color: context.colors.cardBackground,
-                                child: Icon(
-                                  Icons.broken_image_rounded,
-                                  color: context.colors.textSecondary,
-                                ),
-                              ),
-                            ),
+                            _buildWallpaperImagePreview(url),
                             if (isSelected)
                               Container(
                                 color: context.colors.primary.withValues(alpha: 0.3),
@@ -1125,6 +1151,45 @@ class _ChatThemeBottomSheetState extends State<ChatThemeBottomSheet>
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildWallpaperImagePreview(String url) {
+    if (url.startsWith('data:')) {
+      try {
+        final base64Str = url.contains(',') ? url.split(',')[1] : url;
+        final bytes = base64Decode(base64Str);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+        );
+      } catch (_) {
+        return _buildPlaceholder();
+      }
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+      );
+    } else if (!kIsWeb && File(url).existsSync()) {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+      );
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      color: context.colors.cardBackground,
+      child: Icon(
+        Icons.broken_image_rounded,
+        color: context.colors.textSecondary,
       ),
     );
   }

@@ -4,18 +4,23 @@ class ThemeColorModel {
   final String id;
   final String name;
   final String hexCode;
+  final String? bgImageUrl;
 
   const ThemeColorModel({
     required this.id,
     required this.name,
     required this.hexCode,
+    this.bgImageUrl,
   });
+
+  bool get isWallpaper => bgImageUrl != null && bgImageUrl!.trim().isNotEmpty;
 
   factory ThemeColorModel.fromJson(Map<String, dynamic> json) {
     return ThemeColorModel(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
-      hexCode: json['hexCode']?.toString() ?? '#FFFFFF',
+      hexCode: json['hexCode']?.toString() ?? json['hex_code']?.toString() ?? '#FFFFFF',
+      bgImageUrl: json['bgImageUrl']?.toString() ?? json['bg_image_url']?.toString(),
     );
   }
 
@@ -24,6 +29,7 @@ class ThemeColorModel {
       'id': id,
       'name': name,
       'hexCode': hexCode,
+      if (bgImageUrl != null) 'bgImageUrl': bgImageUrl,
     };
   }
 

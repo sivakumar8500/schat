@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -288,7 +289,9 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
     final themeController = getIt<ThemeController>();
     final currentWallpaper = themeController.homeWallpaperUrl;
     final currentThemeHex = themeController.homeThemeColorHex;
-    final displayColors = _apiThemes.isNotEmpty ? _apiThemes : kDefaultPresetColors;
+    final solidColors = _apiThemes.where((t) => !t.isWallpaper).toList();
+    final displayColors = solidColors.isNotEmpty ? solidColors : kDefaultPresetColors;
+    final apiWallpapers = _apiThemes.where((t) => t.isWallpaper).toList();
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.74,
@@ -456,7 +459,10 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
                   controller: _tabController,
                   children: [
                     // TAB 1: WALLPAPERS & GALLERY
-                    _buildWallpapersTab(currentWallpaper: currentWallpaper),
+                    _buildWallpapersTab(
+                      currentWallpaper: currentWallpaper,
+                      apiWallpapers: apiWallpapers,
+                    ),
 
                     // TAB 2: SOLID COLORS (API THEMES)
                     _buildColorsTab(
@@ -512,7 +518,14 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
     );
   }
 
-  Widget _buildWallpapersTab({required String? currentWallpaper}) {
+  Widget _buildWallpapersTab({
+    required String? currentWallpaper,
+    required List<ThemeColorModel> apiWallpapers,
+  }) {
+    final List<Map<String, String>> allWallpapers = [
+      ...apiWallpapers.map((t) => {'name': t.name, 'url': t.bgImageUrl!}),
+      ...kPresetWallpapers.where((p) => !apiWallpapers.any((a) => a.bgImageUrl == p['url'])),
+    ];
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       children: [
@@ -737,9 +750,9 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
           CommonSpaces.h20,
         ],
 
-        // 4. Curated Wallpapers Section
+        // 4. Curated & Admin Wallpapers Section
         Text(
-          'CURATED WALLPAPERS',
+          'CURATED & ADMIN WALLPAPERS',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -758,9 +771,9 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
             crossAxisSpacing: 14,
             childAspectRatio: 0.68,
           ),
-          itemCount: kPresetWallpapers.length,
+          itemCount: allWallpapers.length,
           itemBuilder: (ctx, index) {
-            final item = kPresetWallpapers[index];
+            final item = allWallpapers[index];
             final url = item['url']!;
             final name = item['name']!;
             final isSelected = currentWallpaper == url;
@@ -793,24 +806,7 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            CachedNetworkImage(
-                              imageUrl: url,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                color: context.colors.cardBackground,
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  ),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                color: context.colors.cardBackground,
-                                child: const Icon(Icons.broken_image_rounded, size: 24),
-                              ),
-                            ),
+                            _buildWallpaperImagePreview(url),
                             if (isSelected)
                               Positioned(
                                 top: 6,
@@ -974,6 +970,52 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
         ),
         CommonSpaces.h24,
       ],
+    );
+  }
+
+  Widget _buildWallpaperImagePreview(String url) {
+    if (url.startsWith('data:')) {
+      try {
+        final base64Str = url.contains(',') ? url.split(',')[1] : url;
+        final bytes = base64Decode(base64Str);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+        );
+      } catch (_) {
+        return _buildPlaceholder();
+      }
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      return CachedNetworkImage(
+        imageUrl: url,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          color: context.colors.cardBackground,
+          child: const Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+        errorWidget: (context, url, error) => _buildPlaceholder(),
+      );
+    } else if (!kIsWeb && File(url).existsSync()) {
+      return Image.file(
+        File(url),
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+      );
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      color: context.colors.cardBackground,
+      child: const Icon(Icons.broken_image_rounded, size: 24),
     );
   }
 }
