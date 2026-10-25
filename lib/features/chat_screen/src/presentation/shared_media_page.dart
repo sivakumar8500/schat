@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
@@ -100,22 +100,63 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
     return _resolveUrl(media.url);
   }
 
-  Future<void> _launchMedia(ChatMediaModel media) async {
+  void _openMedia(ChatMediaModel media) {
     final rawUrl = media.url;
-    final resolved = _resolveUrl(rawUrl);
-    final uri = Uri.parse(resolved);
-    try {
-      final canLaunch = await canLaunchUrl(uri);
-      if (!mounted) return;
-      if (canLaunch) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        context.showErrorNotification('Could not open file URL');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      context.showErrorNotification('Error opening file: $e');
+    if (rawUrl.isEmpty) {
+      context.showErrorNotification('Invalid file URL');
+      return;
     }
+    final resolved = _resolveUrl(rawUrl);
+
+    String fileName = media.filename.trim();
+    if (fileName.isEmpty) {
+      try {
+        final uri = Uri.parse(resolved);
+        final segment = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+        if (segment.isNotEmpty) {
+          fileName = Uri.decodeComponent(segment);
+        }
+      } catch (_) {}
+    }
+    if (fileName.isEmpty) {
+      fileName = 'Shared Media';
+    }
+
+    final typeUpper = media.mediaType.toUpperCase();
+    final mimeLower = media.mimeType.toLowerCase();
+    final nameLower = fileName.toLowerCase();
+    final urlLower = resolved.toLowerCase();
+
+    String type = 'file';
+    if (typeUpper.contains('IMAGE') ||
+        mimeLower.startsWith('image/') ||
+        ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.heic']
+            .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+      type = 'image';
+    } else if (typeUpper.contains('VIDEO') ||
+        mimeLower.startsWith('video/') ||
+        ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp']
+            .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+      type = 'video';
+    } else if (typeUpper.contains('VOICE') ||
+        typeUpper.contains('AUDIO') ||
+        mimeLower.startsWith('audio/') ||
+        ['.mp3', '.wav', '.aac', '.m4a', '.ogg', '.opus']
+            .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+      type = 'audio';
+    } else if (mimeLower.contains('pdf') || nameLower.endsWith('.pdf') || urlLower.contains('.pdf')) {
+      type = 'pdf';
+    }
+
+    InAppViewer.show(
+      context,
+      url: resolved,
+      fileName: fileName,
+      type: type,
+      mediaId: media.id.isNotEmpty ? media.id : null,
+      allowShare: true,
+      allowDownload: true,
+    );
   }
 
   String _formatBytes(int bytes) {
@@ -279,10 +320,14 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
       itemCount: list.length,
       itemBuilder: (context, index) {
         final item = list[index];
-        final isVideo = item.mediaType == 'CHAT_VIDEO' || item.mimeType.startsWith('video/');
+        final nameLower = item.filename.toLowerCase();
+        final urlLower = item.url.toLowerCase();
+        final isVideo = item.mediaType.toUpperCase().contains('VIDEO') ||
+            item.mimeType.toLowerCase().startsWith('video/') ||
+            ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp'].any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext));
 
         return GestureDetector(
-          onTap: () => _launchMedia(item),
+          onTap: () => _openMedia(item),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -352,7 +397,7 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
             style: context.bodySmall.copyWith(color: context.colors.textSecondary),
           ),
           trailing: Icon(CommonIcons.arrowForward, color: context.colors.textHint, size: 18),
-          onTap: () => _launchMedia(item),
+          onTap: () => _openMedia(item),
         );
       },
     );
@@ -391,7 +436,7 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
             style: context.bodySmall.copyWith(color: context.colors.textSecondary),
           ),
           trailing: Icon(CommonIcons.arrowForward, color: context.colors.textHint, size: 18),
-          onTap: () => _launchMedia(item),
+          onTap: () => _openMedia(item),
         );
       },
     );

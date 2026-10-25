@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$StatusItemModel {
 
- String get id;@JsonKey(name: 'userId') String? get userId;@JsonKey(name: 'statusType') String? get statusType;@JsonKey(name: 'textContent') String? get text;@JsonKey(name: 'mediaUrl') String? get imagePath;@JsonKey(name: 'textColor') String? get textColor;@JsonKey(name: 'createdAt') DateTime get timestamp;@JsonKey(name: 'expiresAt') DateTime? get expiresAt;@JsonKey(name: 'viewCount', defaultValue: 0) int? get viewCount;@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> get viewers;@JsonKey(name: 'privacyType') String? get privacyType;@JsonKey(name: 'privacyUserIds') List<String>? get privacyUserIds;@JsonKey(includeFromJson: false, includeToJson: false) Color get backgroundColor;@JsonKey(includeFromJson: false, includeToJson: false) bool get viewed;
+ String get id;@JsonKey(name: 'userId') String? get userId;@JsonKey(name: 'statusType') String? get statusType;@JsonKey(name: 'textContent') String? get text;@JsonKey(name: 'mediaUrl') String? get imagePath;@JsonKey(name: 'textColor') String? get textColor;@JsonKey(name: 'createdAt') DateTime get timestamp;@JsonKey(name: 'expiresAt') DateTime? get expiresAt;@JsonKey(name: 'viewCount', defaultValue: 0) int? get viewCount;@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> get viewers;@JsonKey(name: 'privacyType') String? get privacyType;@JsonKey(name: 'privacyUserIds') List<String>? get privacyUserIds;@JsonKey(includeFromJson: false, includeToJson: false) Color get backgroundColor;@JsonKey(name: 'viewed', defaultValue: false) bool get viewed;
 /// Create a copy of StatusItemModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $StatusItemModelCopyWith<$Res>  {
   factory $StatusItemModelCopyWith(StatusItemModel value, $Res Function(StatusItemModel) _then) = _$StatusItemModelCopyWithImpl;
 @useResult
 $Res call({
- String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
+ String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(name: 'viewed', defaultValue: false) bool viewed
 });
 
 
@@ -166,7 +166,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(name: 'viewed', defaultValue: false)  bool viewed)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _StatusItemModel() when $default != null:
 return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
@@ -187,7 +187,7 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(name: 'viewed', defaultValue: false)  bool viewed)  $default,) {final _that = this;
 switch (_that) {
 case _StatusItemModel():
 return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
@@ -207,7 +207,7 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(includeFromJson: false, includeToJson: false)  bool viewed)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'userId')  String? userId, @JsonKey(name: 'statusType')  String? statusType, @JsonKey(name: 'textContent')  String? text, @JsonKey(name: 'mediaUrl')  String? imagePath, @JsonKey(name: 'textColor')  String? textColor, @JsonKey(name: 'createdAt')  DateTime timestamp, @JsonKey(name: 'expiresAt')  DateTime? expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0)  int? viewCount, @JsonKey(name: 'viewers', includeToJson: false)  List<StatusViewerModel> viewers, @JsonKey(name: 'privacyType')  String? privacyType, @JsonKey(name: 'privacyUserIds')  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false)  Color backgroundColor, @JsonKey(name: 'viewed', defaultValue: false)  bool viewed)?  $default,) {final _that = this;
 switch (_that) {
 case _StatusItemModel() when $default != null:
 return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePath,_that.textColor,_that.timestamp,_that.expiresAt,_that.viewCount,_that.viewers,_that.privacyType,_that.privacyUserIds,_that.backgroundColor,_that.viewed);case _:
@@ -222,7 +222,7 @@ return $default(_that.id,_that.userId,_that.statusType,_that.text,_that.imagePat
 @JsonSerializable()
 
 class _StatusItemModel extends StatusItemModel {
-  const _StatusItemModel({required this.id, @JsonKey(name: 'userId') this.userId, @JsonKey(name: 'statusType') this.statusType, @JsonKey(name: 'textContent') this.text, @JsonKey(name: 'mediaUrl') this.imagePath, @JsonKey(name: 'textColor') this.textColor, @JsonKey(name: 'createdAt') required this.timestamp, @JsonKey(name: 'expiresAt') this.expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0) this.viewCount, @JsonKey(name: 'viewers', includeToJson: false) final  List<StatusViewerModel> viewers = const [], @JsonKey(name: 'privacyType') this.privacyType, @JsonKey(name: 'privacyUserIds') final  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false) this.backgroundColor = Colors.black, @JsonKey(includeFromJson: false, includeToJson: false) this.viewed = false}): _viewers = viewers,_privacyUserIds = privacyUserIds,super._();
+  const _StatusItemModel({required this.id, @JsonKey(name: 'userId') this.userId, @JsonKey(name: 'statusType') this.statusType, @JsonKey(name: 'textContent') this.text, @JsonKey(name: 'mediaUrl') this.imagePath, @JsonKey(name: 'textColor') this.textColor, @JsonKey(name: 'createdAt') required this.timestamp, @JsonKey(name: 'expiresAt') this.expiresAt, @JsonKey(name: 'viewCount', defaultValue: 0) this.viewCount, @JsonKey(name: 'viewers', includeToJson: false) final  List<StatusViewerModel> viewers = const [], @JsonKey(name: 'privacyType') this.privacyType, @JsonKey(name: 'privacyUserIds') final  List<String>? privacyUserIds, @JsonKey(includeFromJson: false, includeToJson: false) this.backgroundColor = Colors.black, @JsonKey(name: 'viewed', defaultValue: false) this.viewed = false}): _viewers = viewers,_privacyUserIds = privacyUserIds,super._();
   factory _StatusItemModel.fromJson(Map<String, dynamic> json) => _$StatusItemModelFromJson(json);
 
 @override final  String id;
@@ -252,7 +252,7 @@ class _StatusItemModel extends StatusItemModel {
 }
 
 @override@JsonKey(includeFromJson: false, includeToJson: false) final  Color backgroundColor;
-@override@JsonKey(includeFromJson: false, includeToJson: false) final  bool viewed;
+@override@JsonKey(name: 'viewed', defaultValue: false) final  bool viewed;
 
 /// Create a copy of StatusItemModel
 /// with the given fields replaced by the non-null parameter values.
@@ -287,7 +287,7 @@ abstract mixin class _$StatusItemModelCopyWith<$Res> implements $StatusItemModel
   factory _$StatusItemModelCopyWith(_StatusItemModel value, $Res Function(_StatusItemModel) _then) = __$StatusItemModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(includeFromJson: false, includeToJson: false) bool viewed
+ String id,@JsonKey(name: 'userId') String? userId,@JsonKey(name: 'statusType') String? statusType,@JsonKey(name: 'textContent') String? text,@JsonKey(name: 'mediaUrl') String? imagePath,@JsonKey(name: 'textColor') String? textColor,@JsonKey(name: 'createdAt') DateTime timestamp,@JsonKey(name: 'expiresAt') DateTime? expiresAt,@JsonKey(name: 'viewCount', defaultValue: 0) int? viewCount,@JsonKey(name: 'viewers', includeToJson: false) List<StatusViewerModel> viewers,@JsonKey(name: 'privacyType') String? privacyType,@JsonKey(name: 'privacyUserIds') List<String>? privacyUserIds,@JsonKey(includeFromJson: false, includeToJson: false) Color backgroundColor,@JsonKey(name: 'viewed', defaultValue: false) bool viewed
 });
 
 

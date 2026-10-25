@@ -10,6 +10,7 @@ import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_stat
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
 
 class TicketsPage extends StatefulWidget {
   const TicketsPage({super.key});
@@ -210,6 +211,42 @@ class _TicketsPageState extends State<TicketsPage> {
                         ),
                       ),
                     ),
+                    if (localAttachment != null) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(
+                          children: [
+                            Image.file(
+                              localAttachment!,
+                              height: 130,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: GestureDetector(
+                                onTap: () {
+                                  setSheetState(() {
+                                    localAttachment = null;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.65),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close_rounded,
+                                      color: Colors.white, size: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 22),
                     SizedBox(
                       width: double.infinity,
@@ -526,32 +563,9 @@ class _TicketsPageState extends State<TicketsPage> {
                     color: isDark ? Colors.white70 : const Color(0xFF4B5563),
                   ),
                 ),
-                if (ticket.attachmentPath != null) ...[
+                if (ticket.attachmentPath != null && ticket.attachmentPath!.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.06)
-                          : const Color(0xFFEFF4F1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.attachment_rounded, size: 15, color: const Color(0xFF00873C)),
-                        const SizedBox(width: 6),
-                        Text(
-                          ticket.attachmentPath!.split('/').last,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? Colors.white70 : const Color(0xFF374151),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildTicketAttachment(ticket.attachmentPath!, ticket.id),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -619,10 +633,185 @@ class _TicketsPageState extends State<TicketsPage> {
   String _formatDate(int? timestamp) {
     if (timestamp == null) return 'Unknown';
     try {
-      final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+      final ms = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+      final dateTime = DateTime.fromMillisecondsSinceEpoch(ms);
       return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
     } catch (_) {
       return 'Unknown';
     }
+  }
+
+  Widget _buildTicketAttachment(String path, String ticketId) {
+    final isDark = context.colors.isDark;
+    final isNetwork = path.startsWith('http://') || path.startsWith('https://');
+
+    return GestureDetector(
+      onTap: () {
+        if (isNetwork) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FullScreenImagePage(
+                imageUrl: path,
+                tag: 'ticket_image_${ticketId}_$path',
+              ),
+            ),
+          );
+        } else {
+          final file = File(path);
+          if (file.existsSync()) {
+            showDialog(
+              context: context,
+              builder: (_) => Dialog(
+                backgroundColor: Colors.black,
+                insetPadding: EdgeInsets.zero,
+                child: Stack(
+                  children: [
+                    Center(
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Image.file(file, fit: BoxFit.contain),
+                      ),
+                    ),
+                    SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: CircleAvatar(
+                          backgroundColor: Colors.black.withValues(alpha: 0.5),
+                          child: IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: context.colors.border.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Stack(
+            children: [
+              if (isNetwork)
+                Image.network(
+                  path,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                      height: 160,
+                      width: double.infinity,
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF3F4F6),
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00873C)),
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      height: 80,
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : const Color(0xFFF3F4F6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.attachment_rounded, size: 20, color: Color(0xFF00873C)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              path.split('/').last,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: context.colors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                )
+              else
+                Image.file(
+                  File(path),
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      height: 70,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      color: isDark ? Colors.white10 : const Color(0xFFF3F4F6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.attachment_rounded, color: Color(0xFF00873C)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              path.split('/').last,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, color: context.colors.textPrimary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.fullscreen_rounded, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'View Image',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

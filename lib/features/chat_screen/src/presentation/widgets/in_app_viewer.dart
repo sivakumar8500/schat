@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -18,6 +19,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_ic
 import 'package:schat/features/chat_screen/src/presentation/share_forward_target_page.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/injection.dart';
 
 class InAppViewer extends StatefulWidget {
@@ -92,6 +94,7 @@ class InAppViewer extends StatefulWidget {
 
 class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStateMixin {
   File? _decryptedTempFile;
+  File? _tempFileToCleanup;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -187,14 +190,24 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         return;
       }
 
-      final resolvedUrl = SecureAttachmentService.resolveFullUrl(widget.url);
+      var resolvedUrl = SecureAttachmentService.resolveFullUrl(widget.url);
       final rawPath = widget.url.replaceAll('file://', '').trim();
 
       String targetLocalPath = '';
-      if (!kIsWeb && File(resolvedUrl).existsSync()) {
+      if (!kIsWeb && resolvedUrl.isNotEmpty && File(resolvedUrl).existsSync()) {
         targetLocalPath = resolvedUrl;
-      } else if (!kIsWeb && File(rawPath).existsSync()) {
+      } else if (!kIsWeb && rawPath.isNotEmpty && File(rawPath).existsSync()) {
         targetLocalPath = rawPath;
+      }
+
+      if (targetLocalPath.isEmpty && !kIsWeb) {
+        final recovered = SecureAttachmentService.findLocalFile(
+          pathOrKey: widget.url,
+          fileName: widget.fileName,
+        );
+        if (recovered != null && File(recovered).existsSync()) {
+          targetLocalPath = recovered;
+        }
       }
 
       if (targetLocalPath.isNotEmpty) {
@@ -212,6 +225,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           if (mounted) {
             setState(() {
               _decryptedTempFile = tempFile;
+              _tempFileToCleanup = tempFile;
               _isLoading = false;
             });
           }
@@ -220,6 +234,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           if (mounted) {
             setState(() {
               _decryptedTempFile = File(targetLocalPath);
+              _tempFileToCleanup = null; // Do NOT clean up permanent local files!
               _isLoading = false;
             });
           }
@@ -227,24 +242,75 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         }
       }
 
+      // If local file does not exist, and resolvedUrl is empty or dead local path or raw S3 URL,
+      // attempt to fetch presigned view URL from server using mediaId
+      final effectiveMediaId = widget.mediaId?.isNotEmpty == true
+          ? widget.mediaId
+          : (SecureAttachmentService.findMediaId(widget.url) ??
+              SecureAttachmentService.findMediaId(widget.fileName));
+
+      final bool isRawUnsignedS3 = resolvedUrl.contains('amazonaws.com') &&
+          !resolvedUrl.contains('X-Amz-Signature') &&
+          !resolvedUrl.contains('X-Amz-Credential');
+
+      if ((resolvedUrl.isEmpty || resolvedUrl.startsWith('/') || resolvedUrl.startsWith('file://') || isRawUnsignedS3) &&
+          effectiveMediaId != null &&
+          effectiveMediaId.isNotEmpty &&
+          !effectiveMediaId.startsWith('temp_')) {
+        try {
+          final serverViewUrl = await getIt<ChatRepository>().getMediaViewUrl(effectiveMediaId);
+          if (serverViewUrl != null && serverViewUrl.isNotEmpty) {
+            resolvedUrl = SecureAttachmentService.resolveFullUrl(serverViewUrl);
+          }
+        } catch (e) {
+          debugPrint('InAppViewer: Failed to fetch view URL for mediaId $effectiveMediaId: $e');
+        }
+      }
+
+      if (resolvedUrl.isEmpty || resolvedUrl.startsWith('/') || resolvedUrl.startsWith('file://')) {
+        throw Exception('Attachment file is no longer available locally or on the server');
+      }
+
       // 2. Fetch and decrypt securely from remote URL
       final secureService = getIt<SecureAttachmentService>();
-      final tempFile = await secureService.getDecryptedTempFileForViewing(
-        url: resolvedUrl,
-        fileName: widget.fileName,
-      );
+      File? tempFile;
+      try {
+        tempFile = await secureService.getDecryptedTempFileForViewing(
+          url: resolvedUrl,
+          fileName: widget.fileName,
+        );
+      } catch (err) {
+        if (effectiveMediaId != null && effectiveMediaId.isNotEmpty && !isRawUnsignedS3) {
+          try {
+            final serverViewUrl = await getIt<ChatRepository>().getMediaViewUrl(effectiveMediaId);
+            if (serverViewUrl != null && serverViewUrl.isNotEmpty) {
+              final newUrl = SecureAttachmentService.resolveFullUrl(serverViewUrl);
+              tempFile = await secureService.getDecryptedTempFileForViewing(
+                url: newUrl,
+                fileName: widget.fileName,
+              );
+            }
+          } catch (_) {}
+        }
+        if (tempFile == null) rethrow;
+      }
 
       if (mounted) {
         setState(() {
           _decryptedTempFile = tempFile;
+          _tempFileToCleanup = tempFile;
           _isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('InAppViewer preparation fallback to direct url: $e');
+      debugPrint('InAppViewer preparation error: $e');
       if (mounted) {
         setState(() {
-          _errorMessage = null; // fallback to direct url
+          if (widget.url.isEmpty || widget.url.startsWith('/') || widget.url.startsWith('file://')) {
+            _errorMessage = 'Failed to load media: file is no longer available on this device';
+          } else {
+            _errorMessage = null; // Fallback to direct URL if valid HTTP
+          }
           _isLoading = false;
         });
       }
@@ -256,8 +322,8 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
     _animationController.dispose();
     _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
-    if (_decryptedTempFile != null) {
-      getIt<SecureAttachmentService>().cleanupTempFile(_decryptedTempFile);
+    if (_tempFileToCleanup != null) {
+      getIt<SecureAttachmentService>().cleanupTempFile(_tempFileToCleanup);
     }
     super.dispose();
   }
@@ -403,13 +469,37 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       );
     } else if (_errorMessage != null) {
       viewerWidget = Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.lock_clock_outlined, color: Colors.white54, size: 64),
-            CommonSpaces.h16,
-            Text(_errorMessage!, style: const TextStyle(color: Colors.white70)),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+              CommonSpaces.h16,
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              CommonSpaces.h16,
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00D084),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _errorMessage = null;
+                    _isLoading = true;
+                  });
+                  _prepareAttachment();
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     } else {
@@ -425,13 +515,27 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         pathCheck = pathCheck.substring(0, pathCheck.length - 4);
       }
 
-      final ext = nameCheck.contains('.')
+      String ext = nameCheck.contains('.')
           ? nameCheck.split('.').last
           : (pathCheck.contains('.') ? pathCheck.split('.').last : '');
 
+      if (!kIsWeb && File(activePath).existsSync()) {
+        try {
+          final probeBytes = File(activePath).openSync().readSync(32);
+          final detected = SecureAttachmentService.detectExtensionFromBytes(probeBytes);
+          if (detected.isNotEmpty) {
+            ext = detected;
+            final detectedType = SecureAttachmentService.getMediaTypeForExtension(detected);
+            if (detectedType != 'file') {
+              effectiveType = detectedType;
+            }
+          }
+        } catch (_) {}
+      }
+
       if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(ext) || effectiveType == 'image') {
         effectiveType = 'image';
-      } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv'].contains(ext) || effectiveType == 'video') {
+      } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(ext) || effectiveType == 'video') {
         effectiveType = 'video';
       } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext) || effectiveType == 'audio') {
         effectiveType = 'audio';
@@ -723,9 +827,10 @@ class _MobileDocumentViewer extends StatefulWidget {
 }
 
 class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   bool _isLoading = true;
   bool _hasError = false;
+  bool _isNativeBinaryDoc = false;
 
   @override
   void initState() {
@@ -736,6 +841,36 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
   void _initializeController() {
     final String path = widget.url;
     final bool isLocal = !path.startsWith('http://') && !path.startsWith('https://');
+
+    if (isLocal) {
+      final cleanPath = path.replaceAll('file://', '');
+      final file = File(cleanPath);
+      if (!file.existsSync()) {
+        if (mounted) setState(() => _hasError = true);
+        return;
+      }
+
+      final lower = cleanPath.toLowerCase();
+      final isRenderableHtmlOrText = lower.endsWith('.html') ||
+          lower.endsWith('.htm') ||
+          lower.endsWith('.txt') ||
+          lower.endsWith('.json') ||
+          lower.endsWith('.csv') ||
+          lower.endsWith('.xml') ||
+          lower.endsWith('.md');
+
+      if (!isRenderableHtmlOrText) {
+        // Native binary document (docx, xlsx, pptx, zip, etc.)
+        // Show clean document card instead of crashing WebView
+        if (mounted) {
+          setState(() {
+            _isNativeBinaryDoc = true;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+    }
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -757,33 +892,34 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
 
     if (isLocal) {
       final cleanPath = path.replaceAll('file://', '');
-      final file = File(cleanPath);
-      if (file.existsSync()) {
-        debugPrint('MobileDocumentViewer: Loading local file -> $cleanPath');
-        _controller.loadFile(cleanPath);
-      } else {
-        if (mounted) setState(() => _hasError = true);
-      }
+      debugPrint('MobileDocumentViewer: Loading local file -> $cleanPath');
+      _controller!.loadFile(cleanPath);
     } else {
       final googleDocsUrl =
           'https://docs.google.com/viewer?url=${Uri.encodeComponent(path)}&embedded=true';
       debugPrint('MobileDocumentViewer: Loading remote doc -> $googleDocsUrl');
-      _controller.loadRequest(Uri.parse(googleDocsUrl));
+      _controller!.loadRequest(Uri.parse(googleDocsUrl));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError) {
+    if (_hasError || _isNativeBinaryDoc) {
       var clean = widget.fileName;
       while (clean.toLowerCase().endsWith('.enc')) {
         clean = clean.substring(0, clean.length - 4);
       }
+      final cleanPath = widget.url.replaceAll('file://', '');
+      final isLocal = !widget.url.startsWith('http://') && !widget.url.startsWith('https://');
       final ext = clean.contains('.') ? clean.split('.').last.toLowerCase() : '';
       final isPdf = ext == 'pdf';
       final isVideo = ['mp4', 'mov', 'mkv', 'avi', '3gp', 'webm', 'flv', 'm4v'].contains(ext);
       final isAudio = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'amr'].contains(ext);
       final isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'bmp', 'svg'].contains(ext);
+      final isWord = ext == 'doc' || ext == 'docx';
+      final isExcel = ext == 'xls' || ext == 'xlsx';
+      final isPpt = ext == 'ppt' || ext == 'pptx';
+      final isZip = ext == 'zip' || ext == 'rar' || ext == '7z' || ext == 'tar' || ext == 'gz';
 
       final icon = isPdf
           ? Icons.picture_as_pdf
@@ -793,9 +929,19 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                   ? Icons.audio_file_rounded
                   : isImage
                       ? Icons.image_rounded
-                      : Icons.insert_drive_file_rounded;
+                      : isWord
+                          ? Icons.description
+                          : isExcel
+                              ? Icons.table_chart
+                              : isPpt
+                                  ? Icons.slideshow
+                                  : isZip
+                                      ? Icons.folder_zip
+                                      : Icons.insert_drive_file_rounded;
 
-      final label = isPdf ? 'Open with External PDF Reader' : 'Save to Downloads';
+      final label = isPdf
+          ? 'Open with External PDF Reader'
+          : (isLocal ? 'Open with App' : 'Save to Downloads');
 
       return Center(
         child: Padding(
@@ -812,7 +958,11 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
               ),
               const SizedBox(height: 8),
               Text(
-                isPdf ? 'Tap below to open or save the PDF file' : 'Tap below to save the file to Downloads',
+                isPdf
+                    ? 'Tap below to open or save the PDF file'
+                    : (isLocal
+                        ? 'Tap below to open or share this document'
+                        : 'Tap below to save the file to Downloads'),
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -823,7 +973,7 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                 alignment: WrapAlignment.center,
                 children: [
                   ElevatedButton.icon(
-                    icon: Icon(isPdf ? Icons.open_in_new : Icons.download),
+                    icon: Icon(isPdf ? Icons.open_in_new : (isLocal ? Icons.open_in_new : Icons.download)),
                     label: Text(label),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: context.colors.primary,
@@ -831,7 +981,11 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
                     onPressed: () {
-                      downloadFile(widget.url, clean);
+                      if (isLocal && File(cleanPath).existsSync()) {
+                        Share.shareXFiles([XFile(cleanPath, name: clean)]);
+                      } else {
+                        downloadFile(widget.url, clean);
+                      }
                     },
                   ),
                   ElevatedButton.icon(
@@ -868,9 +1022,13 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
       );
     }
 
+    if (_controller == null) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
     return Stack(
       children: [
-        WebViewWidget(controller: _controller),
+        WebViewWidget(controller: _controller!),
         if (_isLoading)
           const Center(
             child: CircularProgressIndicator(color: Colors.white),
@@ -889,7 +1047,7 @@ class _MobileVideoPlayer extends StatefulWidget {
 }
 
 class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _hasError = false;
 
@@ -900,21 +1058,37 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
   }
 
   Future<void> _initializePlayer() async {
+    final cleanUrl = widget.url.trim();
+    if (cleanUrl.isEmpty) {
+      if (mounted) setState(() => _hasError = true);
+      return;
+    }
+
     try {
-      final isLocal = !kIsWeb && File(widget.url).existsSync();
-      if (isLocal) {
-        _controller = VideoPlayerController.file(File(widget.url));
-      } else {
-        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      final isLocal = !kIsWeb && File(cleanUrl).existsSync();
+      if (!isLocal && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        debugPrint('_MobileVideoPlayer: URL is not a local file and not a valid HTTP URL -> $cleanUrl');
+        if (mounted) setState(() => _hasError = true);
+        return;
       }
 
-      await _controller.initialize();
+      final controller = isLocal
+          ? VideoPlayerController.file(File(cleanUrl))
+          : VideoPlayerController.networkUrl(Uri.parse(cleanUrl));
+
+      _controller = controller;
+
+      await controller.initialize().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('Video initialization timed out after 15 seconds'),
+      );
+
       if (mounted) {
         setState(() {
           _isInitialized = true;
         });
-        _controller.play();
-        _controller.setLooping(true);
+        controller.play();
+        controller.setLooping(true);
       }
     } catch (e) {
       debugPrint('Video player initialization error: $e');
@@ -928,21 +1102,45 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_hasError) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, color: Colors.white54, size: 64),
-            SizedBox(height: 16),
-            Text('Failed to play video', style: TextStyle(color: Colors.white70)),
-          ],
+    if (_hasError || _controller == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white54, size: 64),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to play video',
+                style: TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00D084),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _hasError = false;
+                    _isInitialized = false;
+                  });
+                  _initializePlayer();
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -951,10 +1149,11 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
+    final controller = _controller!;
     return GestureDetector(
       onTap: () {
         setState(() {
-          _controller.value.isPlaying ? _controller.pause() : _controller.play();
+          controller.value.isPlaying ? controller.pause() : controller.play();
         });
       },
       child: Center(
@@ -962,10 +1161,10 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
           alignment: Alignment.center,
           children: [
             AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
+              aspectRatio: controller.value.aspectRatio,
+              child: VideoPlayer(controller),
             ),
-            if (!_controller.value.isPlaying)
+            if (!controller.value.isPlaying)
               Container(
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.3),
@@ -979,7 +1178,7 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
               left: 0,
               right: 0,
               child: VideoProgressIndicator(
-                _controller,
+                controller,
                 allowScrubbing: true,
                 colors: VideoProgressColors(
                   playedColor: Theme.of(context).primaryColor,

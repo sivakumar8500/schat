@@ -355,7 +355,6 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
           child: CircularProgressIndicator(strokeWidth: 2.5, color: primaryColor),
         );
       case StepStatus.pending:
-      default:
         return Icon(
           Icons.radio_button_unchecked_rounded,
           color: context.colors.textHint.withValues(alpha: 0.35),

@@ -273,6 +273,26 @@ class ChangeBackgroundColorEvent extends ChatEvent {
   const ChangeBackgroundColorEvent({required this.color, required this.conversationId});
 }
 
+class UpdateMessageMediaUrlEvent extends ChatEvent {
+  final String messageId;
+  final String conversationId;
+  final String mediaUrl;
+  final String? persistentLocalPath;
+  final String? attachmentName;
+  final String? mediaType;
+  final int? fileSize;
+
+  const UpdateMessageMediaUrlEvent({
+    required this.messageId,
+    required this.conversationId,
+    required this.mediaUrl,
+    this.persistentLocalPath,
+    this.attachmentName,
+    this.mediaType,
+    this.fileSize,
+  });
+}
+
 class UpdateAttachmentPermissionsEvent extends ChatEvent {
   final String messageId;
   final String conversationId;

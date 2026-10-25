@@ -14,6 +14,7 @@ import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_m
 import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -158,9 +159,39 @@ class ChatRepositoryImpl implements ChatRepository {
 
     try {
       onProgress?.call(0.05);
+      String resolvedFilePath = filePath;
+      String resolvedFileName = fileName;
+      Uint8List? resolvedFileBytes = fileBytes;
+      String resolvedMediaType = mediaType;
+      int resolvedFileSizeBytes = fileSizeBytes;
       String resolvedMime = mimeType;
-      final ext = fileName.split('.').last.toLowerCase();
-      if (mediaType == 'CHAT_VIDEO' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+
+      // Automatically remove encryption and normalize .enc files to standard format before upload
+      if (resolvedFileName.toLowerCase().endsWith('.enc') ||
+          (resolvedFilePath.isNotEmpty && resolvedFilePath.toLowerCase().endsWith('.enc'))) {
+        try {
+          final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+            filePath: resolvedFilePath.isNotEmpty ? resolvedFilePath : null,
+            fileBytes: resolvedFileBytes,
+            fileName: resolvedFileName,
+            explicitMediaType: (mediaType == 'VOICE_NOTE') ? 'VOICE_NOTE' : null,
+          );
+          resolvedFilePath = normal.filePath;
+          resolvedFileName = normal.fileName;
+          resolvedFileBytes = normal.bytes;
+          if (mediaType != 'VOICE_NOTE') {
+            resolvedMediaType = normal.backendMediaType;
+          }
+          resolvedMime = normal.mimeType;
+          resolvedFileSizeBytes = normal.fileSizeBytes;
+          debugPrint('ChatRepository.uploadMedia: Successfully normalized .enc -> $resolvedFileName ($resolvedMime, $resolvedMediaType)');
+        } catch (e) {
+          debugPrint('ChatRepository.uploadMedia: Error auto-decrypting .enc file: $e');
+        }
+      }
+
+      final ext = resolvedFileName.split('.').last.toLowerCase();
+      if (resolvedMediaType == 'CHAT_VIDEO' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
         switch (ext) {
           case 'mov':
             resolvedMime = 'video/quicktime';
@@ -177,7 +208,7 @@ class ChatRepositoryImpl implements ChatRepository {
           default:
             resolvedMime = 'video/mp4';
         }
-      } else if (mediaType == 'CHAT_IMAGE' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+      } else if (resolvedMediaType == 'CHAT_IMAGE' && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
         switch (ext) {
           case 'png':
             resolvedMime = 'image/png';
@@ -191,7 +222,7 @@ class ChatRepositoryImpl implements ChatRepository {
           default:
             resolvedMime = 'image/jpeg';
         }
-      } else if ((mediaType == 'VOICE_NOTE' || mediaType == 'CHAT_AUDIO') && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
+      } else if ((resolvedMediaType == 'VOICE_NOTE' || resolvedMediaType == 'CHAT_AUDIO') && (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream')) {
         switch (ext) {
           case 'wav':
             resolvedMime = 'audio/wav';
@@ -208,7 +239,7 @@ class ChatRepositoryImpl implements ChatRepository {
           default:
             resolvedMime = 'audio/mpeg';
         }
-      } else if (mediaType == 'DOCUMENT') {
+      } else if (resolvedMediaType == 'DOCUMENT') {
         switch (ext) {
           case 'pdf':
             resolvedMime = 'application/pdf';
@@ -240,10 +271,10 @@ class ChatRepositoryImpl implements ChatRepository {
       }
 
       final requestData = <String, dynamic>{
-        'media_type': mediaType,
+        'media_type': resolvedMediaType,
         'mime_type': resolvedMime,
-        'file_size_bytes': fileSizeBytes,
-        'filename': fileName,
+        'file_size_bytes': resolvedFileSizeBytes,
+        'filename': resolvedFileName,
       };
       if (conversationId.isNotEmpty) {
         requestData['conversation_id'] = conversationId;
@@ -322,13 +353,19 @@ class ChatRepositoryImpl implements ChatRepository {
         throw Exception('Invalid metadata received from request-upload');
       }
 
+      if (mediaId.isNotEmpty && objectKey.isNotEmpty) {
+        SecureAttachmentService.cacheMediaMapping(key: objectKey, localPath: resolvedFilePath, mediaId: mediaId);
+        SecureAttachmentService.cacheMediaMapping(key: resolvedFileName, localPath: resolvedFilePath, mediaId: mediaId);
+        SecureAttachmentService.cacheMediaMapping(key: objectKey.split('/').last, localPath: resolvedFilePath, mediaId: mediaId);
+      }
+
       // 2. Perform direct S3/MinIO upload with retry
       Uint8List bytes;
-      if (fileBytes != null && fileBytes.isNotEmpty) {
-        bytes = fileBytes;
-      } else if (!kIsWeb && filePath.isNotEmpty) {
-        final file = File(filePath);
-        if (!await file.exists()) throw Exception('File does not exist at path: $filePath');
+      if (resolvedFileBytes != null && resolvedFileBytes.isNotEmpty) {
+        bytes = resolvedFileBytes;
+      } else if (!kIsWeb && resolvedFilePath.isNotEmpty) {
+        final file = File(resolvedFilePath);
+        if (!await file.exists()) throw Exception('File does not exist at path: $resolvedFilePath');
         bytes = await file.readAsBytes();
       } else {
         throw Exception('No file data available for upload');
@@ -440,6 +477,23 @@ class ChatRepositoryImpl implements ChatRepository {
       if (completedObjectKey == null) {
         throw lastCompleteError ?? Exception('Failed to complete upload after retries');
       }
+
+      try {
+        if (!kIsWeb && resolvedFilePath.isNotEmpty && File(resolvedFilePath).existsSync()) {
+          final p1 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+            originalPath: resolvedFilePath,
+            fileName: resolvedFileName,
+          );
+          final p2 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+            originalPath: resolvedFilePath,
+            fileName: completedObjectKey.split('/').last,
+          );
+          final effectiveLocal = File(p1).existsSync() ? p1 : (File(p2).existsSync() ? p2 : resolvedFilePath);
+          SecureAttachmentService.cacheMediaMapping(key: completedObjectKey, localPath: effectiveLocal, mediaId: mediaId);
+          SecureAttachmentService.cacheMediaMapping(key: resolvedFileName, localPath: effectiveLocal, mediaId: mediaId);
+          SecureAttachmentService.cacheMediaMapping(key: completedObjectKey.split('/').last, localPath: effectiveLocal, mediaId: mediaId);
+        }
+      } catch (_) {}
 
       if (mediaId.isNotEmpty && recipientId != null && recipientId.isNotEmpty) {
         try {
@@ -1528,6 +1582,48 @@ class ChatRepositoryImpl implements ChatRepository {
     } catch (e) {
       debugPrint('ChatRepositoryImpl: reportConversation error: $e');
       return true;
+    }
+  }
+
+  @override
+  Future<String?> getMediaViewUrl(String mediaId) async {
+    if (mediaId.trim().isEmpty) return null;
+    try {
+      final result = await _apiService.get<Map<String, dynamic>>(
+        CommonEndpoints.mediaViewUrl(mediaId.trim()),
+        mapper: (data) => Map<String, dynamic>.from(data as Map),
+      );
+      return result.when(
+        success: (data) => data['view_url']?.toString() ?? data['url']?.toString(),
+        failure: (error, statusCode) {
+          debugPrint('getMediaViewUrl failed [$statusCode]: $error');
+          return null;
+        },
+      );
+    } catch (e) {
+      debugPrint('getMediaViewUrl exception: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> getMediaDownloadUrl(String mediaId) async {
+    if (mediaId.trim().isEmpty) return null;
+    try {
+      final result = await _apiService.get<Map<String, dynamic>>(
+        CommonEndpoints.mediaDownloadUrl(mediaId.trim()),
+        mapper: (data) => Map<String, dynamic>.from(data as Map),
+      );
+      return result.when(
+        success: (data) => data['download_url']?.toString() ?? data['url']?.toString(),
+        failure: (error, statusCode) {
+          debugPrint('getMediaDownloadUrl failed [$statusCode]: $error');
+          return null;
+        },
+      );
+    } catch (e) {
+      debugPrint('getMediaDownloadUrl exception: $e');
+      return null;
     }
   }
 }

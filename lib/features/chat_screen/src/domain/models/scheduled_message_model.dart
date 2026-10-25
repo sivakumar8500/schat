@@ -8,6 +8,7 @@ class ScheduledMessageModel {
   final String? parentMessageId;
   final String text;
   final String? fileKey;
+  final String? mediaId;
   final String? thumbnail;
   final String? fileName;
   final int fileSize;
@@ -26,6 +27,7 @@ class ScheduledMessageModel {
     this.parentMessageId,
     required this.text,
     this.fileKey,
+    this.mediaId,
     this.thumbnail,
     this.fileName,
     this.fileSize = 0,
@@ -131,6 +133,13 @@ class ScheduledMessageModel {
               json['url'] ??
               json['path'])
           ?.toString(),
+      mediaId: (content['mediaId'] ??
+              content['media_id'] ??
+              json['mediaId'] ??
+              json['media_id'] ??
+              content['id'] ??
+              json['id'])
+          ?.toString(),
       thumbnail: (content['thumbnail'] ??
               content['thumb_url'] ??
               content['thumbUrl'] ??
@@ -175,12 +184,35 @@ class ScheduledMessageModel {
     );
   }
 
+  /// Normalized media type helper
+  String get normalizedType {
+    final t = messageType.toLowerCase().replaceAll('chat_', '').trim();
+    if (t == 'image' || t == 'video' || t == 'audio' || t == 'voice_note' || t == 'document' || t == 'file') {
+      return t == 'voice_note' ? 'audio' : (t == 'file' ? 'document' : t);
+    }
+    final name = (fileName ?? fileKey ?? '').toLowerCase();
+    final ext = name.contains('.') ? name.split('.').last : '';
+    if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic', 'avif'].contains(ext)) return 'image';
+    if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp'].contains(ext)) return 'video';
+    if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr'].contains(ext)) return 'audio';
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip', 'rar', 'csv'].contains(ext)) return 'document';
+    if (fileKey != null && fileKey!.isNotEmpty) return 'document';
+    return 'text';
+  }
+
+  bool get isImage => normalizedType == 'image';
+  bool get isVideo => normalizedType == 'video';
+  bool get isAudio => normalizedType == 'audio';
+  bool get isDocument => normalizedType == 'document';
+  bool get hasMedia => isImage || isVideo || isAudio || isDocument || (fileKey != null && fileKey!.isNotEmpty) || (fileName != null && fileName!.isNotEmpty);
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'conversationId': conversationId,
         'senderId': senderId,
         'messageType': messageType,
         'parentMessageId': parentMessageId,
+        'mediaId': mediaId,
         'content': rawContent,
         'scheduledAt': scheduledAt.toUtc().toIso8601String(),
         'status': status,

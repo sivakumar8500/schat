@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_event.dart';
@@ -265,6 +266,9 @@ class PushNotificationService {
     }
 
     final convId = (message.data['conversationId'] ?? message.data['conversation_id'])?.toString();
+    if (convId != null && convId.isNotEmpty) {
+      ChatMessageCacheHelper.appendRawMessage(convId, message.data);
+    }
     final storage = getIt<StorageService>();
     if (!storage.getNotificationsEnabled()) {
       debugPrint('PushNotificationService: Suppressing push notification because account notifications are disabled');

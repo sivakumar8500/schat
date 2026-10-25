@@ -119,6 +119,32 @@ class ScreenProtectionService {
     }
   }
 
+  /// Starts native in-app screen recording using MediaProjection (prompts user on Android).
+  Future<bool> startInAppRecording() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _androidScreenshotChannel.invokeMethod<bool>('startInAppRecording');
+      debugPrint('ScreenProtection: startInAppRecording() result=$res');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error starting in-app recording: $e');
+      return false;
+    }
+  }
+
+  /// Stops native in-app screen recording and saves directly into Download/Schat.
+  Future<String?> stopInAppRecording() async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final res = await _androidScreenshotChannel.invokeMethod<String>('stopInAppRecording');
+      debugPrint('ScreenProtection: stopInAppRecording() result=$res');
+      return res;
+    } catch (e) {
+      debugPrint('ScreenProtection: Error stopping in-app recording: $e');
+      return null;
+    }
+  }
+
   /// Triggers Android MediaScanner so newly copied/saved files appear immediately in Downloads and File Manager
   Future<bool> scanFile(String path, {String? mimeType}) async {
     if (kIsWeb || !Platform.isAndroid) return false;

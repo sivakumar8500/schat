@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$TicketModel {
 
- String get id; String get title; String get description; String? get attachmentPath; String get status;@JsonKey(name: 'createdAt', fromJson: _parseInt) int? get createdAtInt;
+ String get id; String get title; String get description;@JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath) String? get attachmentPath; String get status;@JsonKey(name: 'createdAt', fromJson: _parseInt) int? get createdAtInt;
 /// Create a copy of TicketModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -48,7 +48,7 @@ abstract mixin class $TicketModelCopyWith<$Res>  {
   factory $TicketModelCopyWith(TicketModel value, $Res Function(TicketModel) _then) = _$TicketModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String title, String description, String? attachmentPath, String status,@JsonKey(name: 'createdAt', fromJson: _parseInt) int? createdAtInt
+ String id, String title, String description,@JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath) String? attachmentPath, String status,@JsonKey(name: 'createdAt', fromJson: _parseInt) int? createdAtInt
 });
 
 
@@ -158,7 +158,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  String description,  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  String description, @JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath)  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _TicketModel() when $default != null:
 return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_that.status,_that.createdAtInt);case _:
@@ -179,7 +179,7 @@ return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  String description,  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  String description, @JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath)  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)  $default,) {final _that = this;
 switch (_that) {
 case _TicketModel():
 return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_that.status,_that.createdAtInt);case _:
@@ -199,7 +199,7 @@ return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  String description,  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  String description, @JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath)  String? attachmentPath,  String status, @JsonKey(name: 'createdAt', fromJson: _parseInt)  int? createdAtInt)?  $default,) {final _that = this;
 switch (_that) {
 case _TicketModel() when $default != null:
 return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_that.status,_that.createdAtInt);case _:
@@ -214,13 +214,13 @@ return $default(_that.id,_that.title,_that.description,_that.attachmentPath,_tha
 @JsonSerializable()
 
 class _TicketModel implements TicketModel {
-  const _TicketModel({required this.id, required this.title, required this.description, this.attachmentPath, required this.status, @JsonKey(name: 'createdAt', fromJson: _parseInt) this.createdAtInt});
+  const _TicketModel({required this.id, required this.title, required this.description, @JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath) this.attachmentPath, required this.status, @JsonKey(name: 'createdAt', fromJson: _parseInt) this.createdAtInt});
   factory _TicketModel.fromJson(Map<String, dynamic> json) => _$TicketModelFromJson(json);
 
 @override final  String id;
 @override final  String title;
 @override final  String description;
-@override final  String? attachmentPath;
+@override@JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath) final  String? attachmentPath;
 @override final  String status;
 @override@JsonKey(name: 'createdAt', fromJson: _parseInt) final  int? createdAtInt;
 
@@ -257,7 +257,7 @@ abstract mixin class _$TicketModelCopyWith<$Res> implements $TicketModelCopyWith
   factory _$TicketModelCopyWith(_TicketModel value, $Res Function(_TicketModel) _then) = __$TicketModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String title, String description, String? attachmentPath, String status,@JsonKey(name: 'createdAt', fromJson: _parseInt) int? createdAtInt
+ String id, String title, String description,@JsonKey(name: 'attachmentPath', readValue: _readAttachmentPath) String? attachmentPath, String status,@JsonKey(name: 'createdAt', fromJson: _parseInt) int? createdAtInt
 });
 
 

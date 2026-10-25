@@ -38,9 +38,12 @@ class InAppUpdateService {
   }) async {
     if (kIsWeb) return;
 
+    // Force update popup removed: only run update check if manually triggered by user
+    if (!isManualCheck) return;
+
     // Avoid duplicate checks within 30 seconds unless manually triggered
     if (_isChecking) return;
-    if (!isManualCheck && _lastCheckTime != null) {
+    if (_lastCheckTime != null) {
       final diff = DateTime.now().difference(_lastCheckTime!);
       if (diff.inSeconds < 30) return;
     }
@@ -113,8 +116,11 @@ class InAppUpdateService {
                   await InAppUpdate.completeFlexibleUpdate();
                 }
               }
-            } else if (updateInfo.immediateUpdateAllowed) {
-              await InAppUpdate.performImmediateUpdate();
+            } else {
+              // Forced immediate update removed to avoid blocking users
+              if (targetContext != null && targetContext.mounted) {
+                targetContext.showSuccessNotification('A new update is available on Google Play Store.');
+              }
             }
             return;
           }
@@ -141,7 +147,7 @@ class InAppUpdateService {
   void _showInstallDownloadedDialog(BuildContext context) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: const Color(0xFF1E293B),

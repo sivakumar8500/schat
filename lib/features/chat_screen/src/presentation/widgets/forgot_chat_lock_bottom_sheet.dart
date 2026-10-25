@@ -55,11 +55,6 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
   int _resendCountdown = 30;
   Timer? _countdownTimer;
 
-  static const List<String> _popularEmojis = [
-    '🔒', '🔑', '🔐', '🤫', '❤️', '🔥', '⭐', '😎',
-    '🤐', '🛡️', '💎', '🚀', '⚡', '🍀', '🎯', '👑',
-    '✨', '🌸', '🐱', '🦋', '🌙', '🪄', '💎', '🦄',
-  ];
 
   @override
   void initState() {
@@ -309,27 +304,6 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
     }
   }
 
-  void _insertEmoji(String emoji) {
-    TextEditingController targetController;
-    if (_confirmPasswordFocusNode.hasFocus) {
-      targetController = _confirmPasswordController;
-    } else {
-      targetController = _newPasswordController;
-    }
-
-    final currentText = targetController.text;
-    final selection = targetController.selection;
-    if (selection.start >= 0 && selection.end >= 0) {
-      final newText = currentText.replaceRange(selection.start, selection.end, emoji);
-      targetController.value = TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: selection.start + emoji.length),
-      );
-    } else {
-      targetController.text = currentText + emoji;
-      targetController.selection = TextSelection.collapsed(offset: targetController.text.length);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -633,50 +607,7 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
             ),
           ),
         ),
-        CommonSpaces.h12,
-
-        // Quick Emoji Bar
-        Row(
-          children: [
-            Icon(Icons.emoji_emotions_outlined, size: 16, color: primaryColor),
-            CommonSpaces.w6,
-            Text(
-              'Add emojis to your passcode:',
-              style: context.bodySmall.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        CommonSpaces.h6,
-        SizedBox(
-          height: 38,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _popularEmojis.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 6),
-            itemBuilder: (context, idx) {
-              final emoji = _popularEmojis[idx];
-              return InkWell(
-                 onTap: () => _insertEmoji(emoji),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: colors.lightBackground,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: primaryColor.withValues(alpha: 0.15)),
-                  ),
-                  child: Center(
-                    child: Text(emoji, style: const TextStyle(fontSize: 18)),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
 
         SizedBox(
           width: double.infinity,

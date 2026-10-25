@@ -47,11 +47,6 @@ class _UnlockChatBottomSheetState extends State<UnlockChatBottomSheet> {
   bool _obscurePassword = true;
   String? _errorMessage;
 
-  static const List<String> _popularEmojis = [
-    '🔒', '🔑', '🔐', '🤫', '❤️', '🔥', '⭐', '😎',
-    '🤐', '🛡️', '💎', '🚀', '⚡', '🍀', '🎯', '👑',
-    '✨', '🌸', '🐱', '🦋', '🌙', '🪄', '🦄',
-  ];
 
   @override
   void initState() {
@@ -70,20 +65,6 @@ class _UnlockChatBottomSheetState extends State<UnlockChatBottomSheet> {
     super.dispose();
   }
 
-  void _insertEmoji(String emoji) {
-    final text = _passwordController.text;
-    final sel = _passwordController.selection;
-    if (sel.start >= 0 && sel.end >= 0) {
-      final newText = text.replaceRange(sel.start, sel.end, emoji);
-      _passwordController.value = TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: sel.start + emoji.length),
-      );
-    } else {
-      _passwordController.text = text + emoji;
-      _passwordController.selection = TextSelection.collapsed(offset: _passwordController.text.length);
-    }
-  }
 
   Future<void> _verifyAndUnlock() async {
     final code = _passwordController.text.trim();
@@ -263,50 +244,6 @@ class _UnlockChatBottomSheetState extends State<UnlockChatBottomSheet> {
                 ),
               ),
 
-              CommonSpaces.h12,
-
-              // Quick Emoji Bar
-              Row(
-                children: [
-                  const Icon(Icons.emoji_emotions_outlined, size: 16, color: primaryColor),
-                  CommonSpaces.w6,
-                  Text(
-                    'Insert emoji into code:',
-                    style: context.bodySmall.copyWith(
-                      color: context.colors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ],
-              ),
-              CommonSpaces.h6,
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _popularEmojis.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 6),
-                  itemBuilder: (context, idx) {
-                    final emoji = _popularEmojis[idx];
-                    return InkWell(
-                      onTap: () => _insertEmoji(emoji),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: primaryColor.withValues(alpha: 0.15)),
-                        ),
-                        child: Center(
-                          child: Text(emoji, style: const TextStyle(fontSize: 17)),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
 
               // Error banner if any
               if (_errorMessage != null) ...[

@@ -28,8 +28,8 @@ class TicketModel {
     id: json['id'] as String,
     title: json['title'] as String,
     description: json['description'] as String,
-    attachmentPath: json['attachmentPath'] as String?,
+    attachmentPath: (json['attachmentPath'] ?? json['attachment_path'] ?? json['imageUrl'] ?? json['image_url']) as String?,
     status: json['status'] as String,
-    createdAt: json['createdAt'] as String,
+    createdAt: json['createdAt']?.toString() ?? '',
   );
 }

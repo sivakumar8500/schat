@@ -22,6 +22,7 @@ import 'core/network/network_module.dart' as _i550;
 import 'core/notifications/call_notification_service.dart' as _i374;
 import 'core/notifications/in_app_notification_service.dart' as _i601;
 import 'core/notifications/push_notification_service.dart' as _i610;
+import 'core/security/recording_permission_service.dart' as _i390;
 import 'core/security/screen_protection_service.dart' as _i568;
 import 'core/security/secure_attachment_service.dart' as _i32;
 import 'core/security/security_scanner_service.dart' as _i464;
@@ -147,6 +148,9 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i895.Connectivity>(() => networkModule.connectivity);
     gh.lazySingleton<_i610.PushNotificationService>(
       () => _i610.PushNotificationService(),
+    );
+    gh.lazySingleton<_i390.RecordingPermissionService>(
+      () => _i390.RecordingPermissionService(),
     );
     gh.lazySingleton<_i568.ScreenProtectionService>(
       () => _i568.ScreenProtectionService(),

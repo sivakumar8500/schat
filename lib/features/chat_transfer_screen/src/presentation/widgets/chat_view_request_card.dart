@@ -28,6 +28,7 @@ class ChatViewRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = context.colors.isDark;
     final otherUser = type == RequestCardType.incomingPending || type == RequestCardType.activeViewer
         ? request.sender
         : request.receiver;
@@ -43,6 +44,8 @@ class ChatViewRequestCard extends StatelessWidget {
         : '@${otherUser?.username ?? ""}';
 
     final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+    final avatarBg = isDark ? const Color(0xFF1E3A2B) : const Color(0xFFD1FADF);
+    final avatarTextColor = isDark ? const Color(0xFF00873C) : const Color(0xFF027A48);
 
     return InkWell(
       onTap: onTap,
@@ -68,7 +71,7 @@ class ChatViewRequestCard extends StatelessWidget {
                   height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFE8F5E9),
+                    color: avatarBg,
                   ),
                   child: ClipOval(
                     child: (otherUser?.profilePictureUrl != null && otherUser!.profilePictureUrl!.isNotEmpty)
@@ -78,18 +81,20 @@ class ChatViewRequestCard extends StatelessWidget {
                             placeholder: (context, url) => Center(
                               child: Text(
                                 initial,
-                                style: CommonFontStyles.titleMedium(context).copyWith(
-                                  color: const Color(0xFF00873C),
-                                  fontWeight: FontWeight.bold,
+                                style: TextStyle(
+                                  color: avatarTextColor,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
                             errorWidget: (context, url, error) => Center(
                               child: Text(
                                 initial,
-                                style: CommonFontStyles.titleMedium(context).copyWith(
-                                  color: const Color(0xFF00873C),
-                                  fontWeight: FontWeight.bold,
+                                style: TextStyle(
+                                  color: avatarTextColor,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -97,9 +102,10 @@ class ChatViewRequestCard extends StatelessWidget {
                         : Center(
                             child: Text(
                               initial,
-                              style: CommonFontStyles.titleMedium(context).copyWith(
-                                color: const Color(0xFF00873C),
-                                fontWeight: FontWeight.bold,
+                              style: TextStyle(
+                                color: avatarTextColor,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -112,15 +118,20 @@ class ChatViewRequestCard extends StatelessWidget {
                     children: [
                       Text(
                         displayName,
-                        style: CommonFontStyles.titleSmall(context),
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                          color: context.colors.textPrimary,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      CommonSpaces.h4,
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        style: CommonFontStyles.bodySmall(context).copyWith(
-                          color: context.colors.textSecondary,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? Colors.white60 : const Color(0xFF6B7280),
                         ),
                       ),
                     ],

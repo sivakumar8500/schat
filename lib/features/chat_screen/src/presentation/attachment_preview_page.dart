@@ -133,6 +133,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   // Temporary files to cleanup
   final List<File> _tempFilesToCleanup = [];
   String? _resolvedActivePath;
+  bool _wasSent = false;
 
   @override
   void initState() {
@@ -198,7 +199,26 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     while (nameLower.endsWith('.enc')) {
       nameLower = nameLower.substring(0, nameLower.length - 4);
     }
-    final ext = nameLower.contains('.') ? nameLower.split('.').last : '';
+    String ext = nameLower.contains('.') ? nameLower.split('.').last : '';
+
+    if (ext.isEmpty || ext == 'bin' || ext == 'tmp' || ext == 'enc') {
+      try {
+        Uint8List? probe;
+        if (_currentBytes != null && _currentBytes!.isNotEmpty) {
+          probe = _currentBytes;
+        } else if (_activeInitialBytes != null && _activeInitialBytes!.isNotEmpty) {
+          probe = _activeInitialBytes;
+        } else if (_activePath != null && !kIsWeb && File(_activePath!).existsSync()) {
+          probe = File(_activePath!).openSync().readSync(32);
+        }
+        if (probe != null && probe.isNotEmpty) {
+          final detected = SecureAttachmentService.detectExtensionFromBytes(probe);
+          if (detected.isNotEmpty) {
+            ext = detected;
+          }
+        }
+      } catch (_) {}
+    }
 
     if (explicitType == 'image' || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'].contains(ext)) {
       return 'image';
@@ -426,12 +446,14 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     }
     _audioPlayer?.dispose();
 
-    for (final tempFile in _tempFilesToCleanup) {
-      try {
-        if (tempFile.existsSync()) {
-          tempFile.deleteSync();
-        }
-      } catch (_) {}
+    if (!_wasSent) {
+      for (final tempFile in _tempFilesToCleanup) {
+        try {
+          if (tempFile.existsSync()) {
+            tempFile.deleteSync();
+          }
+        } catch (_) {}
+      }
     }
 
     super.dispose();
@@ -546,6 +568,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   }
 
   void _onSend() {
+    _wasSent = true;
     var cleanName = _activeName;
     while (cleanName.toLowerCase().endsWith('.enc')) {
       cleanName = cleanName.substring(0, cleanName.length - 4);
@@ -554,10 +577,21 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
     final effectiveType = _resolveEffectiveType();
 
+    Uint8List? sendBytes = _currentBytes;
+    if (sendBytes == null && _resolvedActivePath != null && !kIsWeb) {
+      final f = File(_resolvedActivePath!);
+      if (f.existsSync()) {
+        try {
+          sendBytes = f.readAsBytesSync();
+        } catch (_) {}
+      }
+    }
+    sendBytes ??= _activeInitialBytes;
+
     Navigator.pop(context, {
       'send': true,
       'caption': _captionController.text.trim(),
-      'bytes': _currentBytes ?? _activeInitialBytes,
+      'bytes': sendBytes,
       'path': _resolvedActivePath ?? _activePath,
       'name': cleanName,
       'type': effectiveType,

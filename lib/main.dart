@@ -19,7 +19,6 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:schat/features/call_screen/call_screen.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_history_cubit.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
-import 'package:schat/core/services/in_app_update_service.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/minimized_call_overlay.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/pip_call_view.dart';
 
@@ -144,7 +143,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
       repo.onAppResumed();
-      getIt<InAppUpdateService>().checkForUpdate();
       try {
         getIt<PushNotificationService>().clearAllNotifications();
       } catch (_) {}

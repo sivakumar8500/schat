@@ -1,5 +1,3 @@
-import 'package:schat/features/tickets_screen/src/domain/models/ticket_model.dart';
-
 abstract class TicketsEvent {
   const TicketsEvent();
 }

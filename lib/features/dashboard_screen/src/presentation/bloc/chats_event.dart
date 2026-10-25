@@ -120,4 +120,12 @@ class UpdateMessageStatus extends ChatsEvent {
   });
 }
 
+class MarkConversationAsRead extends ChatsEvent {
+  final String conversationId;
+
+  const MarkConversationAsRead({
+    required this.conversationId,
+  });
+}
+
 

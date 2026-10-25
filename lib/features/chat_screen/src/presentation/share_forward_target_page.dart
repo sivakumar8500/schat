@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
@@ -327,6 +329,31 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
       // 2. Upload and dispatch each media item
       if (widget.mediaItems.isNotEmpty) {
         for (final item in widget.mediaItems) {
+          String itemName = item.name;
+          String itemPath = item.path;
+          String itemType = item.type;
+          int itemSize = item.size;
+          Uint8List? itemBytes;
+
+          // If item is .enc file, remove encryption and normalize to standard format
+          if (itemName.toLowerCase().endsWith('.enc') || itemPath.toLowerCase().endsWith('.enc')) {
+            try {
+              final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+                filePath: itemPath,
+                fileName: itemName,
+                explicitMediaType: itemType,
+              );
+              itemName = normal.fileName;
+              itemPath = normal.filePath;
+              itemType = normal.mediaType;
+              itemSize = normal.fileSizeBytes;
+              itemBytes = normal.bytes;
+              debugPrint('ShareForwardTargetPage: Normalized .enc -> $itemName ($itemType, $itemSize bytes)');
+            } catch (e) {
+              debugPrint('ShareForwardTargetPage: Error normalizing .enc file: $e');
+            }
+          }
+
           String? fileKey;
           final firstTarget = _selectedTargets.isNotEmpty ? _selectedTargets.first : null;
           final targetRecipientId = firstTarget?.userModel?.id ?? (firstTarget?.chatModel?.recipient.id.isNotEmpty == true ? firstTarget?.chatModel?.recipient.id : null);
@@ -334,11 +361,12 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             fileKey = await chatRepo.uploadMedia(
               conversationId: primaryConvId,
               recipientId: targetRecipientId,
-              filePath: item.path,
-              fileName: item.name,
-              mediaType: _getMediaType(item.type),
-              mimeType: _getMimeType(item.name, item.type),
-              fileSizeBytes: item.size > 0 ? item.size : 1024,
+              filePath: itemPath,
+              fileName: itemName,
+              mediaType: _getMediaType(itemType),
+              mimeType: _getMimeType(itemName, itemType),
+              fileSizeBytes: itemSize > 0 ? itemSize : 1024,
+              fileBytes: itemBytes,
               allowView: true,
               allowDownload: true,
               allowShare: true,
@@ -347,17 +375,17 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             debugPrint('Upload error during share: $uploadErr');
           }
 
-          final msgType = item.type == 'voice_note' ? 'audio' : item.type;
+          final msgType = itemType == 'voice_note' ? 'audio' : itemType;
 
           for (final convId in conversationIds) {
             socketRepo.sendMessage(
               conversationId: convId,
               type: msgType,
-              text: caption.isNotEmpty ? caption : (item.type == 'image' ? '' : item.name),
+              text: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
               fileKey: fileKey,
-              fileName: item.name,
-              fileSize: item.size,
-              mimeType: _getMimeType(item.name, item.type),
+              fileName: itemName,
+              fileSize: itemSize,
+              mimeType: _getMimeType(itemName, itemType),
               security: const {
                 'allowShare': true,
                 'allowDownload': true,

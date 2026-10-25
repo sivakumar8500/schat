@@ -19,6 +19,7 @@ import 'package:schat/features/profile_screen/src/domain/repositories/profile_re
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_screen/src/presentation/shared_media_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:hive/hive.dart';
@@ -633,6 +634,63 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       );
     }
 
+    void openMediaInApp(ChatMediaModel media) {
+      final rawUrl = media.url;
+      if (rawUrl.isEmpty) {
+        goToAllMedia();
+        return;
+      }
+      final resolved = _resolveUrl(rawUrl);
+
+      String fileName = media.filename.trim();
+      if (fileName.isEmpty) {
+        try {
+          final uri = Uri.parse(resolved);
+          final segment = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+          if (segment.isNotEmpty) {
+            fileName = Uri.decodeComponent(segment);
+          }
+        } catch (_) {}
+      }
+      if (fileName.isEmpty) fileName = 'Shared Media';
+
+      final typeUpper = media.mediaType.toUpperCase();
+      final mimeLower = media.mimeType.toLowerCase();
+      final nameLower = fileName.toLowerCase();
+      final urlLower = resolved.toLowerCase();
+
+      String type = 'file';
+      if (typeUpper.contains('IMAGE') ||
+          mimeLower.startsWith('image/') ||
+          ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.heic']
+              .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+        type = 'image';
+      } else if (typeUpper.contains('VIDEO') ||
+          mimeLower.startsWith('video/') ||
+          ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp']
+              .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+        type = 'video';
+      } else if (typeUpper.contains('VOICE') ||
+          typeUpper.contains('AUDIO') ||
+          mimeLower.startsWith('audio/') ||
+          ['.mp3', '.wav', '.aac', '.m4a', '.ogg', '.opus']
+              .any((ext) => nameLower.endsWith(ext) || urlLower.contains(ext))) {
+        type = 'audio';
+      } else if (mimeLower.contains('pdf') || nameLower.endsWith('.pdf') || urlLower.contains('.pdf')) {
+        type = 'pdf';
+      }
+
+      InAppViewer.show(
+        context,
+        url: resolved,
+        fileName: fileName,
+        type: type,
+        mediaId: media.id.isNotEmpty ? media.id : null,
+        allowShare: true,
+        allowDownload: true,
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SizedBox(
@@ -646,7 +704,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                 media.mimeType.toLowerCase().startsWith('image/');
 
             return GestureDetector(
-              onTap: goToAllMedia,
+              onTap: () => openMediaInApp(media),
               child: Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: ClipRRect(

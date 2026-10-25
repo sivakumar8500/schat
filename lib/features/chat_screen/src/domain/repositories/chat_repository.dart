@@ -148,6 +148,12 @@ abstract class ChatRepository {
   /// POST /media/{mediaId}/revoke-all to revoke all shares for this media.
   Future<bool> revokeAllMediaShares(String mediaId);
 
+  /// GET /media/{mediaId}/view-url to retrieve a presigned or direct viewing URL.
+  Future<String?> getMediaViewUrl(String mediaId);
+
+  /// GET /media/{mediaId}/download-url to retrieve a presigned or direct download URL.
+  Future<String?> getMediaDownloadUrl(String mediaId);
+
   /// Screen capture permission methods
   Future<ScreenPermissionModel> requestScreenPermission({
     required String conversationId,

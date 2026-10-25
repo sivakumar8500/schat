@@ -10,7 +10,7 @@ _TicketModel _$TicketModelFromJson(Map<String, dynamic> json) => _TicketModel(
   id: json['id'] as String,
   title: json['title'] as String,
   description: json['description'] as String,
-  attachmentPath: json['attachmentPath'] as String?,
+  attachmentPath: _readAttachmentPath(json, 'attachmentPath') as String?,
   status: json['status'] as String,
   createdAtInt: _parseInt(json['createdAt']),
 );

@@ -61,11 +61,6 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
   bool _isChangingPassword = false;
   String? _errorMessage;
 
-  static const List<String> _popularEmojis = [
-    '🔒', '🔑', '🔐', '🤫', '❤️', '🔥', '⭐', '😎',
-    '🤐', '🛡️', '💎', '🚀', '⚡', '🍀', '🎯', '👑',
-    '✨', '🌸', '🐱', '🦋', '🌙', '🪄', '💎', '🦄',
-  ];
 
   @override
   void initState() {
@@ -84,29 +79,6 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
     super.dispose();
   }
 
-  void _insertEmoji(String emoji) {
-    TextEditingController target;
-    if (_confirmPasswordFocus.hasFocus) {
-      target = _confirmPasswordController;
-    } else if (_oldPasswordFocus.hasFocus) {
-      target = _oldPasswordController;
-    } else {
-      target = _passwordController;
-    }
-
-    final text = target.text;
-    final sel = target.selection;
-    if (sel.start >= 0 && sel.end >= 0) {
-      final newText = text.replaceRange(sel.start, sel.end, emoji);
-      target.value = TextEditingValue(
-        text: newText,
-        selection: TextSelection.collapsed(offset: sel.start + emoji.length),
-      );
-    } else {
-      target.text = text + emoji;
-      target.selection = TextSelection.collapsed(offset: target.text.length);
-    }
-  }
 
   Future<void> _checkLockStatus() async {
     setState(() {
@@ -333,7 +305,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
               // Subtitle description
               Text(
                 _isChangingPassword
-                    ? 'Enter your current secret code and choose a new one. Supports words, emojis, symbols, and numbers.'
+                    ? 'Enter your current secret code and choose a new one.'
                     : widget.isCurrentlyLocked
                         ? ((widget.contactName.trim().isNotEmpty &&
                                 widget.contactName.trim().toLowerCase() != 'user' &&
@@ -342,7 +314,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                             ? 'Enter your secret code to unlock chat with ${widget.contactName}.'
                             : 'Enter your secret code to unlock this chat.')
                         : !_hasPassword
-                            ? 'Keep this chat hidden and secured. Create a secret code (use words, emojis 🔒🍕, symbols @#\$, or numbers). Type this code into the search bar to reveal locked chats.'
+                            ? 'Keep this chat hidden and secured. Create a secret code. Type this code into the search bar to reveal locked chats.'
                             : ((widget.contactName.trim().isNotEmpty &&
                                     widget.contactName.trim().toLowerCase() != 'user' &&
                                     widget.contactName.trim().toLowerCase() != 'chat' &&
@@ -382,9 +354,9 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   controller: _passwordController,
                   focusNode: _passwordFocus,
                   hintText: _isChangingPassword
-                      ? 'New Secret Code (e.g. 🔒Secret@123🍕)'
+                      ? 'New Secret Code'
                       : !_hasPassword
-                          ? 'Set Secret Code (e.g. 🔒Secret@123🍕)'
+                          ? 'Set Secret Code'
                           : 'Enter Secret Code',
                   prefixIcon: Icons.key_rounded,
                   obscureText: _obscurePassword,
@@ -406,50 +378,6 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   ),
                 ],
 
-                CommonSpaces.h12,
-
-                // Quick Emoji Selector
-                Row(
-                  children: [
-                    Icon(Icons.emoji_emotions_outlined, size: 16, color: context.colors.primary),
-                    CommonSpaces.w6,
-                    Text(
-                      'Tap to insert emoji into passcode:',
-                      style: context.bodySmall.copyWith(
-                        color: context.colors.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 11.5,
-                      ),
-                    ),
-                  ],
-                ),
-                CommonSpaces.h6,
-                SizedBox(
-                  height: 36,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _popularEmojis.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 6),
-                    itemBuilder: (context, idx) {
-                      final emoji = _popularEmojis[idx];
-                      return InkWell(
-                        onTap: () => _insertEmoji(emoji),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFF3F4F6),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: context.colors.primary.withValues(alpha: 0.15)),
-                          ),
-                          child: Center(
-                            child: Text(emoji, style: const TextStyle(fontSize: 17)),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
 
                 // Error message display
                 if (_errorMessage != null) ...[

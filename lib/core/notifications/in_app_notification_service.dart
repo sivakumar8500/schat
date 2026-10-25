@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/incoming_screen_permission_bottom_sheet.dart';
@@ -139,6 +140,10 @@ class InAppNotificationService {
             data['conversationId'])
         ?.toString()
         .trim();
+
+    if (convId != null && convId.isNotEmpty) {
+      ChatMessageCacheHelper.appendRawMessage(convId, Map<String, dynamic>.from(message));
+    }
 
     final senderId = (message['senderId'] ??
             message['sender_id'] ??

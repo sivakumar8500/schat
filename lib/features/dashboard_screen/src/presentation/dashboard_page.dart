@@ -38,14 +38,15 @@ import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/widgets/home_theme_bottom_sheet.dart';
 import 'package:schat/utils/theme_controller.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/main.dart' show routeObserver;
 import 'package:schat/core/services/share_receiver_service.dart';
-import 'package:schat/core/services/in_app_update_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -54,7 +55,7 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
+class _DashboardPageState extends State<DashboardPage> with RouteAware {
   int _currentIndex = 0;
   int _filterIndex = 0; // 0: All, 1: Unread, 2: Individual, 3: Groups
   late String _username = getIt<StorageService>().getUsername() ?? 'David';
@@ -90,9 +91,39 @@ class _DashboardPageState extends State<DashboardPage> {
         pushService.isDashboardReady = true;
         pushService.handlePendingNotification();
         ShareReceiverService().checkAndPresentPendingShare();
-        getIt<InAppUpdateService>().checkForUpdate(context: context);
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final modalRoute = ModalRoute.of(context);
+    if (modalRoute is PageRoute) {
+      routeObserver.subscribe(this, modalRoute);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    super.didPopNext();
+    _refreshDashboardData();
+  }
+
+  void _refreshDashboardData() {
+    _loadProfile(forceRefresh: true);
+    if (mounted) {
+      context.read<ChatsBloc>().add(const FetchChats());
+      context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
+      _loadMutedChats();
+      setState(() {});
+    }
   }
 
   Future<void> _setupNotifications() async {
@@ -687,6 +718,33 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  void _openHomeThemeBottomSheet() {
+    HomeThemeBottomSheet.show(context);
+  }
+
+  Widget _buildHomeWallpaperImage(String url) {
+    if (!kIsWeb && !url.startsWith('http://') && !url.startsWith('https://')) {
+      final file = File(url);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+        );
+      }
+    }
+
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorWidget: (context, url, error) => const SizedBox.shrink(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint('DEBUG: Building DashboardPage');
@@ -696,11 +754,65 @@ class _DashboardPageState extends State<DashboardPage> {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Full-screen background waves spanning all tabs behind status bar & bottom bar
+          // Full-screen background (waves / custom wallpaper / theme color)
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
+              child: AnimatedBuilder(
+                animation: getIt<ThemeController>(),
+                builder: (context, _) {
+                  final themeCtrl = getIt<ThemeController>();
+                  final wallpaper = themeCtrl.homeWallpaperUrl;
+                  final themeColor = themeCtrl.homeThemeColor;
+
+                  if (wallpaper != null && wallpaper.isNotEmpty) {
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildHomeWallpaperImage(wallpaper),
+                        // Soft scrim overlay for pristine readability of text & cards
+                        Container(
+                          color: (isDark ? Colors.black : Colors.white).withValues(
+                            alpha: isDark ? 0.35 : 0.20,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  if (themeColor != null) {
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: isDark
+                                  ? [
+                                      themeColor.withValues(alpha: 0.35),
+                                      context.colors.scaffoldBackground,
+                                      themeColor.withValues(alpha: 0.18),
+                                    ]
+                                  : [
+                                      themeColor.withValues(alpha: 0.25),
+                                      context.colors.scaffoldBackground,
+                                      themeColor.withValues(alpha: 0.10),
+                                    ],
+                            ),
+                          ),
+                        ),
+                        CustomPaint(
+                          painter: HomeBackgroundWavePainter(isDark: isDark),
+                        ),
+                      ],
+                    );
+                  }
+
+                  return CustomPaint(
+                    painter: HomeBackgroundWavePainter(isDark: isDark),
+                  );
+                },
               ),
             ),
           ),
@@ -955,7 +1067,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     if (mounted) setState(() => _shouldSyncContacts = false);
                   });
                 }
-                _loadProfile();
+                _refreshDashboardData();
               },
               child: Row(
                 children: [
@@ -1053,6 +1165,15 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
             ),
           ),
+          IconButton(
+            icon: Icon(
+              Icons.palette_outlined,
+              color: context.colors.textPrimary,
+              size: 23,
+            ),
+            tooltip: 'Themes & Wallpapers',
+            onPressed: _openHomeThemeBottomSheet,
+          ),
           PopupMenuButton<String>(
             icon: Icon(
               Icons.more_vert_rounded,
@@ -1066,6 +1187,8 @@ class _DashboardPageState extends State<DashboardPage> {
               if (value == 'theme') {
                 getIt<ThemeController>().toggleTheme();
                 setState(() {});
+              } else if (value == 'home_theme') {
+                _openHomeThemeBottomSheet();
               } else if (value == 'create_group') {
                 final chat = await showModalBottomSheet<ChatModel>(
                   context: context,
@@ -1095,7 +1218,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ).then((_) {
                     if (mounted) {
-                      context.read<ChatsBloc>().add(const FetchChats());
+                      _refreshDashboardData();
                     }
                   });
                 }
@@ -1119,7 +1242,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     if (mounted) setState(() => _shouldSyncContacts = false);
                   });
                 }
-                _loadProfile();
+                _refreshDashboardData();
               } else if (value == 'hidden_chats') {
                 await Navigator.push(
                   context,
@@ -1127,6 +1250,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     builder: (context) => const HiddenChatsPage(),
                   ),
                 );
+                _refreshDashboardData();
               } else if (value == 'chat_transfer') {
                 await Navigator.push(
                   context,
@@ -1134,6 +1258,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     builder: (context) => const ChatTransferPage(),
                   ),
                 );
+                _refreshDashboardData();
               }
             },
             itemBuilder: (context) => [
@@ -1151,7 +1276,29 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text('Theme', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
+                      child: Text(
+                        getIt<ThemeController>().themeMode == ThemeMode.dark
+                            ? 'Light Mode'
+                            : 'Dark Mode',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          color: context.colors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'home_theme',
+                height: 42,
+                child: Row(
+                  children: [
+                    Icon(Icons.palette_outlined, color: context.colors.primary, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('Themes & Wallpapers', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w400, color: context.colors.textPrimary)),
                     ),
                   ],
                 ),
@@ -1223,11 +1370,12 @@ class _DashboardPageState extends State<DashboardPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: GestureDetector(
-        onTap: () {
-          Navigator.push(
+        onTap: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const ChatSearchPage()),
           );
+          _refreshDashboardData();
         },
         child: Container(
           height: 48,
@@ -1357,11 +1505,12 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
           GestureDetector(
-            onTap: () {
-              Navigator.push(
+            onTap: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const HiddenChatsPage()),
               );
+              _refreshDashboardData();
             },
             child: Row(
               children: [
@@ -1730,7 +1879,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           );
           if (mounted) {
-            context.read<ChatsBloc>().add(const FetchChats());
+            _refreshDashboardData();
           }
         }
       },
@@ -1883,7 +2032,7 @@ class _DashboardPageState extends State<DashboardPage> {
         setState(() {
           _currentIndex = index;
           if (index == 0) {
-            context.read<ChatsBloc>().add(const FetchChats());
+            _refreshDashboardData();
           } else if (index == 1) {
             context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
           } else if (index == 2) {

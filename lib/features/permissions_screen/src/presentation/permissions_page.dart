@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -23,6 +24,7 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
   bool _contactsGranted = false;
   bool _cameraGranted = false;
   bool _microphoneGranted = false;
+  bool _storageGranted = false;
 
   @override
   void initState() {
@@ -49,12 +51,21 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
     bool contacts = false;
     bool camera = false;
     bool microphone = false;
+    bool storage = false;
 
     if (!kIsWeb) {
       notification = await Permission.notification.isGranted;
       contacts = await Permission.contacts.isGranted;
       camera = await Permission.camera.isGranted;
       microphone = await Permission.microphone.isGranted;
+      if (Platform.isAndroid) {
+        final photos = await Permission.photos.isGranted;
+        final videos = await Permission.videos.isGranted;
+        final legacy = await Permission.storage.isGranted;
+        storage = photos || videos || legacy;
+      } else {
+        storage = await Permission.photos.isGranted;
+      }
     }
 
     if (mounted) {
@@ -63,14 +74,31 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
         _contactsGranted = contacts;
         _cameraGranted = camera;
         _microphoneGranted = microphone;
+        _storageGranted = storage;
       });
     }
   }
 
   Future<void> _requestPermission(Permission permission) async {
     if (kIsWeb) return;
+    if (await permission.isGranted) return;
 
     await permission.request();
+    _checkStatuses();
+  }
+
+  Future<void> _requestStoragePermission() async {
+    if (kIsWeb) return;
+    if (_storageGranted) return;
+
+    if (Platform.isAndroid) {
+      final pStatus = await Permission.photos.request();
+      if (!pStatus.isGranted) {
+        await Permission.storage.request();
+      }
+    } else {
+      await Permission.photos.request();
+    }
     _checkStatuses();
   }
 
@@ -202,6 +230,14 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
                         icon: Icons.mic_none_rounded,
                         isGranted: _microphoneGranted,
                         onTap: () => _requestPermission(Permission.microphone),
+                      ),
+                      CommonSpaces.h10,
+                      _buildPermissionItem(
+                        title: 'Photos & Storage',
+                        description: 'Required to share, view, and save media and documents.',
+                        icon: Icons.photo_library_outlined,
+                        isGranted: _storageGranted,
+                        onTap: _requestStoragePermission,
                       ),
                       CommonSpaces.h16,
                     ],

@@ -40,8 +40,22 @@ Map<String, dynamic> _normalizeChatJson(Map<String, dynamic> json) {
   normalizedJson['_id'] = (json['id'] ?? json['_id'])?.toString() ?? '';
   
   // Normalize unread_count
-  final unreadVal = json['unread_count'] ?? json['unreadCount'];
+  final unreadVal = json['unread_count'] ?? json['unreadCount'] ?? json['unread'];
   normalizedJson['unread_count'] = unreadVal is num ? unreadVal.toInt() : (int.tryParse(unreadVal?.toString() ?? '') ?? 0);
+
+  // Normalize group attributes
+  if (json.containsKey('isGroup') && !json.containsKey('is_group')) {
+    normalizedJson['is_group'] = json['isGroup'];
+  }
+  if (json.containsKey('groupName') && !json.containsKey('group_name')) {
+    normalizedJson['group_name'] = json['groupName'];
+  }
+  if (json.containsKey('groupDescription') && !json.containsKey('group_description')) {
+    normalizedJson['group_description'] = json['groupDescription'];
+  }
+  if (json.containsKey('isMuted') && !json.containsKey('is_muted')) {
+    normalizedJson['is_muted'] = json['isMuted'];
+  }
 
   // Ensure nested objects are handled
   if (json['recipient'] is Map) {
@@ -62,8 +76,9 @@ Map<String, dynamic> _normalizeChatJson(Map<String, dynamic> json) {
     }
   }
   
-  if (json['last_message'] is Map) {
-    normalizedJson['last_message'] = Map<String, dynamic>.from(json['last_message'] as Map);
+  final rawLastMsg = json['last_message'] ?? json['lastMessage'];
+  if (rawLastMsg is Map) {
+    normalizedJson['last_message'] = Map<String, dynamic>.from(rawLastMsg);
   }
 
   if (json['themeColor'] is Map) {

@@ -2938,11 +2938,77 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   void _openInAppViewer(BuildContext context) {
     String? path = attachmentPath;
+
+    final bool isDeadLocal = path != null &&
+        !kIsWeb &&
+        (path.startsWith('/') || path.startsWith('file://')) &&
+        !File(path.replaceAll('file://', '')).existsSync();
+
+    if (isDeadLocal) {
+      // 1. Try finding by filename in persistent app storage
+      final rawName = attachmentName ?? path.split('/').last;
+      var cleanName = rawName;
+      while (cleanName.toLowerCase().endsWith('.enc')) {
+        cleanName = cleanName.substring(0, cleanName.length - 4);
+      }
+      path = null;
+
+      final List<String> dirCandidates = [
+        '${Directory.systemTemp.parent.path}/Documents/Schat',
+        if (Platform.isAndroid) '/storage/emulated/0/Download/Schat',
+        if (Platform.isAndroid) '/storage/emulated/0/Schat',
+      ];
+
+      for (final dirPath in dirCandidates) {
+        try {
+          final dir = Directory(dirPath);
+          if (dir.existsSync()) {
+            final f1 = File('${dir.path}/$rawName');
+            final f2 = File('${dir.path}/$cleanName');
+            final f3 = File('${dir.path}/$cleanName.enc');
+            if (f1.existsSync()) {
+              path = f1.path;
+              break;
+            } else if (f2.existsSync()) {
+              path = f2.path;
+              break;
+            } else if (f3.existsSync()) {
+              path = f3.path;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. If null or dead, check if message is a JSON string containing fileKey / url
+    String? mediaIdToUse = messageId;
     if (path == null || path.isEmpty) {
-      if (message.isNotEmpty && (message.startsWith('http') || message.startsWith('/') || message.contains('.'))) {
+      if (message.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(message);
+          if (decoded is Map) {
+            final key = (decoded['fileKey'] ?? decoded['file_key'] ?? decoded['url'] ?? decoded['mediaUrl'] ?? decoded['media_url'])?.toString();
+            if (key != null && key.isNotEmpty && !key.startsWith('/')) {
+              path = key;
+            }
+            final mId = (decoded['mediaId'] ?? decoded['media_id'])?.toString();
+            if (mId != null && mId.isNotEmpty) {
+              mediaIdToUse = mId;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. If null, check message text fallback
+    if (path == null || path.isEmpty) {
+      if (message.isNotEmpty && (message.startsWith('http') || (!message.startsWith('/') && message.contains('.')))) {
         path = message;
       }
     }
+
+    // 4. If null, check attachmentBytes
     if ((path == null || path.isEmpty) && attachmentBytes != null) {
       try {
         final tempDir = Directory.systemTemp;
@@ -2959,14 +3025,20 @@ class _MessageBubbleState extends State<MessageBubble> {
       return;
     }
     final String url = SecureAttachmentService.resolveFullUrl(path);
-    final bool isLocalFile = !kIsWeb && File(url).existsSync();
+    final bool isLocalFile = !kIsWeb && (url.startsWith('file://') || File(url.replaceAll('file://', '')).existsSync());
+
+    var cleanDisplayName = attachmentName ?? 'File';
+    while (cleanDisplayName.toLowerCase().endsWith('.enc')) {
+      cleanDisplayName = cleanDisplayName.substring(0, cleanDisplayName.length - 4);
+    }
+    if (cleanDisplayName.isEmpty) cleanDisplayName = 'attachment';
 
     InAppViewer.show(
       context,
-      url: url,
-      fileName: attachmentName ?? 'File',
+      url: url.isNotEmpty ? url : path,
+      fileName: cleanDisplayName,
       type: type,
-      mediaId: messageId,
+      mediaId: mediaIdToUse,
       allowShare: (widget.isReadOnly || isViewOnce) ? false : allowShare,
       allowDownload: (widget.isReadOnly || isViewOnce) ? false : allowDownload,
       isViewOnce: isViewOnce,
@@ -3126,14 +3198,21 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildFileBubbleCard(BuildContext context) {
-    final String fileName = attachmentName ?? (type == 'video' ? 'Video' : 'File');
+    final String rawFileName = attachmentName ?? (type == 'video' ? 'Video' : 'File');
+    var cleanFileName = rawFileName;
+    while (cleanFileName.toLowerCase().endsWith('.enc')) {
+      cleanFileName = cleanFileName.substring(0, cleanFileName.length - 4);
+    }
+    final String fileName = cleanFileName.isNotEmpty ? cleanFileName : rawFileName;
     final String extension = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
     
     Color typeColor;
     String badgeText;
     IconData fileIcon;
 
-    if (type == 'video') {
+    final isVideoExt = ['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(extension);
+
+    if (type == 'video' || isVideoExt) {
       typeColor = const Color(0xFF1565C0); // Blue for video
       badgeText = extension.isNotEmpty ? extension.toUpperCase() : 'VIDEO';
       fileIcon = CommonIcons.playCircle;
@@ -3548,6 +3627,7 @@ class _VideoMessagePreview extends StatefulWidget {
 
 class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   VideoPlayerController? _controller;
+  File? _tempDecryptedFile;
   bool _isInitialized = false;
   bool _hasError = false;
 
@@ -3580,14 +3660,41 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       } catch (_) {}
       _controller = null;
     }
+    if (_tempDecryptedFile != null) {
+      try {
+        await getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+      } catch (_) {}
+      _tempDecryptedFile = null;
+    }
 
     try {
       final url = _resolveUrl(widget.url!);
-      final bool isLocal = !kIsWeb && File(url).existsSync();
+      final cleanPath = url.replaceAll('file://', '');
+      final bool isLocal = !kIsWeb && File(cleanPath).existsSync();
 
-      _controller = isLocal
-          ? VideoPlayerController.file(File(url))
-          : VideoPlayerController.networkUrl(Uri.parse(url));
+      String playUrl = isLocal ? cleanPath : url;
+      if (isLocal && (cleanPath.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')))) {
+        try {
+          var cleanName = cleanPath.split('/').last;
+          while (cleanName.toLowerCase().endsWith('.enc')) {
+            cleanName = cleanName.substring(0, cleanName.length - 4);
+          }
+          if (cleanName.isEmpty) cleanName = 'video_preview.mp4';
+          final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+            encryptedFilePath: cleanPath,
+            originalFileName: cleanName,
+          );
+          _tempDecryptedFile = decFile;
+          playUrl = decFile.path;
+        } catch (e) {
+          debugPrint('Error decrypting video preview: $e');
+        }
+      }
+
+      final bool isPlayLocal = !kIsWeb && File(playUrl).existsSync();
+      _controller = isPlayLocal
+          ? VideoPlayerController.file(File(playUrl))
+          : VideoPlayerController.networkUrl(Uri.parse(playUrl));
 
       await _controller!.initialize();
       if (mounted) {
@@ -3609,6 +3716,11 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   @override
   void dispose() {
     _controller?.dispose();
+    if (_tempDecryptedFile != null) {
+      try {
+        getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+      } catch (_) {}
+    }
     super.dispose();
   }
 

@@ -9,6 +9,10 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/last_message_model.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
+import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/injection.dart';
 import 'chats_event.dart';
 import 'chats_state.dart';
 
@@ -40,6 +44,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<MessageDeleted>(_onMessageDeleted);
     on<UpdateDisappearingTimer>(_onUpdateDisappearingTimer);
     on<UpdateMessageStatus>(_onUpdateMessageStatus);
+    on<MarkConversationAsRead>(_onMarkConversationAsRead);
 
     _listenToSocket();
   }
@@ -106,6 +111,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 updatedAt: updatedAt ?? DateTime.now().toIso8601String(),
                 unreadCount: unreadCount,
               ));
+              // Cache incoming message immediately so opening the chat shows it with zero delay!
+              ChatMessageCacheHelper.appendRawMessage(convId, Map<String, dynamic>.from(message));
             }
           }
         } else if (type == 'message_edited' || type == 'edit_message') {
@@ -117,6 +124,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 conversationId: convId,
                 message: LastMessageModel.fromJson(Map<String, dynamic>.from(message)),
               ));
+              ChatMessageCacheHelper.appendRawMessage(convId, Map<String, dynamic>.from(message));
             }
           }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
@@ -124,6 +132,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
           if (convId != null && msgId != null) {
             add(MessageDeleted(conversationId: convId, messageId: msgId));
+            ChatMessageCacheHelper.markMessageDeleted(convId, msgId);
           }
         } else if (type == 'conversation_deleted') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -385,14 +394,40 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             finalChats = chats.map((newChat) {
               final existing = existingMap[newChat.id] ?? existingUserMap[newChat.recipient.id];
               if (existing != null) {
+                var merged = newChat;
+
+                // 1. Respect server profile picture if present, otherwise fallback to existing
                 final existingPic = existing.recipient.profilePictureUrl;
-                if (existingPic != null && existingPic.isNotEmpty) {
-                  return newChat.copyWith(
-                    recipient: newChat.recipient.copyWith(
+                final newPic = newChat.recipient.profilePictureUrl;
+                if ((newPic == null || newPic.isEmpty) && existingPic != null && existingPic.isNotEmpty) {
+                  merged = merged.copyWith(
+                    recipient: merged.recipient.copyWith(
                       profilePictureUrl: existingPic,
                     ),
                   );
                 }
+
+                // 2. Preserve newer local lastMessage (optimistic send) if backend query hasn't caught up
+                final existingActivity = getChatActivityTime(existing);
+                final newActivity = getChatActivityTime(newChat);
+                if (existingActivity.isAfter(newActivity) && existing.lastMessage != null) {
+                  merged = merged.copyWith(
+                    lastMessage: existing.lastMessage,
+                    updatedAt: existing.updatedAt,
+                  );
+                }
+
+                // 3. Avoid resurrecting unreadCount if conversation was marked read locally and no newer message arrived
+                if (existing.unreadCount == 0 && !newActivity.isAfter(existingActivity)) {
+                  merged = merged.copyWith(unreadCount: 0);
+                }
+
+                // 4. Preserve active typing indicator
+                if (existing.isTyping) {
+                  merged = merged.copyWith(isTyping: true);
+                }
+
+                return merged;
               }
               return newChat;
             }).toList();
@@ -405,6 +440,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           final sortedChats = finalChats
             ..sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
           emit(ChatsLoaded(sortedChats));
+          _prefetchUnreadMessages(sortedChats);
         },
         failure: (error, statusCode) {
           debugPrint('DEBUG: ChatsBloc _onFetchChats FAILURE: $error, status: $statusCode');
@@ -418,6 +454,26 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       if (state is! ChatsLoaded) {
         emit(ChatsError(e.toString()));
       }
+    }
+  }
+
+  void _onMarkConversationAsRead(MarkConversationAsRead event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (_isSameConversation(chat.id, event.conversationId)) {
+          final lastMsg = chat.lastMessage;
+          final updatedLastMsg = (lastMsg != null && (!lastMsg.isRead || lastMsg.status != 'read'))
+              ? lastMsg.copyWith(isRead: true, status: 'read')
+              : lastMsg;
+          return chat.copyWith(
+            unreadCount: 0,
+            lastMessage: updatedLastMsg,
+          );
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
     }
   }
 
@@ -450,6 +506,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       } else {
         add(const FetchChats());
       }
+    } else {
+      add(const FetchChats());
     }
   }
 
@@ -645,6 +703,49 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         emit(ChatsError(error));
       },
     );
+  }
+
+  void _prefetchUnreadMessages(List<ChatModel> chats) {
+    Future.microtask(() async {
+      for (var i = 0; i < chats.length; i++) {
+        final c = chats[i];
+        if (c.id.isNotEmpty && (c.unreadCount > 0 || c.lastMessage != null)) {
+          // 1. Immediately cache the lastMessage if available
+          if (c.lastMessage != null && c.lastMessage!.id.isNotEmpty) {
+            final lm = c.lastMessage!;
+            final msgModel = MessageModel(
+              id: lm.id,
+              conversationId: c.id,
+              senderId: lm.senderId,
+              content: lm.content,
+              mediaUrl: lm.mediaUrl,
+              mediaType: lm.mediaType,
+              messageType: lm.mediaType ?? 'text',
+              isDeleted: lm.isDeleted,
+              isRead: lm.isRead,
+              isDelivered: lm.isDelivered,
+              createdAt: lm.createdAt,
+              updatedAt: lm.updatedAt,
+            );
+            await ChatMessageCacheHelper.appendMessage(c.id, msgModel);
+          }
+
+          // 2. If there are unread messages OR this is among top 5 recent chats,
+          // prefetch latest 50 messages so chat opens instantly with all messages
+          final shouldPrefetch = c.unreadCount > 0 || i < 5;
+          if (shouldPrefetch) {
+            try {
+              final chatRepo = getIt<ChatRepository>();
+              final msgs = await chatRepo.getMessages(c.id, limit: 50, skip: 0);
+              if (msgs.isNotEmpty) {
+                await ChatMessageCacheHelper.saveMessages(c.id, msgs);
+                debugPrint('ChatsBloc: Prefetched ${msgs.length} messages for conv ${c.id}');
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    });
   }
 
   @override

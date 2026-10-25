@@ -69,6 +69,60 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   bool _isLoadingList = false;
   String? _listErrorMessage;
   ScheduledMessageModel? _editingMessage;
+  static final Map<String, String> _scheduledLocalPathCache = {};
+
+  String? _findLocalFileForScheduledMessage(ScheduledMessageModel msg) {
+    if (kIsWeb) return null;
+
+    // 1. Direct check if msg has localPath or filePath in rawContent
+    final direct = (msg.rawContent['localPath'] ??
+            msg.rawContent['local_path'] ??
+            msg.rawContent['filePath'] ??
+            msg.rawContent['file_path'])
+        ?.toString();
+    if (direct != null && direct.isNotEmpty && File(direct).existsSync()) {
+      if (msg.fileKey != null) _scheduledLocalPathCache[msg.fileKey!] = direct;
+      if (msg.fileName != null) _scheduledLocalPathCache[msg.fileName!] = direct;
+      return direct;
+    }
+
+    // 2. Direct check if msg.fileKey is a local path
+    if (msg.fileKey != null && msg.fileKey!.isNotEmpty) {
+      final clean = msg.fileKey!.replaceAll('file://', '').trim();
+      if ((clean.startsWith('/') || clean.contains(':\\')) && File(clean).existsSync()) {
+        _scheduledLocalPathCache[msg.fileKey!] = clean;
+        return clean;
+      }
+    }
+
+    // 3. Cache lookup
+    if (msg.fileKey != null && _scheduledLocalPathCache.containsKey(msg.fileKey)) {
+      final p = _scheduledLocalPathCache[msg.fileKey]!;
+      if (File(p).existsSync()) return p;
+    }
+    if (msg.fileName != null && _scheduledLocalPathCache.containsKey(msg.fileName)) {
+      final p = _scheduledLocalPathCache[msg.fileName]!;
+      if (File(p).existsSync()) return p;
+    }
+    final keyLast = msg.fileKey?.split('/').last;
+    if (keyLast != null && _scheduledLocalPathCache.containsKey(keyLast)) {
+      final p = _scheduledLocalPathCache[keyLast]!;
+      if (File(p).existsSync()) return p;
+    }
+
+    // 4. Storage probe via SecureAttachmentService
+    final recovered = SecureAttachmentService.findLocalFile(
+      pathOrKey: msg.fileKey,
+      fileName: msg.fileName,
+    );
+    if (recovered != null && File(recovered).existsSync()) {
+      if (msg.fileKey != null) _scheduledLocalPathCache[msg.fileKey!] = recovered;
+      if (msg.fileName != null) _scheduledLocalPathCache[msg.fileName!] = recovered;
+      return recovered;
+    }
+
+    return null;
+  }
 
   @override
   void initState() {
@@ -257,20 +311,21 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   }
 
   void _startEditing(ScheduledMessageModel message) {
+    final localPath = _findLocalFileForScheduledMessage(message);
     setState(() {
       _editingMessage = message;
       _messageController.text = message.text;
-      _attachedFile = null;
+      _attachedFile = (localPath != null && File(localPath).existsSync()) ? File(localPath) : null;
       _attachedFileName = message.fileName;
       _attachedFileSize = message.fileSize > 0 ? message.fileSize : null;
 
-      if (message.messageType == 'image') {
+      if (message.isImage) {
         _selectedType = ScheduledMessageType.image;
-      } else if (message.messageType == 'video') {
+      } else if (message.isVideo) {
         _selectedType = ScheduledMessageType.video;
-      } else if (message.messageType == 'document') {
+      } else if (message.isDocument) {
         _selectedType = ScheduledMessageType.document;
-      } else if (message.messageType == 'audio' || message.messageType == 'voice_note') {
+      } else if (message.isAudio) {
         _selectedType = ScheduledMessageType.audio;
       } else {
         _selectedType = ScheduledMessageType.text;
@@ -349,6 +404,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             fileSize = await _attachedFile!.length();
             mimeType = _getMimeType(_attachedFile!.path, typeStr);
 
+            if (fileName.toLowerCase().endsWith('.enc') || _attachedFile!.path.toLowerCase().endsWith('.enc')) {
+              try {
+                final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+                  filePath: _attachedFile!.path,
+                  fileName: fileName,
+                  explicitMediaType: typeStr,
+                );
+                fileName = normal.fileName;
+                fileSize = normal.fileSizeBytes;
+                mimeType = normal.mimeType;
+                _attachedFile = File(normal.filePath);
+              } catch (_) {}
+            }
+
             setState(() {
               _uploadProgress = 0.05;
               _uploadPercentage = 5;
@@ -358,9 +427,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             fileKey = await repo.uploadMedia(
               conversationId: widget.conversationId ?? _editingMessage!.conversationId,
               filePath: _attachedFile!.path,
-              fileName: fileName,
+              fileName: fileName ?? 'file',
               mediaType: _getMediaType(typeStr),
-              mimeType: mimeType,
+              mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
               fileSizeBytes: fileSize,
               onProgress: (p) {
                 if (mounted) {
@@ -380,7 +449,39 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 _uploadStatusText = 'Finalizing update... 95%';
               });
             }
+
+            if (_attachedFile != null && _attachedFile!.existsSync()) {
+              final localP = _attachedFile!.path;
+              if (fileName != null) {
+                _scheduledLocalPathCache[fileName] = localP;
+                SecureAttachmentService.cacheMediaMapping(key: fileName, localPath: localP);
+              }
+              if (fileKey != null && fileKey.isNotEmpty) {
+                _scheduledLocalPathCache[fileKey] = localP;
+                _scheduledLocalPathCache[fileKey.split('/').last] = localP;
+                SecureAttachmentService.cacheMediaMapping(key: fileKey, localPath: localP);
+                SecureAttachmentService.cacheMediaMapping(key: fileKey.split('/').last, localPath: localP);
+              }
+              try {
+                final p1 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+                  originalPath: localP,
+                  fileName: fileName ?? localP.split('/').last,
+                );
+                if (fileKey != null) {
+                  final p2 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+                    originalPath: localP,
+                    fileName: fileKey.split('/').last,
+                  );
+                  _scheduledLocalPathCache[fileKey] = p2;
+                }
+                if (fileName != null) _scheduledLocalPathCache[fileName] = p1;
+              } catch (_) {}
+            }
           }
+
+          final mediaId = SecureAttachmentService.findMediaId(fileKey) ??
+              SecureAttachmentService.findMediaId(fileName) ??
+              _editingMessage!.mediaId;
 
           final bool isMedia = _selectedType != ScheduledMessageType.text;
           final updatePayload = <String, dynamic>{
@@ -396,6 +497,10 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               'file_size': fileSize,
               'mimeType': mimeType,
               'mime_type': mimeType,
+              'mediaId': mediaId,
+              'media_id': mediaId,
+              'localPath': _attachedFile?.path,
+              'local_path': _attachedFile?.path,
             },
             'security': {
               'isLocked': false,
@@ -481,6 +586,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               fileSize = await _attachedFile!.length();
               mimeType = _getMimeType(_attachedFile!.path, typeStr);
 
+              if (fileName.toLowerCase().endsWith('.enc') || _attachedFile!.path.toLowerCase().endsWith('.enc')) {
+                try {
+                  final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+                    filePath: _attachedFile!.path,
+                    fileName: fileName,
+                    explicitMediaType: typeStr,
+                  );
+                  fileName = normal.fileName;
+                  fileSize = normal.fileSizeBytes;
+                  mimeType = normal.mimeType;
+                  _attachedFile = File(normal.filePath);
+                } catch (_) {}
+              }
+
               setState(() {
                 _uploadProgress = 0.05;
                 _uploadPercentage = 5;
@@ -490,9 +609,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               fileKey = await repo.uploadMedia(
                 conversationId: widget.conversationId ?? '',
                 filePath: _attachedFile!.path,
-                fileName: fileName,
+                fileName: fileName ?? 'file',
                 mediaType: _getMediaType(typeStr),
-                mimeType: mimeType,
+                mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
                 fileSizeBytes: fileSize,
                 onProgress: (p) {
                   if (mounted) {
@@ -512,7 +631,38 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   _uploadStatusText = 'Saving scheduled message... 95%';
                 });
               }
+
+              if (_attachedFile != null && _attachedFile!.existsSync()) {
+                final localP = _attachedFile!.path;
+                if (fileName != null) {
+                  _scheduledLocalPathCache[fileName] = localP;
+                  SecureAttachmentService.cacheMediaMapping(key: fileName, localPath: localP);
+                }
+                if (fileKey != null && fileKey.isNotEmpty) {
+                  _scheduledLocalPathCache[fileKey] = localP;
+                  _scheduledLocalPathCache[fileKey.split('/').last] = localP;
+                  SecureAttachmentService.cacheMediaMapping(key: fileKey, localPath: localP);
+                  SecureAttachmentService.cacheMediaMapping(key: fileKey.split('/').last, localPath: localP);
+                }
+                try {
+                  final p1 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+                    originalPath: localP,
+                    fileName: fileName ?? localP.split('/').last,
+                  );
+                  if (fileKey != null) {
+                    final p2 = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+                      originalPath: localP,
+                      fileName: fileKey.split('/').last,
+                    );
+                    _scheduledLocalPathCache[fileKey] = p2;
+                  }
+                  if (fileName != null) _scheduledLocalPathCache[fileName] = p1;
+                } catch (_) {}
+              }
             }
+
+            final mediaId = SecureAttachmentService.findMediaId(fileKey) ??
+                SecureAttachmentService.findMediaId(fileName);
 
             final bool isMedia = _selectedType != ScheduledMessageType.text;
             final requestData = <String, dynamic>{
@@ -532,6 +682,10 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 "file_size": fileSize,
                 "mimeType": mimeType,
                 "mime_type": mimeType,
+                "mediaId": mediaId,
+                "media_id": mediaId,
+                "localPath": _attachedFile?.path,
+                "local_path": _attachedFile?.path,
                 "duration": 0,
                 "isForwarded": false,
                 "forwardCount": 0,
@@ -1494,6 +1648,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Image',
                     type: 'image',
+                    mediaId: _editingMessage?.mediaId,
                   );
                 }
               },
@@ -1652,6 +1807,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Video',
                     type: 'video',
+                    mediaId: _editingMessage?.mediaId,
                   );
                 }
               },
@@ -1803,6 +1959,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Document',
                     type: 'file',
+                    mediaId: _editingMessage?.mediaId,
                   );
                 }
               },
@@ -1826,6 +1983,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                       url: viewUrl,
                       fileName: fileName.isNotEmpty ? fileName : 'Document',
                       type: 'file',
+                      mediaId: _editingMessage?.mediaId,
                     );
                   }
                 },
@@ -1919,6 +2077,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Audio',
                     type: 'audio',
+                    mediaId: _editingMessage?.mediaId,
                   );
                 }
               },
@@ -1942,6 +2101,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                       url: viewUrl,
                       fileName: fileName.isNotEmpty ? fileName : 'Audio',
                       type: 'audio',
+                      mediaId: _editingMessage?.mediaId,
                     );
                   }
                 },
@@ -2133,6 +2293,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
   Widget _buildMediaPreview(BuildContext context, ScheduledMessageModel msg) {
     final isDark = context.colors.isDark;
+    final normType = msg.normalizedType;
+    final localPath = _findLocalFileForScheduledMessage(msg);
     final rawPath = msg.fileKey?.isNotEmpty == true
         ? msg.fileKey
         : (msg.thumbnail?.isNotEmpty == true
@@ -2150,16 +2312,14 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     final fileName = msg.fileName?.isNotEmpty == true
         ? msg.fileName!
         : (rawPath != null && rawPath.isNotEmpty ? rawPath.split('/').last : '');
-    final isLocal = !kIsWeb &&
-        ((resolvedUrl != null && File(resolvedUrl).existsSync()) ||
-            (rawPath != null && File(rawPath).existsSync()));
-    final localPath = isLocal
-        ? (resolvedUrl != null && File(resolvedUrl).existsSync() ? resolvedUrl : rawPath)
-        : null;
-    final effectiveUrl = localPath ?? resolvedUrl ?? rawPath ?? '';
+    final isLocal = localPath != null && File(localPath).existsSync();
+    final effectiveUrl = isLocal ? localPath : (resolvedUrl ?? rawPath ?? '');
+    final mediaId = msg.mediaId ??
+        SecureAttachmentService.findMediaId(msg.fileKey) ??
+        SecureAttachmentService.findMediaId(fileName);
 
     // 1. Image Preview
-    if (msg.messageType == 'image') {
+    if (normType == 'image') {
       return GestureDetector(
         onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
@@ -2167,6 +2327,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Image',
                   type: 'image',
+                  mediaId: mediaId,
                 )
             : null,
         child: Container(
@@ -2190,9 +2351,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        isLocal && localPath != null
+                        isLocal
                             ? Image.file(
-                                File(localPath),
+                                File(localPath!),
                                 fit: BoxFit.cover,
                                 errorBuilder: (c, o, s) => _buildMediaFallback(
                                     context, Icons.broken_image_rounded, 'Image Preview Unavailable'),
@@ -2286,7 +2447,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
 
     // 2. Audio Preview
-    if (msg.messageType == 'audio' || msg.messageType == 'voice_note') {
+    if (normType == 'audio') {
       return GestureDetector(
         onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
@@ -2294,6 +2455,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Audio',
                   type: 'audio',
+                  mediaId: mediaId,
                 )
             : null,
         child: Container(
@@ -2307,12 +2469,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(11),
                 decoration: const BoxDecoration(
                   color: Color(0xFF9C27B0),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.audiotrack_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.audiotrack_rounded, color: Colors.white, size: 22),
               ),
               CommonSpaces.w12,
               Expanded(
@@ -2328,18 +2490,22 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                         color: context.colors.textPrimary,
                       ),
                     ),
-                    CommonSpaces.h2,
+                    const SizedBox(height: 3),
                     Row(
                       children: [
                         const Icon(Icons.play_circle_outline_rounded, size: 14, color: Color(0xFF9C27B0)),
                         CommonSpaces.w4,
-                        Text(
-                          msg.fileSize > 0
-                              ? '${_formatFileSize(msg.fileSize)} • Tap to play audio'
-                              : 'Tap to play audio preview',
-                          style: context.bodySmall.copyWith(
-                            color: context.colors.textSecondary,
-                            fontSize: 11,
+                        Expanded(
+                          child: Text(
+                            msg.fileSize > 0
+                                ? '${_formatFileSize(msg.fileSize)} • Tap to play audio'
+                                : 'Tap to play audio preview',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.bodySmall.copyWith(
+                              color: context.colors.textSecondary,
+                              fontSize: 11,
+                            ),
                           ),
                         ),
                       ],
@@ -2377,7 +2543,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
 
     // 3. Video Preview
-    if (msg.messageType == 'video') {
+    if (normType == 'video') {
       return GestureDetector(
         onTap: effectiveUrl.isNotEmpty
             ? () => InAppViewer.show(
@@ -2385,6 +2551,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Video',
                   type: 'video',
+                  mediaId: mediaId,
                 )
             : null,
         child: Container(
@@ -2400,27 +2567,35 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                height: 150,
+                height: 160,
                 width: double.infinity,
-                color: const Color(0xFF0F172A),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFF0F172A), const Color(0xFF1E293B)]
+                        : [const Color(0xFF1E293B), const Color(0xFF334155)],
+                  ),
+                ),
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    const Icon(Icons.videocam_rounded, color: Colors.white24, size: 56),
+                    const Icon(Icons.videocam_rounded, color: Colors.white24, size: 64),
                     Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade600,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.redAccent,
-                            blurRadius: 10,
-                            spreadRadius: 1,
+                            color: Colors.red.withValues(alpha: 0.5),
+                            blurRadius: 16,
+                            spreadRadius: 2,
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28),
+                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
                     ),
                     Positioned(
                       top: 8,
@@ -2448,6 +2623,26 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                         ),
                       ),
                     ),
+                    if (isLocal)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Ready to Play',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -2455,7 +2650,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.videocam_outlined, size: 14, color: Colors.red),
+                    const Icon(Icons.videocam_outlined, size: 15, color: Colors.red),
                     CommonSpaces.w6,
                     Expanded(
                       child: Text(
@@ -2486,7 +2681,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
 
     // 4. Document / Generic Attachment Preview
-    if (msg.fileName != null || msg.fileKey != null || msg.messageType == 'document' || msg.messageType == 'file' || rawPath != null) {
+    if (normType == 'document' || msg.fileName != null || msg.fileKey != null || rawPath != null) {
       final ext = fileName.contains('.') ? fileName.split('.').last.toUpperCase() : 'DOC';
 
       return GestureDetector(
@@ -2496,6 +2691,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Document',
                   type: 'file',
+                  mediaId: mediaId,
                 )
             : null,
         child: Container(
@@ -2509,12 +2705,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(11),
                 decoration: const BoxDecoration(
                   color: Color(0xFFFF9800),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.description_rounded, color: Colors.white, size: 20),
+                child: const Icon(Icons.description_rounded, color: Colors.white, size: 22),
               ),
               CommonSpaces.w12,
               Expanded(
@@ -2552,11 +2748,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                         ),
                       ],
                     ),
-                    CommonSpaces.h2,
+                    const SizedBox(height: 3),
                     Text(
                       msg.fileSize > 0
                           ? '${_formatFileSize(msg.fileSize)} • Tap to view document'
-                          : 'Document Attachment (Tap to view)',
+                          : 'Tap to view document preview',
                       style: context.bodySmall.copyWith(
                         color: context.colors.textSecondary,
                         fontSize: 11,
@@ -2623,19 +2819,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
   Widget _buildScheduledItemCard(BuildContext context, ScheduledMessageModel msg) {
     final isDark = context.colors.isDark;
+    final normType = msg.normalizedType;
     IconData typeIcon;
     Color typeColor;
 
-    if (msg.messageType == 'image') {
+    if (normType == 'image') {
       typeIcon = CommonIcons.gallery;
       typeColor = const Color(0xFF2196F3);
-    } else if (msg.messageType == 'document') {
+    } else if (normType == 'document') {
       typeIcon = CommonIcons.document;
       typeColor = const Color(0xFFFF9800);
-    } else if (msg.messageType == 'audio' || msg.messageType == 'voice_note') {
+    } else if (normType == 'audio') {
       typeIcon = CommonIcons.audio;
       typeColor = const Color(0xFF9C27B0);
-    } else if (msg.messageType == 'video') {
+    } else if (normType == 'video') {
       typeIcon = Icons.videocam_rounded;
       typeColor = Colors.red;
     } else {
@@ -2643,6 +2840,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       typeColor = context.colors.primary;
     }
 
+    final localPath = _findLocalFileForScheduledMessage(msg);
     final rawPath = msg.fileKey?.isNotEmpty == true
         ? msg.fileKey
         : (msg.thumbnail?.isNotEmpty == true
@@ -2660,14 +2858,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     final fileName = msg.fileName?.isNotEmpty == true
         ? msg.fileName!
         : (rawPath != null && rawPath.isNotEmpty ? rawPath.split('/').last : '');
-    final hasMedia = msg.messageType != 'text' || (rawPath != null && rawPath.isNotEmpty) || (fileName.isNotEmpty);
-    final isLocal = !kIsWeb &&
-        ((resolvedUrl != null && File(resolvedUrl).existsSync()) ||
-            (rawPath != null && File(rawPath).existsSync()));
-    final localPath = isLocal
-        ? (resolvedUrl != null && File(resolvedUrl).existsSync() ? resolvedUrl : rawPath)
-        : null;
-    final effectiveUrl = localPath ?? resolvedUrl ?? rawPath ?? '';
+    final hasMedia = msg.hasMedia;
+    final isLocal = localPath != null && File(localPath).existsSync();
+    final effectiveUrl = isLocal ? localPath : (resolvedUrl ?? rawPath ?? '');
+    final mediaId = msg.mediaId ??
+        SecureAttachmentService.findMediaId(msg.fileKey) ??
+        SecureAttachmentService.findMediaId(fileName);
 
     return Container(
       decoration: BoxDecoration(
@@ -2776,10 +2972,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                       InAppViewer.show(
                         context,
                         url: effectiveUrl,
-                        fileName: fileName.isNotEmpty ? fileName : msg.messageType,
-                        type: (msg.messageType == 'document' || msg.messageType == 'file')
-                            ? 'file'
-                            : msg.messageType,
+                        fileName: fileName.isNotEmpty ? fileName : normType,
+                        type: normType == 'document' ? 'file' : normType,
+                        mediaId: mediaId,
                       );
                     },
                     icon: const Icon(Icons.visibility_outlined, size: 14, color: Color(0xFF2196F3)),

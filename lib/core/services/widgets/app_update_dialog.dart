@@ -34,7 +34,7 @@ class AppUpdateDialog extends StatefulWidget {
   }) async {
     await showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (ctx) => AppUpdateDialog(
         updater: updater,
         releaseNotes: releaseNotes,

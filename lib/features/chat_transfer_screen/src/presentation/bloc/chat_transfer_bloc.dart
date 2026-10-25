@@ -9,6 +9,8 @@ import 'package:schat/features/chat_transfer_screen/src/domain/usecases/get_targ
 import 'package:schat/features/chat_transfer_screen/src/domain/usecases/respond_chat_view_request_usecase.dart';
 import 'package:schat/features/chat_transfer_screen/src/domain/usecases/revoke_chat_view_request_usecase.dart';
 import 'package:schat/features/chat_transfer_screen/src/domain/usecases/send_chat_view_request_usecase.dart';
+import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'chat_transfer_event.dart';
 import 'chat_transfer_state.dart';
 
@@ -219,9 +221,11 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
     final result = await _getTargetConversationsUseCase.execute(targetUserId: event.targetUserId);
     result.when(
       success: (conversations) {
+        final sortedConversations = List<ChatModel>.from(conversations)
+          ..sort((a, b) => ChatsBloc.getChatActivityTime(b).compareTo(ChatsBloc.getChatActivityTime(a)));
         emit(state.copyWith(
           status: ChatTransferStatus.success,
-          monitoredConversations: conversations,
+          monitoredConversations: sortedConversations,
         ));
       },
       failure: (message, statusCode) {

@@ -24,6 +24,9 @@ import android.media.MediaScannerConnection
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.app.Activity
+import android.media.projection.MediaProjectionManager
+import android.util.DisplayMetrics
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
@@ -47,6 +50,8 @@ class MainActivity : FlutterActivity() {
     private var lastScreenshotUri: Uri? = null
     private var lastScreenshotPath: String? = null
     private var lastScreenshotMediaId: Long = -1L
+    private val REQUEST_SCREEN_CAPTURE = 4040
+    private var pendingScreenRecordResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         if (isVoiceOrAssistantTrigger(intent)) {
@@ -65,6 +70,62 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         bringActivityToFront()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_SCREEN_CAPTURE) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                val width: Int
+                val height: Int
+                val densityDpi: Int
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val bounds = windowManager.currentWindowMetrics.bounds
+                    width = bounds.width()
+                    height = bounds.height()
+                    densityDpi = resources.configuration.densityDpi
+                } else {
+                    val metrics = DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay.getRealMetrics(metrics)
+                    width = metrics.widthPixels
+                    height = metrics.heightPixels
+                    densityDpi = metrics.densityDpi
+                }
+
+                ScreenRecordService.onRecordingStarted = {
+                    runOnUiThread {
+                        pendingScreenRecordResult?.success(true)
+                        pendingScreenRecordResult = null
+                    }
+                }
+                ScreenRecordService.onRecordingFailed = { err ->
+                    runOnUiThread {
+                        pendingScreenRecordResult?.error("RECORD_ERROR", err, null)
+                        pendingScreenRecordResult = null
+                    }
+                }
+
+                val serviceIntent = Intent(this, ScreenRecordService::class.java).apply {
+                    action = ScreenRecordService.ACTION_START
+                    putExtra(ScreenRecordService.EXTRA_RESULT_CODE, resultCode)
+                    putExtra(ScreenRecordService.EXTRA_DATA, data)
+                    putExtra(ScreenRecordService.EXTRA_WIDTH, width)
+                    putExtra(ScreenRecordService.EXTRA_HEIGHT, height)
+                    putExtra(ScreenRecordService.EXTRA_DPI, densityDpi)
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+            } else {
+                pendingScreenRecordResult?.error("CANCELLED", "Screen recording permission was not granted by user", null)
+                pendingScreenRecordResult = null
+            }
+        }
     }
 
     override fun onProvideAssistContent(outContent: android.app.assist.AssistContent?) {
@@ -183,6 +244,22 @@ class MainActivity : FlutterActivity() {
                     } else {
                         result.error("INVALID_ARGS", "bytes cannot be null", null)
                     }
+                }
+                "startInAppRecording" -> {
+                    // Do not show MediaProjection dialog / screen share popup
+                    result.success(true)
+                }
+                "stopInAppRecording" -> {
+                    if (ScreenRecordService.isRecording) {
+                        ScreenRecordService.stopRecording(this) { savedPath ->
+                            result.success(savedPath)
+                        }
+                    } else {
+                        result.success(null)
+                    }
+                }
+                "isInAppRecordingActive" -> {
+                    result.success(ScreenRecordService.isRecording)
                 }
                 "scanFile" -> {
                     val path = call.argument<String>("path")
@@ -586,57 +663,68 @@ class MainActivity : FlutterActivity() {
 
     private fun saveLatestScreenRecordingToSchat(recordedSinceTimestamp: Long): String? {
         try {
-            val schatFolder = File("/storage/emulated/0/Download/Schat")
-            if (!schatFolder.exists()) {
-                schatFolder.mkdirs()
-            }
-
+            android.util.Log.d("ScreenProtection", "saveLatestScreenRecordingToSchat started, recordedSinceTimestamp=$recordedSinceTimestamp")
             var latestUri: Uri? = null
             var latestFile: File? = null
             var newestTimestamp = 0L
 
-            // 1. Check direct directories on storage (including Vivo/iQOO Pictures/Screenshots)
+            // 1. Check direct directories on storage (including Infinix, Vivo/iQOO, Xiaomi, Samsung)
             val candidateDirs = listOf(
+                File("/storage/emulated/0/Movies/ScreenRecord"),
+                File("/storage/emulated/0/Movies/Screenrecord"),
+                File("/storage/emulated/0/DCIM/ScreenRecord"),
+                File("/storage/emulated/0/Pictures/ScreenRecord"),
+                File("/storage/emulated/0/Pictures/Screenshot"),
+                File("/storage/emulated/0/DCIM/Screenshots"),
                 File("/storage/emulated/0/Pictures/Screenshots"),
+                File("/storage/emulated/0/Recordings/Screen"),
+                File("/storage/emulated/0/Recordings"),
                 File("/storage/emulated/0/Pictures/Screenrecords"),
                 File("/storage/emulated/0/Pictures"),
                 File("/storage/emulated/0/Movies/Screenrecords"),
+                File("/storage/emulated/0/Movies/Screenshots"),
                 File("/storage/emulated/0/Movies"),
                 File("/storage/emulated/0/DCIM/Screenrecords"),
-                File("/storage/emulated/0/DCIM/Screenshots"),
+                File("/storage/emulated/0/DCIM/Camera"),
                 File("/storage/emulated/0/DCIM"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots"),
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenrecords"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), ""),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "ScreenRecord"),
                 File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Screenrecords"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), ""),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenrecords"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "")
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "")
             )
 
             for (dir in candidateDirs) {
-                if (dir.exists() && dir.isDirectory) {
-                    val files = dir.listFiles() ?: continue
-                    for (f in files) {
-                        if (f.isFile && f.extension.equals("mp4", ignoreCase = true)) {
-                            val lm = f.lastModified()
-                            if (lm > newestTimestamp && lm >= (recordedSinceTimestamp - 180000L)) {
-                                newestTimestamp = lm
-                                latestFile = f
+                try {
+                    if (dir.exists() && dir.isDirectory) {
+                        val files = dir.listFiles() ?: continue
+                        for (f in files) {
+                            if (f.isFile && f.extension.equals("mp4", ignoreCase = true) && !f.name.startsWith(".trashed") && f.length() > 50000L) {
+                                val lm = f.lastModified()
+                                if (lm > newestTimestamp && (lm >= (recordedSinceTimestamp - 300000L) || (System.currentTimeMillis() - lm) < 900000L)) {
+                                    if (!f.absolutePath.contains("/Download/Schat/") && !f.absolutePath.contains("/Movies/Schat/")) {
+                                        newestTimestamp = lm
+                                        latestFile = f
+                                        android.util.Log.d("ScreenProtection", "Found candidate file: ${f.absolutePath}, size=${f.length()}, timestamp=$lm")
+                                    }
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    // Ignored if scoped storage blocks dir.listFiles()
                 }
             }
 
-            // 2. Also query MediaStore.Video.Media
+            // 2. Query MediaStore.Video.Media
             try {
                 val projection = arrayOf(
                     MediaStore.Video.Media._ID,
                     MediaStore.Video.Media.DISPLAY_NAME,
                     MediaStore.Video.Media.DATA,
                     MediaStore.Video.Media.DATE_ADDED,
-                    MediaStore.Video.Media.DATE_MODIFIED
+                    MediaStore.Video.Media.DATE_MODIFIED,
+                    MediaStore.Video.Media.SIZE
                 )
                 val cursor = contentResolver.query(
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
@@ -649,66 +737,160 @@ class MainActivity : FlutterActivity() {
                     while (it.moveToNext()) {
                         val idIndex = it.getColumnIndex(MediaStore.Video.Media._ID)
                         val dataIndex = it.getColumnIndex(MediaStore.Video.Media.DATA)
-                        val dateIndex = it.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                        val dateAddedIndex = it.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
+                        val dateModifiedIndex = it.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
+                        val sizeIndex = it.getColumnIndex(MediaStore.Video.Media.SIZE)
 
                         val id = if (idIndex >= 0) it.getLong(idIndex) else -1L
                         val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
-                        val date = if (dateIndex >= 0) it.getLong(dateIndex) * 1000L else 0L
+                        val dateAdded = if (dateAddedIndex >= 0) it.getLong(dateAddedIndex) * 1000L else 0L
+                        val dateModified = if (dateModifiedIndex >= 0) it.getLong(dateModifiedIndex) * 1000L else 0L
+                        val size = if (sizeIndex >= 0) it.getLong(sizeIndex) else 0L
+                        val date = maxOf(dateAdded, dateModified)
 
-                        if (date > newestTimestamp && date >= (recordedSinceTimestamp - 180000L)) {
-                            newestTimestamp = date
-                            latestFile = if (path.isNotEmpty()) File(path) else null
-                            if (id >= 0) {
-                                latestUri = android.content.ContentUris.withAppendedId(
-                                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                                    id
-                                )
+                        if (size in 1..49999L) {
+                            continue // Skip incomplete or 0-frame corrupted recordings
+                        }
+
+                        if (date > newestTimestamp && (date >= (recordedSinceTimestamp - 300000L) || (System.currentTimeMillis() - date) < 900000L)) {
+                            if (!path.contains("/Download/Schat/") && !path.contains("/Movies/Schat/")) {
+                                newestTimestamp = date
+                                latestFile = if (path.isNotEmpty()) File(path) else null
+                                if (id >= 0) {
+                                    latestUri = android.content.ContentUris.withAppendedId(
+                                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                                        id
+                                    )
+                                    android.util.Log.d("ScreenProtection", "Found MediaStore candidate: id=$id, path=$path, size=$size, date=$date")
+                                }
                             }
                         }
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("ScreenProtection", "Error querying MediaStore.Video: ${e.message}")
             }
 
-            // 3. Copy to Schat folder
+            if (latestFile == null && latestUri == null) {
+                android.util.Log.w("ScreenProtection", "No recent screen recording found on device")
+                return null
+            }
+
+            // 3. Save to Download/Schat using Scoped Storage (MediaStore) or Direct File
             val timeStampStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val destFile = File(schatFolder, "Schat_ScreenRecord_$timeStampStr.mp4")
-
+            val fileName = "Schat_ScreenRecord_$timeStampStr.mp4"
+            var savedAbsolutePath: String? = null
             var copied = false
-            if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
-                try {
-                    latestFile.copyTo(destFile, overwrite = true)
-                    copied = destFile.exists() && destFile.length() > 0
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
 
-            if (!copied && latestUri != null) {
+            // On Android 10+ (API 29+), use MediaStore.Downloads to insert into Download/Schat
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
-                    contentResolver.openInputStream(latestUri)?.use { input ->
-                        destFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
+                    val contentValues = android.content.ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                        put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
+                        put(MediaStore.Downloads.RELATIVE_PATH, "Download/Schat/")
+                        put(MediaStore.Downloads.IS_PENDING, 1)
                     }
-                    copied = destFile.exists() && destFile.length() > 0
+                    val destUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    if (destUri != null) {
+                        contentResolver.openOutputStream(destUri)?.use { outputStream ->
+                            if (latestUri != null) {
+                                contentResolver.openInputStream(latestUri)?.use { inputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            } else if (latestFile != null && latestFile.exists()) {
+                                latestFile.inputStream().use { inputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            }
+                            outputStream.flush()
+                        }
+                        contentValues.clear()
+                        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                        contentResolver.update(destUri, contentValues, null, null)
+
+                        savedAbsolutePath = "/storage/emulated/0/Download/Schat/$fileName"
+                        copied = true
+                        android.util.Log.d("ScreenProtection", "Successfully inserted into MediaStore.Downloads: $savedAbsolutePath")
+                    }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.e("ScreenProtection", "Error inserting to MediaStore.Downloads: ${e.message}")
                 }
             }
 
-            if (copied) {
+            // Fallback for Android 9 and below or if MediaStore insert failed
+            if (!copied) {
+                try {
+                    val schatFolder = File("/storage/emulated/0/Download/Schat")
+                    if (!schatFolder.exists()) {
+                        schatFolder.mkdirs()
+                    }
+                    val destFile = File(schatFolder, fileName)
+                    if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
+                        latestFile.copyTo(destFile, overwrite = true)
+                        copied = destFile.exists() && destFile.length() > 0
+                    } else if (latestUri != null) {
+                        contentResolver.openInputStream(latestUri)?.use { input ->
+                            destFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        copied = destFile.exists() && destFile.length() > 0
+                    }
+                    if (copied) {
+                        savedAbsolutePath = destFile.absolutePath
+                        android.util.Log.d("ScreenProtection", "Successfully copied directly to file: $savedAbsolutePath")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ScreenProtection", "Direct file copy failed: ${e.message}")
+                }
+            }
+
+            // Also copy to Movies/Schat so that native Gallery / Video apps detect it immediately
+            if (copied && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val movieValues = android.content.ContentValues().apply {
+                        put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                        put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Schat")
+                        put(MediaStore.Video.Media.IS_PENDING, 1)
+                    }
+                    val movieUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, movieValues)
+                    if (movieUri != null) {
+                        contentResolver.openOutputStream(movieUri)?.use { outputStream ->
+                            if (latestUri != null) {
+                                contentResolver.openInputStream(latestUri)?.use { inputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            } else if (latestFile != null && latestFile.exists()) {
+                                latestFile.inputStream().use { inputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
+                            }
+                            outputStream.flush()
+                        }
+                        movieValues.clear()
+                        movieValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                        contentResolver.update(movieUri, movieValues, null, null)
+                        android.util.Log.d("ScreenProtection", "Also mirrored into MediaStore Movies/Schat")
+                    }
+                } catch (e: Exception) {
+                    // Primary save was Download/Schat, ignore secondary mirror error
+                }
+            }
+
+            if (copied && savedAbsolutePath != null) {
                 MediaScannerConnection.scanFile(
                     applicationContext,
-                    arrayOf(destFile.absolutePath),
+                    arrayOf(savedAbsolutePath),
                     arrayOf("video/mp4"),
                     null
                 )
-                return destFile.absolutePath
+                return savedAbsolutePath
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            android.util.Log.e("ScreenProtection", "Fatal error in saveLatestScreenRecordingToSchat: ${e.message}")
         }
         return null
     }

@@ -203,58 +203,58 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
   }
 
   Widget _buildSegmentedTabs(ChatTransferState state, int pendingCount) {
+    final isDark = context.colors.isDark;
+    const activeColor = Color(0xFF00873C);
+    const activeTextColor = Colors.white;
+
     final tabs = [
       ('Monitored', state.activeMonitoredAccounts.length, false),
       ('My Viewers', state.activeViewers.length, false),
       ('Requests', pendingCount, true),
     ];
 
-    return Container(
-      height: 44,
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: context.colors.cardBackground.withValues(alpha: 0.8),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: context.colors.border.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Row(
-        children: List.generate(tabs.length, (index) {
-          final (label, count, isAlert) = tabs[index];
-          final isSelected = _tabController.index == index;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: List.generate(tabs.length, (index) {
+            final (label, count, isAlert) = tabs[index];
+            final isSelected = _tabController.index == index;
 
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                _tabController.animateTo(index);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF00873C) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFF00873C).withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
+            return Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: GestureDetector(
+                onTap: () {
+                  _tabController.animateTo(index);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? activeColor
+                        : (isDark ? Colors.white.withValues(alpha: 0.05) : Colors.transparent),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? activeColor
+                          : (isDark ? Colors.white24 : const Color(0xFFD1D5DB)),
+                      width: 1,
+                    ),
+                  ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         label,
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                          color: isSelected ? Colors.white : context.colors.textSecondary,
+                          color: isSelected
+                              ? activeTextColor
+                              : (isDark ? Colors.white70 : const Color(0xFF374151)),
+                          fontSize: 13.5,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                         ),
                       ),
                       if (count > 0) ...[
@@ -271,7 +271,7 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
                             '$count',
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 10,
+                              fontSize: 10.5,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -281,9 +281,50 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
                   ),
                 ),
               ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, int count) {
+    final isDark = context.colors.isDark;
+    const primaryColor = Color(0xFF00873C);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: context.colors.textPrimary,
             ),
-          );
-        }),
+          ),
+          if (count > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF00873C).withValues(alpha: 0.18)
+                    : const Color(0xFFD1FADF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                count > 99 ? '99+' : count.toString(),
+                style: const TextStyle(
+                  color: primaryColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -301,29 +342,37 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
-      itemCount: activeList.length,
-      itemBuilder: (context, index) {
-        final req = activeList[index];
-        return ChatViewRequestCard(
-          request: req,
-          type: RequestCardType.activeMonitored,
-          onRevoke: () => _confirmRevoke(context, req.id),
-          onTap: () {
-            final targetUser = req.receiver ?? ChatViewUserModel(id: req.receiverId);
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BlocProvider.value(
-                  value: context.read<ChatTransferBloc>(),
-                  child: TargetConversationsPage(targetUser: targetUser),
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Monitored Accounts', activeList.length),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+            itemCount: activeList.length,
+            itemBuilder: (context, index) {
+              final req = activeList[index];
+              return ChatViewRequestCard(
+                request: req,
+                type: RequestCardType.activeMonitored,
+                onRevoke: () => _confirmRevoke(context, req.id),
+                onTap: () {
+                  final targetUser = req.receiver ?? ChatViewUserModel(id: req.receiverId);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BlocProvider.value(
+                        value: context.read<ChatTransferBloc>(),
+                        child: TargetConversationsPage(targetUser: targetUser),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -338,17 +387,25 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
-      itemCount: viewers.length,
-      itemBuilder: (context, index) {
-        final req = viewers[index];
-        return ChatViewRequestCard(
-          request: req,
-          type: RequestCardType.activeViewer,
-          onRevoke: () => _confirmRevoke(context, req.id),
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('Active Viewers', viewers.length),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+            itemCount: viewers.length,
+            itemBuilder: (context, index) {
+              final req = viewers[index];
+              return ChatViewRequestCard(
+                request: req,
+                type: RequestCardType.activeViewer,
+                onRevoke: () => _confirmRevoke(context, req.id),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -365,9 +422,16 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+    final totalRequests = incoming.length + outgoing.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildSectionHeader('Access Requests', totalRequests),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(0, 4, 0, 24),
+            children: [
         if (incoming.isNotEmpty) ...[
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -417,8 +481,11 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
               )),
         ],
       ],
-    );
-  }
+    ),
+  ),
+],
+);
+}
 
   Widget _buildEmptyState(
     BuildContext context, {

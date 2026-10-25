@@ -46,6 +46,7 @@ Map<String, dynamic> _$StatusItemModelToJson(_StatusItemModel instance) =>
       'viewCount': instance.viewCount,
       'privacyType': instance.privacyType,
       'privacyUserIds': instance.privacyUserIds,
+      'viewed': instance.viewed,
     };
 
 _StatusContactModel _$StatusContactModelFromJson(Map<String, dynamic> json) =>

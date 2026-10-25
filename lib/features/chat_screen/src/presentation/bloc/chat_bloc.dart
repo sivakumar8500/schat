@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive/hive.dart';
@@ -11,6 +14,11 @@ import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_reposit
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
+import 'package:collection/collection.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 
@@ -31,6 +39,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   int _messagesSkip = 0;
   bool _hasReachedMax = false;
   bool _isFetchingMore = false;
+  final List<Map<String, dynamic>> _pendingIncomingMessages = [];
 
   ChatBloc({
     ChatRepository? chatRepository,
@@ -60,6 +69,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ReceiveDeleteMessageEvent>(_onReceiveDeleteMessage);
     on<ReceiveEditMessageEvent>(_onReceiveEditMessage);
     on<ChangeBackgroundColorEvent>(_onChangeBackgroundColor);
+    on<UpdateMessageMediaUrlEvent>(_onUpdateMessageMediaUrl);
     on<UpdateAttachmentPermissionsEvent>(_onUpdateAttachmentPermissions);
     on<ReceiveMediaPermissionsUpdatedEvent>(_onReceiveMediaPermissionsUpdated);
     on<MarkMessageFailedEvent>(_onMarkMessageFailed);
@@ -134,6 +144,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onCheckExpiredMessages(CheckExpiredMessagesEvent event, Emitter<ChatState> emit) {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
+      if (currentState.disappearingTimer == null || currentState.disappearingTimer == 0) {
+        return;
+      }
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       bool hasExpired = false;
       final filteredMessages = currentState.messages.where((msg) {
@@ -163,7 +176,26 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     return (defaultTimer != null && defaultTimer != 0) ? defaultTimer : null;
   }
 
-  List<MessageModel> _filterExpiredMessages(List<MessageModel> messages) {
+  DateTime _parseTimestamp(String? createdAt) {
+    if (createdAt == null || createdAt.isEmpty) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    final parsedInt = int.tryParse(createdAt);
+    if (parsedInt != null) {
+      if (createdAt.length <= 10) {
+        return DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000);
+      } else {
+        return DateTime.fromMillisecondsSinceEpoch(parsedInt);
+      }
+    }
+    return DateTime.tryParse(createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  List<MessageModel> _filterExpiredMessages(List<MessageModel> messages, [int? activeTimer]) {
+    final timer = activeTimer ?? (state is ChatLoaded ? (state as ChatLoaded).disappearingTimer : null);
+    if (timer == null || timer == 0) {
+      return messages;
+    }
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return messages.where((msg) {
       if (msg.expiry != null && msg.expiry! > 0) {
@@ -248,6 +280,45 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     }
     return m;
+  }
+
+  String? _resolveBestMediaUrl({
+    required MessageModel serverMsg,
+    MessageModel? cachedMsg,
+    required bool allowView,
+  }) {
+    if (!allowView) return null;
+
+    // 1. Check if serverMsg has a valid mediaUrl
+    if (serverMsg.mediaUrl != null && serverMsg.mediaUrl!.isNotEmpty) {
+      final isLocal = serverMsg.mediaUrl!.startsWith('/') || serverMsg.mediaUrl!.startsWith('file://');
+      if (!isLocal || (!kIsWeb && File(serverMsg.mediaUrl!.replaceAll('file://', '')).existsSync())) {
+        return serverMsg.mediaUrl;
+      }
+    }
+
+    // 2. Check if content JSON contains a fileKey/url
+    if (serverMsg.content.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(serverMsg.content);
+        if (decoded is Map) {
+          final key = (decoded['fileKey'] ?? decoded['file_key'] ?? decoded['url'] ?? decoded['mediaUrl'] ?? decoded['media_url'])?.toString();
+          if (key != null && key.isNotEmpty && !key.startsWith('/')) {
+            return key;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Check if cached message has a non-dead mediaUrl
+    if (cachedMsg != null && cachedMsg.mediaUrl != null && cachedMsg.mediaUrl!.isNotEmpty) {
+      final isLocal = cachedMsg.mediaUrl!.startsWith('/') || cachedMsg.mediaUrl!.startsWith('file://');
+      if (!isLocal || (!kIsWeb && File(cachedMsg.mediaUrl!.replaceAll('file://', '')).existsSync())) {
+        return cachedMsg.mediaUrl;
+      }
+    }
+
+    return serverMsg.mediaUrl ?? cachedMsg?.mediaUrl;
   }
 
   Map<String, dynamic> _cleanMap(Map<dynamic, dynamic> map) {
@@ -801,24 +872,47 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // 1. Try loading from cache first
     List<MessageModel> cachedMessages = [];
     try {
-      final msgBox = await Hive.openBox('cached_messages');
-      final List<dynamic>? cachedList = msgBox.get(event.conversationId);
-      if (cachedList != null) {
-        final rawCached = cachedList
-            .map((item) => MessageModel.fromJson(Map<String, dynamic>.from(item as Map)))
-            .toList();
-        final cacheMap = <String, MessageModel>{};
-        for (final m in rawCached) {
-          if (m.id.isNotEmpty) cacheMap[m.id] = m;
+      cachedMessages = await ChatMessageCacheHelper.loadMessages(event.conversationId);
+
+      // Also incorporate latest message from ChatsBloc if not already in cache
+      if (getIt.isRegistered<ChatsBloc>()) {
+        final chatsState = getIt<ChatsBloc>().state;
+        if (chatsState is ChatsLoaded) {
+          final matchedChat = chatsState.chats.firstWhereOrNull((c) =>
+              _isSameConversation(c.id, event.conversationId) ||
+              (event.recipientId != null && event.recipientId!.isNotEmpty && _isSameConversation(c.recipient.id, event.recipientId)));
+          if (cachedMessages.isEmpty && matchedChat != null && matchedChat.id.isNotEmpty && matchedChat.id != event.conversationId) {
+            cachedMessages = await ChatMessageCacheHelper.loadMessages(matchedChat.id);
+          }
+          if (matchedChat != null && matchedChat.lastMessage != null && matchedChat.lastMessage!.id.isNotEmpty) {
+            final lm = matchedChat.lastMessage!;
+            final existsInCache = cachedMessages.any((m) => m.id == lm.id);
+            if (!existsInCache) {
+              final synthesized = MessageModel(
+                id: lm.id,
+                conversationId: event.conversationId,
+                senderId: lm.senderId,
+                content: lm.content,
+                mediaUrl: lm.mediaUrl,
+                mediaType: lm.mediaType,
+                messageType: lm.mediaType ?? 'text',
+                isDeleted: lm.isDeleted,
+                isRead: lm.isRead,
+                isDelivered: lm.isDelivered,
+                createdAt: lm.createdAt,
+                updatedAt: lm.updatedAt,
+              );
+              cachedMessages.add(synthesized);
+              cachedMessages.sort((a, b) {
+                final dtA = _parseTimestamp(a.createdAt);
+                final dtB = _parseTimestamp(b.createdAt);
+                final cmp = dtA.compareTo(dtB);
+                if (cmp != 0) return cmp;
+                return a.id.compareTo(b.id);
+              });
+            }
+          }
         }
-        cachedMessages = cacheMap.values.toList()
-          ..sort((a, b) {
-            final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final cmp = dtA.compareTo(dtB);
-            if (cmp != 0) return cmp;
-            return a.id.compareTo(b.id);
-          });
       }
 
       final bgBox = await Hive.openBox('chat_backgrounds');
@@ -881,7 +975,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     } catch (_) {}
 
     if (cachedMessages.isNotEmpty) {
-      final filteredCached = _filterExpiredMessages(cachedMessages);
+      var filteredCached = _filterExpiredMessages(cachedMessages, disappearingTimer);
+      if (disappearingTimer == null || disappearingTimer == 0) {
+        filteredCached = filteredCached.map((m) => m.copyWith(expiry: 0)).toList();
+      }
       emit(ChatLoaded(
         messages: filteredCached,
         myId: myId,
@@ -923,10 +1020,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final rawApiMessages = await _chatRepository.getMessages(event.conversationId, limit: 100, skip: 0);
       _messagesSkip = rawApiMessages.length;
       _hasReachedMax = rawApiMessages.length < 100;
-      var messages = _applyPersistentViewOnceStates(rawApiMessages, cachedMessages);
+
+      final currentLoadedMessages = (state is ChatLoaded)
+          ? (state as ChatLoaded).messages
+          : cachedMessages;
+      var messages = _applyPersistentViewOnceStates(rawApiMessages, currentLoadedMessages);
 
       final cachedMap = <String, MessageModel>{};
-      for (final m in cachedMessages) {
+      for (final m in currentLoadedMessages) {
         if (m.id.isNotEmpty) cachedMap[m.id] = m;
       }
 
@@ -960,9 +1061,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               }
             }
 
-            final effectiveMediaUrl = (allowView && (m.mediaUrl != null && m.mediaUrl!.isNotEmpty))
-                ? m.mediaUrl
-                : (cached.mediaUrl ?? m.mediaUrl);
+            final effectiveMediaUrl = _resolveBestMediaUrl(
+              serverMsg: m,
+              cachedMsg: cached,
+              allowView: allowView,
+            );
             final effectiveContent = (allowView && m.content != '[View Restricted]')
                 ? m.content
                 : (m.content == '[View Restricted]' ? (allowView ? '' : '[View Restricted]') : m.content);
@@ -986,20 +1089,37 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
       // Preserve pending local sending messages
-      for (final m in cachedMessages) {
+      for (final m in currentLoadedMessages) {
         if (m.id.startsWith('temp_') && !freshMap.containsKey(m.id)) {
           freshMap[m.id] = m;
         }
       }
 
+      // Merge any messages that arrived via socket during load
+      if (_pendingIncomingMessages.isNotEmpty) {
+        for (final raw in _pendingIncomingMessages) {
+          try {
+            final m = MessageModel.fromJson(raw);
+            if (m.id.isNotEmpty && !freshMap.containsKey(m.id)) {
+              freshMap[m.id] = m;
+            }
+          } catch (_) {}
+        }
+        _pendingIncomingMessages.clear();
+      }
+
       messages = freshMap.values.toList()
         ..sort((a, b) {
-          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtA = _parseTimestamp(a.createdAt);
+          final dtB = _parseTimestamp(b.createdAt);
           final cmp = dtA.compareTo(dtB);
           if (cmp != 0) return cmp;
           return a.id.compareTo(b.id);
         });
+      messages = _filterExpiredMessages(messages, disappearingTimer);
+      if (disappearingTimer == null || disappearingTimer == 0) {
+        messages = messages.map((m) => m.copyWith(expiry: 0)).toList();
+      }
 
       List<MessageModel> pinnedMessages = [];
       try {
@@ -1024,6 +1144,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
+      if (getIt.isRegistered<ChatsBloc>()) {
+        getIt<ChatsBloc>().add(MarkConversationAsRead(conversationId: event.conversationId));
+      }
+
       // ── Infer read/delivered status from message history (ONLY FOR 1-ON-1 DIRECT CHATS) ──
       if (event.recipientId != null && event.recipientId!.isNotEmpty && !event.isReadOnly) {
         String? lastRecipientMessageTime;
@@ -1045,9 +1169,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
             if (!inferredRead) {
               // If recipient sent a message after this one, it was read
-              final myTime = DateTime.tryParse(msg.createdAt);
-              final recipientTime = DateTime.tryParse(lastRecipientMessageTime!);
-              if (myTime != null && recipientTime != null && (recipientTime.isAfter(myTime) || recipientTime.isAtSameMomentAs(myTime))) {
+              final myTime = _parseTimestamp(msg.createdAt);
+              final recipientTime = _parseTimestamp(lastRecipientMessageTime);
+              if (recipientTime.isAfter(myTime) || recipientTime.isAtSameMomentAs(myTime)) {
                 inferredRead = true;
                 inferredDelivered = true;
               }
@@ -1238,12 +1362,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       messages = freshMap.values.toList()
         ..sort((a, b) {
-          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtA = _parseTimestamp(a.createdAt);
+          final dtB = _parseTimestamp(b.createdAt);
           final cmp = dtA.compareTo(dtB);
           if (cmp != 0) return cmp;
           return a.id.compareTo(b.id);
         });
+
+      if (currentState.disappearingTimer == null || currentState.disappearingTimer == 0) {
+        messages = messages.map((m) => m.copyWith(expiry: 0)).toList();
+      }
 
       List<MessageModel> pinnedMessages = currentState.pinnedMessages;
       try {
@@ -1320,9 +1448,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (cached != null) {
             final keepRead = m.isRead || cached.isRead || m.status == 'read' || cached.status == 'read';
             final keepDelivered = keepRead || m.isDelivered || cached.isDelivered || m.status == 'delivered' || cached.status == 'delivered';
-            final effectiveMediaUrl = (allowView && (m.mediaUrl != null && m.mediaUrl!.isNotEmpty))
-                ? m.mediaUrl
-                : (cached.mediaUrl ?? m.mediaUrl);
+            final effectiveMediaUrl = _resolveBestMediaUrl(
+              serverMsg: m,
+              cachedMsg: cached,
+              allowView: allowView,
+            );
             final effectiveContent = (allowView && m.content != '[View Restricted]')
                 ? m.content
                 : (m.content == '[View Restricted]' ? (allowView ? '' : '[View Restricted]') : m.content);
@@ -1347,8 +1477,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       final updatedMessages = messageMap.values.toList()
         ..sort((a, b) {
-          final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final dtA = _parseTimestamp(a.createdAt);
+          final dtB = _parseTimestamp(b.createdAt);
           final cmp = dtA.compareTo(dtB);
           if (cmp != 0) return cmp;
           return a.id.compareTo(b.id);
@@ -1598,8 +1728,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
         updatedMessages = _filterExpiredMessages(updatedMessages)
           ..sort((a, b) {
-            final dtA = DateTime.tryParse(a.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final dtB = DateTime.tryParse(b.createdAt) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final dtA = _parseTimestamp(a.createdAt);
+            final dtB = _parseTimestamp(b.createdAt);
             final cmp = dtA.compareTo(dtB);
             if (cmp != 0) return cmp;
             return a.id.compareTo(b.id);
@@ -1613,6 +1743,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           _socketRepository.sendReadReceipt(newMessage.conversationId, newMessage.id);
         }
 
+        if (getIt.isRegistered<ChatsBloc>()) {
+          getIt<ChatsBloc>().add(MarkConversationAsRead(conversationId: newMessage.conversationId));
+        }
+
         emit(currentState.copyWith(
           messages: updatedMessages,
           isRecipientTyping: false,
@@ -1624,6 +1758,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
     } else {
       debugPrint('DEBUG: Message received but state is not ChatLoaded. Current state: ${currentState.runtimeType}');
+      _pendingIncomingMessages.add(event.messageData);
+      if (_conversationId != null) {
+        ChatMessageCacheHelper.appendRawMessage(_conversationId!, event.messageData);
+      }
     }
   }
 
@@ -2100,6 +2238,60 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  Future<void> _onUpdateMessageMediaUrl(
+    UpdateMessageMediaUrlEvent event,
+    Emitter<ChatState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is! ChatLoaded) return;
+
+    final updated = currentState.messages.map((m) {
+      if (m.id == event.messageId ||
+          m.id == 'temp_${event.messageId}' ||
+          'temp_${m.id}' == event.messageId) {
+        final effectiveUrl = (event.persistentLocalPath != null &&
+                !kIsWeb &&
+                File(event.persistentLocalPath!).existsSync())
+            ? event.persistentLocalPath!
+            : event.mediaUrl;
+        return m.copyWith(
+          mediaUrl: effectiveUrl,
+          attachmentName: (event.attachmentName != null && event.attachmentName!.isNotEmpty)
+              ? event.attachmentName
+              : m.attachmentName,
+          mediaType: (event.mediaType != null && event.mediaType!.isNotEmpty)
+              ? event.mediaType
+              : m.mediaType,
+          fileSize: (event.fileSize != null && event.fileSize! > 0)
+              ? event.fileSize
+              : m.fileSize,
+          isUploading: false,
+        );
+      }
+      return m;
+    }).toList();
+
+    emit(currentState.copyWith(messages: updated));
+    ChatMessageCacheHelper.saveMessages(event.conversationId, updated);
+
+    try {
+      _storageService.saveSenderMediaPermissions(
+        event.mediaUrl,
+        allowView: true,
+        allowDownload: true,
+        allowShare: true,
+      );
+      if (event.persistentLocalPath != null) {
+        _storageService.saveSenderMediaPermissions(
+          event.persistentLocalPath!,
+          allowView: true,
+          allowDownload: true,
+          allowShare: true,
+        );
+      }
+    } catch (_) {}
+  }
+
   void _onUpdateAttachmentPermissions(UpdateAttachmentPermissionsEvent event, Emitter<ChatState> emit) {
     _storageService.saveSenderMediaPermissions(
       event.messageId,
@@ -2404,11 +2596,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
         final mergedList = merged.values.toList()
           ..sort((a, b) {
-            final aDate = DateTime.tryParse(a.createdAt);
-            final bDate = DateTime.tryParse(b.createdAt);
-            if (aDate == null && bDate == null) return 0;
-            if (aDate == null) return -1;
-            if (bDate == null) return 1;
+            final aDate = _parseTimestamp(a.createdAt);
+            final bDate = _parseTimestamp(b.createdAt);
             return aDate.compareTo(bDate);
           });
         final finalFiltered = _filterExpiredMessages(mergedList);
@@ -2551,12 +2740,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _saveToCache(String conversationId, List<MessageModel> messages) {
-    Hive.openBox('cached_messages').then((box) {
-      final serializable = messages.map((m) => m.toJson()).toList();
-      box.put(conversationId, serializable);
-    }).catchError((e) {
-      debugPrint('Error saving to cache: $e');
-    });
+    ChatMessageCacheHelper.saveMessages(conversationId, messages);
   }
 
   Future<void> _onUpdateMessageSecurity(
