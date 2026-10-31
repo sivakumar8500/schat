@@ -1,5 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
@@ -8,6 +9,7 @@ import 'package:schat/features/profile_screen/src/domain/models/user_model.dart'
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
@@ -335,44 +337,94 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
           int itemSize = item.size;
           Uint8List? itemBytes;
 
-          // If item is .enc file, remove encryption and normalize to standard format
-          if (itemName.toLowerCase().endsWith('.enc') || itemPath.toLowerCase().endsWith('.enc')) {
+          // If itemPath is a remote URL
+          String? fileKey;
+          if (itemPath.startsWith('http://') || itemPath.startsWith('https://')) {
+            final cleanUrl = itemPath.split('?').first;
+            if (cleanUrl.contains('amazonaws.com') || cleanUrl.contains('minio') || cleanUrl.contains('/chat-media/') || cleanUrl.contains('/documents/') || cleanUrl.contains('/voice-notes/')) {
+              final parts = cleanUrl.split('/');
+              final idx = parts.indexWhere((p) => p == 'chat-media' || p == 'documents' || p == 'voice-notes' || p == 'status-media' || p == 'wallpapers');
+              if (idx != -1) {
+                fileKey = parts.sublist(idx).join('/');
+              } else {
+                fileKey = cleanUrl;
+              }
+            } else {
+              try {
+                final tempDir = Directory.systemTemp;
+                final tempFilePath = '${tempDir.path}/share_${DateTime.now().millisecondsSinceEpoch}_$itemName';
+                await Dio().download(itemPath, tempFilePath);
+                if (File(tempFilePath).existsSync()) {
+                  itemPath = tempFilePath;
+                }
+              } catch (e) {
+                debugPrint('Error downloading remote file for share: $e');
+              }
+            }
+          }
+
+          // If item is a local file or bytes, normalize and decrypt .enc files
+          final bool isLocal = !kIsWeb && itemPath.isNotEmpty && File(itemPath).existsSync();
+          if (isLocal) {
             try {
               final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
-                filePath: itemPath,
+                filePath: isLocal ? itemPath : null,
+                fileBytes: itemBytes,
                 fileName: itemName,
-                explicitMediaType: itemType,
+                explicitMediaType: (itemType == 'voice_note' || itemType == 'audio' || itemType == 'image' || itemType == 'video') ? itemType : null,
               );
               itemName = normal.fileName;
               itemPath = normal.filePath;
               itemType = normal.mediaType;
               itemSize = normal.fileSizeBytes;
               itemBytes = normal.bytes;
-              debugPrint('ShareForwardTargetPage: Normalized .enc -> $itemName ($itemType, $itemSize bytes)');
+              debugPrint('ShareForwardTargetPage: Normalized file -> $itemName ($itemType, $itemSize bytes)');
             } catch (e) {
-              debugPrint('ShareForwardTargetPage: Error normalizing .enc file: $e');
+              debugPrint('ShareForwardTargetPage: Error normalizing file: $e');
             }
           }
 
-          String? fileKey;
           final firstTarget = _selectedTargets.isNotEmpty ? _selectedTargets.first : null;
           final targetRecipientId = firstTarget?.userModel?.id ?? (firstTarget?.chatModel?.recipient.id.isNotEmpty == true ? firstTarget?.chatModel?.recipient.id : null);
-          try {
-            fileKey = await chatRepo.uploadMedia(
-              conversationId: primaryConvId,
-              recipientId: targetRecipientId,
-              filePath: itemPath,
-              fileName: itemName,
-              mediaType: _getMediaType(itemType),
-              mimeType: _getMimeType(itemName, itemType),
-              fileSizeBytes: itemSize > 0 ? itemSize : 1024,
-              fileBytes: itemBytes,
-              allowView: true,
-              allowDownload: true,
-              allowShare: true,
-            );
-          } catch (uploadErr) {
-            debugPrint('Upload error during share: $uploadErr');
+          
+          if (fileKey == null && (isLocal || (itemBytes != null && itemBytes.isNotEmpty))) {
+            try {
+              fileKey = await chatRepo.uploadMedia(
+                conversationId: primaryConvId,
+                recipientId: targetRecipientId,
+                filePath: itemPath,
+                fileName: itemName,
+                mediaType: _getMediaType(itemType),
+                mimeType: _getMimeType(itemName, itemType),
+                fileSizeBytes: itemSize > 0 ? itemSize : (File(itemPath).existsSync() ? File(itemPath).lengthSync() : 1024),
+                fileBytes: itemBytes,
+                allowView: true,
+                allowDownload: true,
+                allowShare: true,
+              );
+            } catch (uploadErr) {
+              debugPrint('Upload error during share: $uploadErr');
+            }
+          }
+
+          // Auto-grant media share permissions to all selected target recipients
+          final resolvedMediaId = SecureAttachmentService.findMediaId(fileKey) ??
+              fileKey?.split('?').first.split('/').last.split('.').first;
+          if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+            for (final target in _selectedTargets) {
+              final recId = target.userModel?.id ?? (target.chatModel?.recipient.id.isNotEmpty == true ? target.chatModel?.recipient.id : null);
+              if (recId != null && recId.isNotEmpty) {
+                try {
+                  await chatRepo.shareMedia(
+                    mediaId: resolvedMediaId,
+                    granteeId: recId,
+                    canView: true,
+                    canDownload: true,
+                    canShare: true,
+                  );
+                } catch (_) {}
+              }
+            }
           }
 
           final msgType = itemType == 'voice_note' ? 'audio' : itemType;
@@ -400,6 +452,30 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
                 'allowView': true,
               },
             );
+
+            // Guaranteed persistence via REST API
+            final MessageModel msgToSend = MessageModel(
+              id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+              conversationId: convId,
+              senderId: '',
+              content: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
+              mediaUrl: fileKey,
+              mediaType: msgType,
+              messageType: msgType,
+              attachmentName: itemName,
+              fileSize: itemSize,
+              allowShare: true,
+              allowDownload: true,
+              allowView: true,
+              isViewOnce: false,
+              maxViews: 1,
+              isDeleted: false,
+              createdAt: DateTime.now().toIso8601String(),
+              updatedAt: DateTime.now().toIso8601String(),
+            );
+            try {
+              chatRepo.sendMessageAndGetResult(msgToSend);
+            } catch (_) {}
           }
         }
       } else if (widget.sharedText != null && widget.sharedText!.isNotEmpty) {
@@ -411,6 +487,23 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             type: 'text',
             text: textToSend,
           );
+
+          final MessageModel msgToSend = MessageModel(
+            id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+            conversationId: convId,
+            senderId: '',
+            content: textToSend,
+            messageType: 'text',
+            allowShare: true,
+            allowDownload: true,
+            allowView: true,
+            isDeleted: false,
+            createdAt: DateTime.now().toIso8601String(),
+            updatedAt: DateTime.now().toIso8601String(),
+          );
+          try {
+            chatRepo.sendMessageAndGetResult(msgToSend);
+          } catch (_) {}
         }
       } else if (caption.isNotEmpty) {
         for (final convId in conversationIds) {
@@ -419,6 +512,23 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             type: 'text',
             text: caption,
           );
+
+          final MessageModel msgToSend = MessageModel(
+            id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+            conversationId: convId,
+            senderId: '',
+            content: caption,
+            messageType: 'text',
+            allowShare: true,
+            allowDownload: true,
+            allowView: true,
+            isDeleted: false,
+            createdAt: DateTime.now().toIso8601String(),
+            updatedAt: DateTime.now().toIso8601String(),
+          );
+          try {
+            chatRepo.sendMessageAndGetResult(msgToSend);
+          } catch (_) {}
         }
       }
 

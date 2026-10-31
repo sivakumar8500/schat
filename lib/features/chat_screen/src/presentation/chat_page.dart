@@ -169,9 +169,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   bool _isScreenRecordingActive = false;
   bool _isScreenRecordingPaused = false;
   bool _isSystemRecordingStarted = false;
-  bool _isScreenRecordingStarting = false;
   int _screenRecordRemainingSeconds = 0;
   String? _activeScreenRecordPermissionId;
+  int? _lastRecordingSessionStartMs;
+  bool _isSavingScreenRecording = false;
   Timer? _screenshotAutoExpireTimer;
   String? _activeScreenshotPermissionId;
   int? _localRemainingScreenshots;
@@ -235,8 +236,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
-  bool _attachmentAllowShare = false;
-  bool _attachmentAllowDownload = false;
+  bool _attachmentAllowShare = true;
+  bool _attachmentAllowDownload = true;
   bool _attachmentAllowView = true;
   bool _attachmentIsViewOnce = false;
   int _attachmentViewCount = 1;
@@ -451,14 +452,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           if (isCaptured) {
             _onSystemScreenRecordStarted(perm);
           } else {
-            _triggerSaveScreenRecordingToSchat(DateTime.now().millisecondsSinceEpoch - 120000);
+            // User stopped system screen recording while session was active
+            _stopScreenRecording(perm.id, completedByTimer: false);
           }
         }
       } else if (isCaptured && !_isScreenRecordingActive) {
-        // No active screen record permission, enforce protection immediately
+        // No active screen record permission or user hasn't clicked Start Record yet, enforce protection immediately
         getIt<ScreenProtectionService>().enableProtection();
-      } else if (!isCaptured) {
-        _triggerSaveScreenRecordingToSchat(DateTime.now().millisecondsSinceEpoch - 120000);
+      } else if (!isCaptured && _lastRecordingSessionStartMs != null) {
+        final sessionAge = DateTime.now().millisecondsSinceEpoch - _lastRecordingSessionStartMs!;
+        if (sessionAge < 180000) {
+          debugPrint('ScreenProtection: System screen recording stopped after session! Triggering save to Schat folder...');
+          _triggerSaveScreenRecordingToSchat(_lastRecordingSessionStartMs!);
+        }
       }
     });
   }
@@ -2864,6 +2870,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   void _sendForwardSocketMessage(ChatSocketRepository repo, String conversationId, MessageModel msg) {
+    final effectiveShare = msg.allowShare;
+    final effectiveDownload = msg.allowDownload;
+    final effectiveView = msg.allowView;
+
     repo.sendMessage(
       conversationId: conversationId,
       type: msg.mediaType ?? 'text',
@@ -2875,16 +2885,39 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       isForwarded: true,
       forwardedFromMessageId: msg.id,
       security: {
-        'allowShare': msg.allowShare,
-        'allowDownload': msg.allowDownload,
-        'allowView': msg.allowView,
+        'allowShare': effectiveShare,
+        'allowDownload': effectiveDownload,
+        'allowView': effectiveView,
       },
       viewControl: {
-        'allowShare': msg.allowShare,
-        'allowDownload': msg.allowDownload,
-        'allowView': msg.allowView,
+        'allowShare': effectiveShare,
+        'allowDownload': effectiveDownload,
+        'allowView': effectiveView,
       },
     );
+
+    final MessageModel forwardMsg = MessageModel(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      conversationId: conversationId,
+      senderId: '',
+      content: msg.content,
+      mediaUrl: msg.mediaUrl,
+      mediaType: msg.mediaType ?? 'text',
+      messageType: msg.mediaType ?? 'text',
+      attachmentName: msg.attachmentName,
+      fileSize: msg.fileSize,
+      allowShare: effectiveShare,
+      allowDownload: effectiveDownload,
+      allowView: effectiveView,
+      isForwarded: true,
+      forwardedFromMessageId: msg.id,
+      isDeleted: false,
+      createdAt: DateTime.now().toIso8601String(),
+      updatedAt: DateTime.now().toIso8601String(),
+    );
+    try {
+      getIt<ChatRepository>().sendMessageAndGetResult(forwardMsg);
+    } catch (_) {}
   }
 
   void _showForwardBottomSheet(BuildContext context, MessageModel msg) async {
@@ -3657,8 +3690,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _recordedPath = null;
       _recordedName = null;
       _recordedDurationSecs = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
     });
 
@@ -4114,13 +4147,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
       _notifyChatsBlocMessageSent(messageId: tempId, text: text, type: 'text');
 
+      final MessageModel msgToSend = MessageModel(
+        id: tempId,
+        conversationId: widget.conversationId,
+        senderId: '',
+        content: text,
+        messageType: 'text',
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+        replyMessageId: _replyingToMessage?.id,
+        replyMessageBody: _getReplyMessageBody(_replyingToMessage),
+      );
+
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
-      if (!isSocketConnected) {
-        _chatBloc.add(MarkMessageFailedEvent(
-          messageId: tempId,
-          conversationId: widget.conversationId,
-        ));
-      } else {
+      if (isSocketConnected) {
         // Send via socket
         context.read<ChatSocketBloc>().add(SendMessage(
           conversationId: widget.conversationId,
@@ -4130,6 +4171,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           expiry: _getExpiryData(),
         ));
       }
+
+      // Guaranteed delivery via REST API
+      getIt<ChatRepository>().sendMessageAndGetResult(msgToSend).then((confirmedMsg) {
+        if (confirmedMsg != null) {
+          debugPrint('ChatPage._sendMessage: Persisted via REST -> ${confirmedMsg.id}');
+          _chatBloc.add(ReceiveMessageEvent(
+            messageData: confirmedMsg.toJson()..['userView'] = 'send',
+          ));
+        } else if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      }).catchError((e) {
+        debugPrint('ChatPage._sendMessage: REST error $e');
+        if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      });
 
       setState(() {
         _replyingToMessage = null;
@@ -4164,8 +4228,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
       _attachmentIsViewOnce = false;
       _attachmentViewCount = 1;
@@ -4208,13 +4272,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         type: type,
       );
 
+      final MessageModel locOrContactMsg = MessageModel(
+        id: tempId,
+        conversationId: widget.conversationId,
+        senderId: '',
+        content: caption.isNotEmpty ? caption : name,
+        mediaType: type,
+        messageType: type,
+        latitude: lat,
+        longitude: lng,
+        locationTitle: type == 'location' ? name : null,
+        allowShare: isViewOnce ? false : allowShare,
+        allowDownload: isViewOnce ? false : allowDownload,
+        allowView: allowView,
+        isViewOnce: isViewOnce,
+        maxViews: viewCount,
+        fileSize: size,
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
-      if (!isSocketConnected) {
-        _chatBloc.add(MarkMessageFailedEvent(
-          messageId: tempId,
-          conversationId: widget.conversationId,
-        ));
-      } else {
+      if (isSocketConnected) {
         context.read<ChatSocketBloc>().add(SendMessage(
           conversationId: widget.conversationId,
           type: type,
@@ -4239,6 +4319,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           expiry: _getExpiryData(),
         ));
       }
+
+      getIt<ChatRepository>().sendMessageAndGetResult(locOrContactMsg).then((confirmedMsg) {
+        if (confirmedMsg != null) {
+          _chatBloc.add(ReceiveMessageEvent(
+            messageData: confirmedMsg.toJson()..['userView'] = 'send',
+          ));
+        } else if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      }).catchError((e) {
+        if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      });
       return;
     }
 
@@ -4420,13 +4520,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         storage.saveSenderMediaPermissions(uploadName, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
       } catch (_) {}
 
+      final MessageModel mediaMsg = MessageModel(
+        id: tempId,
+        conversationId: widget.conversationId,
+        senderId: '',
+        content: caption.isNotEmpty ? caption : (uploadType == 'image' ? '' : uploadName),
+        mediaUrl: fileKey,
+        mediaType: uploadType,
+        messageType: uploadType,
+        attachmentName: uploadName,
+        fileSize: uploadSize,
+        allowShare: isViewOnce ? false : allowShare,
+        allowDownload: isViewOnce ? false : allowDownload,
+        allowView: allowView,
+        isViewOnce: isViewOnce,
+        maxViews: viewCount,
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+      );
+
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
-      if (!isSocketConnected) {
-        _chatBloc.add(MarkMessageFailedEvent(
-          messageId: tempId,
-          conversationId: widget.conversationId,
-        ));
-      } else {
+      if (isSocketConnected) {
         context.read<ChatSocketBloc>().add(SendMessage(
           conversationId: widget.conversationId,
           type: uploadType,
@@ -4451,6 +4566,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           expiry: _getExpiryData(),
         ));
       }
+
+      getIt<ChatRepository>().sendMessageAndGetResult(mediaMsg).then((confirmedMsg) {
+        if (confirmedMsg != null) {
+          debugPrint('ChatPage._performBackgroundUploadAndSend: Persisted via REST -> ${confirmedMsg.id}');
+          _chatBloc.add(ReceiveMessageEvent(
+            messageData: confirmedMsg.toJson()..['userView'] = 'send',
+          ));
+        } else if (!isSocketConnected && context.mounted) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      }).catchError((e) {
+        debugPrint('ChatPage._performBackgroundUploadAndSend: REST error $e');
+        if (!isSocketConnected && context.mounted) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      });
     } else if (context.mounted) {
       _chatBloc.add(MarkMessageFailedEvent(
         messageId: tempId,
@@ -4479,13 +4616,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
       _notifyChatsBlocMessageSent(messageId: tempId, text: msg.content, type: 'text');
 
+      final MessageModel msgToSend = MessageModel(
+        id: tempId,
+        conversationId: widget.conversationId,
+        senderId: '',
+        content: msg.content,
+        messageType: 'text',
+        isDeleted: false,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+        replyMessageId: msg.replyMessageId,
+        replyMessageBody: msg.replyMessageBody,
+      );
+
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
-      if (!isSocketConnected) {
-        _chatBloc.add(MarkMessageFailedEvent(
-          messageId: tempId,
-          conversationId: widget.conversationId,
-        ));
-      } else {
+      if (isSocketConnected) {
         context.read<ChatSocketBloc>().add(SendMessage(
           conversationId: widget.conversationId,
           type: 'text',
@@ -4494,6 +4639,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           expiry: _getExpiryData(),
         ));
       }
+
+      getIt<ChatRepository>().sendMessageAndGetResult(msgToSend).then((confirmedMsg) {
+        if (confirmedMsg != null) {
+          _chatBloc.add(ReceiveMessageEvent(
+            messageData: confirmedMsg.toJson()..['userView'] = 'send',
+          ));
+        } else if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      }).catchError((e) {
+        if (!isSocketConnected) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+      });
     } else {
       _chatBloc.add(SendMessageEvent(
         conversationId: widget.conversationId,
@@ -4514,13 +4679,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _notifyChatsBlocMessageSent(messageId: tempId, text: msg.content, type: msg.mediaType!);
 
       if (msg.mediaType == 'location' || msg.mediaType == 'contact') {
+        final MessageModel locOrContactMsg = MessageModel(
+          id: tempId,
+          conversationId: widget.conversationId,
+          senderId: '',
+          content: msg.content,
+          mediaType: msg.mediaType!,
+          messageType: msg.mediaType!,
+          mediaUrl: msg.mediaUrl,
+          latitude: msg.latitude,
+          longitude: msg.longitude,
+          locationTitle: msg.locationTitle,
+          allowShare: msg.allowShare,
+          allowDownload: msg.allowDownload,
+          allowView: msg.allowView,
+          isViewOnce: msg.isViewOnce,
+          maxViews: msg.maxViews,
+          fileSize: msg.fileSize,
+          isDeleted: false,
+          createdAt: DateTime.now().toIso8601String(),
+          updatedAt: DateTime.now().toIso8601String(),
+        );
+
         final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
-        if (!isSocketConnected) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        } else {
+        if (isSocketConnected) {
           context.read<ChatSocketBloc>().add(SendMessage(
             conversationId: widget.conversationId,
             type: msg.mediaType!,
@@ -4539,6 +4721,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             expiry: _getExpiryData(),
           ));
         }
+
+        getIt<ChatRepository>().sendMessageAndGetResult(locOrContactMsg).then((confirmedMsg) {
+          if (confirmedMsg != null) {
+            _chatBloc.add(ReceiveMessageEvent(
+              messageData: confirmedMsg.toJson()..['userView'] = 'send',
+            ));
+          } else if (!isSocketConnected) {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        }).catchError((e) {
+          if (!isSocketConnected) {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        });
       } else {
         _performBackgroundUploadAndSend(
           context: context,
@@ -4648,8 +4850,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                     _selectedAttachmentName = null;
                     _selectedAttachmentType = null;
                     _selectedAttachmentSize = 0;
-                    _attachmentAllowShare = false;
-                    _attachmentAllowDownload = false;
+                    _attachmentAllowShare = true;
+                    _attachmentAllowDownload = true;
                     _attachmentAllowView = true;
                     _isTyping = _messageController.text.trim().isNotEmpty;
                   });
@@ -4843,7 +5045,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             } else if (_localRemainingScreenshots != null && _localRemainingScreenshots! <= 0) {
               getIt<ScreenProtectionService>().enableProtection();
             } else if (isScreenRecordAllowed) {
-              // Screen recording approved: check for existing paused session or auto-start new recording
+              // Screen recording approved: check for existing paused session to resume
               final existingSession = getIt<ScreenProtectionService>().activeRecordingSession;
               if (existingSession != null &&
                   existingSession.permissionId == activeRecordPerm.id &&
@@ -4851,19 +5053,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 if (_isScreenRecordingPaused || !_isScreenRecordingActive) {
                   _resumeScreenRecording();
                 }
-              } else if (!_isScreenRecordingActive &&
-                         !_isScreenRecordingStarting &&
-                         existingSession == null &&
-                         activeRecordPerm.computedRemainingSeconds > 0) {
-                _isScreenRecordingStarting = true;
-                debugPrint('ScreenProtection: Receiver accepted screen record permission! Auto-starting recording...');
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && !_isScreenRecordingActive) {
-                    _startScreenRecording(activeRecordPerm);
-                  }
-                  _isScreenRecordingStarting = false;
-                });
               }
+              // NOTE: Do NOT auto-start! Screen recording starts ONLY when user taps "Start Record" button.
             } else if (activeRecordPerm != null &&
                 (activeRecordPerm.isCompleted ||
                  activeRecordPerm.isRejected ||
@@ -7601,8 +7792,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _selectedAttachmentType = 'contact';
       _selectedAttachmentBytes = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = false;
-      _attachmentAllowDownload = false;
+      _attachmentAllowShare = true;
+      _attachmentAllowDownload = true;
       _attachmentAllowView = true;
       _isTyping = true;
     });
@@ -7687,8 +7878,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               _selectedAttachmentName = (result['name'] as String?) ?? name;
               _selectedAttachmentType = (result['type'] as String?) ?? fileType;
               _selectedAttachmentSize = sendBytes.length;
-              _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+              _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
               _attachmentAllowView = (result['allowView'] as bool?) ?? true;
               _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
               _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7737,8 +7928,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
           if (result != null && result['send'] == true && mounted) {
             final caption = (result['caption'] as String?) ?? '';
-            final allowShare = (result['allowShare'] as bool?) ?? false;
-            final allowDownload = (result['allowDownload'] as bool?) ?? false;
+            final allowShare = (result['allowShare'] as bool?) ?? true;
+            final allowDownload = (result['allowDownload'] as bool?) ?? true;
             final allowView = (result['allowView'] as bool?) ?? true;
             final isViewOnce = (result['isViewOnce'] as bool?) ?? false;
             final maxViews = (result['maxViews'] as int?) ?? 1;
@@ -7840,8 +8031,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             _selectedAttachmentName = (result['name'] as String?) ?? name;
             _selectedAttachmentType = (result['type'] as String?) ?? 'image';
             _selectedAttachmentSize = sendBytes.length;
-            _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+            _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
             _attachmentAllowView = (result['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7917,8 +8108,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           _selectedAttachmentName = sendName;
           _selectedAttachmentType = sendType;
           _selectedAttachmentSize = sendBytes.length;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7990,8 +8181,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           _selectedAttachmentName = sendName;
           _selectedAttachmentType = sendType;
           _selectedAttachmentSize = sendBytes.length;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -8137,8 +8328,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             _selectedAttachmentName = sendName;
             _selectedAttachmentType = sendType;
             _selectedAttachmentSize = sendBytes?.length ?? (sendPath != null && File(sendPath).existsSync() ? File(sendPath).lengthSync() : file.size);
-            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? false;
-            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? false;
+            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? true;
+            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? true;
             _attachmentAllowView = (previewResult['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (previewResult['maxViews'] as int?) ?? 1;
@@ -8227,8 +8418,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
         if (previewResult != null && previewResult['send'] == true && mounted) {
           final caption = (previewResult['caption'] as String?) ?? '';
-          final allowShare = (previewResult['allowShare'] as bool?) ?? false;
-          final allowDownload = (previewResult['allowDownload'] as bool?) ?? false;
+          final allowShare = (previewResult['allowShare'] as bool?) ?? true;
+          final allowDownload = (previewResult['allowDownload'] as bool?) ?? true;
           final allowView = (previewResult['allowView'] as bool?) ?? true;
           final isViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
           final maxViews = (previewResult['maxViews'] as int?) ?? 1;
@@ -8700,8 +8891,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           mimeType: mimeType ?? _getMimeType(filePathToUpload, messageTypeStr),
           fileSizeBytes: fileSize,
           allowView: true,
-          allowDownload: false,
-          allowShare: false,
+          allowDownload: true,
+          allowShare: true,
         );
 
         if (attachment.existsSync()) {
@@ -8734,13 +8925,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             mediaId: resolvedMediaId,
             granteeId: targetRecipient,
             canView: true,
-            canDownload: false,
-            canShare: false,
+            canDownload: true,
+            canShare: true,
           );
         } catch (_) {}
       }
 
-      final bool isMedia = type != ScheduledMessageType.text;
       final requestData = {
         "conversationId": widget.conversationId,
         "messageType": messageTypeStr,
@@ -8771,8 +8961,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         "security": {
           "isLocked": false,
           "accessUsers": [],
-          "allowDownload": isMedia ? false : true,
-          "allowShare": isMedia ? false : true,
+          "allowDownload": true,
+          "allowShare": true,
           "allowView": true
         },
         "viewControl": {
@@ -8781,8 +8971,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           "viewedBy": [],
           "isOpened": false,
           "openedAt": null,
-          "allowDownload": isMedia ? false : true,
-          "allowShare": isMedia ? false : true,
+          "allowDownload": true,
+          "allowShare": true,
           "allowView": true
         },
         "expiry": {
@@ -9211,6 +9401,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       isPaused: false,
     );
     getIt<ScreenProtectionService>().setActiveRecordingSession(session);
+    _lastRecordingSessionStartMs = session.startedAt.millisecondsSinceEpoch;
 
     setState(() {
       _isScreenRecordingActive = true;
@@ -9227,7 +9418,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
     if (mounted) {
       context.showSuccessNotification(
-        '⏺️ Screen recording active! ${remaining}s countdown running.',
+        '⏺️ Screen recording active! ${remaining}s countdown running. Start your phone recorder now.',
       );
     }
 
@@ -9254,8 +9445,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     }
 
     final session = getIt<ScreenProtectionService>().activeRecordingSession;
-    final sessionStartMs = session?.startedAt.millisecondsSinceEpoch ??
+    final sessionStartMs = _lastRecordingSessionStartMs ?? session?.startedAt.millisecondsSinceEpoch ??
         (DateTime.now().millisecondsSinceEpoch - 60000);
+    _lastRecordingSessionStartMs = sessionStartMs;
 
     getIt<ScreenProtectionService>().setActiveRecordingSession(null);
 
@@ -9286,12 +9478,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
     if (completedByTimer) {
       if (mounted) {
-        context.showSuccessNotification('Countdown complete! Checking and saving screen recording...');
+        context.showSuccessNotification('Countdown complete! Stop screen recording on your phone to save in Schat folder.');
       }
       _triggerSaveScreenRecordingToSchat(sessionStartMs);
     } else {
       if (mounted) {
-        context.showInfoNotification('Screen recording stopped. Checking for saved video...');
+        context.showInfoNotification('Screen recording stopped. Saving to Schat folder...');
       }
       _triggerSaveScreenRecordingToSchat(sessionStartMs);
     }
@@ -9329,23 +9521,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   void _triggerSaveScreenRecordingToSchat(int sessionStartMs) {
+    if (_isSavingScreenRecording) return;
+    _isSavingScreenRecording = true;
+
     void attemptSave(int attempt) async {
       final saved = await getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat(
         recordedSinceTimestamp: sessionStartMs,
       );
       if (saved != null && saved.isNotEmpty) {
+        _isSavingScreenRecording = false;
+        _lastRecordingSessionStartMs = null;
         if (mounted) {
           _handleRecordedVideoSaved(saved);
         }
-      } else if (attempt < 4) {
-        // Retry at 2s, 4s, 6s to give phone's media recorder time to finish writing the MP4 file
-        Future.delayed(Duration(seconds: attempt * 2), () {
-          if (mounted) attemptSave(attempt + 1);
+      } else if (attempt < 8) {
+        // Retry with progressive intervals to give phone's media recorder time to finalize the MP4 file
+        final delaySec = attempt <= 3 ? (attempt * 2) : 3;
+        Future.delayed(Duration(seconds: delaySec), () {
+          attemptSave(attempt + 1);
         });
       } else {
+        _isSavingScreenRecording = false;
         if (mounted) {
           context.showInfoNotification(
-            'Recording finished. Check your Gallery or Download/Schat folder for saved recordings.',
+            'Recording finished. Saved in your Schat folder (Download/Schat or Movies/Schat).',
           );
         }
       }

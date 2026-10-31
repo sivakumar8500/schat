@@ -105,6 +105,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
   File? _tempFileToCleanup;
   bool _isLoading = true;
   String? _errorMessage;
+  String? _effectiveMediaId;
 
   final TransformationController _transformationController = TransformationController();
   late AnimationController _animationController;
@@ -219,8 +220,11 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       }
 
       if (targetLocalPath.isNotEmpty) {
-        // If local file is encrypted with .enc, decrypt it to temporary file first
-        if (targetLocalPath.toLowerCase().endsWith('.enc') || widget.fileName.toLowerCase().endsWith('.enc')) {
+        // If local file is encrypted with .enc or has encrypted bytes, decrypt it to temporary file first
+        final bool isEnc = targetLocalPath.toLowerCase().endsWith('.enc') ||
+            widget.fileName.toLowerCase().endsWith('.enc') ||
+            SecureAttachmentService.isFileEncryptedSync(targetLocalPath);
+        if (isEnc) {
           var cleanName = widget.fileName;
           while (cleanName.toLowerCase().endsWith('.enc')) {
             cleanName = cleanName.substring(0, cleanName.length - 4);
@@ -256,6 +260,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           ? widget.mediaId
           : (SecureAttachmentService.findMediaId(widget.url) ??
               SecureAttachmentService.findMediaId(widget.fileName));
+      _effectiveMediaId = effectiveMediaId;
 
       final bool isRawUnsignedS3 = resolvedUrl.contains('amazonaws.com') &&
           !resolvedUrl.contains('X-Amz-Signature') &&
@@ -635,7 +640,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             ),
           );
         } else {
-          viewerWidget = _MobileVideoPlayer(url: activePath);
+          viewerWidget = _MobileVideoPlayer(url: activePath, mediaId: _effectiveMediaId);
         }
       } else if (effectiveType == 'audio') {
         if (kIsWeb) {
@@ -958,7 +963,7 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
         clean = clean.substring(0, clean.length - 4);
       }
       final cleanPath = widget.url.replaceAll('file://', '');
-      final isLocal = !widget.url.startsWith('http://') && !widget.url.startsWith('https://');
+      final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
       final ext = clean.contains('.') ? clean.split('.').last.toLowerCase() : '';
       final isPdf = ext == 'pdf';
       final isVideo = ['mp4', 'mov', 'mkv', 'avi', '3gp', 'webm', 'flv', 'm4v'].contains(ext);
@@ -1052,10 +1057,10 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                             builder: (_) => ShareForwardTargetPage(
                               mediaItems: [
                                 SharedMediaItem(
-                                  path: widget.url,
+                                  path: cleanPath,
                                   name: clean,
                                   type: isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'file',
-                                  size: 0,
+                                  size: isLocal && File(cleanPath).existsSync() ? File(cleanPath).lengthSync() : 0,
                                 ),
                               ],
                             ),
@@ -1642,7 +1647,8 @@ class _MobileAudioPlayerState extends State<_MobileAudioPlayer> {
 
 class _MobileVideoPlayer extends StatefulWidget {
   final String url;
-  const _MobileVideoPlayer({required this.url});
+  final String? mediaId;
+  const _MobileVideoPlayer({required this.url, this.mediaId});
 
   @override
   State<_MobileVideoPlayer> createState() => _MobileVideoPlayerState();
@@ -1668,32 +1674,64 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
 
     try {
       final isLocal = !kIsWeb && File(cleanUrl).existsSync();
+      String effectiveUrl = cleanUrl;
       if (!isLocal && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-        debugPrint('_MobileVideoPlayer: URL is not a local file and not a valid HTTP URL -> $cleanUrl');
-        if (mounted) setState(() => _hasError = true);
-        return;
+        final local = SecureAttachmentService.findCachedLocalPath(cleanUrl) ??
+            SecureAttachmentService.findLocalFile(pathOrKey: cleanUrl);
+        if (local != null && File(local).existsSync()) {
+          effectiveUrl = local;
+        } else {
+          debugPrint('_MobileVideoPlayer: URL is not a local file and not a valid HTTP URL -> $cleanUrl');
+          if (mounted) setState(() => _hasError = true);
+          return;
+        }
       }
 
-      final controller = isLocal
-          ? VideoPlayerController.file(File(cleanUrl))
-          : VideoPlayerController.networkUrl(Uri.parse(cleanUrl));
+      final bool isNowLocal = !kIsWeb && File(effectiveUrl).existsSync();
+      final controller = isNowLocal
+          ? VideoPlayerController.file(File(effectiveUrl))
+          : VideoPlayerController.networkUrl(Uri.parse(effectiveUrl));
 
       _controller = controller;
 
       await controller.initialize().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw TimeoutException('Video initialization timed out after 15 seconds'),
+        const Duration(seconds: 35),
+        onTimeout: () => throw TimeoutException('Video initialization timed out after 35 seconds'),
       );
 
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _hasError = false;
         });
         controller.play();
         controller.setLooping(true);
       }
     } catch (e) {
-      debugPrint('Video player initialization error: $e');
+      debugPrint('Video player initialization error: $e, attempting fresh URL refresh...');
+      if (widget.mediaId != null && widget.mediaId!.isNotEmpty) {
+        try {
+          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(widget.mediaId!);
+          if (freshUrl != null && freshUrl.isNotEmpty && freshUrl != cleanUrl) {
+            final resolvedFresh = SecureAttachmentService.resolveFullUrl(freshUrl);
+            final freshController = VideoPlayerController.networkUrl(Uri.parse(resolvedFresh));
+            await freshController.initialize().timeout(const Duration(seconds: 35));
+            if (mounted) {
+              _controller?.dispose();
+              _controller = freshController;
+              setState(() {
+                _isInitialized = true;
+                _hasError = false;
+              });
+              freshController.play();
+              freshController.setLooping(true);
+              return;
+            }
+          }
+        } catch (retryError) {
+          debugPrint('Video player refresh retry failed: $retryError');
+        }
+      }
       if (mounted) {
         setState(() {
           _hasError = true;

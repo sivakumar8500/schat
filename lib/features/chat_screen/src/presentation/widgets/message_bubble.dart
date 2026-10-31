@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -37,7 +38,6 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/link_preview
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:async' show StreamSubscription;
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
@@ -1687,6 +1687,99 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
+  Widget _buildLocalImageWidget(
+    BuildContext context, {
+    required String filePath,
+    String? fileName,
+    required bool viewLocked,
+  }) {
+    final bool isEnc = filePath.toLowerCase().endsWith('.enc') ||
+        (fileName != null && fileName.toLowerCase().endsWith('.enc')) ||
+        SecureAttachmentService.isFileEncryptedSync(filePath);
+
+    if (!isEnc) {
+      return Image.file(
+        File(filePath),
+        height: 220,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) {
+          return _buildDecryptedLocalImage(
+            context,
+            filePath: filePath,
+            fileName: fileName,
+            viewLocked: viewLocked,
+          );
+        },
+      );
+    }
+
+    return _buildDecryptedLocalImage(
+      context,
+      filePath: filePath,
+      fileName: fileName,
+      viewLocked: viewLocked,
+    );
+  }
+
+  Widget _buildDecryptedLocalImage(
+    BuildContext context, {
+    required String filePath,
+    String? fileName,
+    required bool viewLocked,
+  }) {
+    var cleanName = fileName ?? filePath.split('/').last;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    if (cleanName.isEmpty) cleanName = 'image.jpg';
+
+    return FutureBuilder<File>(
+      future: getIt<SecureAttachmentService>().decryptToTemporaryFile(
+        encryptedFilePath: filePath,
+        originalFileName: cleanName,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
+          return Image.file(
+            snapshot.data!,
+            height: 220,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _buildMaskedImagePreview(
+              context,
+              title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+              subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
+              icon: CommonIcons.imageNotSupported,
+            ),
+          );
+        } else if (snapshot.hasError) {
+          return _buildMaskedImagePreview(
+            context,
+            title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+            subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
+            icon: CommonIcons.imageNotSupported,
+          );
+        }
+        return Container(
+          height: 220,
+          width: double.infinity,
+          color: context.colors.pureBlack.withValues(alpha: 0.1),
+          child: Center(
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAttachment(BuildContext context) {
     final effectivePath = (attachmentPath != null && attachmentPath!.isNotEmpty)
         ? attachmentPath!
@@ -1752,17 +1845,11 @@ class _MessageBubbleState extends State<MessageBubble> {
         final resolvedUrl = SecureAttachmentService.resolveFullUrl(effectivePath);
         final isLocalFile = !kIsWeb && File(resolvedUrl).existsSync();
         if (isLocalFile) {
-          imageWidget = Image.file(
-            File(resolvedUrl),
-            height: 220,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildMaskedImagePreview(
-              context,
-              title: viewLocked ? 'View Restricted' : 'Image Unavailable',
-              subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
-              icon: CommonIcons.imageNotSupported,
-            ),
+          imageWidget = _buildLocalImageWidget(
+            context,
+            filePath: resolvedUrl,
+            fileName: attachmentName,
+            viewLocked: viewLocked,
           );
         } else if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
           imageWidget = CachedNetworkImage(
@@ -1794,11 +1881,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) {
                   if (!kIsWeb && attachmentPath != null && File(attachmentPath!).existsSync()) {
-                    return Image.file(
-                      File(attachmentPath!),
-                      height: 220,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
+                    return _buildLocalImageWidget(
+                      context,
+                      filePath: attachmentPath!,
+                      fileName: attachmentName,
+                      viewLocked: viewLocked,
                     );
                   }
                   return _buildMaskedImagePreview(
@@ -3765,15 +3852,25 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       final bool isLocal = !kIsWeb && File(cleanPath).existsSync();
 
       String playUrl = isLocal ? cleanPath : url;
-      if (isLocal && (cleanPath.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')))) {
+      if (!isLocal && !kIsWeb) {
+        final local = SecureAttachmentService.findCachedLocalPath(widget.url) ??
+            SecureAttachmentService.findCachedLocalPath(widget.messageId) ??
+            SecureAttachmentService.findLocalFile(pathOrKey: widget.url);
+        if (local != null && File(local).existsSync()) {
+          playUrl = local;
+        }
+      }
+
+      final bool isPlayLocal = !kIsWeb && File(playUrl).existsSync();
+      if (isPlayLocal && (playUrl.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')))) {
         try {
-          var cleanName = cleanPath.split('/').last;
+          var cleanName = playUrl.split('/').last;
           while (cleanName.toLowerCase().endsWith('.enc')) {
             cleanName = cleanName.substring(0, cleanName.length - 4);
           }
           if (cleanName.isEmpty) cleanName = 'video_preview.mp4';
           final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
-            encryptedFilePath: cleanPath,
+            encryptedFilePath: playUrl,
             originalFileName: cleanName,
           );
           _tempDecryptedFile = decFile;
@@ -3783,12 +3880,15 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         }
       }
 
-      final bool isPlayLocal = !kIsWeb && File(playUrl).existsSync();
-      _controller = isPlayLocal
+      final bool isFinalLocal = !kIsWeb && File(playUrl).existsSync();
+      _controller = isFinalLocal
           ? VideoPlayerController.file(File(playUrl))
           : VideoPlayerController.networkUrl(Uri.parse(playUrl));
 
-      await _controller!.initialize();
+      await _controller!.initialize().timeout(
+        const Duration(seconds: 25),
+        onTimeout: () => throw TimeoutException('Video preview init timed out'),
+      );
       if (mounted) {
         setState(() {
           _isInitialized = true;
@@ -3796,7 +3896,28 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         });
       }
     } catch (e) {
-      debugPrint('Error initializing video preview: $e');
+      debugPrint('Error initializing video preview: $e, attempting refresh...');
+      if (widget.messageId.isNotEmpty) {
+        try {
+          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(widget.messageId);
+          if (freshUrl != null && freshUrl.isNotEmpty && freshUrl != widget.url) {
+            final resolvedFresh = _resolveUrl(freshUrl);
+            final freshController = VideoPlayerController.networkUrl(Uri.parse(resolvedFresh));
+            await freshController.initialize().timeout(const Duration(seconds: 25));
+            if (mounted) {
+              _controller?.dispose();
+              _controller = freshController;
+              setState(() {
+                _isInitialized = true;
+                _hasError = false;
+              });
+              return;
+            }
+          }
+        } catch (retryError) {
+          debugPrint('Retry with fresh view URL failed: $retryError');
+        }
+      }
       if (mounted) {
         setState(() {
           _hasError = true;

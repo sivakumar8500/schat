@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:get_it/get_it.dart';
 import 'package:hive/hive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/data/repositories/chat_repository_impl.dart';
@@ -12,11 +14,13 @@ import 'package:schat/features/chat_screen/src/presentation/bloc/chat_bloc.dart'
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/bloc/chat_state.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 
 class MockApiService extends Mock implements ApiService {}
 class MockChatRepository extends Mock implements ChatRepository {}
 class MockStorageService extends Mock implements StorageService {}
 class MockChatSocketRepository extends Mock implements ChatSocketRepository {}
+class MockProfileRepository extends Mock implements ProfileRepository {}
 
 void main() {
   late ChatRepositoryImpl repository;
@@ -38,6 +42,16 @@ void main() {
         createdAt: '2026-06-14T10:00:00Z',
         updatedAt: '2026-06-14T10:00:00Z',
       );
+
+      when(() => mockApiService.call<MessageModel>(
+        path: any(named: 'path'),
+        method: any(named: 'method'),
+        data: any(named: 'data'),
+        queryParameters: any(named: 'queryParameters'),
+        options: any(named: 'options'),
+        mapper: any(named: 'mapper'),
+      )).thenAnswer((_) async => ApiResult.success(message));
+
       final result = await repository.sendMessage(message);
       expect(result, isTrue);
     });
@@ -129,7 +143,29 @@ void main() {
 
       when(() => mockChatSocketRepository.onMessage).thenAnswer((_) => const Stream.empty());
       when(() => mockChatRepositoryInstance.getPinnedMessages(any())).thenAnswer((_) async => []);
+      when(() => mockChatRepositoryInstance.getLockedChats()).thenAnswer((_) async => []);
       when(() => mockStorageService.getUserId()).thenReturn('me');
+      when(() => mockStorageService.getDefaultDisappearingTimer()).thenReturn(null);
+      when(() => mockStorageService.getConversationClearedAt(any())).thenReturn(null);
+      when(() => mockStorageService.isChatLocked(any())).thenReturn(false);
+      when(() => mockStorageService.isChatMuted(any())).thenReturn(false);
+      when(() => mockStorageService.getSenderMediaPermissions(any())).thenReturn(null);
+      when(() => mockStorageService.saveSenderMediaPermissions(
+        any(),
+        allowView: any(named: 'allowView'),
+        allowDownload: any(named: 'allowDownload'),
+        allowShare: any(named: 'allowShare'),
+      )).thenAnswer((_) async {});
+      when(() => mockStorageService.getReadReceiptsEnabled()).thenReturn(true);
+
+      if (!GetIt.I.isRegistered<StorageService>()) {
+        GetIt.I.registerSingleton<StorageService>(mockStorageService);
+      }
+      if (!GetIt.I.isRegistered<ProfileRepository>()) {
+        final mockProfileRepo = MockProfileRepository();
+        when(() => mockProfileRepo.getUserById(any())).thenAnswer((_) async => ApiResult.failure('not found'));
+        GetIt.I.registerSingleton<ProfileRepository>(mockProfileRepo);
+      }
 
       chatBloc = ChatBloc(
         chatRepository: mockChatRepositoryInstance,

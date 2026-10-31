@@ -314,8 +314,14 @@ class StorageService {
       'allowShare': allowShare,
     });
     await _prefs.setString('sender_perms_$cleanKey', jsonStr);
-    final fileName = cleanKey.split('?').first.split('/').last.trim();
-    if (fileName.isNotEmpty && fileName != cleanKey) {
+    final fileName = cleanKey.split('?').first.split('/').last.trim().toLowerCase();
+    final isGeneric = fileName.length < 8 ||
+        fileName.startsWith('video.') ||
+        fileName.startsWith('image.') ||
+        fileName.startsWith('file.') ||
+        fileName.startsWith('audio.') ||
+        fileName.startsWith('recording.');
+    if (fileName.isNotEmpty && fileName != cleanKey.toLowerCase() && !isGeneric) {
       await _prefs.setString('sender_perms_$fileName', jsonStr);
     }
   }
@@ -325,8 +331,14 @@ class StorageService {
     if (cleanKey.isEmpty) return null;
     String? jsonStr = _prefs.getString('sender_perms_$cleanKey');
     if (jsonStr == null || jsonStr.isEmpty) {
-      final fileName = cleanKey.split('?').first.split('/').last.trim();
-      if (fileName.isNotEmpty && fileName != cleanKey) {
+      final fileName = cleanKey.split('?').first.split('/').last.trim().toLowerCase();
+      final isGeneric = fileName.length < 8 ||
+          fileName.startsWith('video.') ||
+          fileName.startsWith('image.') ||
+          fileName.startsWith('file.') ||
+          fileName.startsWith('audio.') ||
+          fileName.startsWith('recording.');
+      if (fileName.isNotEmpty && fileName != cleanKey.toLowerCase() && !isGeneric) {
         jsonStr = _prefs.getString('sender_perms_$fileName');
       }
     }

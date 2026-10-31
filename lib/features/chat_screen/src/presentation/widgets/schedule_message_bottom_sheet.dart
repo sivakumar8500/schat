@@ -637,8 +637,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             'security': {
               'isLocked': false,
               'accessUsers': [],
-              'allowDownload': isMedia ? false : true,
-              'allowShare': isMedia ? false : true,
+              'allowDownload': true,
+              'allowShare': true,
               'allowView': true,
             },
             'viewControl': {
@@ -646,8 +646,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               'maxViews': 1,
               'viewedBy': [],
               'isOpened': false,
-              'allowDownload': isMedia ? false : true,
-              'allowShare': isMedia ? false : true,
+              'allowDownload': true,
+              'allowShare': true,
               'allowView': true,
             },
             'scheduledAt': scheduled.toUtc().toIso8601String(),
@@ -872,8 +872,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               "security": {
                 "isLocked": false,
                 "accessUsers": [],
-                "allowDownload": isMedia ? false : true,
-                "allowShare": isMedia ? false : true,
+                "allowDownload": true,
+                "allowShare": true,
                 "allowView": true,
               },
               "viewControl": {
@@ -881,8 +881,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 "maxViews": 1,
                 "viewedBy": [],
                 "isOpened": false,
-                "allowDownload": isMedia ? false : true,
-                "allowShare": isMedia ? false : true,
+                "allowDownload": true,
+                "allowShare": true,
                 "allowView": true,
               },
               "expiry": {

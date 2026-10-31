@@ -133,7 +133,93 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<bool> sendMessage(MessageModel message) async {
-    return true;
+    final confirmed = await sendMessageAndGetResult(message);
+    return confirmed != null;
+  }
+
+  @override
+  Future<MessageModel?> sendMessageAndGetResult(MessageModel message) async {
+    try {
+      final String payloadType = (message.mediaType != null && message.mediaType!.isNotEmpty)
+          ? message.mediaType!
+          : message.messageType;
+
+      final Map<String, dynamic> contentMap = {};
+      if (message.content.isNotEmpty) {
+        contentMap['text'] = message.content;
+      }
+      if (message.mediaUrl != null && message.mediaUrl!.isNotEmpty) {
+        contentMap['fileKey'] = message.mediaUrl;
+      }
+      if (message.attachmentName != null && message.attachmentName!.isNotEmpty) {
+        contentMap['fileName'] = message.attachmentName;
+      }
+      if (message.fileSize != null && message.fileSize! > 0) {
+        contentMap['fileSize'] = message.fileSize;
+      }
+      if (message.duration != null && message.duration! > 0) {
+        contentMap['duration'] = message.duration;
+      }
+      if (message.latitude != null && message.longitude != null) {
+        contentMap['latitude'] = message.latitude;
+        contentMap['longitude'] = message.longitude;
+        if (message.address != null && message.address!.isNotEmpty) {
+          contentMap['address'] = message.address;
+        }
+        if (message.locationTitle != null && message.locationTitle!.isNotEmpty) {
+          contentMap['contactName'] = message.locationTitle;
+        }
+      }
+
+      final Map<String, dynamic> payload = {
+        'conversationId': message.conversationId,
+        'type': payloadType,
+        if (contentMap.isNotEmpty) 'content': contentMap,
+        if (message.replyMessageId != null && message.replyMessageId!.isNotEmpty)
+          'replyMessageId': message.replyMessageId,
+        'security': {
+          'isLocked': false,
+          'accessUsers': [],
+          'allowDownload': message.isViewOnce ? false : message.allowDownload,
+          'allowShare': message.isViewOnce ? false : message.allowShare,
+          'allowView': message.allowView,
+        },
+        'viewControl': {
+          'type': message.isViewOnce ? 'once' : 'normal',
+          'maxViews': message.maxViews > 0 ? message.maxViews : 1,
+          'isViewOnce': message.isViewOnce,
+          'allowShare': message.isViewOnce ? false : message.allowShare,
+          'allowDownload': message.isViewOnce ? false : message.allowDownload,
+          'allowView': message.allowView,
+        },
+      };
+
+      if (message.callMeta != null) {
+        payload['callMeta'] = message.callMeta!.toJson();
+      }
+
+      debugPrint('ChatRepository.sendMessage calling POST ${CommonEndpoints.getMessages} with payload: $payload');
+      final result = await _apiService.post<MessageModel>(
+        CommonEndpoints.getMessages,
+        data: payload,
+        mapper: (data) => MessageModel.fromJson(data as Map<String, dynamic>),
+      );
+
+      final outcome = result.when(
+        success: (confirmedMsg) {
+          debugPrint('ChatRepository.sendMessage SUCCESS: id=${confirmedMsg.id}, status=${confirmedMsg.status}');
+          return confirmedMsg;
+        },
+        failure: (error, statusCode) {
+          debugPrint('ChatRepository.sendMessage FAILED: $error (statusCode: $statusCode)');
+          return null;
+        },
+      );
+      return outcome;
+    } catch (e) {
+      debugPrint('ChatRepository.sendMessage EXCEPTION: $e');
+      return null;
+    }
   }
 
   @override
@@ -148,8 +234,8 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = false,
-    bool allowShare = false,
+    bool allowDownload = true,
+    bool allowShare = true,
   }) async {
     try {
       if (!kIsWeb) {
@@ -1608,13 +1694,14 @@ class ChatRepositoryImpl implements ChatRepository {
         CommonEndpoints.mediaViewUrl(mediaId.trim()),
         mapper: (data) => Map<String, dynamic>.from(data as Map),
       );
-      return result.when(
+      final url = result.when(
         success: (data) => data['view_url']?.toString() ?? data['url']?.toString(),
         failure: (error, statusCode) {
           debugPrint('getMediaViewUrl failed [$statusCode]: $error');
           return null;
         },
       );
+      return url;
     } catch (e) {
       debugPrint('getMediaViewUrl exception: $e');
       return null;
@@ -1629,13 +1716,14 @@ class ChatRepositoryImpl implements ChatRepository {
         CommonEndpoints.mediaDownloadUrl(mediaId.trim()),
         mapper: (data) => Map<String, dynamic>.from(data as Map),
       );
-      return result.when(
+      final url = result.when(
         success: (data) => data['download_url']?.toString() ?? data['url']?.toString(),
         failure: (error, statusCode) {
           debugPrint('getMediaDownloadUrl failed [$statusCode]: $error');
           return null;
         },
       );
+      return url;
     } catch (e) {
       debugPrint('getMediaDownloadUrl exception: $e');
       return null;

@@ -21,8 +21,8 @@ class SecureAttachmentService {
 
   SecureAttachmentService(this._storageService)
       : _cleanDio = Dio(BaseOptions(
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 30),
+          connectTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(minutes: 3),
           followRedirects: true,
           maxRedirects: 5,
           validateStatus: (status) => status != null && status >= 200 && status < 300,
@@ -231,28 +231,8 @@ class SecureAttachmentService {
     return enc.Key(Uint8List.fromList(keyBytes));
   }
 
-  enc.Key _getFallbackKeyUserOnly() {
-    final userId = _storageService.getUserId() ?? 'guest_user';
-    final rawSeed = 'schat_sec_attachment_$userId';
-    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
-    return enc.Key(Uint8List.fromList(keyBytes));
-  }
-
   enc.Key _getFallbackKeyCommon() {
     const rawSeed = 'schat_sec_attachment_common_key';
-    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
-    return enc.Key(Uint8List.fromList(keyBytes));
-  }
-
-  enc.Key _getFallbackKeyGuestDevice() {
-    final deviceId = _storageService.getOrGenerateDeviceId();
-    final rawSeed = 'schat_sec_attachment_guest_user_$deviceId';
-    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
-    return enc.Key(Uint8List.fromList(keyBytes));
-  }
-
-  enc.Key _getFallbackKeyGuest() {
-    const rawSeed = 'schat_sec_attachment_guest_user';
     final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
     return enc.Key(Uint8List.fromList(keyBytes));
   }
@@ -309,7 +289,31 @@ class SecureAttachmentService {
     return keys;
   }
 
+  static bool isFileEncryptedSync(String filePath) {
+    if (kIsWeb) return false;
+    try {
+      final clean = filePath.replaceAll('file://', '').trim();
+      final f = File(clean);
+      if (!f.existsSync()) return false;
+      if (clean.toLowerCase().endsWith('.enc')) return true;
+      final len = f.lengthSync();
+      if (len < 16) return false;
+      final bytes = f.openSync().readSync(32);
+      return !isPlaintextFile(bytes, clean.split('/').last);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool isPlaintextFile(Uint8List bytes, [String safeName = '']) {
+    return _isPlaintextFileStatic(bytes, safeName);
+  }
+
   bool _isPlaintextFile(Uint8List bytes, String safeName) {
+    return _isPlaintextFileStatic(bytes, safeName);
+  }
+
+  static bool _isPlaintextFileStatic(Uint8List bytes, String safeName) {
     if (bytes.length < 4) return false;
     final lower = safeName.toLowerCase();
 
@@ -662,7 +666,7 @@ class SecureAttachmentService {
         }
       } catch (dioError) {
         debugPrint('SecureAttachmentService: Dio error ($dioError), trying HTTP fallback for $fullUrl');
-        final httpResponse = await http.get(Uri.parse(fullUrl)).timeout(const Duration(seconds: 15));
+        final httpResponse = await http.get(Uri.parse(fullUrl)).timeout(const Duration(seconds: 60));
         if (httpResponse.statusCode == 200 && httpResponse.bodyBytes.isNotEmpty) {
           rawBytes = httpResponse.bodyBytes;
           if (onProgress != null) onProgress(rawBytes.length, rawBytes.length);

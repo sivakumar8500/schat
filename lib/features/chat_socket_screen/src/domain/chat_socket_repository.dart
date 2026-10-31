@@ -428,15 +428,28 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         'accessUsers': security['accessUsers'],
       if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
         'access_users': security['access_users'],
-      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
-      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? true,
       'allowView': security['allowView'] ?? security['allow_view'] ?? true,
       'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
       'canView': security['allowView'] ?? security['allow_view'] ?? true,
       'can_view': security['allowView'] ?? security['allow_view'] ?? true,
-    } : null;
+    } : {
+      'isLocked': false,
+      'is_locked': false,
+      'accessUsers': <String>[],
+      'access_users': <String>[],
+      'allowDownload': true,
+      'allow_download': true,
+      'allowShare': true,
+      'allow_share': true,
+      'allowView': true,
+      'allow_view': true,
+      'canView': true,
+      'can_view': true,
+    };
 
     final resolvedViewControl = viewControl != null ? {
       ...viewControl,
@@ -445,10 +458,10 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       'max_views': viewControl['maxViews'] ?? viewControl['max_views'] ?? 1,
       'isViewOnce': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
       'is_view_once': viewControl['isViewOnce'] ?? viewControl['is_view_once'] ?? false,
-      'allowDownload': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
-      'allow_download': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? false,
-      'allowShare': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
-      'allow_share': viewControl['allowShare'] ?? viewControl['allow_share'] ?? false,
+      'allowDownload': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true,
+      'allow_download': viewControl['allowDownload'] ?? viewControl['allow_download'] ?? true,
+      'allowShare': viewControl['allowShare'] ?? viewControl['allow_share'] ?? true,
+      'allow_share': viewControl['allowShare'] ?? viewControl['allow_share'] ?? true,
       'allowView': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
       'allow_view': viewControl['allowView'] ?? viewControl['allow_view'] ?? true,
     } : null;
@@ -464,15 +477,13 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       payload['replyMessageId'] = replyMessageId;
       payload['reply_message_id'] = replyMessageId;
     }
-    if (resolvedSecurity != null) {
-      payload['security'] = resolvedSecurity;
-      payload['allowView'] = resolvedSecurity['allowView'];
-      payload['allow_view'] = resolvedSecurity['allowView'];
-      payload['allowDownload'] = resolvedSecurity['allowDownload'];
-      payload['allow_download'] = resolvedSecurity['allowDownload'];
-      payload['allowShare'] = resolvedSecurity['allowShare'];
-      payload['allow_share'] = resolvedSecurity['allowShare'];
-    }
+    payload['security'] = resolvedSecurity;
+    payload['allowView'] = resolvedSecurity['allowView'];
+    payload['allow_view'] = resolvedSecurity['allowView'];
+    payload['allowDownload'] = resolvedSecurity['allowDownload'];
+    payload['allow_download'] = resolvedSecurity['allowDownload'];
+    payload['allowShare'] = resolvedSecurity['allowShare'];
+    payload['allow_share'] = resolvedSecurity['allowShare'];
     if (resolvedViewControl != null) payload['viewControl'] = resolvedViewControl;
     if (expiry != null) payload['expiry'] = expiry;
     if (callMeta != null) payload['callMeta'] = callMeta;
@@ -565,15 +576,28 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
         'accessUsers': security['accessUsers'],
       if ((security['access_users'] is List && (security['access_users'] as List).isNotEmpty))
         'access_users': security['access_users'],
-      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? false,
-      'allowShare': security['allowShare'] ?? security['allow_share'] ?? false,
-      'allow_share': security['allowShare'] ?? security['allow_share'] ?? false,
+      'allowDownload': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allow_download': security['allowDownload'] ?? security['allow_download'] ?? true,
+      'allowShare': security['allowShare'] ?? security['allow_share'] ?? true,
+      'allow_share': security['allowShare'] ?? security['allow_share'] ?? true,
       'allowView': security['allowView'] ?? security['allow_view'] ?? true,
       'allow_view': security['allowView'] ?? security['allow_view'] ?? true,
       'canView': security['allowView'] ?? security['allow_view'] ?? true,
       'can_view': security['allowView'] ?? security['allow_view'] ?? true,
-    } : null;
+    } : {
+      'isLocked': false,
+      'is_locked': false,
+      'accessUsers': <String>[],
+      'access_users': <String>[],
+      'allowDownload': true,
+      'allow_download': true,
+      'allowShare': true,
+      'allow_share': true,
+      'allowView': true,
+      'allow_view': true,
+      'canView': true,
+      'can_view': true,
+    };
 
     final Map<String, dynamic> payload = {
       "type": "edit_message",
@@ -582,13 +606,13 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
       if (conversationId != null) "conversation_id": conversationId,
       if (conversationId != null) "conversationId": conversationId,
       if (text != null) "text": text,
-      if (resolvedSecurity != null) "security": resolvedSecurity,
-      if (resolvedSecurity != null) "allowView": resolvedSecurity['allowView'],
-      if (resolvedSecurity != null) "allow_view": resolvedSecurity['allowView'],
-      if (resolvedSecurity != null) "allowDownload": resolvedSecurity['allowDownload'],
-      if (resolvedSecurity != null) "allow_download": resolvedSecurity['allowDownload'],
-      if (resolvedSecurity != null) "allowShare": resolvedSecurity['allowShare'],
-      if (resolvedSecurity != null) "allow_share": resolvedSecurity['allowShare'],
+      "security": resolvedSecurity,
+      "allowView": resolvedSecurity['allowView'],
+      "allow_view": resolvedSecurity['allowView'],
+      "allowDownload": resolvedSecurity['allowDownload'],
+      "allow_download": resolvedSecurity['allowDownload'],
+      "allowShare": resolvedSecurity['allowShare'],
+      "allow_share": resolvedSecurity['allowShare'],
     };
     emit('message', payload);
   }

@@ -19,6 +19,7 @@ import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/core/security/secure_attachment_service.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 
@@ -1101,6 +1102,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                 allowDownload = (!allowView) ? false : (cached.allowDownload && m.allowDownload);
                 allowShare = (!allowView) ? false : (cached.allowShare && m.allowShare);
               }
+            } else {
+              // Recipient message (!isMine): If cached message was already granted and has valid mediaUrl,
+              // don't drop to restricted unless cached message was already restricted or server explicitly revoked it
+              if (cached.allowView && (cached.mediaUrl != null && cached.mediaUrl!.isNotEmpty)) {
+                if (!m.allowView && m.content == '[View Restricted]' && cached.content != '[View Restricted]') {
+                  allowView = true;
+                }
+              }
             }
 
             final effectiveMediaUrl = _resolveBestMediaUrl(
@@ -1572,6 +1581,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               allowView = m.allowView && cached.allowView;
               allowDownload = (!allowView) ? false : (cached.allowDownload && m.allowDownload);
               allowShare = (!allowView) ? false : (cached.allowShare && m.allowShare);
+            }
+          } else if (cached != null) {
+            if (cached.allowView && (cached.mediaUrl != null && cached.mediaUrl!.isNotEmpty)) {
+              if (!m.allowView && m.content == '[View Restricted]' && cached.content != '[View Restricted]') {
+                allowView = true;
+              }
             }
           }
 
@@ -2372,14 +2387,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded) {
       final editedAtStr = event.updatedAt ?? DateTime.now().toIso8601String();
-      bool shouldReloadForMedia = false;
       final updatedMessages = currentState.messages.map((msg) {
         if (msg.id == event.messageId) {
-          final updatedMediaUrl = (event.newMediaUrl != null && event.newMediaUrl!.isNotEmpty)
+          String? updatedMediaUrl = (event.newMediaUrl != null && event.newMediaUrl!.isNotEmpty)
               ? event.newMediaUrl
               : msg.mediaUrl;
           if (event.allowView == true && (updatedMediaUrl == null || updatedMediaUrl.isEmpty)) {
-            shouldReloadForMedia = true;
+            updatedMediaUrl = SecureAttachmentService.findCachedLocalPath(msg.attachmentName) ??
+                SecureAttachmentService.findCachedLocalPath(msg.id);
           }
           return msg.copyWith(
             content: (event.newContent != null && event.newContent!.isNotEmpty && event.newContent != '[View Restricted]')
@@ -2398,10 +2413,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }).toList();
       emit(currentState.copyWith(messages: updatedMessages));
       _saveToCache(event.conversationId, updatedMessages);
-
-      if (shouldReloadForMedia) {
-        add(LoadMessagesEvent(conversationId: event.conversationId));
-      }
     }
   }
 
@@ -2513,8 +2524,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onReceiveMediaPermissionsUpdated(ReceiveMediaPermissionsUpdatedEvent event, Emitter<ChatState> emit) {
-    final myId = _storageService.getUserId() ?? '';
-
     String extractExactFilename(String? s) {
       if (s == null) return '';
       final trimmed = s.trim();
@@ -2533,17 +2542,45 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         if (msgId == event.mediaId || fwdFromId == event.mediaId) {
           return true;
         }
+        if (mediaKey.isNotEmpty && mediaKey.contains(event.mediaId)) {
+          return true;
+        }
+        // When mediaId is provided, do NOT match other messages simply by filename!
+        return false;
+      }
+
+      if (event.fileKey != null && event.fileKey!.isNotEmpty && mediaKey.isNotEmpty) {
+        if (mediaKey == event.fileKey || mediaKey.contains(event.fileKey!)) {
+          return true;
+        }
+        final targetExact = event.fileKey!.split('?').first.trim();
+        final msgExact = mediaKey.split('?').first.trim();
+        if (targetExact.length >= 10 && msgExact.endsWith(targetExact)) {
+          return true;
+        }
       }
 
       final msgFile = extractExactFilename(mediaKey);
       final msgAtt = extractExactFilename(attachmentName);
 
-      if (targetFile.isNotEmpty) {
+      if (targetFile.isNotEmpty &&
+          targetFile.length >= 8 &&
+          !targetFile.startsWith('video') &&
+          !targetFile.startsWith('image') &&
+          !targetFile.startsWith('file') &&
+          !targetFile.startsWith('audio') &&
+          !targetFile.startsWith('recording')) {
         if (msgFile.isNotEmpty && msgFile == targetFile) return true;
         if (msgAtt.isNotEmpty && msgAtt == targetFile) return true;
       }
 
-      if (targetName.isNotEmpty) {
+      if (targetName.isNotEmpty &&
+          targetName.length >= 8 &&
+          !targetName.startsWith('video') &&
+          !targetName.startsWith('image') &&
+          !targetName.startsWith('file') &&
+          !targetName.startsWith('audio') &&
+          !targetName.startsWith('recording')) {
         if (msgFile.isNotEmpty && msgFile == targetName) return true;
         if (msgAtt.isNotEmpty && msgAtt == targetName) return true;
       }
@@ -2553,7 +2590,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     final currentState = state;
     if (currentState is ChatLoaded) {
-      bool needReload = false;
       final updatedMessages = currentState.messages.map((msg) {
         final mediaKey = msg.mediaUrl ?? msg.content;
         final attachmentName = msg.attachmentName ?? '';
@@ -2567,24 +2603,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final effectiveShare = (!updatedView) ? false : updatedShare;
           final effectiveDownload = (!updatedView) ? false : updatedDownload;
 
-          final isMe = myId.isNotEmpty && msg.senderId == myId;
-          final changed = (msg.allowShare != effectiveShare || msg.allowDownload != effectiveDownload || msg.allowView != updatedView);
-          if (isMe && changed && msg.id.isNotEmpty && !msg.id.startsWith('temp_')) {
-            _chatRepository.updateMessageSecurity(
-              msg.id,
-              allowShare: effectiveShare,
-              allowDownload: effectiveDownload,
-              allowView: updatedView,
-            ).catchError((_) {});
-          }
-
           final shouldClearRestricted = updatedView && msg.content == '[View Restricted]';
-          final newMediaUrl = (updatedView && (msg.mediaUrl == null || msg.mediaUrl!.isEmpty) && event.fileKey != null && event.fileKey!.startsWith('http'))
-              ? event.fileKey
-              : msg.mediaUrl;
-
+          String? newMediaUrl = msg.mediaUrl;
           if (updatedView && (newMediaUrl == null || newMediaUrl.isEmpty)) {
-            needReload = true;
+            if (event.fileKey != null && event.fileKey!.isNotEmpty) {
+              if (event.fileKey!.startsWith('http')) {
+                newMediaUrl = event.fileKey;
+              } else {
+                newMediaUrl = SecureAttachmentService.findCachedLocalPath(event.fileKey) ??
+                    SecureAttachmentService.findCachedLocalPath(msg.attachmentName) ??
+                    SecureAttachmentService.resolveFullUrl(event.fileKey!);
+              }
+            } else if (msg.attachmentName != null && msg.attachmentName!.isNotEmpty) {
+              newMediaUrl = SecureAttachmentService.findCachedLocalPath(msg.attachmentName);
+            }
           }
 
           return msg.copyWith(
@@ -2600,9 +2632,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       emit(currentState.copyWith(messages: updatedMessages));
       if (_conversationId != null) {
         _saveToCache(_conversationId!, updatedMessages);
-      }
-      if (needReload && _conversationId != null) {
-        add(LoadMessagesEvent(conversationId: _conversationId!));
       }
     }
 
@@ -2640,17 +2669,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                 map['allowView'] = updatedView;
                 map['allowDownload'] = effectiveDownload;
                 map['allowShare'] = effectiveShare;
-
-                final senderId = (map['senderId'] ?? '')?.toString() ?? '';
-                final isMeSent = map['isMe'] == true || (myId.isNotEmpty && senderId == myId);
-                if (isMeSent && msgId.isNotEmpty && !msgId.startsWith('temp_')) {
-                  _chatRepository.updateMessageSecurity(
-                    msgId,
-                    allowShare: effectiveShare,
-                    allowDownload: effectiveDownload,
-                    allowView: updatedView,
-                  ).catchError((_) {});
-                }
               }
             }
             return map;

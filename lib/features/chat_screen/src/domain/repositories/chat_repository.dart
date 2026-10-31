@@ -12,6 +12,7 @@ import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_m
 abstract class ChatRepository {
   Future<List<MessageModel>> getMessages(String conversationId, {int? limit, int? skip});
   Future<bool> sendMessage(MessageModel message);
+  Future<MessageModel?> sendMessageAndGetResult(MessageModel message);
   Future<String?> uploadMedia({
     required String conversationId,
     String? recipientId,
@@ -23,8 +24,8 @@ abstract class ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = false,
-    bool allowShare = false,
+    bool allowDownload = true,
+    bool allowShare = true,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);

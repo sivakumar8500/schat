@@ -58,8 +58,8 @@ class AttachmentPreviewPage extends StatefulWidget {
     required this.size,
     required this.contactName,
     this.initialAllowView = true,
-    this.initialAllowDownload = false,
-    this.initialAllowShare = false,
+    this.initialAllowDownload = true,
+    this.initialAllowShare = true,
     this.initialIsViewOnce = false,
     this.initialViewCount = 1,
     this.extraItems,
@@ -259,7 +259,10 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     if (_activePath != null && !kIsWeb) {
       final activeFile = File(_activePath!);
       if (activeFile.existsSync()) {
-        if (_activePath!.toLowerCase().endsWith('.enc')) {
+        final bool isEnc = _activePath!.toLowerCase().endsWith('.enc') ||
+            _activeName.toLowerCase().endsWith('.enc') ||
+            SecureAttachmentService.isFileEncryptedSync(_activePath!);
+        if (isEnc) {
           try {
             final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
               encryptedFilePath: _activePath!,
@@ -267,6 +270,18 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
             );
             _tempFilesToCleanup.add(decFile);
             _resolvedActivePath = decFile.path;
+            try {
+              final bytes = await decFile.readAsBytes();
+              if (mounted) {
+                setState(() {
+                  _currentBytes = bytes;
+                  _originalBytes = bytes;
+                });
+              } else {
+                _currentBytes = bytes;
+                _originalBytes = bytes;
+              }
+            } catch (_) {}
             return decFile.path;
           } catch (e) {
             debugPrint('Error decrypting .enc in _resolveTempFilePath: $e');
@@ -565,6 +580,9 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       if (_isViewOnce) {
         _allowDownload = false;
         _allowShare = false;
+      } else {
+        _allowDownload = true;
+        _allowShare = true;
       }
     });
 
@@ -604,7 +622,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       'name': cleanName,
       'type': effectiveType,
       'items': widget.extraItems,
-      'allowView': true,
+      'allowView': _allowView,
       'allowDownload': _isViewOnce ? false : _allowDownload,
       'allowShare': _isViewOnce ? false : _allowShare,
       'isViewOnce': _isViewOnce,
