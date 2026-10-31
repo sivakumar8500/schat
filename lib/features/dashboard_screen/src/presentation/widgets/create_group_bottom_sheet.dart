@@ -13,6 +13,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/group_stat
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/main.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
@@ -31,6 +32,9 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
   final Set<String> _selectedUserIds = {};
   XFile? _selectedImage;
   bool _isUploadingImage = false;
+  bool _isSubmitting = false;
+
+  late final GroupBloc _groupBloc;
 
   List<UserModel> _cachedUsers = [];
   bool _isLoadingContacts = true;
@@ -38,6 +42,7 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
   @override
   void initState() {
     super.initState();
+    _groupBloc = GroupBloc();
     _loadLocalContacts();
   }
 
@@ -48,22 +53,26 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
       final users = await repository.getCachedContacts();
       final filteredUsers = users.where((u) => u.id.trim().isNotEmpty && (myId == null || u.id != myId)).toList();
       filteredUsers.sort((a, b) => a.displayName.trim().toLowerCase().compareTo(b.displayName.trim().toLowerCase()));
-      setState(() {
-        _cachedUsers = filteredUsers;
-        _isLoadingContacts = false;
-      });
+      if (mounted) {
+        setState(() {
+          _cachedUsers = filteredUsers;
+          _isLoadingContacts = false;
+        });
+      }
     } catch (e) {
       debugPrint('DEBUG: CreateGroupBottomSheet._loadLocalContacts error: $e');
-      setState(() {
-        _isLoadingContacts = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingContacts = false;
+        });
+      }
     }
   }
 
   Future<void> _pickGroupImage() async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-    if (image != null) {
+    if (image != null && mounted) {
       setState(() {
         _selectedImage = image;
       });
@@ -72,6 +81,7 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
 
   @override
   void dispose() {
+    _groupBloc.close();
     _nameController.dispose();
     _descriptionController.dispose();
     super.dispose();
@@ -79,20 +89,34 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => GroupBloc(),
+    return BlocProvider.value(
+      value: _groupBloc,
       child: BlocConsumer<GroupBloc, GroupState>(
         listener: (context, state) {
           if (state is GroupSuccess) {
             debugPrint('DEBUG: CreateGroupBottomSheet GroupSuccess received: ${state.chat.id}');
-            Navigator.pop(context, state.chat);
+            if (mounted) {
+              setState(() {
+                _isSubmitting = false;
+              });
+            }
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop(state.chat);
+            } else if (navigatorKey.currentState?.canPop() ?? false) {
+              navigatorKey.currentState?.pop(state.chat);
+            }
           } else if (state is GroupError) {
             debugPrint('DEBUG: CreateGroupBottomSheet GroupError: ${state.message}');
+            if (mounted) {
+              setState(() {
+                _isSubmitting = false;
+              });
+            }
             context.showErrorNotification(state.message);
           }
         },
         builder: (context, state) {
-          final isLoading = state is GroupLoading || _isUploadingImage;
+          final isLoading = state is GroupLoading || _isUploadingImage || _isSubmitting;
 
           return Container(
             padding: EdgeInsets.only(
@@ -291,7 +315,7 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
                       ),
                       CommonSpaces.w12,
                       ElevatedButton(
-                        onPressed: isLoading ? null : () => _createGroup(context),
+                        onPressed: isLoading ? null : _createGroup,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.primary,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -316,7 +340,8 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
     );
   }
 
-  Future<void> _createGroup(BuildContext context) async {
+  Future<void> _createGroup() async {
+    FocusScope.of(context).unfocus();
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       context.showErrorNotification('Please enter group name');
@@ -328,11 +353,19 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
       return;
     }
 
+    if (mounted) {
+      setState(() {
+        _isSubmitting = true;
+      });
+    }
+
     String? uploadedUrl;
     if (_selectedImage != null) {
-      setState(() {
-        _isUploadingImage = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploadingImage = true;
+        });
+      }
       try {
         final bytes = await _selectedImage!.readAsBytes();
         uploadedUrl = await getIt<ProfileRepository>().uploadProfilePicture(
@@ -344,11 +377,12 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
         );
       } catch (e) {
         debugPrint('DEBUG: CreateGroupBottomSheet uploadProfilePicture error: $e');
-        if (mounted && context.mounted) {
-          context.showErrorNotification('Failed to upload group image: $e');
+        if (mounted) {
           setState(() {
             _isUploadingImage = false;
+            _isSubmitting = false;
           });
+          context.showErrorNotification('Failed to upload group image: $e');
         }
         return;
       }
@@ -359,15 +393,13 @@ class _CreateGroupBottomSheetState extends State<CreateGroupBottomSheet> {
       }
     }
 
-    if (mounted && context.mounted) {
-      debugPrint('DEBUG: CreateGroupBottomSheet dispatching CreateGroupEvent: name=$name, participants=$validParticipantIds');
-      context.read<GroupBloc>().add(CreateGroupEvent(
-        name: name,
-        description: _descriptionController.text.trim(),
-        participantIds: validParticipantIds,
-        groupPictureUrl: uploadedUrl,
-        groupImageUrl: uploadedUrl,
-      ));
-    }
+    debugPrint('DEBUG: CreateGroupBottomSheet dispatching CreateGroupEvent: name=$name, participants=$validParticipantIds');
+    _groupBloc.add(CreateGroupEvent(
+      name: name,
+      description: _descriptionController.text.trim(),
+      participantIds: validParticipantIds,
+      groupPictureUrl: uploadedUrl,
+      groupImageUrl: uploadedUrl,
+    ));
   }
 }

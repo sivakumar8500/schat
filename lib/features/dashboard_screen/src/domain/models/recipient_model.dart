@@ -45,15 +45,18 @@ abstract class RecipientModel with _$RecipientModel {
 }
 
 Map<String, dynamic> _normalizeRecipientJson(Map<String, dynamic> json) {
-  final normalizedJson = Map<String, dynamic>.from(json);
-  normalizedJson['_id'] = (json['id'] ?? json['_id'])?.toString() ?? '';
-  normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
-  normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
-  normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;
-  if (json.containsKey('last_seen_enabled') && json['last_seen_enabled'] != null) {
-    normalizedJson['last_seen_enabled'] = json['last_seen_enabled'] == true;
-  } else if (json.containsKey('lastSeenEnabled') && json['lastSeenEnabled'] != null) {
-    normalizedJson['last_seen_enabled'] = json['lastSeenEnabled'] == true;
+  final Map<String, dynamic> baseJson = (json['user'] is Map)
+      ? Map<String, dynamic>.from(json['user'] as Map)
+      : (json['recipient'] is Map ? Map<String, dynamic>.from(json['recipient'] as Map) : json);
+  final normalizedJson = Map<String, dynamic>.from(baseJson);
+  normalizedJson['_id'] = (baseJson['id'] ?? baseJson['_id'])?.toString() ?? '';
+  normalizedJson['is_blocked'] = baseJson['is_blocked'] ?? baseJson['isBlocked'] ?? false;
+  normalizedJson['is_blocked_by_me'] = baseJson['is_blocked_by_me'] ?? baseJson['isBlockedByMe'] ?? false;
+  normalizedJson['is_blocked_by_other'] = baseJson['is_blocked_by_other'] ?? baseJson['isBlockedByOther'] ?? false;
+  if (baseJson.containsKey('last_seen_enabled') && baseJson['last_seen_enabled'] != null) {
+    normalizedJson['last_seen_enabled'] = baseJson['last_seen_enabled'] == true;
+  } else if (baseJson.containsKey('lastSeenEnabled') && baseJson['lastSeenEnabled'] != null) {
+    normalizedJson['last_seen_enabled'] = baseJson['lastSeenEnabled'] == true;
   }
   return normalizedJson;
 }

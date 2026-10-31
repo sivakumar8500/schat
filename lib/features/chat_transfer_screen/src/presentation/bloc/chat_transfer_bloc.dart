@@ -25,6 +25,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
   final ChatSocketRepository _chatSocketRepository;
 
   StreamSubscription? _socketSubscription;
+  final Set<String> _processedRequestIds = {};
 
   ChatTransferBloc(
     this._storageService,
@@ -86,15 +87,22 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
       currentUserId: currentUserId,
       errorMessage: null,
       successMessage: null,
+      newlyReceivedRequest: null,
     ));
 
     final result = await _getChatViewRequestsUseCase.execute();
     result.when(
       success: (requests) {
+        final seen = <String>{};
+        final uniqueRequests = requests.where((r) => seen.add(r.id)).toList();
+        for (final req in uniqueRequests) {
+          _processedRequestIds.add(req.id);
+        }
         emit(state.copyWith(
           status: ChatTransferStatus.success,
-          requests: requests,
+          requests: uniqueRequests,
           currentUserId: currentUserId,
+          newlyReceivedRequest: null,
         ));
       },
       failure: (message, statusCode) {
@@ -102,6 +110,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
           status: ChatTransferStatus.failure,
           errorMessage: message,
           currentUserId: currentUserId,
+          newlyReceivedRequest: null,
         ));
       },
     );
@@ -115,11 +124,13 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
       status: ChatTransferStatus.loading,
       errorMessage: null,
       successMessage: null,
+      newlyReceivedRequest: null,
     ));
 
     final result = await _sendChatViewRequestUseCase.execute(receiverId: event.receiverId);
     result.when(
       success: (newRequest) {
+        _processedRequestIds.add(newRequest.id);
         final updatedList = [
           newRequest,
           ...state.requests.where((r) => r.id != newRequest.id),
@@ -127,6 +138,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.success,
           requests: updatedList,
+          newlyReceivedRequest: null,
           successMessage: 'Chat view request sent successfully.',
         ));
       },
@@ -134,6 +146,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.failure,
           errorMessage: message,
+          newlyReceivedRequest: null,
         ));
       },
     );
@@ -143,10 +156,12 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
     RespondChatTransferRequest event,
     Emitter<ChatTransferState> emit,
   ) async {
+    _processedRequestIds.add(event.requestId);
     emit(state.copyWith(
       status: ChatTransferStatus.loading,
       errorMessage: null,
       successMessage: null,
+      newlyReceivedRequest: null,
     ));
 
     final result = await _respondChatViewRequestUseCase.execute(
@@ -156,6 +171,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
 
     result.when(
       success: (updatedRequest) {
+        _processedRequestIds.add(updatedRequest.id);
         final updatedList = state.requests.map((r) {
           return r.id == updatedRequest.id ? updatedRequest : r;
         }).toList();
@@ -171,6 +187,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.failure,
           errorMessage: message,
+          newlyReceivedRequest: null,
         ));
       },
     );
@@ -180,10 +197,12 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
     RevokeChatTransferRequest event,
     Emitter<ChatTransferState> emit,
   ) async {
+    _processedRequestIds.add(event.requestId);
     emit(state.copyWith(
       status: ChatTransferStatus.loading,
       errorMessage: null,
       successMessage: null,
+      newlyReceivedRequest: null,
     ));
 
     final result = await _revokeChatViewRequestUseCase.execute(requestId: event.requestId);
@@ -196,6 +215,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.success,
           requests: updatedList,
+          newlyReceivedRequest: null,
           successMessage: 'Access revoked successfully.',
         ));
       },
@@ -203,6 +223,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.failure,
           errorMessage: message,
+          newlyReceivedRequest: null,
         ));
       },
     );
@@ -216,6 +237,7 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
       status: ChatTransferStatus.loading,
       selectedTargetUser: event.targetUser ?? state.selectedTargetUser,
       errorMessage: null,
+      newlyReceivedRequest: null,
     ));
 
     final result = await _getTargetConversationsUseCase.execute(targetUserId: event.targetUserId);
@@ -226,12 +248,14 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
         emit(state.copyWith(
           status: ChatTransferStatus.success,
           monitoredConversations: sortedConversations,
+          newlyReceivedRequest: null,
         ));
       },
       failure: (message, statusCode) {
         emit(state.copyWith(
           status: ChatTransferStatus.failure,
           errorMessage: message,
+          newlyReceivedRequest: null,
         ));
       },
     );
@@ -241,24 +265,40 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
     SocketChatViewRequestReceived event,
     Emitter<ChatTransferState> emit,
   ) {
+    final alreadyReceived = _processedRequestIds.contains(event.request.id) ||
+        state.requests.any((r) => r.id == event.request.id);
+
     final updatedList = [
       event.request,
       ...state.requests.where((r) => r.id != event.request.id),
     ];
-    emit(state.copyWith(
-      requests: updatedList,
-      newlyReceivedRequest: event.request,
-    ));
+
+    if (!alreadyReceived) {
+      _processedRequestIds.add(event.request.id);
+      emit(state.copyWith(
+        requests: updatedList,
+        newlyReceivedRequest: event.request,
+      ));
+    } else {
+      emit(state.copyWith(
+        requests: updatedList,
+        newlyReceivedRequest: null,
+      ));
+    }
   }
 
   void _onSocketChatViewRequestUpdated(
     SocketChatViewRequestUpdated event,
     Emitter<ChatTransferState> emit,
   ) {
+    _processedRequestIds.add(event.request.id);
     final updatedList = state.requests.map((r) {
       return r.id == event.request.id ? event.request : r;
     }).toList();
-    emit(state.copyWith(requests: updatedList));
+    emit(state.copyWith(
+      requests: updatedList,
+      newlyReceivedRequest: null,
+    ));
   }
 
   void _onClearTransferMessages(

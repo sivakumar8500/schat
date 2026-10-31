@@ -1596,7 +1596,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _openShareDetailsBottomSheet(BuildContext context) {
-    final idToUse = widget.messageId;
+    final cachedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
+        SecureAttachmentService.findMediaId(attachmentName);
+    final idToUse = (cachedMediaId != null && cachedMediaId.isNotEmpty) ? cachedMediaId : widget.messageId;
     final name = attachmentName ?? (type == 'image' ? 'Image File' : (type == 'video' ? 'Video File' : (type == 'audio' ? 'Audio File' : 'Media Attachment')));
     MediaProtectionBottomSheet.show(
       context,
@@ -1728,9 +1730,16 @@ class _MessageBubbleState extends State<MessageBubble> {
         onSharePressed: (allowShare && widget.onSharePressed != null) ? (_) => widget.onSharePressed!() : null,
       );
     }
+    // Extract extension to ensure text/documents are never rendered as image or audio
+    final String rawBubbleName = attachmentName ?? (effectivePath != null ? effectivePath.split('/').last : '');
+    final String bubbleNameBeforeCaption = rawBubbleName.contains(' · ') ? rawBubbleName.split(' · ').first.trim() : rawBubbleName;
+    final String bubbleExt = bubbleNameBeforeCaption.contains('.')
+        ? bubbleNameBeforeCaption.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+        : '';
+    final bool isDocumentExtension = ['txt', 'text', 'log', 'md', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml', 'pdf', 'zip', 'rar', '7z', 'tar', 'gz'].contains(bubbleExt);
 
     Widget result;
-    if (type == 'image' || (type == 'text' && (effectivePath != null || attachmentBytes != null))) {
+    if (!isDocumentExtension && (type == 'image' || (type == 'text' && (effectivePath != null || attachmentBytes != null)))) {
       Widget imageWidget;
       if (attachmentBytes != null) {
         imageWidget = Image.memory(
@@ -1865,7 +1874,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: imageContent,
         ),
       );
-    } else if (type == 'audio' || type == 'voice' || type == 'voice_note') {
+    } else if (!isDocumentExtension && (type == 'audio' || type == 'voice' || type == 'voice_note')) {
       if (viewLocked) {
         result = _buildLockedAttachmentCard(context, type: type, label: 'Audio Restricted');
       } else {
@@ -1903,7 +1912,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         );
       }
-    } else if (type == 'file' || type == 'document') {
+    } else if (type == 'file' || type == 'document' || isDocumentExtension) {
       if (viewLocked) {
         result = _buildLockedAttachmentCard(context, type: type, label: 'Document Restricted');
       } else {
@@ -2734,7 +2743,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 backgroundColor: allowView ? (isFileViewed ? viewedBg : activeBg) : inactiveBg,
                 textColor: allowView ? (isFileViewed ? viewedIcon : activeIcon) : inactiveIcon,
                 borderColor: allowView ? (isFileViewed ? viewedBorder : activeBorder) : inactiveBorder,
-                onTap: () => _updatePermissions(context, view: !allowView),
+                onTap: () {
+                  final nextVal = !allowView;
+                  _updatePermissions(context, view: nextVal);
+                  context.showSuccessNotification(
+                    nextVal ? 'View enabled for recipient' : 'View disabled for recipient',
+                  );
+                },
               ),
               _buildCapsuleChip(
                 context: context,
@@ -2743,7 +2758,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 backgroundColor: allowDownload ? (isFileDownloaded ? viewedBg : activeBg) : inactiveBg,
                 textColor: allowDownload ? (isFileDownloaded ? viewedIcon : activeIcon) : inactiveIcon,
                 borderColor: allowDownload ? (isFileDownloaded ? viewedBorder : activeBorder) : inactiveBorder,
-                onTap: () => _updatePermissions(context, download: !allowDownload),
+                onTap: () {
+                  final nextVal = !allowDownload;
+                  _updatePermissions(context, download: nextVal);
+                  context.showSuccessNotification(
+                    nextVal ? 'Download enabled for recipient' : 'Download disabled for recipient',
+                  );
+                },
               ),
               _buildCapsuleChip(
                 context: context,
@@ -2752,7 +2773,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 backgroundColor: allowShare ? (isFileShared ? viewedBg : activeBg) : inactiveBg,
                 textColor: allowShare ? (isFileShared ? viewedIcon : activeIcon) : inactiveIcon,
                 borderColor: allowShare ? (isFileShared ? viewedBorder : activeBorder) : inactiveBorder,
-                onTap: () => _updatePermissions(context, share: !allowShare),
+                onTap: () {
+                  final nextVal = !allowShare;
+                  _updatePermissions(context, share: nextVal);
+                  context.showSuccessNotification(
+                    nextVal ? 'Share enabled for recipient' : 'Share disabled for recipient',
+                  );
+                },
               ),
             ],
           ),
@@ -3033,17 +3060,38 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     if (cleanDisplayName.isEmpty) cleanDisplayName = 'attachment';
 
+    final String actualName = cleanDisplayName.contains(' · ') ? cleanDisplayName.split(' · ').first.trim() : cleanDisplayName;
+    final String cleanExt = actualName.contains('.')
+        ? actualName.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+        : (path.contains('.') ? path.split('?').first.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '') : '');
+
+    String effectiveViewerType = type.toLowerCase();
+    if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log'].contains(cleanExt)) {
+      effectiveViewerType = 'text';
+    } else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(cleanExt)) {
+      effectiveViewerType = 'image';
+    } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(cleanExt)) {
+      effectiveViewerType = 'video';
+    } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma', 'caf'].contains(cleanExt)) {
+      effectiveViewerType = 'audio';
+    } else if (cleanExt == 'pdf') {
+      effectiveViewerType = 'pdf';
+    } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(cleanExt)) {
+      effectiveViewerType = 'file';
+    }
+
     InAppViewer.show(
       context,
       url: url.isNotEmpty ? url : path,
-      fileName: cleanDisplayName,
-      type: type,
+      fileName: actualName,
+      type: effectiveViewerType,
       mediaId: mediaIdToUse,
       allowShare: (widget.isReadOnly || isViewOnce) ? false : allowShare,
       allowDownload: (widget.isReadOnly || isViewOnce) ? false : allowDownload,
       isViewOnce: isViewOnce,
       isMe: widget.isReadOnly ? false : isMe,
       isForwarded: isForwarded,
+      isReadOnly: widget.isReadOnly,
       onViewed: () {
         if (isViewOnce) {
           try {
@@ -3204,7 +3252,10 @@ class _MessageBubbleState extends State<MessageBubble> {
       cleanFileName = cleanFileName.substring(0, cleanFileName.length - 4);
     }
     final String fileName = cleanFileName.isNotEmpty ? cleanFileName : rawFileName;
-    final String extension = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    // Extract actual file name before any ' · ' caption separator to prevent long caption poisoning the extension
+    final String nameBeforeCaption = fileName.contains(' · ') ? fileName.split(' · ').first.trim() : fileName;
+    final String rawExt = nameBeforeCaption.contains('.') ? nameBeforeCaption.split('.').last.trim().toLowerCase() : '';
+    final String extension = rawExt.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
     
     Color typeColor;
     String badgeText;
@@ -3214,7 +3265,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (type == 'video' || isVideoExt) {
       typeColor = const Color(0xFF1565C0); // Blue for video
-      badgeText = extension.isNotEmpty ? extension.toUpperCase() : 'VIDEO';
+      badgeText = extension.isNotEmpty ? (extension.length > 4 ? extension.substring(0, 4).toUpperCase() : extension.toUpperCase()) : 'VIDEO';
       fileIcon = CommonIcons.playCircle;
     } else {
       switch (extension) {
@@ -3245,9 +3296,36 @@ class _MessageBubbleState extends State<MessageBubble> {
           badgeText = 'JSON';
           fileIcon = CommonIcons.codeIcon;
           break;
+        case 'txt':
+        case 'text':
+        case 'log':
+        case 'md':
+          typeColor = const Color(0xFFFF9800); // Orange for Text
+          badgeText = 'TXT';
+          fileIcon = CommonIcons.description;
+          break;
+        case 'zip':
+        case 'rar':
+        case '7z':
+        case 'tar':
+        case 'gz':
+          typeColor = const Color(0xFF6D4C41); // Brown for Archive
+          badgeText = 'ZIP';
+          fileIcon = Icons.folder_zip_rounded;
+          break;
+        case 'mp3':
+        case 'wav':
+        case 'm4a':
+        case 'aac':
+        case 'ogg':
+        case 'flac':
+          typeColor = const Color(0xFF8E24AA); // Purple for Audio
+          badgeText = 'AUDIO';
+          fileIcon = Icons.audiotrack_rounded;
+          break;
         default:
           typeColor = const Color(0xFF757575); // Grey for other files
-          badgeText = extension.isNotEmpty ? extension.toUpperCase() : 'FILE';
+          badgeText = extension.isNotEmpty ? (extension.length > 4 ? extension.substring(0, 4).toUpperCase() : extension.toUpperCase()) : 'FILE';
           fileIcon = CommonIcons.document;
           break;
       }
@@ -3312,24 +3390,38 @@ class _MessageBubbleState extends State<MessageBubble> {
                         valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
                       ),
                     )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          fileIcon,
-                          color: context.colors.pureWhite,
-                          size: 20,
-                        ),
-                        CommonSpaces.h2,
-                        Text(
-                          badgeText,
-                          style: context.bodySmall.copyWith(
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            fileIcon,
                             color: context.colors.pureWhite,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
+                            size: 19,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 1),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                badgeText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                                textAlign: TextAlign.center,
+                                style: context.bodySmall.copyWith(
+                                  color: context.colors.pureWhite,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.0,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
             ),
             CommonSpaces.w12,

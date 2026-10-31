@@ -299,22 +299,24 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
     _currentMediaUrl = mediaUrl;
 
     final lower = (mediaUrl ?? '').toLowerCase();
-    final isVideo = (statusType == 'video') ||
-        lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.avi') ||
-        lower.endsWith('.mkv');
-
-    final isAudio = (statusType == 'audio') ||
+    final isAudio = (statusType == 'audio' || statusType == 'voice') ||
         lower.endsWith('.m4a') ||
         lower.endsWith('.mp3') ||
         lower.endsWith('.aac') ||
-        lower.endsWith('.wav');
+        lower.endsWith('.wav') ||
+        lower.contains('/voice-notes/');
 
-    if (isVideo && mediaUrl != null && mediaUrl.isNotEmpty) {
-      _initVideoPlayer(mediaUrl);
-    } else if (isAudio && mediaUrl != null && mediaUrl.isNotEmpty) {
+    final isVideo = !isAudio &&
+        ((statusType == 'video') ||
+            lower.endsWith('.mp4') ||
+            lower.endsWith('.mov') ||
+            lower.endsWith('.avi') ||
+            lower.endsWith('.mkv'));
+
+    if (isAudio && mediaUrl != null && mediaUrl.isNotEmpty) {
       _initAudioPlayer(mediaUrl);
+    } else if (isVideo && mediaUrl != null && mediaUrl.isNotEmpty) {
+      _initVideoPlayer(mediaUrl);
     } else if (mediaUrl != null && mediaUrl.isNotEmpty && !File(mediaUrl).existsSync() && !mediaUrl.startsWith('http')) {
       // Network media is loading; wait for _onMediaLoaded
       _isMediaLoading = true;
@@ -644,29 +646,31 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
         viewers = item.viewers;
 
         final lower = (item.imagePath ?? '').toLowerCase();
-        final isVideo = (item.statusType == 'video') ||
-            lower.endsWith('.mp4') ||
-            lower.endsWith('.mov') ||
-            lower.endsWith('.avi') ||
-            lower.endsWith('.mkv');
-
-        final isAudio = (item.statusType == 'audio') ||
+        final isAudio = (item.statusType == 'audio' || item.statusType == 'voice') ||
             lower.endsWith('.m4a') ||
             lower.endsWith('.mp3') ||
             lower.endsWith('.aac') ||
-            lower.endsWith('.wav');
+            lower.endsWith('.wav') ||
+            lower.contains('/voice-notes/');
 
-        if (isVideo && item.imagePath != null && item.imagePath!.isNotEmpty) {
-          content = _buildVideoStatusContent(
-            videoUrl: item.imagePath!,
-            caption: item.text,
-            isMyStatus: true,
-          );
-        } else if (isAudio && item.imagePath != null && item.imagePath!.isNotEmpty) {
+        final isVideo = !isAudio &&
+            ((item.statusType == 'video') ||
+                lower.endsWith('.mp4') ||
+                lower.endsWith('.mov') ||
+                lower.endsWith('.avi') ||
+                lower.endsWith('.mkv'));
+
+        if (isAudio && item.imagePath != null && item.imagePath!.isNotEmpty) {
           content = _buildAudioStatusContent(
             audioUrl: item.imagePath!,
             caption: item.text,
             bgColor: item.parsedBackgroundColor,
+          );
+        } else if (isVideo && item.imagePath != null && item.imagePath!.isNotEmpty) {
+          content = _buildVideoStatusContent(
+            videoUrl: item.imagePath!,
+            caption: item.text,
+            isMyStatus: true,
           );
         } else if (item.imagePath != null && item.imagePath!.isNotEmpty) {
           content = _buildMediaStatusContent(
@@ -689,8 +693,22 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
         }
       } else if (widget.myPath != null) {
         final lower = widget.myPath!.toLowerCase();
-        final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi') || lower.endsWith('.mkv');
-        if (isVid) {
+        final isAud = lower.endsWith('.m4a') ||
+            lower.endsWith('.mp3') ||
+            lower.endsWith('.aac') ||
+            lower.endsWith('.wav');
+        final isVid = !isAud &&
+            (lower.endsWith('.mp4') ||
+                lower.endsWith('.mov') ||
+                lower.endsWith('.avi') ||
+                lower.endsWith('.mkv'));
+        if (isAud) {
+          content = _buildAudioStatusContent(
+            audioUrl: widget.myPath!,
+            caption: null,
+            bgColor: const Color(0xFF4A148C),
+          );
+        } else if (isVid) {
           content = _buildVideoStatusContent(
             videoUrl: widget.myPath!,
             caption: null,
@@ -733,29 +751,31 @@ class _StatusViewPageState extends State<StatusViewPage> with TickerProviderStat
       current = _currentStatusIndex;
 
       final lower = (status.imagePath ?? '').toLowerCase();
-      final isVideo = (status.statusType == 'video') ||
-          lower.endsWith('.mp4') ||
-          lower.endsWith('.mov') ||
-          lower.endsWith('.avi') ||
-          lower.endsWith('.mkv');
-
-      final isAudio = (status.statusType == 'audio') ||
+      final isAudio = (status.statusType == 'audio' || status.statusType == 'voice') ||
           lower.endsWith('.m4a') ||
           lower.endsWith('.mp3') ||
           lower.endsWith('.aac') ||
-          lower.endsWith('.wav');
+          lower.endsWith('.wav') ||
+          lower.contains('/voice-notes/');
 
-      if (isVideo && status.imagePath != null && status.imagePath!.isNotEmpty) {
-        content = _buildVideoStatusContent(
-          videoUrl: status.imagePath!,
-          caption: status.text,
-          isMyStatus: false,
-        );
-      } else if (isAudio && status.imagePath != null && status.imagePath!.isNotEmpty) {
+      final isVideo = !isAudio &&
+          ((status.statusType == 'video') ||
+              lower.endsWith('.mp4') ||
+              lower.endsWith('.mov') ||
+              lower.endsWith('.avi') ||
+              lower.endsWith('.mkv'));
+
+      if (isAudio && status.imagePath != null && status.imagePath!.isNotEmpty) {
         content = _buildAudioStatusContent(
           audioUrl: status.imagePath!,
           caption: status.text,
           bgColor: status.parsedBackgroundColor,
+        );
+      } else if (isVideo && status.imagePath != null && status.imagePath!.isNotEmpty) {
+        content = _buildVideoStatusContent(
+          videoUrl: status.imagePath!,
+          caption: status.text,
+          isMyStatus: false,
         );
       } else if (status.imagePath != null && status.imagePath!.isNotEmpty) {
         content = _buildMediaStatusContent(

@@ -217,7 +217,7 @@ class StatusPageContent extends StatelessWidget {
                   ),
                   child: Icon(Icons.videocam_outlined, color: colors.primary),
                 ),
-                title: Text('Record Video (Max 1 min)', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600)),
+                title: Text('Record Video', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickStatusVideo(context, source: ImageSource.camera);
@@ -301,12 +301,12 @@ class StatusPageContent extends StatelessWidget {
               ),
               Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
 
-              // 2. Video (Max 1 min)
+              // 2. Video
               _buildUploadOptionRow(
                 context: ctx,
                 icon: Icons.videocam_outlined,
-                title: 'Video (Max 1 min)',
-                subtitle: 'Share video clips up to 60 seconds',
+                title: 'Video',
+                subtitle: 'Share video clips',
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickStatusVideo(context, source: ImageSource.gallery);
@@ -314,12 +314,12 @@ class StatusPageContent extends StatelessWidget {
               ),
               Divider(height: 1, color: colors.textHint.withValues(alpha: 0.08)),
 
-              // 3. Voice Status (Max 1 min)
+              // 3. Voice Status
               _buildUploadOptionRow(
                 context: ctx,
                 icon: Icons.mic_none_outlined,
-                title: 'Voice Status (Max 1 min)',
-                subtitle: 'Record voice notes up to 60 seconds',
+                title: 'Voice Status',
+                subtitle: 'Record voice notes',
                 onTap: () {
                   Navigator.pop(ctx);
                   _addVoiceStatus(context);
@@ -939,29 +939,32 @@ class StatusPageContent extends StatelessWidget {
       final lastItem = myStatuses.last;
       final path = lastItem.imagePath ?? '';
       final lower = path.toLowerCase();
-      final isVid = lastItem.statusType == 'video' ||
-          lower.endsWith('.mp4') ||
-          lower.endsWith('.mov') ||
-          lower.endsWith('.avi') ||
-          lower.endsWith('.mkv');
       final isAud = lastItem.statusType == 'audio' ||
+          lastItem.statusType == 'voice' ||
           lower.endsWith('.m4a') ||
           lower.endsWith('.mp3') ||
           lower.endsWith('.aac') ||
-          lower.endsWith('.wav');
+          lower.endsWith('.wav') ||
+          lower.contains('/voice-notes/');
+      final isVid = !isAud &&
+          (lastItem.statusType == 'video' ||
+              lower.endsWith('.mp4') ||
+              lower.endsWith('.mov') ||
+              lower.endsWith('.avi') ||
+              lower.endsWith('.mkv'));
 
-      if (isVid) {
-        innerContent = Container(
-          color: const Color(0xFF00873C),
-          child: const Center(
-            child: Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
-          ),
-        );
-      } else if (isAud) {
+      if (isAud) {
         innerContent = Container(
           color: lastItem.parsedBackgroundColor,
           child: const Center(
             child: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
+          ),
+        );
+      } else if (isVid) {
+        innerContent = Container(
+          color: const Color(0xFF00873C),
+          child: const Center(
+            child: Icon(Icons.videocam_rounded, color: Colors.white, size: 20),
           ),
         );
       } else if (path.isNotEmpty) {
@@ -991,8 +994,19 @@ class StatusPageContent extends StatelessWidget {
       innerContent = Image.memory(myStatusBytes, fit: BoxFit.cover);
     } else if (myStatusPath != null && !kIsWeb) {
       final lower = myStatusPath.toLowerCase();
-      final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov');
-      if (isVid) {
+      final isAud = lower.endsWith('.m4a') ||
+          lower.endsWith('.mp3') ||
+          lower.endsWith('.aac') ||
+          lower.endsWith('.wav');
+      final isVid = !isAud && (lower.endsWith('.mp4') || lower.endsWith('.mov'));
+      if (isAud) {
+        innerContent = Container(
+          color: const Color(0xFF4A148C),
+          child: const Center(
+            child: Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
+          ),
+        );
+      } else if (isVid) {
         innerContent = Container(
           color: const Color(0xFF00873C),
           child: const Center(

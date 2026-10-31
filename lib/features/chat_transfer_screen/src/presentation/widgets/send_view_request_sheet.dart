@@ -43,6 +43,7 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
   UserModel? _selectedUser;
   bool _isLoading = true;
   bool _showManualInput = false;
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -131,6 +132,8 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
   }
 
   void _submit() {
+    if (_isSubmitting) return;
+
     String targetId = '';
     if (_showManualInput) {
       if (_formKey.currentState?.validate() != true) return;
@@ -143,6 +146,7 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
     }
 
     if (targetId.isNotEmpty) {
+      setState(() => _isSubmitting = true);
       context.read<ChatTransferBloc>().add(SendChatTransferRequest(targetId));
       Navigator.pop(context);
     }
@@ -436,7 +440,7 @@ class _SendViewRequestSheetState extends State<SendViewRequestSheet> {
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton.icon(
-                  onPressed: (_showManualInput || _selectedUser != null) ? _submit : null,
+                  onPressed: (!_isSubmitting && (_showManualInput || _selectedUser != null)) ? _submit : null,
                   icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                   label: Text(
                     _selectedUser != null

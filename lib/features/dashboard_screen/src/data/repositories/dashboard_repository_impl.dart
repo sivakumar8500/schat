@@ -91,31 +91,40 @@ class DashboardRepositoryImpl implements DashboardRepository {
     String? groupImageUrl,
     required List<String> participantIds,
   }) async {
-    debugPrint('DEBUG: DashboardRepository.createGroup called with name=$groupName, participants=$participantIds');
-    final result = await _apiService.post<ChatModel>(
-      CommonEndpoints.createGroup,
-      data: {
-        'group_name': groupName,
-        'group_description': groupDescription ?? '',
-        'groupPictureUrl': groupPictureUrl ?? '',
-        'groupImageUrl': groupImageUrl ?? '',
-        'participant_ids': participantIds,
-      },
-      mapper: (json) {
-        debugPrint('DEBUG: DashboardRepository.createGroup mapper received json: $json');
-        return ChatModel.fromJson(json as Map<String, dynamic>);
-      },
-    );
-    return result.when(
-      success: (chat) {
-        debugPrint('DEBUG: DashboardRepository.createGroup SUCCESS: chat.id=${chat.id}, group_name=${chat.groupName}');
-        return ApiResult.success(chat);
-      },
-      failure: (message, statusCode) {
-        debugPrint('DEBUG: DashboardRepository.createGroup FAILURE: $message (code: $statusCode)');
-        return ApiResult.failure(message, statusCode: statusCode);
-      },
-    );
+    try {
+      debugPrint('DEBUG: DashboardRepository.createGroup called with name=$groupName, participants=$participantIds');
+      final result = await _apiService.post<ChatModel>(
+        CommonEndpoints.createGroup,
+        data: {
+          'group_name': groupName,
+          'group_description': groupDescription ?? '',
+          'groupPictureUrl': groupPictureUrl ?? '',
+          'groupImageUrl': groupImageUrl ?? '',
+          'participant_ids': participantIds,
+        },
+        mapper: (json) {
+          debugPrint('DEBUG: DashboardRepository.createGroup mapper received json: $json');
+          if (json is Map) {
+            return ChatModel.fromJson(Map<String, dynamic>.from(json));
+          }
+          throw Exception('Expected Map for createGroup response, received: ${json.runtimeType}');
+        },
+      );
+      final ApiResult<ChatModel> finalResult = result.when(
+        success: (chat) {
+          debugPrint('DEBUG: DashboardRepository.createGroup SUCCESS: chat.id=${chat.id}, group_name=${chat.groupName}');
+          return ApiResult<ChatModel>.success(chat);
+        },
+        failure: (message, statusCode) {
+          debugPrint('DEBUG: DashboardRepository.createGroup FAILURE: $message (code: $statusCode)');
+          return ApiResult<ChatModel>.failure(message, statusCode: statusCode);
+        },
+      );
+      return finalResult;
+    } catch (e, st) {
+      debugPrint('DEBUG: DashboardRepository.createGroup exception: $e\n$st');
+      return ApiResult<ChatModel>.failure(e.toString());
+    }
   }
 
   @override

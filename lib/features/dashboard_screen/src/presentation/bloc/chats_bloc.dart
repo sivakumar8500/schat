@@ -45,6 +45,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<UpdateDisappearingTimer>(_onUpdateDisappearingTimer);
     on<UpdateMessageStatus>(_onUpdateMessageStatus);
     on<MarkConversationAsRead>(_onMarkConversationAsRead);
+    on<ClearConversationMessages>(_onClearConversationMessages);
 
     _listenToSocket();
   }
@@ -76,11 +77,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         final type = cleanData['type']?.toString();
         
         if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
-          final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
+          final userId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
               ?.toString();
           final status = cleanData['status']?.toString();
           final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
-          final lastSeen = cleanData['last_seen']?.toString();
+          final lastSeen = (cleanData['last_seen'] ?? cleanData['lastSeen'])?.toString();
           if (userId != null) {
             add(UpdateUserStatus(
               userId: userId,
@@ -309,6 +310,13 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               status: 'delivered',
             ));
           }
+        } else if (type == 'chat_cleared' || type == 'clear_chat') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (convId != null) {
+            _storageService.saveConversationClearedAt(convId, DateTime.now().toUtc().toIso8601String());
+            ChatMessageCacheHelper.clearConversation(convId);
+            add(ClearConversationMessages(conversationId: convId));
+          }
         }
       } catch (e) {
         // Log error
@@ -384,14 +392,27 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       result.when(
         success: (chats) {
           debugPrint('DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}');
-          
+
+          // Filter out lastMessage if older than conversation cleared_at timestamp
+          final effectiveChats = chats.map((chat) {
+            final clearedAtStr = _storageService.getConversationClearedAt(chat.id);
+            final DateTime? clearedAt = clearedAtStr != null ? DateTime.tryParse(clearedAtStr) : null;
+            if (clearedAt != null && chat.lastMessage != null) {
+              final msgDt = ChatMessageCacheHelper.parseTimestamp(chat.lastMessage!.createdAt);
+              if (!msgDt.isAfter(clearedAt)) {
+                return chat.copyWith(lastMessage: null, unreadCount: 0);
+              }
+            }
+            return chat;
+          }).toList();
+
           List<ChatModel> finalChats;
           if (_hasInitialLoaded && state is ChatsLoaded) {
             final existingChats = (state as ChatsLoaded).chats;
             final existingMap = {for (var c in existingChats) c.id: c};
             final existingUserMap = {for (var c in existingChats) c.recipient.id: c};
 
-            finalChats = chats.map((newChat) {
+            finalChats = effectiveChats.map((newChat) {
               final existing = existingMap[newChat.id] ?? existingUserMap[newChat.recipient.id];
               if (existing != null) {
                 var merged = newChat;
@@ -433,7 +454,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             }).toList();
           } else {
             _hasInitialLoaded = true;
-            finalChats = List<ChatModel>.from(chats);
+            finalChats = List<ChatModel>.from(effectiveChats);
           }
 
           // Sort by most recent message/activity time descending (newest at top)
@@ -469,6 +490,22 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           return chat.copyWith(
             unreadCount: 0,
             lastMessage: updatedLastMsg,
+          );
+        }
+        return chat;
+      }).toList();
+      emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onClearConversationMessages(ClearConversationMessages event, Emitter<ChatsState> emit) {
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (_isSameConversation(chat.id, event.conversationId)) {
+          return chat.copyWith(
+            lastMessage: null,
+            unreadCount: 0,
           );
         }
         return chat;
@@ -615,10 +652,22 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
        final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (!chat.isGroup && chat.recipient.id == event.userId) {
+        if (!chat.isGroup && _isSameConversation(chat.recipient.id, event.userId)) {
+          final cleanLastSeen = (event.lastSeen != null &&
+                  event.lastSeen!.trim().isNotEmpty &&
+                  event.lastSeen != 'null' &&
+                  event.lastSeen != '0')
+              ? event.lastSeen
+              : null;
+          final effectiveLastSeen = event.isOnline
+              ? chat.recipient.lastSeen
+              : (cleanLastSeen ??
+                  ((chat.recipient.isOnline)
+                      ? DateTime.now().toUtc().toIso8601String()
+                      : chat.recipient.lastSeen));
           final updatedRecipient = chat.recipient.copyWith(
             isOnline: event.isOnline,
-            lastSeen: event.lastSeen ?? chat.recipient.lastSeen,
+            lastSeen: effectiveLastSeen,
           );
           return chat.copyWith(recipient: updatedRecipient);
         }
@@ -631,9 +680,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onUpdateChatTypingStatus(UpdateChatTypingStatus event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
+      final globalTyping = _storageService.getTypingIndicatorsEnabled();
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (_isSameConversation(chat.id, event.conversationId)) {
-          return chat.copyWith(isTyping: event.isTyping);
+          final isAllowed = chat.typingIndicatorsEnabled ?? globalTyping;
+          return chat.copyWith(isTyping: isAllowed ? event.isTyping : false);
         }
         return chat;
       }).toList();
@@ -657,6 +708,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onUpdateMessageStatus(UpdateMessageStatus event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
+      final globalRead = _storageService.getReadReceiptsEnabled();
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (_isSameConversation(chat.id, event.conversationId)) {
           final lastMsg = chat.lastMessage;
@@ -665,8 +717,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 lastMsg.id == event.messageId ||
                 (event.messageIds != null && event.messageIds!.contains(lastMsg.id));
             if (isTarget) {
-              final isRead = event.status == 'read' || lastMsg.isRead;
-              final isDelivered = event.status == 'delivered' || isRead || lastMsg.isDelivered;
+              final isReadAllowed = chat.readReceiptsEnabled ?? globalRead;
+              final isRead = (event.status == 'read' && isReadAllowed) || (lastMsg.isRead && isReadAllowed);
+              final isDelivered = event.status == 'delivered' || event.status == 'read' || isRead || lastMsg.isDelivered || lastMsg.isRead;
               final updatedLastMsg = lastMsg.copyWith(
                 isRead: isRead,
                 isDelivered: isDelivered,
@@ -710,24 +763,30 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       for (var i = 0; i < chats.length; i++) {
         final c = chats[i];
         if (c.id.isNotEmpty && (c.unreadCount > 0 || c.lastMessage != null)) {
-          // 1. Immediately cache the lastMessage if available
+          final clearedAtStr = _storageService.getConversationClearedAt(c.id);
+          final DateTime? clearedAt = clearedAtStr != null ? DateTime.tryParse(clearedAtStr) : null;
+
+          // 1. Immediately cache the lastMessage if available and not cleared
           if (c.lastMessage != null && c.lastMessage!.id.isNotEmpty) {
             final lm = c.lastMessage!;
-            final msgModel = MessageModel(
-              id: lm.id,
-              conversationId: c.id,
-              senderId: lm.senderId,
-              content: lm.content,
-              mediaUrl: lm.mediaUrl,
-              mediaType: lm.mediaType,
-              messageType: lm.mediaType ?? 'text',
-              isDeleted: lm.isDeleted,
-              isRead: lm.isRead,
-              isDelivered: lm.isDelivered,
-              createdAt: lm.createdAt,
-              updatedAt: lm.updatedAt,
-            );
-            await ChatMessageCacheHelper.appendMessage(c.id, msgModel);
+            final lmDate = ChatMessageCacheHelper.parseTimestamp(lm.createdAt);
+            if (clearedAt == null || lmDate.isAfter(clearedAt)) {
+              final msgModel = MessageModel(
+                id: lm.id,
+                conversationId: c.id,
+                senderId: lm.senderId,
+                content: lm.content,
+                mediaUrl: lm.mediaUrl,
+                mediaType: lm.mediaType,
+                messageType: lm.mediaType ?? 'text',
+                isDeleted: lm.isDeleted,
+                isRead: lm.isRead,
+                isDelivered: lm.isDelivered,
+                createdAt: lm.createdAt,
+                updatedAt: lm.updatedAt,
+              );
+              await ChatMessageCacheHelper.appendMessage(c.id, msgModel);
+            }
           }
 
           // 2. If there are unread messages OR this is among top 5 recent chats,
@@ -737,9 +796,12 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             try {
               final chatRepo = getIt<ChatRepository>();
               final msgs = await chatRepo.getMessages(c.id, limit: 50, skip: 0);
-              if (msgs.isNotEmpty) {
-                await ChatMessageCacheHelper.saveMessages(c.id, msgs);
-                debugPrint('ChatsBloc: Prefetched ${msgs.length} messages for conv ${c.id}');
+              final validMsgs = (clearedAt != null)
+                  ? msgs.where((m) => ChatMessageCacheHelper.parseTimestamp(m.createdAt).isAfter(clearedAt)).toList()
+                  : msgs;
+              if (validMsgs.isNotEmpty) {
+                await ChatMessageCacheHelper.saveMessages(c.id, validMsgs);
+                debugPrint('ChatsBloc: Prefetched ${validMsgs.length} messages for conv ${c.id}');
               }
             } catch (_) {}
           }

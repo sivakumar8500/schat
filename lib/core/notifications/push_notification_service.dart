@@ -469,7 +469,12 @@ class PushNotificationService {
             '')
         .toString()
         .trim();
-    if (senderName == 'sChat' || senderName == 'New Message' || senderName == 'Chat' || senderName == 'User') {
+    if (senderName == 'sChat' ||
+        senderName == 'S-Chat' ||
+        senderName == 'New message for schat user' ||
+        senderName == 'New Message' ||
+        senderName == 'Chat' ||
+        senderName == 'User') {
       if (data['actual_sender_name'] != null && data['actual_sender_name'].toString().trim().isNotEmpty) {
         senderName = data['actual_sender_name'].toString().trim();
       } else {
@@ -547,7 +552,14 @@ class PushNotificationService {
     bool isGeneric(String? n) {
       if (n == null) return true;
       final t = n.trim().toLowerCase();
-      return t.isEmpty || t == 'schat' || t == 'chat' || t == 'user' || t == 'new message' || t == 'null';
+      return t.isEmpty ||
+          t == 'schat' ||
+          t == 's-chat' ||
+          t == 'new message for schat user' ||
+          t == 'chat' ||
+          t == 'user' ||
+          t == 'new message' ||
+          t == 'null';
     }
 
     String resolvedName = (contactName ?? '').trim();
@@ -771,6 +783,8 @@ class PushNotificationService {
 
     if (resolvedName.isEmpty ||
         resolvedName == 'sChat' ||
+        resolvedName == 'S-Chat' ||
+        resolvedName == 'New message for schat user' ||
         resolvedName == 'New Message' ||
         resolvedName == 'Chat' ||
         resolvedName == 'User' ||
@@ -838,7 +852,7 @@ class PushNotificationService {
     }
 
     if (isLocked) {
-      title = 'sChat';
+      title = 'New message for schat user';
       body = 'New message';
     } else {
       if (title.isEmpty) {
@@ -907,11 +921,11 @@ class PushNotificationService {
 
     final payloadMap = Map<String, dynamic>.from(message.data);
     if (isLocked) {
-      payloadMap['title'] = 'sChat';
-      payloadMap['sender_name'] = 'sChat';
-      payloadMap['senderName'] = 'sChat';
-      payloadMap['contact_name'] = 'sChat';
-      payloadMap['contactName'] = 'sChat';
+      payloadMap['title'] = 'New message for schat user';
+      payloadMap['sender_name'] = 'New message for schat user';
+      payloadMap['senderName'] = 'New message for schat user';
+      payloadMap['contact_name'] = 'New message for schat user';
+      payloadMap['contactName'] = 'New message for schat user';
       payloadMap['body'] = 'New message';
       payloadMap['content'] = 'New message';
       payloadMap['is_locked'] = 'true';

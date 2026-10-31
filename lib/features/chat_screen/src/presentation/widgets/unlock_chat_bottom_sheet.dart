@@ -188,7 +188,9 @@ class _UnlockChatBottomSheetState extends State<UnlockChatBottomSheet> {
                 widget.contactName != null &&
                         widget.contactName!.isNotEmpty &&
                         widget.contactName != 'Chat' &&
-                        widget.contactName != 'sChat'
+                        widget.contactName != 'sChat' &&
+                        widget.contactName != 'S-Chat' &&
+                        widget.contactName != 'New message for schat user'
                     ? 'Enter your secret code to view chat with ${widget.contactName}.'
                     : 'Enter your secret code to view this locked conversation.',
                 style: context.bodyMedium.copyWith(

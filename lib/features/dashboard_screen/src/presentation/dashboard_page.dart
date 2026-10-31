@@ -39,13 +39,13 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_b
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/home_theme_bottom_sheet.dart';
+import 'package:schat/main.dart';
 import 'package:schat/utils/theme_controller.dart';
 
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
-import 'package:schat/main.dart' show routeObserver;
 import 'package:schat/core/services/share_receiver_service.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -1150,7 +1150,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         const AnimatedTagline(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -1199,16 +1199,22 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
                     child: const CreateGroupBottomSheet(),
                   ),
                 );
-                if (chat != null && mounted) {
-                  context.showSuccessNotification('Group created successfully');
-                  context.read<ChatsBloc>().add(const FetchChats());
-                  Navigator.push(
-                    context,
+                if (chat != null) {
+                  debugPrint('DEBUG: DashboardPage navigating to newly created group: ${chat.id} (${chat.groupName})');
+                  final navContext = mounted ? context : (navigatorKey.currentContext ?? context);
+                  navContext.showSuccessNotification('Group created successfully');
+                  if (mounted) {
+                    context.read<ChatsBloc>().add(const FetchChats());
+                  } else if (getIt.isRegistered<ChatsBloc>()) {
+                    getIt<ChatsBloc>().add(const FetchChats());
+                  }
+                  final navState = (mounted ? Navigator.maybeOf(context) : null) ?? navigatorKey.currentState;
+                  navState?.push(
                     MaterialPageRoute(
                       builder: (context) => ChatPage(
                         conversationId: chat.id,
                         contactName: chat.groupName ?? 'Group',
-                        contactColor: context.colors.primary,
+                        contactColor: navContext.colors.primary,
                         isOnline: false,
                         recipientId: chat.id,
                         isGroup: true,
@@ -1775,7 +1781,12 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
     final greyColor = isDark ? Colors.white54 : const Color(0xFF9CA3AF);
     const blueColor = Color(0xFF34B7F1);
 
-    if (lastMsg.isRead || lastMsg.status?.toLowerCase() == 'read') {
+    final globalReadReceipts = getIt.isRegistered<StorageService>()
+        ? getIt<StorageService>().getReadReceiptsEnabled()
+        : true;
+    final isReadAllowed = chat.readReceiptsEnabled ?? globalReadReceipts;
+
+    if (isReadAllowed && (lastMsg.isRead || lastMsg.status?.toLowerCase() == 'read')) {
       return const Icon(
         Icons.done_all_rounded,
         color: blueColor,
@@ -1783,7 +1794,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
       );
     }
 
-    if (lastMsg.isDelivered || lastMsg.status?.toLowerCase() == 'delivered') {
+    if (lastMsg.isDelivered || lastMsg.isRead || lastMsg.status?.toLowerCase() == 'delivered' || lastMsg.status?.toLowerCase() == 'read') {
       return Icon(
         Icons.done_all_rounded,
         color: greyColor,
@@ -1817,8 +1828,14 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
         final name = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
+        final globalTyping = getIt.isRegistered<StorageService>()
+            ? getIt<StorageService>().getTypingIndicatorsEnabled()
+            : true;
+        final isTypingAllowed = chat.typingIndicatorsEnabled ?? globalTyping;
+        final isTypingActive = chat.isTyping && isTypingAllowed;
+
         final String message;
-        if (chat.isTyping) {
+        if (isTypingActive) {
           message = 'typing...';
         } else if (chat.lastMessage != null && chat.lastMessage!.isDeleted) {
           final myId = getIt<StorageService>().getUserId() ?? '';
@@ -1832,6 +1849,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
           chat: chat,
           name: name,
           message: message,
+          isTypingActive: isTypingActive,
         );
       },
     );
@@ -1841,6 +1859,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
     required ChatModel chat,
     required String name,
     required String message,
+    bool isTypingActive = false,
   }) {
     final isSelected = _selectedChatIds.contains(chat.id);
     final isSelectionMode = _selectedChatIds.isNotEmpty;
@@ -1875,6 +1894,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
                 isBlockedByOther: chat.recipient.isBlockedByOther,
                 initialReadReceiptsEnabled: chat.readReceiptsEnabled,
                 initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
+                initialLastSeen: chat.recipient.lastSeen,
               ),
             ),
           );
@@ -1925,12 +1945,12 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: chat.isTyping
+                            color: isTypingActive
                                 ? const Color(0xFF12B76A)
                                 : (isSelected
                                     ? context.colors.primary
                                     : (isDark ? Colors.white60 : const Color(0xFF6B7280))),
-                            fontWeight: chat.isTyping ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: isTypingActive ? FontWeight.w600 : FontWeight.normal,
                             fontSize: 13.5,
                           ),
                         ),

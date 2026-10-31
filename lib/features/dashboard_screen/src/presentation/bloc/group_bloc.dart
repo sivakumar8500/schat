@@ -15,21 +15,25 @@ class GroupBloc extends Bloc<GroupEvent, GroupState> {
 
   Future<void> _onCreateGroup(CreateGroupEvent event, Emitter<GroupState> emit) async {
     emit(const GroupLoading());
-    final result = await _repository.createGroup(
-      groupName: event.name,
-      groupDescription: event.description,
-      groupPictureUrl: event.groupPictureUrl,
-      groupImageUrl: event.groupImageUrl,
-      participantIds: event.participantIds,
-    );
+    try {
+      final result = await _repository.createGroup(
+        groupName: event.name,
+        groupDescription: event.description,
+        groupPictureUrl: event.groupPictureUrl,
+        groupImageUrl: event.groupImageUrl,
+        participantIds: event.participantIds,
+      );
 
-    result.when(
-      success: (chat) {
-        emit(GroupSuccess(chat));
-      },
-      failure: (message, _) {
-        emit(GroupError(message));
-      },
-    );
+      result.when(
+        success: (chat) {
+          emit(GroupSuccess(chat));
+        },
+        failure: (message, _) {
+          emit(GroupError(message));
+        },
+      );
+    } catch (e) {
+      emit(GroupError(e.toString()));
+    }
   }
 }

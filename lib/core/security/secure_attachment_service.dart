@@ -845,9 +845,13 @@ class SecureAttachmentService {
       }
       return 'mp4';
     }
+    // UTF text BOM
+    if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return 'txt';
+    if (bytes.length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) return 'txt';
+    if (bytes.length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return 'txt';
     // MP3: ID3 header ('ID3') or sync word
     if (bytes.length >= 3 && bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) return 'mp3';
-    if (bytes.length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) return 'mp3';
+    if (bytes.length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 && bytes[1] != 0xFE) return 'mp3';
     // AMR: '#!AMR'
     if (bytes.length >= 5 && bytes[0] == 0x23 && bytes[1] == 0x21 && bytes[2] == 0x41 && bytes[3] == 0x4D && bytes[4] == 0x52) {
       return 'amr';

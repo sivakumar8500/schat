@@ -14,12 +14,14 @@ class SharedMediaPage extends StatefulWidget {
   final String conversationId;
   final List<ChatMediaModel> initialMediaList;
   final bool shouldFetch;
+  final bool isReadOnly;
 
   const SharedMediaPage({
     super.key,
     required this.conversationId,
     required this.initialMediaList,
     this.shouldFetch = true,
+    this.isReadOnly = false,
   });
 
   @override
@@ -154,8 +156,9 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
       fileName: fileName,
       type: type,
       mediaId: media.id.isNotEmpty ? media.id : null,
-      allowShare: true,
-      allowDownload: true,
+      allowShare: false,
+      allowDownload: false,
+      isReadOnly: true,
     );
   }
 

@@ -197,6 +197,7 @@ class _VoiceStatusCreatorPageState extends State<VoiceStatusCreatorPage> with Si
 
   void _postVoiceStatus() {
     if (_recordedFilePath == null) return;
+    _audioPlayer.stop();
     final caption = _captionController.text.trim();
     final hexColor = _colorToHex(_currentColor);
 
@@ -206,7 +207,7 @@ class _VoiceStatusCreatorPageState extends State<VoiceStatusCreatorPage> with Si
             path: _recordedFilePath,
             caption: caption.isNotEmpty ? caption : null,
             statusType: 'audio',
-            mimeType: 'audio/m4a',
+            mimeType: 'audio/mp4',
             textColor: hexColor,
           ),
         );
@@ -234,7 +235,7 @@ class _VoiceStatusCreatorPageState extends State<VoiceStatusCreatorPage> with Si
             onPressed: () => Navigator.pop(context),
           ),
           title: const Text(
-            'Voice Status (Max 1 min)',
+            'Voice Status',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
           ),
           actions: [

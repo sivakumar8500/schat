@@ -344,6 +344,15 @@ class StorageService {
     return null;
   }
 
+  // --- Conversation Cleared Timestamp ---
+  Future<void> saveConversationClearedAt(String conversationId, String timestamp) async {
+    await _prefs.setString('cleared_at_$conversationId', timestamp);
+  }
+
+  String? getConversationClearedAt(String conversationId) {
+    return _prefs.getString('cleared_at_$conversationId');
+  }
+
   Future<void> clearAll() async {
     final hasSeenIntro = _prefs.getBool('hasSeenIntro') ?? true;
     await _prefs.clear();

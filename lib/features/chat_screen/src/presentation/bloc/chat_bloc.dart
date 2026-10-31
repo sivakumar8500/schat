@@ -193,11 +193,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   List<MessageModel> _filterExpiredMessages(List<MessageModel> messages, [int? activeTimer]) {
     final timer = activeTimer ?? (state is ChatLoaded ? (state as ChatLoaded).disappearingTimer : null);
+    final confirmed = messages.where((m) => !m.id.startsWith('temp_')).toList();
+    
+    // Purge any temp messages that duplicate a confirmed message
+    var filtered = messages.where((msg) {
+      if (msg.id.startsWith('temp_')) {
+        if (confirmed.any((c) => ChatMessageCacheHelper.isDuplicateTempMessage(msg, c))) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+
     if (timer == null || timer == 0) {
-      return messages;
+      return filtered;
     }
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return messages.where((msg) {
+    return filtered.where((msg) {
       if (msg.expiry != null && msg.expiry! > 0) {
         return now < msg.expiry!;
       }
@@ -425,6 +437,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               conversationId: convId!,
             ));
           }
+        } else if (type == 'chat_cleared' || type == 'clear_chat') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          if (_isSameConversation(convId, _conversationId)) {
+            add(ClearChatEvent(conversationId: convId!, clearType: 'everyone', isRemote: true));
+          }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
@@ -587,12 +604,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             add(ReceiveGroupAdminUpdatedEvent(data: cleanData));
           }
         } else if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
-          final userId = (cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])?.toString();
+          final userId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])?.toString();
           final status = cleanData['status']?.toString();
           final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
-          final lastSeen = cleanData['last_seen']?.toString();
+          final lastSeen = (cleanData['last_seen'] ?? cleanData['lastSeen'])?.toString();
           debugPrint('DEBUG: Status Match Check - Event User: $userId, Current Recipient: $_recipientId, Type: $type, isOnline: $isOnline, lastSeen: $lastSeen');
-          if (userId == _recipientId) {
+          if (_isSameConversation(userId, _recipientId)) {
             add(UpdateUserStatusEvent(
               userId: userId ?? '',
               isOnline: isOnline,
@@ -881,6 +898,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final matchedChat = chatsState.chats.firstWhereOrNull((c) =>
               _isSameConversation(c.id, event.conversationId) ||
               (event.recipientId != null && event.recipientId!.isNotEmpty && _isSameConversation(c.recipient.id, event.recipientId)));
+          if ((_recipientId == null || _recipientId!.isEmpty) && matchedChat != null && !matchedChat.isGroup && matchedChat.recipient.id.isNotEmpty) {
+            _recipientId = matchedChat.recipient.id;
+          }
           if (cachedMessages.isEmpty && matchedChat != null && matchedChat.id.isNotEmpty && matchedChat.id != event.conversationId) {
             cachedMessages = await ChatMessageCacheHelper.loadMessages(matchedChat.id);
           }
@@ -974,6 +994,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
     } catch (_) {}
 
+    final localClearedAtStr = _storageService.getConversationClearedAt(event.conversationId);
+    final DateTime? localClearedAt = localClearedAtStr != null ? DateTime.tryParse(localClearedAtStr) : null;
+
+    if (localClearedAt != null && cachedMessages.isNotEmpty) {
+      cachedMessages = cachedMessages.where((m) {
+        final mDate = _parseTimestamp(m.createdAt);
+        return mDate.isAfter(localClearedAt);
+      }).toList();
+    }
+
     if (cachedMessages.isNotEmpty) {
       var filteredCached = _filterExpiredMessages(cachedMessages, disappearingTimer);
       if (disappearingTimer == null || disappearingTimer == 0) {
@@ -985,6 +1015,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isMuted: isMuted,
         isRecipientOnline: isBlocked ? false : _currentIsOnline,
         isRecipientTyping: isBlocked ? false : _currentIsTyping,
+        lastSeen: event.initialLastSeen,
         customBgColor: savedColor,
         customWallpaperUrl: savedWallpaper,
         themeColor: savedThemeColor,
@@ -993,6 +1024,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isBlockedByMe: isBlockedByMe,
         isBlockedByOther: isBlockedByOther,
         isLocked: initialLock,
+        readReceiptsEnabled: event.initialReadReceiptsEnabled,
+        typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
       ));
     } else {
       emit(const ChatLoading());
@@ -1018,13 +1051,22 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // 2. Fetch fresh messages from API in background
     try {
       final rawApiMessages = await _chatRepository.getMessages(event.conversationId, limit: 100, skip: 0);
-      _messagesSkip = rawApiMessages.length;
+      final List<MessageModel> filteredApiMessages;
+      if (localClearedAt != null) {
+        filteredApiMessages = rawApiMessages.where((m) {
+          final mDate = _parseTimestamp(m.createdAt);
+          return mDate.isAfter(localClearedAt);
+        }).toList();
+      } else {
+        filteredApiMessages = rawApiMessages;
+      }
+      _messagesSkip = filteredApiMessages.length;
       _hasReachedMax = rawApiMessages.length < 100;
 
       final currentLoadedMessages = (state is ChatLoaded)
           ? (state as ChatLoaded).messages
           : cachedMessages;
-      var messages = _applyPersistentViewOnceStates(rawApiMessages, currentLoadedMessages);
+      var messages = _applyPersistentViewOnceStates(filteredApiMessages, currentLoadedMessages);
 
       final cachedMap = <String, MessageModel>{};
       for (final m in currentLoadedMessages) {
@@ -1088,9 +1130,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           freshMap[m.id] = m;
         }
       }
-      // Preserve pending local sending messages
+      // Preserve any messages already loaded or arrived via socket while API was in-flight
       for (final m in currentLoadedMessages) {
-        if (m.id.startsWith('temp_') && !freshMap.containsKey(m.id)) {
+        if (m.id.isNotEmpty && !freshMap.containsKey(m.id)) {
+          if (m.id.startsWith('temp_')) {
+            final hasConfirmed = freshMap.values.any((fresh) => ChatMessageCacheHelper.isDuplicateTempMessage(m, fresh));
+            if (hasConfirmed) continue;
+            final dt = _parseTimestamp(m.createdAt);
+            if (DateTime.now().difference(dt).inMinutes > 5) continue;
+          }
           freshMap[m.id] = m;
         }
       }
@@ -1100,6 +1148,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         for (final raw in _pendingIncomingMessages) {
           try {
             final m = MessageModel.fromJson(raw);
+            if (localClearedAt != null && !_parseTimestamp(m.createdAt).isAfter(localClearedAt)) {
+              continue;
+            }
             if (m.id.isNotEmpty && !freshMap.containsKey(m.id)) {
               freshMap[m.id] = m;
             }
@@ -1167,7 +1218,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             bool inferredRead = msg.isRead || msg.status == 'read';
             bool inferredDelivered = msg.isDelivered || inferredRead || msg.status == 'delivered';
 
-            if (!inferredRead) {
+            if (effectiveReadReceipts && !inferredRead) {
               // If recipient sent a message after this one, it was read
               final myTime = _parseTimestamp(msg.createdAt);
               final recipientTime = _parseTimestamp(lastRecipientMessageTime);
@@ -1175,6 +1226,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                 inferredRead = true;
                 inferredDelivered = true;
               }
+            } else if (!effectiveReadReceipts) {
+              inferredRead = false;
             }
             if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
             return msg.copyWith(
@@ -1213,8 +1266,28 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
       final currentState = state;
       if (currentState is ChatLoaded) {
+        // Ensure any newly arrived messages in currentState (e.g. from socket during async permission checks) are retained
+        final latestMap = <String, MessageModel>{};
+        for (final m in messages) {
+          if (m.id.isNotEmpty) latestMap[m.id] = m;
+        }
+        for (final m in currentState.messages) {
+          if (m.id.isNotEmpty && !latestMap.containsKey(m.id)) {
+            latestMap[m.id] = m;
+          }
+        }
+        final finalMessages = latestMap.values.toList()
+          ..sort((a, b) {
+            final dtA = _parseTimestamp(a.createdAt);
+            final dtB = _parseTimestamp(b.createdAt);
+            final cmp = dtA.compareTo(dtB);
+            if (cmp != 0) return cmp;
+            return a.id.compareTo(b.id);
+          });
+        _saveToCache(event.conversationId, finalMessages);
+
         emit(currentState.copyWith(
-          messages: messages,
+          messages: finalMessages,
           pinnedMessages: pinnedMessages,
           themeColor: savedThemeColor ?? currentState.themeColor,
           customWallpaperUrl: savedWallpaper ?? currentState.customWallpaperUrl,
@@ -1227,6 +1300,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isBlocked: isBlocked || currentState.isBlocked,
           isBlockedByMe: isBlockedByMe || currentState.isBlockedByMe,
           isBlockedByOther: isBlockedByOther || currentState.isBlockedByOther,
+          lastSeen: event.initialLastSeen ?? currentState.lastSeen,
         ));
       } else {
         emit(ChatLoaded(
@@ -1236,6 +1310,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isMuted: isMuted,
           isRecipientOnline: isBlocked ? false : _currentIsOnline,
           isRecipientTyping: isBlocked ? false : _currentIsTyping,
+          lastSeen: event.initialLastSeen,
           customBgColor: savedColor,
           customWallpaperUrl: savedWallpaper,
           themeColor: savedThemeColor,
@@ -1259,7 +1334,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
 
     // Fetch recipient profile for initial lastSeen and block status in background
-    final rId = event.recipientId;
+    final rId = (_recipientId != null && _recipientId!.isNotEmpty) ? _recipientId : event.recipientId;
     if (rId != null && rId.isNotEmpty) {
       getIt<ProfileRepository>().getUserById(rId).then((result) {
         result.when(
@@ -1296,8 +1371,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
 
     try {
-      final rawApiMessages = event.freshMessages ??
+      var rawApiMessages = event.freshMessages ??
           await _chatRepository.getMessages(event.conversationId, limit: 100, skip: 0);
+
+      final localClearedAtStr = _storageService.getConversationClearedAt(event.conversationId);
+      final DateTime? localClearedAt = localClearedAtStr != null ? DateTime.tryParse(localClearedAtStr) : null;
+      if (localClearedAt != null) {
+        rawApiMessages = rawApiMessages.where((m) => _parseTimestamp(m.createdAt).isAfter(localClearedAt)).toList();
+      }
+
       _messagesSkip = rawApiMessages.length;
       _hasReachedMax = rawApiMessages.length < 100;
       var messages = _applyPersistentViewOnceStates(rawApiMessages, currentState.messages);
@@ -1354,8 +1436,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         }
       }
 
+      // Preserve any messages already loaded or arrived via socket while API was in-flight
       for (final m in currentState.messages) {
-        if (m.id.startsWith('temp_') && !freshMap.containsKey(m.id)) {
+        if (m.id.isNotEmpty && !freshMap.containsKey(m.id)) {
+          if (m.id.startsWith('temp_')) {
+            final hasConfirmed = freshMap.values.any((fresh) => ChatMessageCacheHelper.isDuplicateTempMessage(m, fresh));
+            if (hasConfirmed) continue;
+            final dt = _parseTimestamp(m.createdAt);
+            if (DateTime.now().difference(dt).inMinutes > 5) continue;
+          }
           freshMap[m.id] = m;
         }
       }
@@ -1378,10 +1467,38 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
       } catch (_) {}
 
-      _saveToCache(event.conversationId, messages);
+      final latestState = state;
+      final emitTarget = (latestState is ChatLoaded) ? latestState : currentState;
+      final finalMap = <String, MessageModel>{};
+      for (final m in messages) {
+        if (m.id.isNotEmpty) finalMap[m.id] = m;
+      }
+      if (latestState is ChatLoaded) {
+        for (final m in latestState.messages) {
+          if (m.id.isNotEmpty && !finalMap.containsKey(m.id)) {
+            if (m.id.startsWith('temp_')) {
+              final hasConfirmed = finalMap.values.any((fresh) => ChatMessageCacheHelper.isDuplicateTempMessage(m, fresh));
+              if (hasConfirmed) continue;
+              final dt = _parseTimestamp(m.createdAt);
+              if (DateTime.now().difference(dt).inMinutes > 5) continue;
+            }
+            finalMap[m.id] = m;
+          }
+        }
+      }
+      final finalMessages = finalMap.values.toList()
+        ..sort((a, b) {
+          final dtA = _parseTimestamp(a.createdAt);
+          final dtB = _parseTimestamp(b.createdAt);
+          final cmp = dtA.compareTo(dtB);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        });
 
-      emit(currentState.copyWith(
-        messages: messages,
+      _saveToCache(event.conversationId, finalMessages);
+
+      emit(emitTarget.copyWith(
+        messages: finalMessages,
         pinnedMessages: pinnedMessages,
       ));
     } catch (e) {
@@ -1404,18 +1521,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         skip: _messagesSkip,
       );
 
-      if (moreMessages.isEmpty) {
+      final localClearedAtStr = _storageService.getConversationClearedAt(event.conversationId);
+      final DateTime? localClearedAt = localClearedAtStr != null ? DateTime.tryParse(localClearedAtStr) : null;
+
+      final List<MessageModel> validMore;
+      if (localClearedAt != null) {
+        validMore = moreMessages.where((m) => _parseTimestamp(m.createdAt).isAfter(localClearedAt)).toList();
+        if (validMore.length < moreMessages.length) {
+          _hasReachedMax = true;
+        }
+      } else {
+        validMore = moreMessages;
+      }
+
+      if (validMore.isEmpty) {
         _hasReachedMax = true;
         _isFetchingMore = false;
         return;
       }
 
-      _messagesSkip += moreMessages.length;
+      _messagesSkip += validMore.length;
       if (moreMessages.length < 100) {
         _hasReachedMax = true;
       }
 
-      var filteredMore = _filterExpiredMessages(moreMessages);
+      var filteredMore = _filterExpiredMessages(validMore);
       filteredMore = _applyPersistentViewOnceStates(filteredMore, currentState.messages);
 
       final messageMap = <String, MessageModel>{};
@@ -1622,6 +1752,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (currentState is ChatLoaded) {
       try {
         final rawMessage = MessageModel.fromJson(event.messageData);
+
+        // Check if message is older than local cleared_at timestamp
+        final localClearedAtStr = _storageService.getConversationClearedAt(_conversationId ?? '');
+        if (localClearedAtStr != null) {
+          final localClearedAt = DateTime.tryParse(localClearedAtStr);
+          if (localClearedAt != null && !_parseTimestamp(rawMessage.createdAt).isAfter(localClearedAt)) {
+            debugPrint('ChatBloc: Ignored incoming message older than conversation cleared_at');
+            return;
+          }
+        }
+
         final newMessage = _applyPersistentViewOnceStates([rawMessage], currentState.messages).first;
         debugPrint('DEBUG: Decoded new message. ID=${newMessage.id}, sender=${newMessage.senderId}, myId=${currentState.myId}');
         
@@ -1636,7 +1777,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
           int index = updatedMessages.lastIndexWhere((msg) =>
               msg.id.startsWith('temp_') &&
-              (msg.content == newMessage.content ||
+              (ChatMessageCacheHelper.isDuplicateTempMessage(msg, newMessage) ||
+               (msg.content.isNotEmpty && msg.content == newMessage.content) ||
                (msg.mediaUrl != null && newMessage.mediaUrl != null && msg.mediaUrl == newMessage.mediaUrl) ||
                (msg.attachmentName != null && newMessage.attachmentName != null && msg.attachmentName == newMessage.attachmentName)));
           if (index == -1) {
@@ -1694,22 +1836,37 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             isUploading: false,
           );
 
-          if (index != -1) {
+          final existingIndex = updatedMessages.indexWhere((msg) => msg.id == newMessage.id);
+          if (existingIndex != -1) {
+            final existing = updatedMessages[existingIndex];
+            updatedMessages[existingIndex] = confirmedMessage.copyWith(
+              reactions: newMessage.reactions.isNotEmpty ? newMessage.reactions : existing.reactions,
+              isEdited: newMessage.isEdited || existing.isEdited,
+              editedAt: newMessage.editedAt ?? existing.editedAt,
+              isRead: newMessage.isRead || existing.isRead,
+              isDelivered: newMessage.isDelivered || existing.isDelivered,
+            );
+            if (index != -1 && index != existingIndex) {
+              updatedMessages.removeAt(index);
+            }
+          } else if (index != -1) {
             updatedMessages[index] = confirmedMessage;
           } else {
-            final existingIndex = updatedMessages.indexWhere((msg) => msg.id == newMessage.id);
-            if (existingIndex == -1) {
-              updatedMessages.add(confirmedMessage);
-            } else {
-              final existing = updatedMessages[existingIndex];
-              updatedMessages[existingIndex] = confirmedMessage.copyWith(
-                reactions: newMessage.reactions.isNotEmpty ? newMessage.reactions : existing.reactions,
-                isEdited: newMessage.isEdited || existing.isEdited,
-                editedAt: newMessage.editedAt ?? existing.editedAt,
-                isRead: newMessage.isRead || existing.isRead,
-                isDelivered: newMessage.isDelivered || existing.isDelivered,
-              );
-            }
+            updatedMessages.add(confirmedMessage);
+          }
+
+          // Purge any remaining duplicate temp messages in updatedMessages
+          updatedMessages.removeWhere((m) =>
+              m.id != confirmedMessage.id &&
+              m.id.startsWith('temp_') &&
+              ChatMessageCacheHelper.isDuplicateTempMessage(m, confirmedMessage));
+
+          // Ensure no duplicate IDs in list
+          final seenIds = <String>{};
+          updatedMessages.retainWhere((m) => seenIds.add(m.id));
+
+          if (oldTemp != null && _conversationId != null) {
+            ChatMessageCacheHelper.deleteMessage(_conversationId!, oldTemp.id);
           }
 
           final filtered = _filterExpiredMessages(updatedMessages);
@@ -1904,9 +2061,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ));
         return;
       }
+      final cleanLastSeen = (event.lastSeen != null &&
+              event.lastSeen!.trim().isNotEmpty &&
+              event.lastSeen != 'null' &&
+              event.lastSeen != '0')
+          ? event.lastSeen
+          : null;
+      final effectiveLastSeen = event.isOnline
+          ? currentState.lastSeen
+          : (cleanLastSeen ??
+              ((currentState.isRecipientOnline)
+                  ? DateTime.now().toUtc().toIso8601String()
+                  : currentState.lastSeen));
       emit(currentState.copyWith(
         isRecipientOnline: _currentIsOnline,
-        lastSeen: event.lastSeen ?? currentState.lastSeen,
+        lastSeen: effectiveLastSeen,
       ));
     }
   }
@@ -1916,6 +2085,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded) {
       if (currentState.isBlocked) {
+        emit(currentState.copyWith(isRecipientTyping: false));
+        return;
+      }
+      final globalTyping = getIt<StorageService>().getTypingIndicatorsEnabled();
+      final effectiveTyping = currentState.typingIndicatorsEnabled ?? globalTyping;
+      if (!effectiveTyping) {
         emit(currentState.copyWith(isRecipientTyping: false));
         return;
       }
@@ -1934,6 +2109,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onMarkMessageRead(MarkMessageReadEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
+      final globalRead = getIt<StorageService>().getReadReceiptsEnabled();
+      final effectiveRead = currentState.readReceiptsEnabled ?? globalRead;
+      if (!effectiveRead) {
+        return;
+      }
       final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
       final msgs = currentState.messages;
       final updated = <MessageModel>[];
@@ -2612,24 +2792,43 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> _onClearChat(ClearChatEvent event, Emitter<ChatState> emit) async {
     final currentState = state;
     if (currentState is! ChatLoaded) return;
-    try {
-      await _chatRepository.clearChat(event.conversationId);
-      final box = await Hive.openBox('cached_messages');
-      await box.delete(event.conversationId);
 
-      _messagesSkip = 0;
-      _hasReachedMax = true;
+    final nowIso = DateTime.now().toUtc().toIso8601String();
 
-      emit(currentState.copyWith(
-        messages: [],
-        pinnedMessages: [],
-        notificationMessage: null,
-      ));
-    } catch (e) {
-      debugPrint('Error clearing chat: $e');
-      emit(currentState.copyWith(
-        notificationMessage: 'Failed to clear chat',
-      ));
+    // 1. Instantly record cleared_at in StorageService
+    await _storageService.saveConversationClearedAt(event.conversationId, nowIso);
+
+    // 2. Instantly purge all cache in Hive across exact & normalized keys
+    await ChatMessageCacheHelper.clearConversation(event.conversationId);
+
+    _messagesSkip = 0;
+    _hasReachedMax = true;
+
+    // 3. Instantly emit empty message list on the UI!
+    emit(currentState.copyWith(
+      messages: [],
+      pinnedMessages: [],
+      notificationMessage: null,
+    ));
+
+    // 4. Instantly notify ChatsBloc so dashboard updates immediately
+    if (getIt.isRegistered<ChatsBloc>()) {
+      getIt<ChatsBloc>().add(ClearConversationMessages(conversationId: event.conversationId));
+    }
+
+    // 5. If this was initiated locally, call backend API in background
+    if (!event.isRemote) {
+      try {
+        final serverClearedAt = await _chatRepository.clearChat(
+          event.conversationId,
+          clearType: event.clearType,
+        );
+        if (serverClearedAt != null && serverClearedAt.isNotEmpty) {
+          await _storageService.saveConversationClearedAt(event.conversationId, serverClearedAt);
+        }
+      } catch (e) {
+        debugPrint('Error clearing chat on server: $e');
+      }
     }
   }
 

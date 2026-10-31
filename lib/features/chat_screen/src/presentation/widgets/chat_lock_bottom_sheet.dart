@@ -55,9 +55,9 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
   bool _isLoadingStatus = true;
   bool _isActionProcessing = false;
   bool _hasPassword = false;
-  bool _obscurePassword = false;
-  bool _obscureConfirmPassword = false;
-  bool _obscureOldPassword = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  bool _obscureOldPassword = true;
   bool _isChangingPassword = false;
   String? _errorMessage;
 

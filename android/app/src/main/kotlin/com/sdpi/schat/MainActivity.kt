@@ -60,6 +60,15 @@ class MainActivity : FlutterActivity() {
         }
         super.onCreate(savedInstanceState)
         bringActivityToFront()
+        // Hardware button and gesture screenshot protection
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!isScreenRecordingOnlyMode) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -467,6 +476,7 @@ class MainActivity : FlutterActivity() {
         // 1. Android 14+ (API 34) Official ScreenCaptureCallback
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             val callback = ScreenCaptureCallback {
+                deleteLastScreenshot()
                 notifyScreenshotTaken()
             }
             screenCaptureCallback = callback
@@ -519,7 +529,17 @@ class MainActivity : FlutterActivity() {
                         object : FileObserver(dir, CREATE or CLOSE_WRITE) {
                             override fun onEvent(event: Int, path: String?) {
                                 if (path != null && (path.contains("screenshot", ignoreCase = true) || path.endsWith(".jpg") || path.endsWith(".png"))) {
-                                    notifyScreenshotTaken()
+                                    if (!path.contains("/Schat/", ignoreCase = true) && !path.contains("Schat", ignoreCase = true)) {
+                                        deleteLastScreenshot()
+                                        mainHandler.post {
+                                            try {
+                                                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                        notifyScreenshotTaken()
+                                    }
                                 }
                             }
                         }
@@ -528,7 +548,17 @@ class MainActivity : FlutterActivity() {
                         object : FileObserver(dir.absolutePath, CREATE or CLOSE_WRITE) {
                             override fun onEvent(event: Int, path: String?) {
                                 if (path != null && (path.contains("screenshot", ignoreCase = true) || path.endsWith(".jpg") || path.endsWith(".png"))) {
-                                    notifyScreenshotTaken()
+                                    if (!path.contains("/Schat/", ignoreCase = true) && !path.contains("Schat", ignoreCase = true)) {
+                                        deleteLastScreenshot()
+                                        mainHandler.post {
+                                            try {
+                                                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                        notifyScreenshotTaken()
+                                    }
                                 }
                             }
                         }
@@ -550,16 +580,19 @@ class MainActivity : FlutterActivity() {
 
         if (uri != null) {
             val uriStr = uri.toString().lowercase()
+            // Ignore legitimate in-app screenshots saved to Schat
+            if (uriStr.contains("/schat/") || uriStr.contains("pictures/schat") || uriStr.contains("download/schat")) {
+                return
+            }
             if (uriStr.contains("screenshot") || uriStr.contains("media")) {
                 lastScreenshotUri = uri
-                if (isScreenRecordingOnlyMode) {
-                    deleteLastScreenshot()
-                    mainHandler.post {
-                        try {
-                            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
+                // Native screenshot from external sources (Power+Down, 3 fingers, etc.)
+                deleteLastScreenshot()
+                mainHandler.post {
+                    try {
+                        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
                 notifyScreenshotTaken()
@@ -590,6 +623,13 @@ class MainActivity : FlutterActivity() {
                     val path = if (dataIndex >= 0) it.getString(dataIndex) ?: "" else ""
                     val mediaId = if (idIndex >= 0) it.getLong(idIndex) else -1L
 
+                    // Ignore legitimate in-app screenshots saved to Schat
+                    if (path.contains("/Schat/", ignoreCase = true) ||
+                        path.contains("Pictures/Schat", ignoreCase = true) ||
+                        path.contains("Download/Schat", ignoreCase = true)) {
+                        return
+                    }
+
                     if (name.contains("screenshot") || path.lowercase().contains("screenshot")) {
                         if (mediaId != -1L && mediaId == lastScreenshotMediaId && (now - lastScreenshotTimestamp < 1000)) {
                             // Exact same MediaStore entry already handled within 1 second
@@ -604,14 +644,13 @@ class MainActivity : FlutterActivity() {
                                 id
                             )
                         }
-                        if (isScreenRecordingOnlyMode) {
-                            deleteLastScreenshot()
-                            mainHandler.post {
-                                try {
-                                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
+                        // Delete unauthorized hardware/gesture screenshot immediately
+                        deleteLastScreenshot()
+                        mainHandler.post {
+                            try {
+                                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
                             }
                         }
                         notifyScreenshotTaken()
@@ -638,7 +677,7 @@ class MainActivity : FlutterActivity() {
         var deleted = false
         try {
             val path = lastScreenshotPath
-            if (!path.isNullOrEmpty()) {
+            if (!path.isNullOrEmpty() && !path.contains("/Schat/", ignoreCase = true)) {
                 val f = File(path)
                 if (f.exists()) {
                     deleted = f.delete() || deleted
@@ -658,6 +697,30 @@ class MainActivity : FlutterActivity() {
         }
         lastScreenshotPath = null
         lastScreenshotUri = null
+
+        // Also purge any recent external screenshot files within the last 15 seconds (excluding Schat)
+        try {
+            val now = System.currentTimeMillis()
+            val dirs = listOf(
+                File("/storage/emulated/0/Pictures/Screenshots"),
+                File("/storage/emulated/0/DCIM/Screenshots"),
+                File("/storage/emulated/0/Pictures/Screenshot"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Screenshots"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Screenshots")
+            )
+            for (dir in dirs) {
+                if (dir.exists() && dir.isDirectory) {
+                    val files = dir.listFiles() ?: continue
+                    for (f in files) {
+                        if (f.isFile && (now - f.lastModified()) < 15000L && !f.absolutePath.contains("/Schat/", ignoreCase = true)) {
+                            f.delete()
+                            deleted = true
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
         return deleted
     }
 

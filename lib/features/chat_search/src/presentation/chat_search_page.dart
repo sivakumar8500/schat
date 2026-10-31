@@ -421,8 +421,11 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     return false;
   }
 
-  bool _isRawMediaFileName(String text) {
+  bool _isRawMediaFileName(String text, {String? query}) {
     final lower = text.toLowerCase().trim();
+    if (query != null && query.trim().isNotEmpty && lower.contains(query.trim().toLowerCase())) {
+      return false;
+    }
     return lower.startsWith('image_picker_') ||
         lower.startsWith('scaled_image_picker') ||
         lower.startsWith('temp_') ||
@@ -432,16 +435,22 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
         RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', caseSensitive: false).hasMatch(lower);
   }
 
-  String _formatDisplayContent(String rawContent, String mediaType, {String? fileName}) {
+  String _formatDisplayContent(String rawContent, String mediaType, {String? fileName, String? query}) {
     final type = mediaType.toLowerCase();
     final trimmed = rawContent.trim();
+    final cleanQ = query?.trim().toLowerCase() ?? '';
+    final effectiveFileName = (fileName != null && fileName.trim().isNotEmpty) ? fileName.trim() : null;
 
     if (trimmed.contains(' · ')) {
       final parts = trimmed.split(' · ');
       final filePart = parts[0].trim();
       final captionPart = parts.sublist(1).join(' · ').trim();
 
-      if (_isRawMediaFileName(filePart)) {
+      if (cleanQ.isNotEmpty && filePart.toLowerCase().contains(cleanQ)) {
+        return captionPart.isNotEmpty ? '$filePart · $captionPart' : filePart;
+      }
+
+      if (_isRawMediaFileName(filePart, query: query)) {
         if (captionPart.isNotEmpty) {
           if (type == 'image' || type == 'photo') return '📷 $captionPart';
           if (type == 'video') return '🎥 $captionPart';
@@ -449,49 +458,124 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           if (type == 'document' || type == 'file' || type == 'pdf') return '📄 $captionPart';
           return captionPart;
         }
+      } else {
+        return captionPart.isNotEmpty ? '$filePart · $captionPart' : filePart;
       }
     }
 
-    if (_isRawMediaFileName(trimmed)) {
+    if (effectiveFileName != null && cleanQ.isNotEmpty && effectiveFileName.toLowerCase().contains(cleanQ)) {
+      if (!trimmed.toLowerCase().contains(effectiveFileName.toLowerCase())) {
+        return trimmed.isNotEmpty ? '$effectiveFileName · $trimmed' : effectiveFileName;
+      }
+    }
+
+    if (_isRawMediaFileName(trimmed, query: query)) {
+      if (effectiveFileName != null && !_isRawMediaFileName(effectiveFileName, query: query)) {
+        return effectiveFileName;
+      }
       if (type == 'image' || type == 'photo') return '📷 Photo';
       if (type == 'video') return '🎥 Video';
       if (type == 'audio' || type == 'voice') return '🎵 Audio';
-      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(fileName ?? 'Document');
+      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(effectiveFileName ?? 'Document', query);
       return 'Attachment';
     }
 
     if (trimmed.isEmpty) {
+      if (effectiveFileName != null && !_isRawMediaFileName(effectiveFileName, query: query)) {
+        return effectiveFileName;
+      }
       if (type == 'image' || type == 'photo') return '📷 Photo';
       if (type == 'video') return '🎥 Video';
       if (type == 'audio' || type == 'voice') return '🎵 Audio';
-      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(fileName ?? 'Document');
+      if (type == 'document' || type == 'file' || type == 'pdf') return _formatDisplayFileName(effectiveFileName ?? 'Document', query);
     }
 
     return trimmed;
   }
 
-  String _formatDisplayFileName(String rawName) {
+  String _formatDisplayFileName(String rawName, [String? query]) {
     final trimmed = rawName.trim();
-    if (_isRawMediaFileName(trimmed)) {
+    if (trimmed.isEmpty) return 'Document';
+    if (query != null && query.trim().isNotEmpty && trimmed.toLowerCase().contains(query.trim().toLowerCase())) {
+      return trimmed;
+    }
+    if (_isRawMediaFileName(trimmed, query: query)) {
       if (trimmed.toLowerCase().endsWith('.pdf')) return 'Document.pdf';
       return 'Document';
     }
     return trimmed;
   }
 
+  String? _extractFileName(String rawContent, String mediaType) {
+    if (rawContent.isEmpty) return null;
+    final trimmed = rawContent.trim();
+    if (trimmed.contains(' · ')) {
+      return trimmed.split(' · ').first.trim();
+    }
+    final lower = trimmed.toLowerCase();
+    if (lower.endsWith('.pdf') ||
+        lower.endsWith('.doc') ||
+        lower.endsWith('.docx') ||
+        lower.endsWith('.xls') ||
+        lower.endsWith('.xlsx') ||
+        lower.endsWith('.ppt') ||
+        lower.endsWith('.pptx') ||
+        lower.endsWith('.txt') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg') ||
+        lower.endsWith('.png') ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.m4a')) {
+      return trimmed;
+    }
+    if (mediaType == 'pdf' || mediaType == 'document' || mediaType == 'file') {
+      return trimmed;
+    }
+    return null;
+  }
+
+  String _resolveConversationTitle({
+    required ChatModel chat,
+    required String rawTitle,
+    required String query,
+  }) {
+    String title = rawTitle.trim();
+    if (title.isEmpty) {
+      title = chat.isGroup ? (chat.groupName ?? 'Group') : chat.recipient.displayName;
+    }
+
+    if (!chat.isGroup &&
+        chat.recipient.username != null &&
+        chat.recipient.username!.trim().isNotEmpty) {
+      final username = chat.recipient.username!.trim();
+      final cleanUsername = username.startsWith('@') ? username.substring(1) : username;
+      final lowerTitle = title.toLowerCase();
+
+      if (!lowerTitle.contains(cleanUsername.toLowerCase())) {
+        final cleanQ = query.trim().toLowerCase();
+        if (cleanQ.isNotEmpty &&
+            (cleanUsername.toLowerCase().contains(cleanQ) || '@$cleanUsername'.toLowerCase().contains(cleanQ))) {
+          title = '$title (@$cleanUsername)';
+        }
+      }
+    }
+    return title;
+  }
+
   bool _matchesQuery(String text, String query) {
-    if (query.isEmpty) return false;
+    if (query.isEmpty || text.isEmpty) return false;
     final cleanQuery = query.toLowerCase().trim();
+    if (cleanQuery.isEmpty) return false;
     final cleanText = text.toLowerCase();
 
-    if (cleanQuery.length < 3) {
-      // For short 1-2 character queries, match words that start with the query
-      // (e.g. "he" matches "hello", "hey", "help", "he", but not "the" or "father")
-      final words = cleanText.split(RegExp(r'[\s,.:;!?/\\-_#@()\[\]]+'));
-      return words.any((w) => w.startsWith(cleanQuery));
-    } else {
-      return cleanText.contains(cleanQuery);
+    if (cleanText.contains(cleanQuery)) return true;
+
+    final tokens = cleanQuery.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
+    for (final token in tokens) {
+      if (cleanText.contains(token)) return true;
     }
+    return false;
   }
 
   // ==========================================
@@ -572,9 +656,16 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             ),
           );
 
+          final resolvedTitle = _resolveConversationTitle(
+            chat: chat,
+            rawTitle: msg.conversationName,
+            query: _searchQuery,
+          );
+          final resolvedFileName = msg.fileName ?? _extractFileName(msg.contentText, msg.messageType);
+
           return _buildQueryMessageItem(
             chat: chat,
-            conversationTitle: msg.conversationName.isNotEmpty ? msg.conversationName : (chat.isGroup ? (chat.groupName ?? 'Group') : chat.recipient.displayName),
+            conversationTitle: resolvedTitle,
             messageId: msg.id,
             senderName: msg.senderName,
             senderId: msg.senderId,
@@ -583,7 +674,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             contentText: msg.contentText,
             mediaType: msg.messageType,
             mediaUrl: _resolveMediaUrl(msg.mediaUrl),
-            fileName: msg.fileName,
+            fileName: resolvedFileName,
             fileSize: msg.fileSize,
             timestamp: msg.createdAt > 0 ? msg.createdAt : chat.updatedAt,
             query: _searchQuery,
@@ -605,18 +696,24 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       separatorBuilder: (context, index) => const SizedBox(height: 20),
       itemBuilder: (context, index) {
         final chat = localMatches[index];
-        final name = chat.isGroup
+        final rawTitle = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
+        final resolvedTitle = _resolveConversationTitle(
+          chat: chat,
+          rawTitle: rawTitle,
+          query: _searchQuery,
+        );
 
         final rawContent = chat.lastMessage?.content ?? chat.groupDescription ?? '';
         final mediaType = (chat.lastMessage?.mediaType ?? '').toLowerCase();
         final rawUrl = chat.lastMessage?.mediaUrl ?? '';
         final resolvedUrl = _resolveMediaUrl(rawUrl);
+        final resolvedFileName = _extractFileName(rawContent, mediaType);
 
         return _buildQueryMessageItem(
           chat: chat,
-          conversationTitle: name,
+          conversationTitle: resolvedTitle,
           messageId: chat.lastMessage?.id,
           senderName: chat.recipient.displayName,
           senderId: chat.lastMessage?.senderId ?? '',
@@ -625,7 +722,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
           contentText: rawContent,
           mediaType: mediaType,
           mediaUrl: resolvedUrl,
-          fileName: rawContent.endsWith('.pdf') || mediaType == 'pdf' || mediaType == 'document' ? rawContent : null,
+          fileName: resolvedFileName,
           fileSize: null,
           timestamp: chat.lastMessage?.createdAt ?? chat.updatedAt,
           query: _searchQuery,
@@ -663,13 +760,34 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       prefix = '~ $senderName: ';
     }
 
-    final displayContent = _formatDisplayContent(contentText, mediaType, fileName: fileName);
+    final displayContent = _formatDisplayContent(
+      contentText,
+      mediaType,
+      fileName: fileName,
+      query: query,
+    );
 
+    final lowerContent = contentText.toLowerCase();
+    final lowerFile = fileName?.toLowerCase() ?? '';
     final isPdfOrDoc = mediaType == 'pdf' ||
         mediaType == 'document' ||
         mediaType == 'file' ||
-        contentText.toLowerCase().endsWith('.pdf') ||
-        (fileName != null && fileName.toLowerCase().endsWith('.pdf'));
+        lowerContent.endsWith('.pdf') ||
+        lowerContent.endsWith('.doc') ||
+        lowerContent.endsWith('.docx') ||
+        lowerContent.endsWith('.xls') ||
+        lowerContent.endsWith('.xlsx') ||
+        lowerContent.endsWith('.ppt') ||
+        lowerContent.endsWith('.pptx') ||
+        lowerContent.endsWith('.txt') ||
+        lowerFile.endsWith('.pdf') ||
+        lowerFile.endsWith('.doc') ||
+        lowerFile.endsWith('.docx') ||
+        lowerFile.endsWith('.xls') ||
+        lowerFile.endsWith('.xlsx') ||
+        lowerFile.endsWith('.ppt') ||
+        lowerFile.endsWith('.pptx') ||
+        lowerFile.endsWith('.txt');
 
     final isMedia = (mediaType == 'image' || mediaType == 'photo' || mediaType == 'video') &&
         mediaUrl != null &&
@@ -689,16 +807,23 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Text(
-                    conversationTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+                  child: _buildHighlightedText(
+                    text: conversationTitle,
+                    query: query,
+                    baseStyle: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: isDark ? Colors.white : const Color(0xFF111827),
                       letterSpacing: -0.2,
                     ),
+                    highlightStyle: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
+                      backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.65),
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -717,7 +842,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             // Content Row
             if (isPdfOrDoc)
               _buildDocumentQueryCard(
-                fileName: _formatDisplayFileName(fileName ?? contentText),
+                fileName: _formatDisplayFileName(fileName ?? contentText, query),
                 fileSize: fileSize ?? '193 kB',
                 query: query,
                 isDark: isDark,
@@ -736,9 +861,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                         height: 1.35,
                       ),
                       highlightStyle: TextStyle(
-                        backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
+                        backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.65),
                         color: const Color(0xFF111827),
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         fontSize: 14,
                         height: 1.35,
                       ),
@@ -779,9 +904,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   height: 1.35,
                 ),
                 highlightStyle: TextStyle(
-                  backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
+                  backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.65),
                   color: const Color(0xFF111827),
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   fontSize: 14,
                   height: 1.35,
                 ),
@@ -799,6 +924,18 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     required String query,
     required bool isDark,
   }) {
+    String docTag = 'PDF';
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
+      docTag = 'XLS';
+    } else if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) {
+      docTag = 'PPT';
+    } else if (lower.endsWith('.txt')) {
+      docTag = 'TXT';
+    } else if (lower.endsWith('.doc') || lower.endsWith('.docx')) {
+      docTag = 'DOC';
+    }
+
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 2),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -817,9 +954,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               color: const Color(0xFFE53935),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: const Text(
-              'PDF',
-              style: TextStyle(
+            child: Text(
+              docTag,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
@@ -841,15 +978,16 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                     fontWeight: FontWeight.w600,
                   ),
                   highlightStyle: TextStyle(
-                    color: isDark ? Colors.white : Colors.black,
+                    backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.65),
+                    color: const Color(0xFF111827),
                     fontSize: 14,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                   ),
                   maxLines: 1,
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  fileSize.isNotEmpty ? '$fileSize · PDF' : '193 kB · PDF',
+                  fileSize.isNotEmpty ? '$fileSize · $docTag' : '193 kB · $docTag',
                   style: TextStyle(
                     color: isDark ? Colors.white54 : const Color(0xFF6B7280),
                     fontSize: 12,
@@ -871,41 +1009,78 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     TextStyle? highlightStyle,
     int maxLines = 3,
   }) {
-    if (query.isEmpty) {
-      return Text(text, style: baseStyle, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty || text.isEmpty) {
+      return Text(
+        text,
+        style: baseStyle,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
-    final matches = RegExp(RegExp.escape(query), caseSensitive: false).allMatches(text);
+    final terms = cleanQuery
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map(RegExp.escape)
+        .toList();
+
+    if (terms.isEmpty) {
+      return Text(
+        text,
+        style: baseStyle,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final pattern = terms.join('|');
+    final matches = RegExp(pattern, caseSensitive: false).allMatches(text);
     if (matches.isEmpty) {
-      return Text(text, style: baseStyle, maxLines: maxLines, overflow: TextOverflow.ellipsis);
+      return Text(
+        text,
+        style: baseStyle,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
-    final effectiveHighlightStyle = highlightStyle ??
-        baseStyle.copyWith(
-          backgroundColor: const Color(0xFFFFEB3B).withValues(alpha: 0.60),
-          color: const Color(0xFF111827),
-          fontWeight: FontWeight.w800,
-        );
+    const defaultHighlightBg = Color(0xFFFFEB3B);
+    final effectiveHighlightStyle = (highlightStyle ?? baseStyle).copyWith(
+      backgroundColor: highlightStyle?.backgroundColor ?? defaultHighlightBg.withValues(alpha: 0.65),
+      color: highlightStyle?.color ?? const Color(0xFF111827),
+      fontWeight: highlightStyle?.fontWeight ?? FontWeight.w800,
+    );
 
     final List<TextSpan> spans = [];
     int lastEnd = 0;
 
     for (final match in matches) {
+      if (match.start < lastEnd) continue;
       if (match.start > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, match.start), style: baseStyle));
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: baseStyle,
+        ));
       }
-      spans.add(TextSpan(text: text.substring(match.start, match.end), style: effectiveHighlightStyle));
+      spans.add(TextSpan(
+        text: text.substring(match.start, match.end),
+        style: effectiveHighlightStyle,
+      ));
       lastEnd = match.end;
     }
 
     if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd), style: baseStyle));
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: baseStyle,
+      ));
     }
 
-    return RichText(
+    return Text.rich(
+      TextSpan(children: spans),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
-      text: TextSpan(children: spans),
     );
   }
 
@@ -1068,9 +1243,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       ),
       itemBuilder: (context, index) {
         final chat = visibleChats[index];
-        final name = chat.isGroup
+        final rawTitle = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
+        final name = _resolveConversationTitle(
+          chat: chat,
+          rawTitle: rawTitle,
+          query: _searchQuery,
+        );
 
         final String rawMessage;
         if (chat.isTyping) {
@@ -1088,6 +1268,8 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
             : _formatDisplayContent(
                 rawMessage,
                 chat.lastMessage?.mediaType ?? '',
+                fileName: _extractFileName(rawMessage, chat.lastMessage?.mediaType ?? ''),
+                query: _searchQuery,
               );
 
         return _buildChatTile(
@@ -1533,15 +1715,15 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                      child: _buildHighlightedText(
+                        text: name,
+                        query: _searchQuery,
+                        baseStyle: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white : Colors.black87,
                         ),
+                        maxLines: 1,
                       ),
                     ),
                     Text(
@@ -1630,15 +1812,15 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                      child: _buildHighlightedText(
+                        text: name,
+                        query: _searchQuery,
+                        baseStyle: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           color: isDark ? Colors.white : Colors.black87,
                         ),
+                        maxLines: 1,
                       ),
                     ),
                     Text(
@@ -1711,24 +1893,24 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   ),
                 ],
               ),
-              Text(
-                chat.lastMessage?.content ?? 'Voice Note',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+              _buildHighlightedText(
+                text: chat.lastMessage?.content ?? 'Voice Note',
+                query: _searchQuery,
+                baseStyle: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: isDark ? Colors.white : Colors.black87,
                 ),
+                maxLines: 2,
               ),
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+              _buildHighlightedText(
+                text: name,
+                query: _searchQuery,
+                baseStyle: TextStyle(
                   fontSize: 11.5,
                   color: isDark ? Colors.white54 : const Color(0xFF6B7280),
                 ),
+                maxLines: 1,
               ),
             ],
           ),
@@ -1745,9 +1927,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final chat = visibleChats[index];
-        final name = chat.isGroup
+        final rawTitle = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
+        final name = _resolveConversationTitle(
+          chat: chat,
+          rawTitle: rawTitle,
+          query: _searchQuery,
+        );
 
         return _buildLinkCard(chat, name, isDark);
       },
@@ -1796,12 +1983,16 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white : Colors.black87,
+                        Expanded(
+                          child: _buildHighlightedText(
+                            text: name,
+                            query: _searchQuery,
+                            baseStyle: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            maxLines: 1,
                           ),
                         ),
                         Text(
@@ -1814,15 +2005,15 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(
-                      rawContent,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                    _buildHighlightedText(
+                      text: rawContent,
+                      query: _searchQuery,
+                      baseStyle: const TextStyle(
                         fontSize: 13.5,
                         color: Color(0xFF00873C),
                         fontWeight: FontWeight.w500,
                       ),
+                      maxLines: 2,
                     ),
                   ],
                 ),
@@ -1842,9 +2033,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       separatorBuilder: (context, index) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final chat = visibleChats[index];
-        final name = chat.isGroup
+        final rawTitle = chat.isGroup
             ? (chat.groupName ?? 'Group')
             : chat.recipient.displayName;
+        final name = _resolveConversationTitle(
+          chat: chat,
+          rawTitle: rawTitle,
+          query: _searchQuery,
+        );
 
         return _buildDocumentCard(chat, name, isDark);
       },
@@ -1857,7 +2053,19 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
     final borderColor = isDark ? Colors.white12 : const Color(0xFFE5E9E7);
     final timestamp = chat.lastMessage?.createdAt ?? chat.updatedAt;
     final timeStr = _formatMessageTime(timestamp);
-    final displayFileName = _formatDisplayFileName(rawContent);
+    final displayFileName = _formatDisplayFileName(rawContent, _searchQuery);
+
+    String docTag = 'PDF';
+    final lower = displayFileName.toLowerCase();
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
+      docTag = 'XLS';
+    } else if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) {
+      docTag = 'PPT';
+    } else if (lower.endsWith('.txt')) {
+      docTag = 'TXT';
+    } else if (lower.endsWith('.doc') || lower.endsWith('.docx')) {
+      docTag = 'DOC';
+    }
 
     return Material(
       color: Colors.transparent,
@@ -1880,9 +2088,9 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   color: const Color(0xFFE53935),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text(
-                  'PDF',
-                  style: TextStyle(
+                child: Text(
+                  docTag,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w900,
@@ -1895,23 +2103,25 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      displayFileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                    _buildHighlightedText(
+                      text: displayFileName,
+                      query: _searchQuery,
+                      baseStyle: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black87,
                       ),
+                      maxLines: 1,
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      '$name · $timeStr',
-                      style: TextStyle(
+                    _buildHighlightedText(
+                      text: '$name · $timeStr',
+                      query: _searchQuery,
+                      baseStyle: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.white54 : Colors.grey,
                       ),
+                      maxLines: 1,
                     ),
                   ],
                 ),
@@ -2084,15 +2294,15 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                        child: _buildHighlightedText(
+                          text: displayName,
+                          query: _searchQuery,
+                          baseStyle: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                             color: context.colors.textPrimary,
                           ),
+                          maxLines: 1,
                         ),
                       ),
                       if (item.updatedAt != null || item.lastMessageTimestamp != null)
@@ -2109,14 +2319,14 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          messageSnippet,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                        child: _buildHighlightedText(
+                          text: messageSnippet,
+                          query: _searchQuery,
+                          baseStyle: TextStyle(
                             color: isDark ? Colors.white54 : const Color(0xFF6B7280),
                             fontSize: 13.5,
                           ),
+                          maxLines: 1,
                         ),
                       ),
                       if (item.unreadCount > 0)

@@ -383,7 +383,7 @@ class _RequestScreenPermissionBottomSheetState
         ],
 
         Text(
-          'Request permission from ${widget.contactName} to take screenshots or record screen in this conversation.',
+          'Request permission from ${widget.contactName} to take screenshots or record screen in this conversation. Note: Once approved, screenshots can only be taken using the in-app button.',
           style: context.bodySmall.copyWith(color: colors.textSecondary),
         ),
         CommonSpaces.h16,

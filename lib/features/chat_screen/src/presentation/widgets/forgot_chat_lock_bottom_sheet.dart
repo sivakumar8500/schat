@@ -49,8 +49,8 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  bool _obscureNewPassword = false;
-  bool _obscureConfirmPassword = false;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
 
   int _resendCountdown = 30;
   Timer? _countdownTimer;

@@ -1,6 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:schat/core/storage/storage_service.dart';
-import 'package:schat/injection.dart';
 
 part 'user_model.freezed.dart';
 part 'user_model.g.dart';
@@ -51,71 +49,66 @@ abstract class UserModel with _$UserModel {
 }
 
 Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
-  final normalizedJson = Map<String, dynamic>.from(json);
-  normalizedJson['_id'] = (json['id'] ?? json['_id'] ?? json['user_id'])?.toString() ?? '';
-  final pic = json['profile_picture_url'] ??
-      json['profilePictureUrl'] ??
-      json['profile_picture'] ??
-      json['profilePicture'] ??
-      json['avatar_url'] ??
-      json['avatarUrl'] ??
-      json['avatar'] ??
-      json['profile_pic'] ??
-      json['caller_profile_picture_url'];
+  final Map<String, dynamic> baseJson = (json['user'] is Map)
+      ? Map<String, dynamic>.from(json['user'] as Map)
+      : (json['data'] is Map ? Map<String, dynamic>.from(json['data'] as Map) : json);
+  final normalizedJson = Map<String, dynamic>.from(baseJson);
+  normalizedJson['_id'] = (baseJson['id'] ?? baseJson['_id'] ?? baseJson['user_id'])?.toString() ?? '';
+  normalizedJson['phone_number'] = (baseJson['phone_number'] ?? baseJson['phoneNumber'])?.toString() ?? '';
+
+  final pic = baseJson['profile_picture_url'] ??
+      baseJson['profilePictureUrl'] ??
+      baseJson['profile_picture'] ??
+      baseJson['profilePicture'] ??
+      baseJson['avatar_url'] ??
+      baseJson['avatarUrl'] ??
+      baseJson['avatar'] ??
+      baseJson['profile_pic'] ??
+      baseJson['caller_profile_picture_url'] ??
+      json['profile_picture_url'] ??
+      json['profilePictureUrl'];
   if (pic != null && pic.toString().isNotEmpty) {
     normalizedJson['profile_picture_url'] = pic.toString();
   }
-  if (json.containsKey('defaultDisappearingTimer') && !json.containsKey('default_disappearing_timer')) {
-    normalizedJson['default_disappearing_timer'] = json['defaultDisappearingTimer'];
+  if (baseJson.containsKey('defaultDisappearingTimer') && !baseJson.containsKey('default_disappearing_timer')) {
+    normalizedJson['default_disappearing_timer'] = baseJson['defaultDisappearingTimer'];
   }
-  final categoryVal = json['about'] ??
-      json['category'] ??
-      json['user_category'] ??
-      json['userCategory'] ??
-      json['role'] ??
-      json['occupation'];
+  final categoryVal = baseJson['about'] ??
+      baseJson['category'] ??
+      baseJson['user_category'] ??
+      baseJson['userCategory'] ??
+      baseJson['role'] ??
+      baseJson['occupation'];
   if (categoryVal != null && categoryVal.toString().isNotEmpty) {
     normalizedJson['about'] = categoryVal.toString();
   }
 
-  normalizedJson['is_blocked'] = json['is_blocked'] ?? json['isBlocked'] ?? false;
-  normalizedJson['is_blocked_by_me'] = json['is_blocked_by_me'] ?? json['isBlockedByMe'] ?? false;
-  normalizedJson['is_blocked_by_other'] = json['is_blocked_by_other'] ?? json['isBlockedByOther'] ?? false;
+  normalizedJson['is_blocked'] = baseJson['is_blocked'] ?? baseJson['isBlocked'] ?? false;
+  normalizedJson['is_blocked_by_me'] = baseJson['is_blocked_by_me'] ?? baseJson['isBlockedByMe'] ?? false;
+  normalizedJson['is_blocked_by_other'] = baseJson['is_blocked_by_other'] ?? baseJson['isBlockedByOther'] ?? false;
   
-  if (json.containsKey('read_receipts_enabled') && json['read_receipts_enabled'] != null) {
-    normalizedJson['read_receipts_enabled'] = json['read_receipts_enabled'] == true;
-  } else if (json.containsKey('readReceiptsEnabled') && json['readReceiptsEnabled'] != null) {
-    normalizedJson['read_receipts_enabled'] = json['readReceiptsEnabled'] == true;
+  if (baseJson.containsKey('read_receipts_enabled') && baseJson['read_receipts_enabled'] != null) {
+    normalizedJson['read_receipts_enabled'] = baseJson['read_receipts_enabled'] == true;
+  } else if (baseJson.containsKey('readReceiptsEnabled') && baseJson['readReceiptsEnabled'] != null) {
+    normalizedJson['read_receipts_enabled'] = baseJson['readReceiptsEnabled'] == true;
   } else {
-    try {
-      normalizedJson['read_receipts_enabled'] = getIt<StorageService>().getReadReceiptsEnabled();
-    } catch (_) {
-      normalizedJson['read_receipts_enabled'] = true;
-    }
+    normalizedJson['read_receipts_enabled'] = true;
   }
 
-  if (json.containsKey('typing_indicators_enabled') && json['typing_indicators_enabled'] != null) {
-    normalizedJson['typing_indicators_enabled'] = json['typing_indicators_enabled'] == true;
-  } else if (json.containsKey('typingIndicatorsEnabled') && json['typingIndicatorsEnabled'] != null) {
-    normalizedJson['typing_indicators_enabled'] = json['typingIndicatorsEnabled'] == true;
+  if (baseJson.containsKey('typing_indicators_enabled') && baseJson['typing_indicators_enabled'] != null) {
+    normalizedJson['typing_indicators_enabled'] = baseJson['typing_indicators_enabled'] == true;
+  } else if (baseJson.containsKey('typingIndicatorsEnabled') && baseJson['typingIndicatorsEnabled'] != null) {
+    normalizedJson['typing_indicators_enabled'] = baseJson['typingIndicatorsEnabled'] == true;
   } else {
-    try {
-      normalizedJson['typing_indicators_enabled'] = getIt<StorageService>().getTypingIndicatorsEnabled();
-    } catch (_) {
-      normalizedJson['typing_indicators_enabled'] = true;
-    }
+    normalizedJson['typing_indicators_enabled'] = true;
   }
 
-  if (json.containsKey('last_seen_enabled') && json['last_seen_enabled'] != null) {
-    normalizedJson['last_seen_enabled'] = json['last_seen_enabled'] == true;
-  } else if (json.containsKey('lastSeenEnabled') && json['lastSeenEnabled'] != null) {
-    normalizedJson['last_seen_enabled'] = json['lastSeenEnabled'] == true;
+  if (baseJson.containsKey('last_seen_enabled') && baseJson['last_seen_enabled'] != null) {
+    normalizedJson['last_seen_enabled'] = baseJson['last_seen_enabled'] == true;
+  } else if (baseJson.containsKey('lastSeenEnabled') && baseJson['lastSeenEnabled'] != null) {
+    normalizedJson['last_seen_enabled'] = baseJson['lastSeenEnabled'] == true;
   } else {
-    try {
-      normalizedJson['last_seen_enabled'] = getIt<StorageService>().getLastSeenEnabled();
-    } catch (_) {
-      normalizedJson['last_seen_enabled'] = true;
-    }
+    normalizedJson['last_seen_enabled'] = true;
   }
   return normalizedJson;
 }

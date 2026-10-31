@@ -278,7 +278,14 @@ class MessageModel {
     }
 
     // Auto-detect mediaType if it defaulted to text but mediaUrl/extension is present
-    if ((mediaType == 'text' || mediaType == null || mediaType.isEmpty) && mediaUrl != null && mediaUrl.isNotEmpty) {
+    final String? potentialName = (json['attachmentName'] ?? json['attachment_name'] ?? json['file_name'] ?? 
+        (contentData is Map ? (contentData['fileName'] ?? contentData['file_name'] ?? contentData['name']) : null))?.toString();
+    final String lowerCheck = (potentialName ?? mediaUrl ?? '').toLowerCase().split('?').first.split(' · ').first;
+
+    if (lowerCheck.isNotEmpty && (lowerCheck.endsWith('.txt') || lowerCheck.endsWith('.pdf') || lowerCheck.endsWith('.doc') || lowerCheck.endsWith('.docx') || lowerCheck.endsWith('.xls') || lowerCheck.endsWith('.xlsx') || lowerCheck.endsWith('.zip') || lowerCheck.endsWith('.csv') || lowerCheck.endsWith('.ppt') || lowerCheck.endsWith('.pptx') || lowerCheck.endsWith('.json') || lowerCheck.endsWith('.xml') || lowerCheck.endsWith('.md') || lowerCheck.endsWith('.log'))) {
+      mediaType = 'file';
+      if (messageType == 'text' || messageType == 'audio') messageType = 'file';
+    } else if ((mediaType == 'text' || mediaType == null || mediaType.isEmpty) && mediaUrl != null && mediaUrl.isNotEmpty) {
       final lowerUrl = mediaUrl.toLowerCase().split('?').first;
       if (lowerUrl.endsWith('.mp4') || lowerUrl.endsWith('.mov') || lowerUrl.endsWith('.avi') || lowerUrl.endsWith('.mkv') || lowerUrl.endsWith('.3gp') || lowerUrl.endsWith('.webm')) {
         mediaType = 'video';

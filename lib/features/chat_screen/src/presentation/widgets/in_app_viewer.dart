@@ -11,6 +11,10 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart';
+import 'package:dio/dio.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
@@ -32,6 +36,7 @@ class InAppViewer extends StatefulWidget {
   final bool isViewOnce;
   final bool isMe;
   final bool isForwarded;
+  final bool isReadOnly;
   final VoidCallback? onSharePressed;
   final VoidCallback? onDownloadPressed;
   final VoidCallback? onViewed;
@@ -47,6 +52,7 @@ class InAppViewer extends StatefulWidget {
     this.isViewOnce = false,
     this.isMe = false,
     this.isForwarded = false,
+    this.isReadOnly = false,
     this.onSharePressed,
     this.onDownloadPressed,
     this.onViewed,
@@ -63,6 +69,7 @@ class InAppViewer extends StatefulWidget {
     bool isViewOnce = false,
     bool isMe = false,
     bool isForwarded = false,
+    bool isReadOnly = false,
     VoidCallback? onSharePressed,
     VoidCallback? onDownloadPressed,
     VoidCallback? onViewed,
@@ -80,6 +87,7 @@ class InAppViewer extends StatefulWidget {
           isViewOnce: isViewOnce,
           isMe: isMe,
           isForwarded: isForwarded,
+          isReadOnly: isReadOnly,
           onSharePressed: onSharePressed,
           onDownloadPressed: onDownloadPressed,
           onViewed: onViewed,
@@ -253,7 +261,8 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           !resolvedUrl.contains('X-Amz-Signature') &&
           !resolvedUrl.contains('X-Amz-Credential');
 
-      if ((resolvedUrl.isEmpty || resolvedUrl.startsWith('/') || resolvedUrl.startsWith('file://') || isRawUnsignedS3) &&
+      final bool isHttpUrl = resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://');
+      if ((!isHttpUrl || isRawUnsignedS3) &&
           effectiveMediaId != null &&
           effectiveMediaId.isNotEmpty &&
           !effectiveMediaId.startsWith('temp_')) {
@@ -267,7 +276,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         }
       }
 
-      if (resolvedUrl.isEmpty || resolvedUrl.startsWith('/') || resolvedUrl.startsWith('file://')) {
+      if (!resolvedUrl.startsWith('http://') && !resolvedUrl.startsWith('https://')) {
         throw Exception('Attachment file is no longer available locally or on the server');
       }
 
@@ -506,20 +515,34 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       final activePath = _decryptedTempFile?.path ?? SecureAttachmentService.resolveFullUrl(widget.url);
       var effectiveType = widget.type.toLowerCase();
 
-      var nameCheck = widget.fileName.toLowerCase();
+      var nameCheck = widget.fileName.toLowerCase().trim();
+      if (nameCheck.contains(' · ')) {
+        nameCheck = nameCheck.split(' · ').first.trim();
+      }
+      if (nameCheck.contains('?')) {
+        nameCheck = nameCheck.split('?').first.trim();
+      }
       while (nameCheck.endsWith('.enc')) {
         nameCheck = nameCheck.substring(0, nameCheck.length - 4);
       }
-      var pathCheck = activePath.toLowerCase();
+      var pathCheck = activePath.toLowerCase().trim();
+      if (pathCheck.contains('?')) {
+        pathCheck = pathCheck.split('?').first.trim();
+      }
       while (pathCheck.endsWith('.enc')) {
         pathCheck = pathCheck.substring(0, pathCheck.length - 4);
       }
 
-      String ext = nameCheck.contains('.')
-          ? nameCheck.split('.').last
-          : (pathCheck.contains('.') ? pathCheck.split('.').last : '');
+      String ext = '';
+      if (nameCheck.contains('.')) {
+        ext = nameCheck.split('.').last.trim();
+      } else if (pathCheck.contains('.')) {
+        ext = pathCheck.split('.').last.trim();
+      }
+      ext = ext.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
 
-      if (!kIsWeb && File(activePath).existsSync()) {
+      // Only probe raw bytes if extension is missing or generic (e.g. bin/tmp/enc)
+      if ((ext.isEmpty || ext == 'bin' || ext == 'tmp' || ext == 'enc') && !kIsWeb && File(activePath).existsSync()) {
         try {
           final probeBytes = File(activePath).openSync().readSync(32);
           final detected = SecureAttachmentService.detectExtensionFromBytes(probeBytes);
@@ -533,14 +556,21 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         } catch (_) {}
       }
 
-      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(ext) || effectiveType == 'image') {
+      final lowerExt = ext.toLowerCase();
+      if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log'].contains(lowerExt)) {
+        effectiveType = 'text';
+      } else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(lowerExt)) {
         effectiveType = 'image';
-      } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(ext) || effectiveType == 'video') {
+      } else if (['mp4', 'webm', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(lowerExt)) {
         effectiveType = 'video';
-      } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext) || effectiveType == 'audio') {
+      } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma', 'caf'].contains(lowerExt)) {
         effectiveType = 'audio';
-      } else if (ext == 'pdf' || effectiveType == 'pdf') {
+      } else if (lowerExt == 'pdf') {
         effectiveType = 'pdf';
+      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(lowerExt)) {
+        effectiveType = 'file';
+      } else if (lowerExt == 'ogg') {
+        effectiveType = effectiveType == 'video' ? 'video' : 'audio';
       }
 
       if (effectiveType == 'image') {
@@ -608,30 +638,42 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           viewerWidget = _MobileVideoPlayer(url: activePath);
         }
       } else if (effectiveType == 'audio') {
-        viewerWidget = Center(
-          child: Card(
-            color: Colors.grey.shade900,
-            margin: const EdgeInsets.all(24),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(CommonIcons.audio, color: Colors.white70, size: 64),
-                  CommonSpaces.h16,
-                  Text(
-                    widget.fileName,
-                    style: context.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  CommonSpaces.h24,
-                  createWebAudioView(activePath),
-                ],
+        if (kIsWeb) {
+          viewerWidget = Center(
+            child: Card(
+              color: Colors.grey.shade900,
+              margin: const EdgeInsets.all(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(CommonIcons.audio, color: Colors.white70, size: 64),
+                    CommonSpaces.h16,
+                    Text(
+                      widget.fileName,
+                      style: context.bodyMedium.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    CommonSpaces.h24,
+                    createWebAudioView(activePath),
+                  ],
+                ),
               ),
             ),
-          ),
+          );
+        } else {
+          viewerWidget = _MobileAudioPlayer(
+            url: activePath,
+            fileName: widget.fileName,
+          );
+        }
+      } else if (effectiveType == 'text') {
+        viewerWidget = _InAppTextViewer(
+          filePath: activePath,
+          fileName: widget.fileName,
         );
       } else if (effectiveType == 'pdf') {
         final isLocalFile = !kIsWeb && File(activePath).existsSync();
@@ -644,7 +686,8 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           viewerWidget = _MobileDocumentViewer(
             url: activePath,
             fileName: widget.fileName,
-            allowDownload: widget.allowDownload,
+            allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            isReadOnly: widget.isReadOnly,
             onDownloadPressed: widget.onDownloadPressed,
           );
         }
@@ -662,7 +705,8 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
           viewerWidget = _MobileDocumentViewer(
             url: activePath,
             fileName: widget.fileName,
-            allowDownload: widget.allowDownload,
+            allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            isReadOnly: widget.isReadOnly,
             onDownloadPressed: widget.onDownloadPressed,
           );
         }
@@ -705,87 +749,89 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-        actions: [
-          if (!widget.isViewOnce)
-            IconButton(
-              icon: const Icon(Icons.send_rounded, color: Colors.white),
-              tooltip: 'Send / Forward to Chat',
-              onPressed: () => _sendOrForwardMedia(context),
-            ),
-          if (!widget.isViewOnce && widget.isMe && !widget.isForwarded)
-            IconButton(
-              icon: const Icon(Icons.shield_outlined, color: Colors.white),
-              tooltip: 'Security & Protection',
-              onPressed: () {
-                final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
-                    ? widget.mediaId!
-                    : '3fa85f64-5717-4562-b3fc-2c963f66afa6';
-                MediaProtectionBottomSheet.show(
-                  context,
-                  mediaId: idToUse,
-                  fileName: widget.fileName,
-                );
-              },
-            ),
-          if (!widget.isViewOnce && widget.allowShare)
-            IconButton(
-              icon: const Icon(Icons.share, color: Colors.white),
-              tooltip: 'Share/Forward',
-              onPressed: () async {
-                if (widget.onSharePressed != null) {
-                  Navigator.pop(context);
-                  widget.onSharePressed!();
-                } else {
-                  final shareFile = _decryptedTempFile != null && File(_decryptedTempFile!.path).existsSync()
-                      ? _decryptedTempFile!.path
-                      : (File(widget.url).existsSync() ? widget.url : null);
-                  if (shareFile != null) {
-                    try {
-                      await Share.shareXFiles([XFile(shareFile)], text: widget.fileName);
-                    } catch (e) {
-                      debugPrint('Error sharing file: $e');
-                    }
-                  } else {
-                    context.showInfoNotification('Preparing file for sharing...');
-                  }
-                }
-              },
-            ),
-          if (!widget.isViewOnce && widget.allowDownload)
-            IconButton(
-              icon: const Icon(Icons.download, color: Colors.white),
-              tooltip: 'Download',
-              onPressed: () async {
-                try {
-                  final secureService = getIt<SecureAttachmentService>();
-                  final encFile = await secureService.downloadAndEncryptAttachment(
-                    url: widget.url,
-                    fileName: widget.fileName,
-                  );
+        actions: widget.isReadOnly
+            ? null
+            : [
+                if (!widget.isViewOnce)
+                  IconButton(
+                    icon: const Icon(Icons.send_rounded, color: Colors.white),
+                    tooltip: 'Send / Forward to Chat',
+                    onPressed: () => _sendOrForwardMedia(context),
+                  ),
+                if (!widget.isViewOnce && widget.isMe && !widget.isForwarded)
+                  IconButton(
+                    icon: const Icon(Icons.shield_outlined, color: Colors.white),
+                    tooltip: 'Security & Protection',
+                    onPressed: () {
+                      final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
+                          ? widget.mediaId!
+                          : '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+                      MediaProtectionBottomSheet.show(
+                        context,
+                        mediaId: idToUse,
+                        fileName: widget.fileName,
+                      );
+                    },
+                  ),
+                if (!widget.isViewOnce && widget.allowShare)
+                  IconButton(
+                    icon: const Icon(Icons.share, color: Colors.white),
+                    tooltip: 'Share/Forward',
+                    onPressed: () async {
+                      if (widget.onSharePressed != null) {
+                        Navigator.pop(context);
+                        widget.onSharePressed!();
+                      } else {
+                        final shareFile = _decryptedTempFile != null && File(_decryptedTempFile!.path).existsSync()
+                            ? _decryptedTempFile!.path
+                            : (File(widget.url).existsSync() ? widget.url : null);
+                        if (shareFile != null) {
+                          try {
+                            await Share.shareXFiles([XFile(shareFile)], text: widget.fileName);
+                          } catch (e) {
+                            debugPrint('Error sharing file: $e');
+                          }
+                        } else {
+                          context.showInfoNotification('Preparing file for sharing...');
+                        }
+                      }
+                    },
+                  ),
+                if (!widget.isViewOnce && widget.allowDownload)
+                  IconButton(
+                    icon: const Icon(Icons.download, color: Colors.white),
+                    tooltip: 'Download',
+                    onPressed: () async {
+                      try {
+                        final secureService = getIt<SecureAttachmentService>();
+                        final encFile = await secureService.downloadAndEncryptAttachment(
+                          url: widget.url,
+                          fileName: widget.fileName,
+                        );
 
-                  if (await encFile.exists()) {
-                    if (context.mounted) {
-                      context.showSuccessNotification('Encrypted and saved to Schat folder');
-                    }
-                  } else {
-                    if (context.mounted) {
-                      context.showErrorNotification('Failed to download media');
-                    }
-                  }
-                } catch (e) {
-                  debugPrint('Download error in InAppViewer: $e');
-                  if (context.mounted) {
-                    context.showErrorNotification('Download failed: $e');
-                  }
-                }
+                        if (await encFile.exists()) {
+                          if (context.mounted) {
+                            context.showSuccessNotification('Encrypted and saved to Schat folder');
+                          }
+                        } else {
+                          if (context.mounted) {
+                            context.showErrorNotification('Failed to download media');
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Download error in InAppViewer: $e');
+                        if (context.mounted) {
+                          context.showErrorNotification('Download failed: $e');
+                        }
+                      }
 
-                if (widget.onDownloadPressed != null) {
-                  widget.onDownloadPressed!();
-                }
-              },
-            ),
-          CommonSpaces.w8,
-        ],
+                      if (widget.onDownloadPressed != null) {
+                        widget.onDownloadPressed!();
+                      }
+                    },
+                  ),
+                CommonSpaces.w8,
+              ],
       ),
       body: Stack(
         children: [
@@ -813,12 +859,14 @@ class _MobileDocumentViewer extends StatefulWidget {
   final String url;
   final String fileName;
   final bool allowDownload;
+  final bool isReadOnly;
   final VoidCallback? onDownloadPressed;
 
   const _MobileDocumentViewer({
     required this.url,
     required this.fileName,
     this.allowDownload = true,
+    this.isReadOnly = false,
     this.onDownloadPressed,
   });
 
@@ -966,56 +1014,58 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 24),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                alignment: WrapAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    icon: Icon(isPdf ? Icons.open_in_new : (isLocal ? Icons.open_in_new : Icons.download)),
-                    label: Text(label),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              if (!widget.isReadOnly) ...[
+                const SizedBox(height: 24),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    ElevatedButton.icon(
+                      icon: Icon(isPdf ? Icons.open_in_new : (isLocal ? Icons.open_in_new : Icons.download)),
+                      label: Text(label),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.colors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      onPressed: () {
+                        if (isLocal && File(cleanPath).existsSync()) {
+                          Share.shareXFiles([XFile(cleanPath, name: clean)]);
+                        } else {
+                          downloadFile(widget.url, clean);
+                        }
+                      },
                     ),
-                    onPressed: () {
-                      if (isLocal && File(cleanPath).existsSync()) {
-                        Share.shareXFiles([XFile(cleanPath, name: clean)]);
-                      } else {
-                        downloadFile(widget.url, clean);
-                      }
-                    },
-                  ),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.send_rounded),
-                    label: const Text('Send / Forward'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white24,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ShareForwardTargetPage(
-                            mediaItems: [
-                              SharedMediaItem(
-                                path: widget.url,
-                                name: clean,
-                                type: isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'file',
-                                size: 0,
-                              ),
-                            ],
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.send_rounded),
+                      label: const Text('Send / Forward'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white24,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ShareForwardTargetPage(
+                              mediaItems: [
+                                SharedMediaItem(
+                                  path: widget.url,
+                                  name: clean,
+                                  type: isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'file',
+                                  size: 0,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1034,6 +1084,558 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
             child: CircularProgressIndicator(color: Colors.white),
           ),
       ],
+    );
+  }
+}
+
+class _MobileAudioPlayer extends StatefulWidget {
+  final String url;
+  final String fileName;
+
+  const _MobileAudioPlayer({
+    required this.url,
+    required this.fileName,
+  });
+
+  @override
+  State<_MobileAudioPlayer> createState() => _MobileAudioPlayerState();
+}
+
+class _MobileAudioPlayerState extends State<_MobileAudioPlayer> {
+  late final AudioPlayer _audioPlayer;
+  bool _isInitialized = false;
+  bool _isPlaying = false;
+  bool _hasError = false;
+  bool _isDragging = false;
+  bool _isLooping = false;
+  double _playbackRate = 1.0;
+
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+  Duration _dragPosition = Duration.zero;
+
+  StreamSubscription? _durationSub;
+  StreamSubscription? _positionSub;
+  StreamSubscription? _playerCompleteSub;
+  StreamSubscription? _playerStateSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePlayer();
+  }
+
+  Future<void> _initializePlayer() async {
+    String cleanUrl = widget.url.trim();
+    if (cleanUrl.isEmpty) {
+      if (mounted) setState(() => _hasError = true);
+      return;
+    }
+
+    if (cleanUrl.startsWith('file://')) {
+      cleanUrl = cleanUrl.substring(7);
+    }
+
+    cleanUrl = SecureAttachmentService.resolveFullUrl(cleanUrl);
+
+    try {
+      _audioPlayer = AudioPlayer();
+
+      try {
+        await _audioPlayer.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              isSpeakerphoneOn: true,
+              stayAwake: true,
+              contentType: AndroidContentType.music,
+              usageType: AndroidUsageType.media,
+              audioFocus: AndroidAudioFocus.gainTransient,
+            ),
+            iOS: AudioContextIOS(
+              category: AVAudioSessionCategory.playback,
+              options: const {
+                AVAudioSessionOptions.mixWithOthers,
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        debugPrint('_MobileAudioPlayer audio context config error: $e');
+      }
+
+      _durationSub = _audioPlayer.onDurationChanged.listen((d) {
+        if (mounted && d > Duration.zero) {
+          setState(() => _duration = d);
+        }
+      });
+
+      _positionSub = _audioPlayer.onPositionChanged.listen((p) {
+        if (mounted && !_isDragging) {
+          setState(() => _position = p);
+        }
+      });
+
+      _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _position = Duration.zero;
+          });
+          _audioPlayer.seek(Duration.zero);
+        }
+      });
+
+      _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = state == PlayerState.playing;
+          });
+        }
+      });
+
+      final isLocal = !kIsWeb && File(cleanUrl).existsSync();
+      if (isLocal) {
+        await _audioPlayer.setSource(DeviceFileSource(cleanUrl));
+      } else if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+        await _audioPlayer.setSource(UrlSource(cleanUrl));
+      } else {
+        debugPrint('_MobileAudioPlayer: URL is not local and not HTTP: $cleanUrl');
+        if (mounted) setState(() => _hasError = true);
+        return;
+      }
+
+      final d = await _audioPlayer.getDuration();
+      if (d != null && d > Duration.zero && mounted) {
+        setState(() => _duration = d);
+      }
+
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+        // Auto play on open
+        try {
+          await _audioPlayer.resume();
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('_MobileAudioPlayer initialization error: $e');
+      if (mounted) {
+        setState(() => _hasError = true);
+      }
+    }
+  }
+
+  Future<void> _togglePlay() async {
+    if (!_isInitialized) return;
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else {
+        if (_position >= _duration && _duration > Duration.zero) {
+          await _audioPlayer.seek(Duration.zero);
+        }
+        await _audioPlayer.resume();
+      }
+    } catch (e) {
+      debugPrint('_MobileAudioPlayer play/pause error: $e');
+    }
+  }
+
+  Future<void> _seek(Duration pos) async {
+    try {
+      await _audioPlayer.seek(pos);
+    } catch (e) {
+      debugPrint('_MobileAudioPlayer seek error: $e');
+    }
+  }
+
+  Future<void> _skip(int seconds) async {
+    final target = _position + Duration(seconds: seconds);
+    final clampedMs = target.inMilliseconds.clamp(
+      0,
+      _duration.inMilliseconds > 0 ? _duration.inMilliseconds : 0,
+    );
+    await _seek(Duration(milliseconds: clampedMs));
+  }
+
+  Future<void> _cyclePlaybackRate() async {
+    const rates = [1.0, 1.25, 1.5, 2.0];
+    final currentIndex = rates.indexOf(_playbackRate);
+    final nextRate = rates[(currentIndex + 1) % rates.length];
+    try {
+      await _audioPlayer.setPlaybackRate(nextRate);
+      if (mounted) {
+        setState(() => _playbackRate = nextRate);
+      }
+    } catch (e) {
+      debugPrint('_MobileAudioPlayer setPlaybackRate error: $e');
+    }
+  }
+
+  Future<void> _toggleLoop() async {
+    final newLoop = !_isLooping;
+    try {
+      await _audioPlayer.setReleaseMode(newLoop ? ReleaseMode.loop : ReleaseMode.stop);
+      if (mounted) {
+        setState(() => _isLooping = newLoop);
+      }
+    } catch (e) {
+      debugPrint('_MobileAudioPlayer setReleaseMode error: $e');
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      return '${d.inHours}:$minutes:$seconds';
+    }
+    return '$minutes:$seconds';
+  }
+
+  Widget _buildWaveform(double progress) {
+    const barHeights = [
+      8.0, 14.0, 20.0, 12.0, 26.0, 22.0, 16.0, 28.0, 24.0, 18.0,
+      10.0, 26.0, 30.0, 18.0, 14.0, 22.0, 28.0, 12.0, 16.0, 24.0,
+      30.0, 20.0, 14.0, 26.0, 18.0, 10.0, 16.0, 8.0,
+    ];
+
+    return SizedBox(
+      height: 32,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: List.generate(barHeights.length, (index) {
+          final barProgress = index / barHeights.length;
+          final isPlayed = barProgress <= progress;
+          return Container(
+            width: 3.5,
+            height: barHeights[index],
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: isPlayed
+                  ? const Color(0xFF8B5CF6)
+                  : Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(3),
+              boxShadow: isPlayed
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                        blurRadius: 4,
+                      ),
+                    ]
+                  : null,
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _durationSub?.cancel();
+    _positionSub?.cancel();
+    _playerCompleteSub?.cancel();
+    _playerStateSub?.cancel();
+    _audioPlayer.stop();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white54, size: 64),
+              CommonSpaces.h16,
+              const Text(
+                'Failed to play audio file',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              CommonSpaces.h16,
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _hasError = false;
+                    _isInitialized = false;
+                  });
+                  _initializePlayer();
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    var cleanName = widget.fileName;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    if (cleanName.isEmpty) cleanName = 'Audio Track';
+
+    String extBadge = 'AUDIO';
+    if (cleanName.contains('.')) {
+      final ext = cleanName.split('.').last.toUpperCase();
+      if (ext.length <= 5) extBadge = '$ext AUDIO';
+    }
+
+    final Duration effectivePos = _isDragging ? _dragPosition : _position;
+    final double maxMs = _duration.inMilliseconds > 0 ? _duration.inMilliseconds.toDouble() : 1.0;
+    final double currentMs = effectivePos.inMilliseconds.clamp(0, maxMs.toInt()).toDouble();
+    final double progress = maxMs > 1.0 ? (currentMs / maxMs).clamp(0.0, 1.0) : 0.0;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
+            decoration: BoxDecoration(
+              color: const Color(0xFF181E29),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 32,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top Icon / Visualizer
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.headphones_rounded,
+                    color: Colors.white,
+                    size: 44,
+                  ),
+                ),
+                CommonSpaces.h20,
+
+                // Title
+                Text(
+                  cleanName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    letterSpacing: -0.2,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                CommonSpaces.h8,
+
+                // Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    extBadge,
+                    style: const TextStyle(
+                      color: Color(0xFFC4B5FD),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+                CommonSpaces.h24,
+
+                // Waveform indicator
+                _buildWaveform(progress),
+                CommonSpaces.h16,
+
+                // Scrubbing Slider
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    activeTrackColor: const Color(0xFF8B5CF6),
+                    inactiveTrackColor: Colors.white12,
+                    thumbColor: Colors.white,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayColor: const Color(0xFF8B5CF6).withValues(alpha: 0.25),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: Slider(
+                    value: currentMs,
+                    min: 0.0,
+                    max: maxMs,
+                    onChangeStart: (_) => _isDragging = true,
+                    onChanged: (val) {
+                      setState(() {
+                        _dragPosition = Duration(milliseconds: val.round());
+                      });
+                    },
+                    onChangeEnd: (val) {
+                      _isDragging = false;
+                      _seek(Duration(milliseconds: val.round()));
+                    },
+                  ),
+                ),
+
+                // Timestamps
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _formatDuration(effectivePos),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        _formatDuration(_duration),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                CommonSpaces.h20,
+
+                // Control Buttons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Speed button
+                    InkWell(
+                      onTap: _cyclePlaybackRate,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          '${_playbackRate == 1.0 ? '1' : _playbackRate.toString()}x',
+                          style: const TextStyle(
+                            color: Color(0xFFC4B5FD),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // -10s
+                    IconButton(
+                      icon: const Icon(Icons.replay_10_rounded, color: Colors.white70, size: 28),
+                      tooltip: 'Rewind 10s',
+                      onPressed: () => _skip(-10),
+                    ),
+
+                    // Play / Pause
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF8B5CF6).withValues(alpha: 0.45),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: !_isInitialized
+                          ? const Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                              ),
+                            )
+                          : IconButton(
+                              icon: Icon(
+                                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 34,
+                              ),
+                              onPressed: _togglePlay,
+                            ),
+                    ),
+
+                    // +10s
+                    IconButton(
+                      icon: const Icon(Icons.forward_10_rounded, color: Colors.white70, size: 28),
+                      tooltip: 'Forward 10s',
+                      onPressed: () => _skip(10),
+                    ),
+
+                    // Loop button
+                    IconButton(
+                      icon: Icon(
+                        _isLooping ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                        color: _isLooping ? const Color(0xFF8B5CF6) : Colors.white54,
+                        size: 24,
+                      ),
+                      tooltip: _isLooping ? 'Looping enabled' : 'Looping disabled',
+                      onPressed: _toggleLoop,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1191,6 +1793,241 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
         ),
       ),
     );
+  }
+}
+
+class _InAppTextViewer extends StatefulWidget {
+  final String filePath;
+  final String fileName;
+
+  const _InAppTextViewer({
+    required this.filePath,
+    required this.fileName,
+  });
+
+  @override
+  State<_InAppTextViewer> createState() => _InAppTextViewerState();
+}
+
+class _InAppTextViewerState extends State<_InAppTextViewer> {
+  String? _content;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFileContent();
+  }
+
+  Future<void> _loadFileContent() async {
+    try {
+      final cleanPath = widget.filePath.replaceAll('file://', '');
+      final file = File(cleanPath);
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        final text = utf8.decode(bytes, allowMalformed: true);
+        if (mounted) {
+          setState(() {
+            _content = text;
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (widget.filePath.startsWith('http://') || widget.filePath.startsWith('https://')) {
+          final dio = Dio(BaseOptions(
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 30),
+          ));
+          final res = await dio.get<String>(
+            widget.filePath,
+            options: Options(responseType: ResponseType.plain),
+          );
+          if (mounted) {
+            setState(() {
+              _content = res.data ?? '';
+              _isLoading = false;
+            });
+          }
+        } else {
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Text file not found on device';
+              _isLoading = false;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_InAppTextViewer error: $e');
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Could not load text file: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    if (_errorMessage != null || _content == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white54, size: 64),
+              const SizedBox(height: 16),
+              Text(
+                _errorMessage ?? 'Unable to display text file',
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00D084),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isLoading = true;
+                    _errorMessage = null;
+                  });
+                  _loadFileContent();
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final lines = _content!.split('\n');
+    final charCount = _content!.length;
+
+    return Container(
+      color: const Color(0xFF0F172A),
+      child: Column(
+        children: [
+          // Info bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.5),
+              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF9800).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFF9800).withValues(alpha: 0.4)),
+                  ),
+                  child: const Text(
+                    'TEXT FILE',
+                    style: TextStyle(
+                      color: Color(0xFFFFB74D),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${lines.length} lines • ${_formatBytes(charCount)}',
+                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 18),
+                  tooltip: 'Copy all text',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _content!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Text copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          // Scrollable Text Content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Line numbers
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: List.generate(lines.length, (i) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            '${i + 1}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              fontFamily: 'monospace',
+                              fontSize: 13,
+                              height: 1.45,
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                    Container(
+                      width: 1,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      color: Colors.white.withValues(alpha: 0.1),
+                      height: (lines.length * 20.0).clamp(20.0, double.infinity),
+                    ),
+                    // Actual text
+                    SelectableText(
+                      _content!,
+                      style: const TextStyle(
+                        color: Color(0xFFF1F5F9),
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 }
 

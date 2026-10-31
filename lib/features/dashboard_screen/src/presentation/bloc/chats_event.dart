@@ -128,4 +128,12 @@ class MarkConversationAsRead extends ChatsEvent {
   });
 }
 
+class ClearConversationMessages extends ChatsEvent {
+  final String conversationId;
+
+  const ClearConversationMessages({
+    required this.conversationId,
+  });
+}
+
 

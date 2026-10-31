@@ -12,6 +12,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
 import 'package:hive/hive.dart';
 import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/core/security/screen_protection_service.dart';
 import 'package:schat/core/security/recording_permission_service.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
@@ -32,7 +33,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:schat/main.dart' show routeObserver;
+import 'package:schat/main.dart' show routeObserver, navigatorKey;
 import 'package:video_player/video_player.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -62,9 +63,11 @@ import 'full_screen_image_page.dart';
 import 'group_info_page.dart';
 import 'shared_media_page.dart';
 import 'attachment_preview_page.dart';
+import 'package:schat/common/widgets/common_loading_overlay.dart';
 import 'package:schat/utils/permission_helper.dart';
 import '../../../call_screen/call_screen.dart';
 import 'widgets/chat_theme_bottom_sheet.dart';
+import 'widgets/camera_media_picker_bottom_sheet.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import '../domain/models/message_model.dart';
 import '../domain/models/chat_media_model.dart';
@@ -99,6 +102,7 @@ class ChatPage extends StatefulWidget {
   final bool? initialReadReceiptsEnabled;
   final bool? initialTypingIndicatorsEnabled;
   final bool initialIsLocked;
+  final String? initialLastSeen;
 
   const ChatPage({
     super.key,
@@ -123,6 +127,7 @@ class ChatPage extends StatefulWidget {
     this.initialReadReceiptsEnabled,
     this.initialTypingIndicatorsEnabled,
     this.initialIsLocked = false,
+    this.initialLastSeen,
     this.initialTargetMessageId,
     this.initialSearchQuery,
     this.targetUserId,
@@ -149,9 +154,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   Timer? _searchDebounceTimer;
   final FocusNode _inputFocusNode = FocusNode();
   bool _isReloadingChats = false;
+  bool _isDeleting = false;
 
   late ChatBloc _chatBloc;
   Timer? _typingIndicatorTimer;
+  Timer? _lastSeenRefreshTimer;
   late CallWebRtcBloc _callWebRtcBloc;
   StreamSubscription? _callSocketSubscription;
   StreamSubscription? _screenshotSubscription;
@@ -295,6 +302,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       conversationId: widget.conversationId,
       recipientId: widget.recipientId,
       initialIsOnline: widget.isOnline,
+      initialLastSeen: widget.initialLastSeen,
       initialThemeColor: widget.initialThemeColor,
       initialCustomWallpaperUrl: widget.initialCustomWallpaperUrl,
       initialDisappearingTimer: widget.initialDisappearingTimer,
@@ -306,6 +314,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       initialIsLocked: widget.initialIsLocked,
       isReadOnly: widget.isReadOnly,
     ));
+
+    _lastSeenRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
 
     if (getIt.isRegistered<ChatsBloc>()) {
       getIt<ChatsBloc>().add(MarkConversationAsRead(conversationId: widget.conversationId));
@@ -377,7 +391,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     });
 
-    // Listen for screenshots to decrement allowed count or allow during active screen record
+    // Listen for native/system screenshots (hardware keys, 3-finger swipe, etc.)
+    // Hardware and gesture screenshots are blocked. Screenshot permission can ONLY be used via the "Take it" button.
     _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
       final state = _chatBloc.state;
       if (state is ChatLoaded) {
@@ -386,49 +401,31 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 ? state.activeScreenPermission
                 : null);
 
+        // Always delete unauthorized external screenshot file and re-assert protection
+        getIt<ScreenProtectionService>().deleteLastScreenshot();
+        getIt<ScreenProtectionService>().enableProtection();
+
         if (activeScreenshotPerm != null) {
-          final totalAllowed = _localTotalAllowedScreenshots ??
-              (state.totalAllowedScreenshots > 0
-                  ? state.totalAllowedScreenshots
-                  : (activeScreenshotPerm.allowedCount ?? 1));
-          final currentRemaining = _localRemainingScreenshots ??
-              (state.totalRemainingScreenshots > 0
-                  ? state.totalRemainingScreenshots
-                  : (activeScreenshotPerm.remainingCount ?? activeScreenshotPerm.allowedCount ?? 1));
-
-          final newTotalRemaining = (currentRemaining - 1).clamp(0, totalAllowed);
-          _localRemainingScreenshots = newTotalRemaining;
-          _localTotalAllowedScreenshots = totalAllowed;
-
-          debugPrint('ScreenProtection: Screenshot taken! newTotalRemaining=$newTotalRemaining / $totalAllowed');
-
-          if (newTotalRemaining <= 0) {
-            // Immediately re-enable protection locally with 0 delay once ALL allowed screenshots across all active requests are exhausted!
-            _screenshotAutoExpireTimer?.cancel();
-            _screenshotAutoExpireTimer = null;
-            getIt<ScreenProtectionService>().enableProtection();
-            if (mounted) {
-              context.showInfoNotification('All allowed screenshot(s) taken ($totalAllowed/$totalAllowed). Protection re-enabled.');
-            }
-          } else {
-            if (mounted) {
-              context.showInfoNotification('Screenshot taken. $newTotalRemaining of $totalAllowed screenshot(s) remaining.');
-            }
+          debugPrint('ScreenProtection: Native screenshot blocked! Only in-app "Take it" button is allowed.');
+          if (mounted) {
+            context.showErrorNotification(
+              'Hardware buttons and gestures are blocked. Please use the "Take it" button to capture your screenshot.',
+            );
           }
-
-          _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
+          // Note: DO NOT decrement remaining count and DO NOT consume permission!
         } else if (_isScreenRecordingActive || state.activeScreenPermission?.isScreenRecord == true) {
           debugPrint('ScreenProtection: Screenshot attempted during screen recording! Restricting screenshot.');
-          // Immediately re-enable protection (FLAG_SECURE) to block all further screen capture
-          getIt<ScreenProtectionService>().enableProtection();
-          // Request native deletion of the unauthorized screenshot
-          getIt<ScreenProtectionService>().deleteLastScreenshot();
           // Immediately stop and revoke the recording session
           if (_activeScreenRecordPermissionId != null) {
             _stopScreenRecording(_activeScreenRecordPermissionId!, completedByTimer: false);
           }
           if (mounted) {
             context.showErrorNotification('Screenshots are restricted. During screen recording, only recording is accepted.');
+          }
+        } else {
+          debugPrint('ScreenProtection: Unauthorized screenshot attempt in chat.');
+          if (mounted) {
+            context.showErrorNotification('Screenshots are restricted in this chat.');
           }
         }
       }
@@ -912,6 +909,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         }
       }
     }
+
+    // Purge any temporary message that duplicates an existing confirmed message
+    final confirmedMsgs = messageMap.values.where((m) => !m.id.startsWith('temp_')).toList();
+    messageMap.removeWhere((id, msg) {
+      if (!id.startsWith('temp_')) return false;
+      return confirmedMsgs.any((c) => ChatMessageCacheHelper.isDuplicateTempMessage(msg, c));
+    });
 
     final pool = messageMap.values.toList()
       ..sort((a, b) {
@@ -1594,26 +1598,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildPermissionToggle(
-                  icon: _attachmentAllowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                  icon: CommonIcons.visibility,
                   label: 'View',
-                  isActive: _attachmentAllowView,
-                  onTap: () => setState(() {
-                    _attachmentAllowView = !_attachmentAllowView;
-                    if (!_attachmentAllowView) {
-                      _attachmentAllowDownload = false;
-                      _attachmentAllowShare = false;
-                    }
-                  }),
+                  isActive: true,
+                  onTap: () {
+                    context.showInfoNotification('View is enabled by default. You can remove view access after sending.');
+                  },
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                   label: 'Download',
                   isActive: _attachmentAllowDownload,
                   onTap: () {
-                    if (!_attachmentAllowView) {
-                      context.showInfoNotification('Enable View first to allow Download');
-                      return;
-                    }
                     setState(() => _attachmentAllowDownload = !_attachmentAllowDownload);
                   },
                 ),
@@ -1622,10 +1618,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   label: 'Share',
                   isActive: _attachmentAllowShare,
                   onTap: () {
-                    if (!_attachmentAllowView) {
-                      context.showInfoNotification('Enable View first to allow Share');
-                      return;
-                    }
                     setState(() => _attachmentAllowShare = !_attachmentAllowShare);
                   },
                 ),
@@ -3264,13 +3256,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     final myId = (_chatBloc.state as ChatLoaded).myId;
     final now = DateTime.now();
     final allFromMe = messages.isNotEmpty && messages.every((msg) => msg.senderId == myId);
-    final allWithin90Mins = messages.isNotEmpty && messages.every((msg) {
+
+    // In one-to-one messages, allow delete for everyone option within 6 hours. After that, only delete for me.
+    final maxAllowedDuration = widget.isGroup
+        ? const Duration(minutes: 90)
+        : const Duration(hours: 6);
+
+    final allWithinAllowedTime = messages.isNotEmpty && messages.every((msg) {
       if (msg.createdAt.isEmpty) return true; // newly sent message
       final msgDate = _parseMessageDate(msg.createdAt);
       if (msgDate == null) return true;
-      return now.difference(msgDate).inMinutes < 90;
+      return now.difference(msgDate) <= maxAllowedDuration;
     });
-    final canDeleteForEveryone = allFromMe && allWithin90Mins;
+    final canDeleteForEveryone = allFromMe && allWithinAllowedTime;
 
     showDialog(
       context: context,
@@ -3483,6 +3481,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     _previewPlayer.dispose();
     _previewPositionTimer?.cancel();
     _searchDebounceTimer?.cancel();
+    _lastSeenRefreshTimer?.cancel();
+    _lastSeenRefreshTimer = null;
     _searchController.dispose();
 
     if (getIt.isRegistered<ChatsBloc>()) {
@@ -3707,7 +3707,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       final repo = getIt<ChatRepository>();
       fileKey = await repo.uploadMedia(
         conversationId: widget.conversationId,
-        recipientId: widget.recipientId,
+        recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
         filePath: path,
         fileName: name,
         mediaType: 'VOICE_NOTE',
@@ -3834,14 +3834,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
   bool _isTypingIndicatorEnabled() {
     final state = _chatBloc.state;
-    final chatOverride = state is ChatLoaded ? state.typingIndicatorsEnabled : null;
+    final chatOverride = state is ChatLoaded ? state.typingIndicatorsEnabled : widget.initialTypingIndicatorsEnabled;
     final globalSetting = getIt<StorageService>().getTypingIndicatorsEnabled();
+    return chatOverride ?? globalSetting;
+  }
+
+  bool _isReadReceiptsEnabled() {
+    final state = _chatBloc.state;
+    final chatOverride = state is ChatLoaded ? state.readReceiptsEnabled : widget.initialReadReceiptsEnabled;
+    final globalSetting = getIt<StorageService>().getReadReceiptsEnabled();
     return chatOverride ?? globalSetting;
   }
 
   void _sendTypingStatus(bool isTyping) {
     if (_isChatUnaccepted) return;
-    if (isTyping && !_isTypingIndicatorEnabled()) return;
+    if (!_isTypingIndicatorEnabled()) return;
     context.read<ChatSocketBloc>().add(SendTypingIndicator(widget.conversationId, isTyping: isTyping));
   }
 
@@ -3892,7 +3899,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     }
 
-    if (hasText) {
+    if (hasText && _isTypingIndicatorEnabled()) {
       _startTypingTimer();
     } else {
       _stopTypingTimer();
@@ -4005,6 +4012,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   void _startTypingTimer() {
+    if (!_isTypingIndicatorEnabled()) return;
     if (_typingIndicatorTimer?.isActive ?? false) return;
     
     _typingIndicatorTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
@@ -4373,7 +4381,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       final repo = getIt<ChatRepository>();
       fileKey = await repo.uploadMedia(
         conversationId: widget.conversationId,
-        recipientId: widget.recipientId,
+        recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
         filePath: uploadPath ?? '',
         fileName: uploadName,
         mediaType: _getMediaType(uploadType),
@@ -4658,26 +4666,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildPermissionToggle(
-                  icon: _attachmentAllowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                  icon: CommonIcons.visibility,
                   label: 'View',
-                  isActive: _attachmentAllowView,
-                  onTap: () => setState(() {
-                    _attachmentAllowView = !_attachmentAllowView;
-                    if (!_attachmentAllowView) {
-                      _attachmentAllowDownload = false;
-                      _attachmentAllowShare = false;
-                    }
-                  }),
+                  isActive: true,
+                  onTap: () {
+                    context.showInfoNotification('View is enabled by default. You can remove view access after sending.');
+                  },
                 ),
                 _buildPermissionToggle(
                   icon: _attachmentAllowDownload ? CommonIcons.download : CommonIcons.downloadOff,
                   label: 'Download',
                   isActive: _attachmentAllowDownload,
                   onTap: () {
-                    if (!_attachmentAllowView) {
-                      context.showInfoNotification('Enable View first to allow Download');
-                      return;
-                    }
                     setState(() => _attachmentAllowDownload = !_attachmentAllowDownload);
                   },
                 ),
@@ -4686,10 +4686,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   label: 'Share',
                   isActive: _attachmentAllowShare,
                   onTap: () {
-                    if (!_attachmentAllowView) {
-                      context.showInfoNotification('Enable View first to allow Share');
-                      return;
-                    }
                     setState(() => _attachmentAllowShare = !_attachmentAllowShare);
                   },
                 ),
@@ -4904,7 +4900,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           final isLoading = state is ChatLoading || state is ChatInitial;
           final messages = state is ChatLoaded ? state.messages : <MessageModel>[];
           final displayedMessages = _getDisplayedMessages(messages);
-          final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping && !_isChatUnaccepted;
+          final isOtherUserTyping = state is ChatLoaded && state.isRecipientTyping && !_isChatUnaccepted && _isTypingIndicatorEnabled();
           // Custom Wallpaper or Color Theme
           final customWallpaperUrl = state is ChatLoaded ? state.customWallpaperUrl : null;
           final apiThemeColor = state is ChatLoaded ? state.themeColor?.toColor() : null;
@@ -4979,11 +4975,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 body: Stack(
                   key: _chatBodyKey,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        image: bgDecorationImage,
-                      ),
-                      child: Column(
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        if (_reactionMenuMessage != null || _selectedMessageIds.isNotEmpty) {
+                          setState(() {
+                            _reactionMenuMessage = null;
+                            _selectedMessageIds.clear();
+                          });
+                        }
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          image: bgDecorationImage,
+                        ),
+                        child: Column(
                         children: [
                           SafeArea(
                             bottom: false,
@@ -5126,6 +5132,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                         child: Icon(CommonIcons.reply, color: context.colors.primary),
                                       ),
                                       child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
                                         onTapDown: (details) {
                                           _tapPosition = details.globalPosition;
                                         },
@@ -5133,10 +5140,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           if (widget.isReadOnly || msg.isDeleted) return;
                                           HapticFeedback.mediumImpact();
                                           setState(() {
-                                            _selectedMessageIds.clear();
-                                            _selectedMessageIds.addAll(allGroupIds);
-                                            _reactionMenuMessage = msg;
-                                            _reactionMenuPosition = _tapPosition;
+                                            if (_selectedMessageIds.isNotEmpty) {
+                                              _reactionMenuMessage = null;
+                                              if (isSelected) {
+                                                _selectedMessageIds.removeAll(allGroupIds);
+                                              } else {
+                                                _selectedMessageIds.addAll(allGroupIds);
+                                              }
+                                            } else {
+                                              _selectedMessageIds.clear();
+                                              _selectedMessageIds.addAll(allGroupIds);
+                                              _reactionMenuMessage = msg;
+                                              _reactionMenuPosition = _tapPosition;
+                                            }
                                           });
                                         },
                                         onTap: () {
@@ -5152,14 +5168,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                             });
                                           }
                                         },
-                                        child: MessageBubble(
+                                        child: IgnorePointer(
+                                          ignoring: _selectedMessageIds.isNotEmpty,
+                                          child: MessageBubble(
                                           messageId: msg.id,
                                           conversationId: widget.conversationId,
                                           message: msg.content,
                                           time: _formatTime(msg.isEdited && msg.updatedAt.isNotEmpty ? msg.updatedAt : msg.createdAt),
                                           isMe: isMe,
-                                          isRead: msg.isRead,
-                                          isDelivered: msg.isDelivered,
+                                          isRead: _isReadReceiptsEnabled() ? msg.isRead : false,
+                                          isDelivered: msg.isDelivered || msg.isRead,
                                           isDeleted: msg.isDeleted,
                                           isGroup: widget.isGroup,
                                           isForwarded: msg.isForwarded,
@@ -5219,7 +5237,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           onStopLiveLocation: () => _stopLiveLocation(msg.id),
                                         ),
                                       ),
-                                    );
+                                    ),
+                                  );
 
                                     if (showDateSeparator && msgDay != null) {
                                       return Column(
@@ -5248,20 +5267,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 ],
               ),
             ),
-            if (_reactionMenuMessage != null) ...[
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    setState(() {
-                      _reactionMenuMessage = null;
-                      _selectedMessageIds.clear();
-                    });
-                  },
-                ),
-              ),
-              _buildFloatingReactionMenu(context, _reactionMenuMessage!),
-            ],
+          ),
+          if (_reactionMenuMessage != null) ...[
+            _buildFloatingReactionMenu(context, _reactionMenuMessage!),
+          ],
+            if (_isDeleting)
+              const CommonLoadingOverlay(),
           ],
         ),
       ),
@@ -5435,11 +5446,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   String _formatLastSeenStatus(String? lastSeenStr) {
-    if (lastSeenStr == null || lastSeenStr.isEmpty) return '';
+    if (lastSeenStr == null || lastSeenStr.trim().isEmpty || lastSeenStr == 'null' || lastSeenStr == '0') return '';
     try {
       DateTime date;
       final parsedInt = int.tryParse(lastSeenStr);
       if (parsedInt != null) {
+        if (parsedInt <= 0) return '';
         if (lastSeenStr.length <= 10) {
           date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
         } else {
@@ -5448,10 +5460,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       } else {
         date = DateTime.parse(lastSeenStr).toLocal();
       }
+      if (date.year <= 2000) return '';
       final now = DateTime.now();
       final diff = now.difference(date);
 
-      if (diff.inSeconds < 60) {
+      if (diff.isNegative || diff.inSeconds < 60) {
         return 'last seen just now';
       } else if (diff.inMinutes < 60) {
         final m = diff.inMinutes;
@@ -5765,7 +5778,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     final isBlocked = state is ChatLoaded && state.isBlocked;
     final isUnaccepted = _isChatUnaccepted;
     final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked && !isUnaccepted;
-    final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked && !isUnaccepted;
+    final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked && !isUnaccepted && _isTypingIndicatorEnabled();
     final lastSeen = (isBlocked || isUnaccepted) ? null : (state is ChatLoaded ? state.lastSeen : null);
     final effectivePicUrl = isBlocked ? null : (_effectiveProfilePic ?? widget.profilePictureUrl);
     final isGroup = _effectiveIsGroup || widget.isGroup;
@@ -6097,6 +6110,32 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               }
             },
           ),
+        if (state is ChatLoaded && !widget.isReadOnly) ...[
+          () {
+            final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
+                (state.activeScreenPermission != null && state.activeScreenPermission!.isScreenshot
+                    ? state.activeScreenPermission
+                    : null);
+            final rem = _localRemainingScreenshots ??
+                (state.totalRemainingScreenshots > 0
+                    ? state.totalRemainingScreenshots
+                    : (activeScreenshotPerm?.remainingCount ?? activeScreenshotPerm?.allowedCount ?? 0));
+            if (rem > 0 && activeScreenshotPerm != null && !activeScreenshotPerm.isCompleted && !activeScreenshotPerm.isRejected) {
+              return IconButton(
+                icon: _isTakingScreenshot
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.camera_alt_rounded, color: Colors.white),
+                tooltip: 'Take Screenshot ($rem remaining)',
+                onPressed: _isTakingScreenshot ? null : () => _takeInAppScreenshot(activeScreenshotPerm),
+              );
+            }
+            return const SizedBox.shrink();
+          }(),
+        ],
         if (!widget.isReadOnly)
           PopupMenuButton<String>(
             icon: Icon(CommonIcons.moreVert),
@@ -6171,21 +6210,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   child: const CreateGroupBottomSheet(),
                 ),
               );
-              if (chat != null && context.mounted) {
-                context.showSuccessNotification('Group created successfully');
+              if (chat != null) {
+                final navContext = mounted ? context : (navigatorKey.currentContext ?? context);
+                navContext.showSuccessNotification('Group created successfully');
                 if (getIt.isRegistered<ChatsBloc>()) {
                   getIt<ChatsBloc>().add(const FetchChats());
                 }
-                Navigator.push(
-                  context,
+                final navState = (mounted ? Navigator.maybeOf(context) : null) ?? navigatorKey.currentState;
+                navState?.push(
                   MaterialPageRoute(
                     builder: (context) => ChatPage(
                       conversationId: chat.id,
                       contactName: chat.groupName ?? 'Group',
-                      contactColor: context.colors.primary,
+                      contactColor: navContext.colors.primary,
                       isOnline: false,
                       recipientId: chat.id,
                       isGroup: true,
+                      initialThemeColor: chat.themeColor,
+                      initialDisappearingTimer: chat.disappearingTimer,
                     ),
                   ),
                 ).then((_) {
@@ -6196,6 +6238,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               }
             } else if (value == 'clear_chat') {
               _showClearChatBottomSheet(context);
+            } else if (value == 'delete_chat') {
+              _showDeleteConfirmationDialog(context);
             } else if (value == 'scheduled') {
               _showScheduleMessageBottomSheet(context);
             } else if (value == 'screen_permission') {
@@ -6251,6 +6295,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 _buildMenuItem('background_color', Icons.color_lens_outlined, 'Chat theme'),
                 _buildMenuItem('disappearing', Icons.timer_outlined, 'Disappearing messages'),
                 _buildMenuItem('clear_chat', Icons.cleaning_services_rounded, 'Clear chat'),
+                _buildMenuItem('delete_chat', CommonIcons.deleteOutline, 'Delete chat'),
               ];
             }
           },
@@ -7343,6 +7388,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         builder: (context) => SharedMediaPage(
           conversationId: widget.conversationId,
           initialMediaList: mediaMsgs,
+          isReadOnly: true,
         ),
       ),
     );
@@ -7436,7 +7482,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       case 'pdf':
         return 'application/pdf';
       case 'txt':
-        return 'application/pdf';
+        return 'text/plain';
       case 'doc':
         return 'application/msword';
       case 'docx':
@@ -7491,7 +7537,26 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             break;
           }
 
-          group.add(nextMsg);
+          final isDuplicate = group.any((m) =>
+              m.id == nextMsg.id ||
+              ChatMessageCacheHelper.isDuplicateTempMessage(m, nextMsg) ||
+              ChatMessageCacheHelper.isDuplicateTempMessage(nextMsg, m) ||
+              (m.attachmentName != null &&
+                  m.attachmentName!.isNotEmpty &&
+                  nextMsg.attachmentName != null &&
+                  nextMsg.attachmentName!.isNotEmpty &&
+                  m.attachmentName == nextMsg.attachmentName) ||
+              (m.mediaUrl != null &&
+                  m.mediaUrl!.isNotEmpty &&
+                  nextMsg.mediaUrl != null &&
+                  nextMsg.mediaUrl!.isNotEmpty &&
+                  (m.mediaUrl == nextMsg.mediaUrl ||
+                      m.mediaUrl!.split('/').last.split('?').first ==
+                          nextMsg.mediaUrl!.split('/').last.split('?').first)));
+
+          if (!isDuplicate) {
+            group.add(nextMsg);
+          }
           j++;
         }
 
@@ -7793,104 +7858,80 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     }
   }
 
-  /// Shows a bottom sheet with Photo / Video options when the camera icon is tapped.
+  /// Shows a WhatsApp-style bottom sheet with Photo / Video options and recent gallery media.
   void _showCameraOptions(BuildContext ctx) {
-    showModalBottomSheet(
+    CameraMediaPickerBottomSheet.show(
       context: ctx,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        return SafeArea(
-          child: Container(
-            margin: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ctx.colors.lightBackground,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Handle bar
-                Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: ctx.colors.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text(
-                    'Camera',
-                    style: ctx.bodyLarge.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: ctx.colors.textPrimary,
-                    ),
-                  ),
-                ),
-                const Divider(height: 1),
-                // Photo option
-                ListTile(
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF9E00FF).withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.photo_camera_rounded, color: Color(0xFF9E00FF), size: 22),
-                  ),
-                  title: Text(
-                    'Take Photo',
-                    style: ctx.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: ctx.colors.textPrimary,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Capture a photo and send',
-                    style: ctx.bodySmall.copyWith(color: ctx.colors.textHint),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickImage(ImageSource.camera);
-                  },
-                ),
-                // Video option
-                ListTile(
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF04438).withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.videocam_rounded, color: Color(0xFFF04438), size: 22),
-                  ),
-                  title: Text(
-                    'Record Video',
-                    style: ctx.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: ctx.colors.textPrimary,
-                    ),
-                  ),
-                  subtitle: Text(
-                    'Record a video and send',
-                    style: ctx.bodySmall.copyWith(color: ctx.colors.textHint),
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickVideo(ImageSource.camera);
-                  },
-                ),
-                const SizedBox(height: 12),
-              ],
-            ),
-          ),
-        );
-      },
+      onTakePhoto: () => _pickImage(ImageSource.camera),
+      onRecordVideo: () => _pickVideo(ImageSource.camera),
+      onOpenGallery: () => _pickImage(ImageSource.gallery),
+      onMediaSelected: (file, isVideo) => _handleSelectedMediaFile(file, isVideo),
     );
+  }
+
+  /// Handles media file (photo/video) selected directly from the camera media picker bottom sheet.
+  Future<void> _handleSelectedMediaFile(File file, bool isVideo) async {
+    try {
+      final fileName = file.path.split('/').last;
+      final ext = fileName.split('.').last.toLowerCase();
+      final isHeic = ext == 'heic' || ext == 'heif';
+      final String name = isHeic
+          ? fileName.replaceAll(RegExp(r'\.hei[cf]$', caseSensitive: false), '.jpg')
+          : fileName;
+      final int size = await file.length();
+      if (!mounted) return;
+
+      final Uint8List bytes = await file.readAsBytes();
+      if (!mounted) return;
+
+      final persistentPath = kIsWeb ? null : await getIt<SecureAttachmentService>().saveToPersistentStorage(
+        originalPath: file.path,
+        fileName: name,
+        bytes: bytes,
+      );
+      if (!mounted) return;
+
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AttachmentPreviewPage(
+            path: persistentPath,
+            bytes: bytes,
+            name: name,
+            type: isVideo ? 'video' : 'image',
+            size: size,
+            contactName: widget.contactName,
+          ),
+        ),
+      );
+
+      if (result != null && result['send'] == true && mounted) {
+        final caption = (result['caption'] as String?) ?? '';
+        final sendBytes = (result['bytes'] as Uint8List?) ?? bytes;
+        final sendPath = (result['path'] as String?) ?? persistentPath;
+        final sendName = (result['name'] as String?) ?? name;
+        final sendType = (result['type'] as String?) ?? (isVideo ? 'video' : 'image');
+        setState(() {
+          _selectedAttachmentPath = sendPath;
+          _selectedAttachmentBytes = sendBytes;
+          _selectedAttachmentName = sendName;
+          _selectedAttachmentType = sendType;
+          _selectedAttachmentSize = sendBytes.length;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? false;
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? false;
+          _attachmentAllowView = (result['allowView'] as bool?) ?? true;
+          _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
+          _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
+          _messageController.text = caption;
+        });
+        _uploadAndSendAttachment(context);
+      }
+    } catch (e) {
+      debugPrint('Error handling selected media file: $e');
+      if (mounted) {
+        context.showErrorNotification('Failed to process media: $e');
+      }
+    }
   }
 
   /// Records/picks a video from [source] and sets it as a pending attachment.
@@ -8064,6 +8105,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             fileType = 'audio';
           } else if (ext == 'pdf') {
             fileType = 'pdf';
+          } else if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(ext)) {
+            fileType = 'file';
           }
         }
 
@@ -8152,6 +8195,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               fileType = 'audio';
             } else if (ext == 'pdf') {
               fileType = 'pdf';
+            } else if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(ext)) {
+              fileType = 'file';
             }
           }
 
@@ -8599,6 +8644,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       builder: (dialogCtx) => ScheduleMessageBottomSheet(
         conversationId: widget.conversationId,
         contactName: widget.contactName,
+        recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
       ),
     );
 
@@ -8647,11 +8693,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         
         fileKey = await getIt<ChatRepository>().uploadMedia(
           conversationId: widget.conversationId,
+          recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
           filePath: filePathToUpload,
           fileName: fileName ?? 'file',
           mediaType: _getMediaType(messageTypeStr),
           mimeType: mimeType ?? _getMimeType(filePathToUpload, messageTypeStr),
           fileSizeBytes: fileSize,
+          allowView: true,
+          allowDownload: false,
+          allowShare: false,
         );
 
         if (attachment.existsSync()) {
@@ -8675,6 +8725,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
       final mediaId = SecureAttachmentService.findMediaId(fileKey) ??
           SecureAttachmentService.findMediaId(fileName);
+
+      final targetRecipient = _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId;
+      final resolvedMediaId = mediaId ?? (fileKey != null ? fileKey.split('?').first.split('/').last.split('.').first : null);
+      if (resolvedMediaId != null && resolvedMediaId.isNotEmpty && targetRecipient.isNotEmpty) {
+        try {
+          await getIt<ChatRepository>().shareMedia(
+            mediaId: resolvedMediaId,
+            granteeId: targetRecipient,
+            canView: true,
+            canDownload: false,
+            canShare: false,
+          );
+        } catch (_) {}
+      }
 
       final bool isMedia = type != ScheduledMessageType.text;
       final requestData = {
@@ -9412,12 +9476,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             ? state.activeScreenPermission
             : null);
 
-    final totalRemaining = state.totalRemainingScreenshots > 0
-        ? state.totalRemainingScreenshots
-        : (activeScreenshotPerm?.remainingCount ?? activeScreenshotPerm?.allowedCount ?? 0);
-    final totalAllowed = state.totalAllowedScreenshots > 0
-        ? state.totalAllowedScreenshots
-        : (activeScreenshotPerm?.allowedCount ?? 0);
+    final totalRemaining = _localRemainingScreenshots ??
+        (state.totalRemainingScreenshots > 0
+            ? state.totalRemainingScreenshots
+            : (activeScreenshotPerm?.remainingCount ?? activeScreenshotPerm?.allowedCount ?? 0));
+    final totalAllowed = _localTotalAllowedScreenshots ??
+        (state.totalAllowedScreenshots > 0
+            ? state.totalAllowedScreenshots
+            : (activeScreenshotPerm?.allowedCount ?? 0));
 
     final isScreenshotAllowed = totalRemaining > 0 && activeScreenshotPerm != null &&
         !activeScreenshotPerm.isCompleted && !activeScreenshotPerm.isRejected;
@@ -9662,7 +9728,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   ),
                 ),
                 Text(
-                  'Hardware/gesture shots blocked. Tap to capture & save.',
+                  'Hardware/gesture shots blocked. Tap "Take it" to capture & save.',
                   style: context.bodySmall.copyWith(
                     color: colors.textSecondary,
                     fontSize: 10,
@@ -10175,6 +10241,96 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         );
       },
     );
+  }
+
+  void _showDeleteConfirmationDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: context.colors.scaffoldBackground,
+        title: Text('Delete Chat?', style: context.titleMedium),
+        content: Text(
+          'Are you sure you want to delete this chat? This action cannot be undone.',
+          style: context.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await _handleDeleteChat(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteChat(BuildContext context) async {
+    final convId = widget.conversationId;
+    if (convId.isEmpty) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    bool isSuccess = false;
+    String? errorMsg;
+
+    try {
+      final result = await getIt<DashboardRepository>().deleteChat(convId);
+      result.when(
+        success: (_) {
+          isSuccess = true;
+        },
+        failure: (msg, code) {
+          if (code == 404) {
+            isSuccess = true;
+          } else {
+            errorMsg = msg;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Error deleting chat: $e');
+      isSuccess = false;
+      errorMsg = e.toString();
+    }
+
+    if (isSuccess) {
+      await ChatMessageCacheHelper.clearConversation(convId);
+      getIt<StorageService>().saveConversationClearedAt(
+        convId,
+        DateTime.now().toUtc().toIso8601String(),
+      );
+
+      if (getIt.isRegistered<ChatsBloc>()) {
+        getIt<ChatsBloc>().add(RemoveChat(conversationId: convId));
+        getIt<ChatsBloc>().add(const FetchChats());
+      }
+
+      try {
+        _chatBloc.add(const CloseChatEvent());
+      } catch (_) {}
+
+      if (mounted) {
+        context.showSuccessNotification('Chat deleted');
+
+        // Navigate directly to home screen!
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+        context.showErrorNotification(errorMsg ?? 'Failed to delete chat');
+      }
+    }
   }
 
   void _showDisappearingMessagesBottomSheet(BuildContext context, int? currentTimer) {

@@ -154,7 +154,11 @@ class _IncomingScreenPermissionBottomSheetState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const TextSpan(text: ' in this chat.'),
+                TextSpan(
+                  text: isScreenshot
+                      ? ' in this chat.\n(Only in-app button capture is allowed; hardware buttons & gestures remain blocked)'
+                      : ' in this chat.',
+                ),
               ],
             ),
           ),

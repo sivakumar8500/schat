@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
@@ -9,6 +10,8 @@ import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/chat_screen/src/domain/models/scheduled_message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -22,6 +25,7 @@ enum ScheduledMessageType { text, image, video, document, audio }
 class ScheduleMessageBottomSheet extends StatefulWidget {
   final String contactName;
   final String? conversationId;
+  final String? recipientId;
   final Function(
     DateTime scheduledDateTime,
     String text,
@@ -33,6 +37,7 @@ class ScheduleMessageBottomSheet extends StatefulWidget {
     super.key,
     required this.contactName,
     this.conversationId,
+    this.recipientId,
     this.onSchedule,
   });
 
@@ -70,6 +75,36 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   String? _listErrorMessage;
   ScheduledMessageModel? _editingMessage;
   static final Map<String, String> _scheduledLocalPathCache = {};
+
+  String get _effectiveRecipientId {
+    if (widget.recipientId != null && widget.recipientId!.trim().isNotEmpty) {
+      return widget.recipientId!.trim();
+    }
+    if (getIt.isRegistered<ChatsBloc>()) {
+      final chatsState = getIt<ChatsBloc>().state;
+      if (chatsState is ChatsLoaded && widget.conversationId != null) {
+        final chat = chatsState.chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+        if (chat != null && !chat.isGroup && chat.recipient.id.isNotEmpty) {
+          return chat.recipient.id;
+        }
+      }
+    }
+    return '';
+  }
+
+  String? _resolveMediaId(String? key, String? fileName) {
+    final fromCache = SecureAttachmentService.findMediaId(key) ?? SecureAttachmentService.findMediaId(fileName);
+    if (fromCache != null && fromCache.isNotEmpty) return fromCache;
+    if (key != null && key.isNotEmpty) {
+      final clean = key.split('?').first.split('/').last;
+      final nameWithoutExt = clean.contains('.') ? clean.substring(0, clean.lastIndexOf('.')) : clean;
+      final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+      if (uuidRegex.hasMatch(nameWithoutExt)) {
+        return nameWithoutExt;
+      }
+    }
+    return null;
+  }
 
   String? _findLocalFileForScheduledMessage(ScheduledMessageModel msg) {
     if (kIsWeb) return null;
@@ -122,6 +157,19 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     }
 
     return null;
+  }
+
+  String _detectTypeFromFileName(String name, String fallback) {
+    final nameBeforeCaption = name.contains(' · ') ? name.split(' · ').first.trim() : name;
+    final clean = nameBeforeCaption.toLowerCase().replaceAll('.enc', '');
+    final ext = clean.contains('.') ? clean.split('.').last.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '') : '';
+    if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log'].contains(ext)) return 'text';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'].contains(ext)) return 'image';
+    if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp'].contains(ext)) return 'video';
+    if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'].contains(ext)) return 'audio';
+    if (ext == 'pdf') return 'pdf';
+    if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) return 'file';
+    return fallback;
   }
 
   @override
@@ -239,12 +287,30 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
+      const maxFileBytes = 100 * 1024 * 1024; // Strictly < 100 MB
+      const validVideoExts = ['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'flv'];
+      const validAudioExts = ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'];
+      const validImageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'];
+
       if (_selectedType == ScheduledMessageType.image) {
         final picker = ImagePicker();
         final picked = await picker.pickImage(source: ImageSource.gallery);
         if (picked != null) {
           final f = File(picked.path);
           final size = await f.length();
+          final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase().replaceAll('.enc', '') : '';
+          if (!validImageExts.contains(ext)) {
+            setState(() {
+              _errorMessage = 'Format not allowed. Only image formats (JPG, PNG, WEBP, GIF) are supported.';
+            });
+            return;
+          }
+          if (size >= maxFileBytes) {
+            setState(() {
+              _errorMessage = 'Image size must be less than 100 MB.';
+            });
+            return;
+          }
           setState(() {
             _attachedFile = f;
             _attachedFileName = picked.name;
@@ -258,6 +324,19 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         if (picked != null) {
           final f = File(picked.path);
           final size = await f.length();
+          final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase().replaceAll('.enc', '') : '';
+          if (!validVideoExts.contains(ext)) {
+            setState(() {
+              _errorMessage = 'Format not allowed. Only video formats (MP4, MOV, WEBM, MKV, AVI, 3GP) are supported.';
+            });
+            return;
+          }
+          if (size >= maxFileBytes) {
+            setState(() {
+              _errorMessage = 'Video file size must be less than 100 MB.';
+            });
+            return;
+          }
           setState(() {
             _attachedFile = f;
             _attachedFileName = picked.name;
@@ -270,7 +349,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         try {
           result = await FilePicker.pickFiles(
             type: FileType.custom,
-            allowedExtensions: ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf'],
+            allowedExtensions: validAudioExts,
           );
         } catch (_) {
           result = await FilePicker.pickFiles(type: FileType.audio);
@@ -279,25 +358,35 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         if (audioRes != null && audioRes.files.isNotEmpty && audioRes.files.single.path != null) {
           final f = File(audioRes.files.single.path!);
           final size = audioRes.files.single.size > 0 ? audioRes.files.single.size : await f.length();
+          final pickedName = audioRes.files.single.name;
+          final ext = pickedName.contains('.') ? pickedName.split('.').last.toLowerCase().replaceAll('.enc', '') : '';
+
+          if (!validAudioExts.contains(ext)) {
+            setState(() {
+              _errorMessage = 'Format not allowed. Only audio formats (MP3, M4A, WAV, AAC, OGG, OPUS, FLAC) are supported.';
+            });
+            return;
+          }
+
+          if (size >= maxFileBytes) {
+            setState(() {
+              _errorMessage = 'Audio file size must be less than 100 MB.';
+            });
+            return;
+          }
+
           setState(() {
+            _selectedType = ScheduledMessageType.audio;
             _attachedFile = f;
-            _attachedFileName = audioRes.files.single.name;
+            _attachedFileName = pickedName;
             _attachedFileSize = size;
             _errorMessage = null;
           });
         }
-      } else if (_selectedType == ScheduledMessageType.document) {
-        final docRes = await FilePicker.pickFiles(type: FileType.any);
-        if (docRes != null && docRes.files.isNotEmpty && docRes.files.single.path != null) {
-          final f = File(docRes.files.single.path!);
-          final size = docRes.files.single.size > 0 ? docRes.files.single.size : await f.length();
-          setState(() {
-            _attachedFile = f;
-            _attachedFileName = docRes.files.single.name;
-            _attachedFileSize = size;
-            _errorMessage = null;
-          });
-        }
+      } else {
+        setState(() {
+          _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
+        });
       }
     } catch (e) {
       if (!e.toString().contains('multiple_request')) {
@@ -388,11 +477,23 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       try {
         if (getIt.isRegistered<ChatRepository>()) {
           final repo = getIt<ChatRepository>();
+          final rawFileName = _attachedFile?.path ?? _attachedFileName ?? _editingMessage?.fileName ?? '';
+          final activeExt = rawFileName.split('.').last.toLowerCase().replaceAll('.enc', '');
           String typeStr = 'text';
-          if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
-          if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
-          if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
-          if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
+          if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'].contains(activeExt)) {
+            typeStr = 'image';
+          } else if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'flv'].contains(activeExt)) {
+            typeStr = 'video';
+          } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'].contains(activeExt)) {
+            typeStr = 'audio';
+          } else if (activeExt.isNotEmpty) {
+            typeStr = 'document';
+          } else {
+            if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
+            if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
+            if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
+            if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
+          }
 
           String? fileKey = _editingMessage!.fileKey;
           String? fileName = _attachedFileName ?? _editingMessage!.fileName;
@@ -400,6 +501,21 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           String? mimeType = _editingMessage!.mimeType;
 
           if (_attachedFile != null) {
+            final fLen = await _attachedFile!.length();
+            if (fLen >= 100 * 1024 * 1024) {
+              setState(() {
+                _errorMessage = 'File size must be less than 100 MB.';
+                _isSubmitting = false;
+              });
+              return;
+            }
+            if (_selectedType == ScheduledMessageType.document) {
+              setState(() {
+                _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
+                _isSubmitting = false;
+              });
+              return;
+            }
             fileName = _attachedFile!.path.split('/').last;
             fileSize = await _attachedFile!.length();
             mimeType = _getMimeType(_attachedFile!.path, typeStr);
@@ -426,11 +542,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
             fileKey = await repo.uploadMedia(
               conversationId: widget.conversationId ?? _editingMessage!.conversationId,
+              recipientId: _effectiveRecipientId,
               filePath: _attachedFile!.path,
               fileName: fileName ?? 'file',
               mediaType: _getMediaType(typeStr),
               mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
               fileSizeBytes: fileSize,
+              allowView: true,
               onProgress: (p) {
                 if (mounted) {
                   setState(() {
@@ -482,6 +600,20 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           final mediaId = SecureAttachmentService.findMediaId(fileKey) ??
               SecureAttachmentService.findMediaId(fileName) ??
               _editingMessage!.mediaId;
+
+          final targetRecipient = _effectiveRecipientId;
+          final resolvedMediaId = _resolveMediaId(fileKey, fileName) ?? _editingMessage!.mediaId;
+          if (resolvedMediaId != null && resolvedMediaId.isNotEmpty && targetRecipient.isNotEmpty) {
+            try {
+              await repo.shareMedia(
+                mediaId: resolvedMediaId,
+                granteeId: targetRecipient,
+                canView: true,
+                canDownload: false,
+                canShare: false,
+              );
+            } catch (_) {}
+          }
 
           final bool isMedia = _selectedType != ScheduledMessageType.text;
           final updatePayload = <String, dynamic>{
@@ -570,11 +702,23 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         try {
           if (getIt.isRegistered<ChatRepository>()) {
             final repo = getIt<ChatRepository>();
+            final rawFileName = _attachedFile?.path ?? _attachedFileName ?? '';
+            final activeExt = rawFileName.split('.').last.toLowerCase().replaceAll('.enc', '');
             String typeStr = 'text';
-            if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
-            if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
-            if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
-            if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
+            if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'bmp', 'svg'].contains(activeExt)) {
+              typeStr = 'image';
+            } else if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'flv'].contains(activeExt)) {
+              typeStr = 'video';
+            } else if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'].contains(activeExt)) {
+              typeStr = 'audio';
+            } else if (activeExt.isNotEmpty) {
+              typeStr = 'document';
+            } else {
+              if (_selectedType == ScheduledMessageType.image) typeStr = 'image';
+              if (_selectedType == ScheduledMessageType.video) typeStr = 'video';
+              if (_selectedType == ScheduledMessageType.document) typeStr = 'document';
+              if (_selectedType == ScheduledMessageType.audio) typeStr = 'audio';
+            }
 
             String? fileKey;
             String? fileName = _attachedFileName;
@@ -582,6 +726,21 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             String? mimeType;
 
             if (_attachedFile != null) {
+              final fLen = await _attachedFile!.length();
+              if (fLen >= 100 * 1024 * 1024) {
+                setState(() {
+                  _errorMessage = 'File size must be less than 100 MB.';
+                  _isSubmitting = false;
+                });
+                return;
+              }
+              if (_selectedType == ScheduledMessageType.document) {
+                setState(() {
+                  _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
+                  _isSubmitting = false;
+                });
+                return;
+              }
               fileName = _attachedFile!.path.split('/').last;
               fileSize = await _attachedFile!.length();
               mimeType = _getMimeType(_attachedFile!.path, typeStr);
@@ -608,11 +767,13 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
               fileKey = await repo.uploadMedia(
                 conversationId: widget.conversationId ?? '',
+                recipientId: _effectiveRecipientId,
                 filePath: _attachedFile!.path,
                 fileName: fileName ?? 'file',
                 mediaType: _getMediaType(typeStr),
                 mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
                 fileSizeBytes: fileSize,
+                allowView: true,
                 onProgress: (p) {
                   if (mounted) {
                     setState(() {
@@ -663,6 +824,23 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
             final mediaId = SecureAttachmentService.findMediaId(fileKey) ??
                 SecureAttachmentService.findMediaId(fileName);
+
+            final targetRecipient = _effectiveRecipientId;
+            final resolvedMediaId = _resolveMediaId(fileKey, fileName);
+            if (resolvedMediaId != null && resolvedMediaId.isNotEmpty && targetRecipient.isNotEmpty) {
+              try {
+                await repo.shareMedia(
+                  mediaId: resolvedMediaId,
+                  granteeId: targetRecipient,
+                  canView: true,
+                  canDownload: false,
+                  canShare: false,
+                );
+                debugPrint('ScheduleMessageBottomSheet: Granted view share for $resolvedMediaId to $targetRecipient');
+              } catch (e) {
+                debugPrint('ScheduleMessageBottomSheet: shareMedia error: $e');
+              }
+            }
 
             final bool isMedia = _selectedType != ScheduledMessageType.text;
             final requestData = <String, dynamic>{
@@ -1149,8 +1327,6 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 CommonSpaces.w6,
                 _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
                 CommonSpaces.w6,
-                _buildTypeChip(ScheduledMessageType.document, 'Doc', CommonIcons.document),
-                CommonSpaces.w6,
                 _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
               ],
             ),
@@ -1202,6 +1378,37 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     Expanded(
                       child: Text(
                         'View-only: Download and Share will be disabled for recipients',
+                        style: context.bodySmall.copyWith(
+                          color: context.colors.textPrimary,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              CommonSpaces.h6,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF04438).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFF04438).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: Color(0xFFF04438),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Allowed file size: < 100 MB. Other formats are not allowed.',
                         style: context.bodySmall.copyWith(
                           color: context.colors.textPrimary,
                           fontSize: 11.5,
@@ -1524,31 +1731,25 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         case ScheduledMessageType.image:
           pickerIcon = CommonIcons.gallery;
           pickerTitle = 'Choose Image to Schedule';
-          pickerHint = 'Supports JPG, PNG, WEBP, GIF';
+          pickerHint = 'Supports JPG, PNG, WEBP, GIF (< 100 MB)';
           pickerColor = const Color(0xFF2196F3);
           break;
         case ScheduledMessageType.video:
           pickerIcon = Icons.videocam_rounded;
           pickerTitle = 'Choose Video to Schedule';
-          pickerHint = 'Supports MP4, MOV, WEBM';
+          pickerHint = 'Supports MP4, MOV, WEBM, MKV (< 100 MB)';
           pickerColor = Colors.red;
-          break;
-        case ScheduledMessageType.document:
-          pickerIcon = CommonIcons.document;
-          pickerTitle = 'Choose Document to Schedule';
-          pickerHint = 'Supports PDF, DOC, XLS, PPT, TXT, ZIP';
-          pickerColor = const Color(0xFFFF9800);
           break;
         case ScheduledMessageType.audio:
           pickerIcon = CommonIcons.audio;
           pickerTitle = 'Choose Audio to Schedule';
-          pickerHint = 'Supports MP3, M4A, WAV, AAC, OGG';
+          pickerHint = 'Supports MP3, M4A, WAV, AAC, OGG (< 100 MB)';
           pickerColor = const Color(0xFF9C27B0);
           break;
         default:
           pickerIcon = Icons.attach_file_rounded;
-          pickerTitle = 'Choose Attachment';
-          pickerHint = 'Tap to select file';
+          pickerTitle = 'Choose Media to Schedule';
+          pickerHint = 'Only video and audio formats (< 100 MB) are allowed';
           pickerColor = context.colors.primary;
       }
 
@@ -1954,11 +2155,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               onTap: () {
                 final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
                 if (viewUrl.isNotEmpty) {
+                  final detectedType = _detectTypeFromFileName(fileName, 'file');
                   InAppViewer.show(
                     context,
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Document',
-                    type: 'file',
+                    type: detectedType,
                     mediaId: _editingMessage?.mediaId,
                   );
                 }
@@ -1978,11 +2180,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 onTap: () {
                   final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
                   if (viewUrl.isNotEmpty) {
+                    final detectedType = _detectTypeFromFileName(fileName, 'file');
                     InAppViewer.show(
                       context,
                       url: viewUrl,
                       fileName: fileName.isNotEmpty ? fileName : 'Document',
-                      type: 'file',
+                      type: detectedType,
                       mediaId: _editingMessage?.mediaId,
                     );
                   }
@@ -2072,11 +2275,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               onTap: () {
                 final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
                 if (viewUrl.isNotEmpty) {
+                  final detectedType = _detectTypeFromFileName(fileName, 'audio');
                   InAppViewer.show(
                     context,
                     url: viewUrl,
                     fileName: fileName.isNotEmpty ? fileName : 'Audio',
-                    type: 'audio',
+                    type: detectedType,
                     mediaId: _editingMessage?.mediaId,
                   );
                 }
@@ -2096,11 +2300,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 onTap: () {
                   final viewUrl = hasLocalFile ? _attachedFile!.path : (resolvedUrl ?? '');
                   if (viewUrl.isNotEmpty) {
+                    final detectedType = _detectTypeFromFileName(fileName, 'audio');
                     InAppViewer.show(
                       context,
                       url: viewUrl,
                       fileName: fileName.isNotEmpty ? fileName : 'Audio',
-                      type: 'audio',
+                      type: detectedType,
                       mediaId: _editingMessage?.mediaId,
                     );
                   }
@@ -2353,7 +2558,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                       children: [
                         isLocal
                             ? Image.file(
-                                File(localPath!),
+                                File(localPath),
                                 fit: BoxFit.cover,
                                 errorBuilder: (c, o, s) => _buildMediaFallback(
                                     context, Icons.broken_image_rounded, 'Image Preview Unavailable'),
@@ -2450,13 +2655,16 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     if (normType == 'audio') {
       return GestureDetector(
         onTap: effectiveUrl.isNotEmpty
-            ? () => InAppViewer.show(
+            ? () {
+                final detectedType = _detectTypeFromFileName(fileName, 'audio');
+                InAppViewer.show(
                   context,
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Audio',
-                  type: 'audio',
+                  type: detectedType,
                   mediaId: mediaId,
-                )
+                );
+              }
             : null,
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -2686,13 +2894,16 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
       return GestureDetector(
         onTap: effectiveUrl.isNotEmpty
-            ? () => InAppViewer.show(
+            ? () {
+                final detectedType = _detectTypeFromFileName(fileName, 'file');
+                InAppViewer.show(
                   context,
                   url: effectiveUrl,
                   fileName: fileName.isNotEmpty ? fileName : 'Document',
-                  type: 'file',
+                  type: detectedType,
                   mediaId: mediaId,
-                )
+                );
+              }
             : null,
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -2969,11 +3180,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 if (hasMedia && effectiveUrl.isNotEmpty) ...[
                   OutlinedButton.icon(
                     onPressed: () {
+                      final detectedType = _detectTypeFromFileName(fileName, normType == 'document' ? 'file' : normType);
                       InAppViewer.show(
                         context,
                         url: effectiveUrl,
                         fileName: fileName.isNotEmpty ? fileName : normType,
-                        type: normType == 'document' ? 'file' : normType,
+                        type: detectedType,
                         mediaId: mediaId,
                       );
                     },

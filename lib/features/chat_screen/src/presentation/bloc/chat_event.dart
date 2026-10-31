@@ -11,6 +11,7 @@ class LoadMessagesEvent extends ChatEvent {
   final String conversationId;
   final String? recipientId;
   final bool? initialIsOnline;
+  final String? initialLastSeen;
   final ThemeColorModel? initialThemeColor;
   final String? initialCustomWallpaperUrl;
   final int? initialDisappearingTimer;
@@ -25,6 +26,7 @@ class LoadMessagesEvent extends ChatEvent {
     required this.conversationId,
     this.recipientId,
     this.initialIsOnline,
+    this.initialLastSeen,
     this.initialThemeColor,
     this.initialCustomWallpaperUrl,
     this.initialDisappearingTimer,
@@ -384,7 +386,12 @@ class ShowNotificationEvent extends ChatEvent {
 class ClearChatEvent extends ChatEvent {
   final String conversationId;
   final String clearType; // 'me' or 'everyone'
-  const ClearChatEvent({required this.conversationId, this.clearType = 'me'});
+  final bool isRemote;
+  const ClearChatEvent({
+    required this.conversationId,
+    this.clearType = 'me',
+    this.isRemote = false,
+  });
 }
 
 class LoadThemesEvent extends ChatEvent {

@@ -495,16 +495,19 @@ class ChatRepositoryImpl implements ChatRepository {
         }
       } catch (_) {}
 
-      if (mediaId.isNotEmpty && recipientId != null && recipientId.isNotEmpty) {
+      final effectiveMediaId = mediaId.isNotEmpty
+          ? mediaId
+          : completedObjectKey.split('?').first.split('/').last.split('.').first;
+      if (effectiveMediaId.isNotEmpty && recipientId != null && recipientId.trim().isNotEmpty) {
         try {
           await shareMedia(
-            mediaId: mediaId,
-            granteeId: recipientId,
+            mediaId: effectiveMediaId,
+            granteeId: recipientId.trim(),
             canView: allowView,
             canDownload: allowDownload,
             canShare: allowShare,
           );
-          debugPrint('Successfully auto-granted media share ($mediaId) to $recipientId');
+          debugPrint('Successfully auto-granted media share ($effectiveMediaId) to ${recipientId.trim()}');
         } catch (e) {
           debugPrint('Error auto-granting media share to recipient: $e');
         }
@@ -606,9 +609,17 @@ class ChatRepositoryImpl implements ChatRepository {
     final payload = <String, dynamic>{};
     if (readReceiptsEnabled != null) {
       payload['read_receipts_enabled'] = readReceiptsEnabled;
+      payload['readReceiptsEnabled'] = readReceiptsEnabled;
+    } else {
+      payload['clear_read_receipts'] = true;
+      payload['clearReadReceipts'] = true;
     }
     if (typingIndicatorsEnabled != null) {
       payload['typing_indicators_enabled'] = typingIndicatorsEnabled;
+      payload['typingIndicatorsEnabled'] = typingIndicatorsEnabled;
+    } else {
+      payload['clear_typing_indicators'] = true;
+      payload['clearTypingIndicators'] = true;
     }
 
     final result = await _apiService.put(
@@ -792,10 +803,14 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<String?> clearChat(String conversationId) async {
+  Future<String?> clearChat(String conversationId, {String clearType = 'me'}) async {
     final result = await _apiService.post<Map<String, dynamic>>(
       CommonEndpoints.clearChat(conversationId),
-      mapper: (data) => Map<String, dynamic>.from(data as Map),
+      data: {
+        'clear_type': clearType,
+        'clearType': clearType,
+      },
+      mapper: (data) => data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{},
     );
 
     return result.when(

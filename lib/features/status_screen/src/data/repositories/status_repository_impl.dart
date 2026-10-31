@@ -117,6 +117,28 @@ class StatusRepositoryImpl implements StatusRepository {
   }) async {
     String? finalMediaId = mediaFileId;
 
+    final pathLower = (filePath ?? '').toLowerCase();
+    final nameLower = (fileName ?? '').toLowerCase();
+    final mimeLower = (mimeType ?? '').toLowerCase();
+    final isAudio = statusType == 'audio' ||
+        statusType == 'voice' ||
+        mimeLower.contains('audio') ||
+        pathLower.endsWith('.m4a') ||
+        pathLower.endsWith('.mp3') ||
+        pathLower.endsWith('.aac') ||
+        pathLower.endsWith('.wav') ||
+        nameLower.endsWith('.m4a') ||
+        nameLower.endsWith('.mp3') ||
+        nameLower.endsWith('.aac') ||
+        nameLower.endsWith('.wav');
+    final isVideo = !isAudio &&
+        (statusType == 'video' ||
+            mimeLower.contains('video') ||
+            pathLower.endsWith('.mp4') ||
+            pathLower.endsWith('.mov') ||
+            nameLower.endsWith('.mp4') ||
+            nameLower.endsWith('.mov'));
+
     // Handle file upload if provided
     if ((filePath != null && filePath.isNotEmpty) || fileBytes != null) {
       try {
@@ -137,15 +159,26 @@ class StatusRepositoryImpl implements StatusRepository {
         }
 
         final size = bytes.length;
-        final inferredFileName = fileName ?? (filePath != null ? filePath.split('/').last : (statusType == 'video' ? 'video.mp4' : 'media.jpg'));
-        String inferredMime = mimeType ?? (statusType == 'video' ? 'video/mp4' : (statusType == 'audio' ? 'audio/m4a' : 'image/jpeg'));
-        final isVideo = statusType == 'video' || inferredMime.toLowerCase().contains('video') || inferredFileName.toLowerCase().endsWith('.mp4') || inferredFileName.toLowerCase().endsWith('.mov');
-        final isAudio = statusType == 'audio' || inferredMime.toLowerCase().contains('audio') || inferredFileName.toLowerCase().endsWith('.m4a') || inferredFileName.toLowerCase().endsWith('.mp3');
-        final mediaType = isVideo ? 'CHAT_VIDEO' : (isAudio ? 'CHAT_AUDIO' : 'CHAT_IMAGE');
+        final inferredFileName = fileName ??
+            (filePath != null
+                ? filePath.split('/').last
+                : (isVideo
+                    ? 'video.mp4'
+                    : (isAudio ? 'voice_status.m4a' : 'media.jpg')));
+        String inferredMime = mimeType ??
+            (isVideo ? 'video/mp4' : (isAudio ? 'audio/mp4' : 'image/jpeg'));
 
         if (isVideo) {
           inferredMime = 'video/mp4';
+        } else if (isAudio) {
+          if (inferredMime.contains('m4a') ||
+              inferredMime.isEmpty ||
+              inferredMime == 'application/octet-stream') {
+            inferredMime = 'audio/mp4';
+          }
         }
+        final mediaType =
+            isVideo ? 'CHAT_VIDEO' : (isAudio ? 'VOICE_NOTE' : 'CHAT_IMAGE');
 
         onProgress?.call(0.05);
 
@@ -332,10 +365,32 @@ class StatusRepositoryImpl implements StatusRepository {
       createPayload['contact_ids'] = privacyUserIds;
     }
 
-    final result = await _apiService.post(
+    var result = await _apiService.post(
       CommonEndpoints.createStatus,
       data: createPayload,
     );
+
+    // If server does not accept 'audio' as status_type, retry gracefully with 'video'
+    if (isAudio) {
+      bool needFallback = false;
+      result.when(
+        success: (_) {},
+        failure: (error, statusCode) {
+          if (statusCode == 400 || error.contains('Invalid status type')) {
+            needFallback = true;
+          }
+        },
+      );
+      if (needFallback) {
+        final fallbackPayload = Map<String, dynamic>.from(createPayload);
+        fallbackPayload['statusType'] = 'video';
+        fallbackPayload['status_type'] = 'video';
+        result = await _apiService.post(
+          CommonEndpoints.createStatus,
+          data: fallbackPayload,
+        );
+      }
+    }
     
     result.when(
       success: (_) {

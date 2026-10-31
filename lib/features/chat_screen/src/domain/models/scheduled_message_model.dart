@@ -137,8 +137,8 @@ class ScheduledMessageModel {
               content['media_id'] ??
               json['mediaId'] ??
               json['media_id'] ??
-              content['id'] ??
-              json['id'])
+              content['media']?['id'] ??
+              content['attachment']?['id'])
           ?.toString(),
       thumbnail: (content['thumbnail'] ??
               content['thumb_url'] ??
@@ -186,16 +186,17 @@ class ScheduledMessageModel {
 
   /// Normalized media type helper
   String get normalizedType {
-    final t = messageType.toLowerCase().replaceAll('chat_', '').trim();
-    if (t == 'image' || t == 'video' || t == 'audio' || t == 'voice_note' || t == 'document' || t == 'file') {
-      return t == 'voice_note' ? 'audio' : (t == 'file' ? 'document' : t);
-    }
-    final name = (fileName ?? fileKey ?? '').toLowerCase();
+    final name = (fileName ?? fileKey ?? '').toLowerCase().replaceAll('.enc', '');
     final ext = name.contains('.') ? name.split('.').last : '';
     if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic', 'avif'].contains(ext)) return 'image';
     if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp'].contains(ext)) return 'video';
     if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr'].contains(ext)) return 'audio';
-    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip', 'rar', 'csv'].contains(ext)) return 'document';
+    if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip', 'rar', 'csv', 'json', 'xml', 'md'].contains(ext)) return 'document';
+
+    final t = messageType.toLowerCase().replaceAll('chat_', '').trim();
+    if (t == 'image' || t == 'video' || t == 'audio' || t == 'voice_note' || t == 'document' || t == 'file') {
+      return t == 'voice_note' ? 'audio' : (t == 'file' ? 'document' : t);
+    }
     if (fileKey != null && fileKey!.isNotEmpty) return 'document';
     return 'text';
   }

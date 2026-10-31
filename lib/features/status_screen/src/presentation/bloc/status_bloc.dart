@@ -308,7 +308,7 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
           inferredMime = 'video/mp4';
         } else if (lower.endsWith('.m4a') || lower.endsWith('.mp3') || lower.endsWith('.aac') || lower.endsWith('.wav')) {
           inferredType = 'audio';
-          inferredMime = 'audio/m4a';
+          inferredMime = 'audio/mp4';
         }
       }
 

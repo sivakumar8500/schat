@@ -207,7 +207,7 @@ class _VideoStatusTrimmerPageState extends State<VideoStatusTrimmerPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Video Status (Max 1 min)',
+          'Video Status',
           style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
         ),
         actions: [

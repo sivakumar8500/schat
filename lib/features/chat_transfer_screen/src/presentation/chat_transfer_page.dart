@@ -36,6 +36,7 @@ class _ChatTransferView extends StatefulWidget {
 
 class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final Set<String> _shownDialogRequestIds = {};
 
   @override
   void initState() {
@@ -70,20 +71,26 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
 
         if (state.newlyReceivedRequest != null) {
           final req = state.newlyReceivedRequest!;
-          ChatViewRequestDialog.show(
-            context,
-            request: req,
-            onAccept: () {
-              context.read<ChatTransferBloc>().add(
-                    RespondChatTransferRequest(requestId: req.id, accept: true),
-                  );
-            },
-            onDecline: () {
-              context.read<ChatTransferBloc>().add(
-                    RespondChatTransferRequest(requestId: req.id, accept: false),
-                  );
-            },
-          );
+          // Immediately clear newlyReceivedRequest so subsequent state emissions do NOT trigger the dialog again
+          context.read<ChatTransferBloc>().add(const ClearTransferMessages());
+
+          if (!_shownDialogRequestIds.contains(req.id)) {
+            _shownDialogRequestIds.add(req.id);
+            ChatViewRequestDialog.show(
+              context,
+              request: req,
+              onAccept: () {
+                context.read<ChatTransferBloc>().add(
+                      RespondChatTransferRequest(requestId: req.id, accept: true),
+                    );
+              },
+              onDecline: () {
+                context.read<ChatTransferBloc>().add(
+                      RespondChatTransferRequest(requestId: req.id, accept: false),
+                    );
+              },
+            );
+          }
         }
       },
       builder: (context, state) {

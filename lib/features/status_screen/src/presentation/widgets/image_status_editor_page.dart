@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.dart';
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/image_editor_crop_view.dart';
 import 'package:schat/utils/common_notifications.dart';
 
 /// Represents a single continuous stroke drawn on the canvas
@@ -86,6 +87,85 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   final TextEditingController _captionController = TextEditingController();
   final FocusNode _captionFocus = FocusNode();
+
+  Uint8List? _currentBytes;
+  String? _currentPath;
+  Uint8List? _originalBytes;
+  String? _originalPath;
+  bool _hasCropped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentBytes = widget.imageBytes;
+    _currentPath = widget.imagePath;
+    _originalBytes = widget.imageBytes;
+    _originalPath = widget.imagePath;
+    _loadInitialBytes();
+  }
+
+  Future<void> _loadInitialBytes() async {
+    if (_currentBytes == null && _currentPath != null && _currentPath!.isNotEmpty) {
+      try {
+        final bytes = await File(_currentPath!).readAsBytes();
+        if (mounted) {
+          setState(() {
+            _currentBytes = bytes;
+            _originalBytes = bytes;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error reading initial status image bytes: $e');
+      }
+    }
+  }
+
+  Future<void> _openCrop() async {
+    Uint8List? bytesToCrop = _currentBytes;
+    if (bytesToCrop == null && _currentPath != null && _currentPath!.isNotEmpty) {
+      try {
+        bytesToCrop = await File(_currentPath!).readAsBytes();
+      } catch (e) {
+        debugPrint('Error reading image bytes for crop: $e');
+      }
+    }
+    if (bytesToCrop == null || !mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ImageEditorCropView(
+          imageBytes: bytesToCrop!,
+          onCropped: (croppedBytes) async {
+            Navigator.pop(ctx);
+            String? newPath;
+            if (!kIsWeb) {
+              try {
+                final tempDir = await getTemporaryDirectory();
+                final timestamp = DateTime.now().millisecondsSinceEpoch;
+                final file = File('${tempDir.path}/cropped_status_$timestamp.jpg');
+                await file.writeAsBytes(croppedBytes);
+                newPath = file.path;
+              } catch (e) {
+                debugPrint('Error writing cropped image to file: $e');
+              }
+            }
+            if (mounted) {
+              setState(() {
+                _currentBytes = croppedBytes;
+                if (newPath != null) _currentPath = newPath;
+                _hasCropped = true;
+                _strokes.clear();
+                _rotationQuarterTurns = 0;
+                _flipHorizontal = false;
+              });
+            }
+          },
+          onCancel: () => Navigator.pop(ctx),
+        ),
+      ),
+    );
+  }
 
   // Rotation & Flip
   int _rotationQuarterTurns = 0; // 0, 1, 2, 3
@@ -211,6 +291,9 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
 
   void _resetEdits() {
     setState(() {
+      _currentBytes = _originalBytes;
+      _currentPath = _originalPath;
+      _hasCropped = false;
       _rotationQuarterTurns = 0;
       _flipHorizontal = false;
       _strokes.clear();
@@ -220,11 +303,13 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
     });
   }
 
-  bool get _hasVisualEdits =>
+  bool get _hasCanvasEdits =>
       _rotationQuarterTurns != 0 ||
       _flipHorizontal ||
       _strokes.isNotEmpty ||
       _selectedFilterIndex != 0;
+
+  bool get _hasVisualEdits => _hasCropped || _hasCanvasEdits;
 
   Future<void> _exportAndUpload() async {
     if (_isExporting) return;
@@ -234,7 +319,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
     final bloc = context.read<StatusBloc>();
 
     try {
-      if (_hasVisualEdits) {
+      if (_hasCanvasEdits) {
         // Capture rendered canvas with rotations, filters & doodles
         final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
         if (boundary != null) {
@@ -255,7 +340,7 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
             if (!mounted) return;
             context.showInfoNotification('Uploading status...');
             bloc.add(UploadMediaStatusEvent(
-              path: editedPath ?? widget.imagePath,
+              path: editedPath ?? _currentPath ?? widget.imagePath,
               bytes: editedBytes,
               caption: caption.isNotEmpty ? caption : null,
               statusType: 'image',
@@ -270,8 +355,8 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
       if (!mounted) return;
       context.showInfoNotification('Uploading status...');
       bloc.add(UploadMediaStatusEvent(
-        path: widget.imagePath,
-        bytes: widget.imageBytes,
+        path: _currentPath ?? widget.imagePath,
+        bytes: _currentBytes ?? widget.imageBytes,
         caption: caption.isNotEmpty ? caption : null,
         statusType: 'image',
       ));
@@ -419,14 +504,14 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
   }
 
   Widget _buildSourceImage() {
-    if (widget.imageBytes != null) {
+    if (_currentBytes != null) {
       return Image.memory(
-        widget.imageBytes!,
+        _currentBytes!,
         fit: BoxFit.contain,
       );
-    } else if (widget.imagePath != null && widget.imagePath!.isNotEmpty) {
+    } else if (_currentPath != null && _currentPath!.isNotEmpty) {
       return Image.file(
-        File(widget.imagePath!),
+        File(_currentPath!),
         fit: BoxFit.contain,
       );
     } else {
@@ -467,6 +552,13 @@ class _ImageStatusEditorPageState extends State<ImageStatusEditorPage> {
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
+
+          // Crop Tool
+          IconButton(
+            icon: const Icon(Icons.crop_rotate, color: Colors.white, size: 24),
+            tooltip: 'Crop',
+            onPressed: _openCrop,
+          ),
 
           // Rotate Clockwise Tool
           IconButton(

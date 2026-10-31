@@ -57,9 +57,9 @@ abstract class ChatRepository {
   Future<void> unpinMessage(String messageId);
   Future<List<MessageModel>> getPinnedMessages(String conversationId);
 
-  /// Clears all messages in [conversationId] for the calling user only.
+  /// Clears all messages in [conversationId] for the calling user only or for everyone.
   /// Returns the server-side `clearedAt` ISO-8601 timestamp.
-  Future<String?> clearChat(String conversationId);
+  Future<String?> clearChat(String conversationId, {String clearType = 'me'});
 
   /// DELETE /messages/{messageId} to delete a message for everyone via REST API.
   Future<bool> deleteMessageForEveryone(String messageId);

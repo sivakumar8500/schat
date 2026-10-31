@@ -77,6 +77,10 @@ class ProfileRepositoryImpl implements ProfileRepository {
       data['typing_indicators_enabled'] = request.typingIndicatorsEnabled;
       data['typingIndicatorsEnabled'] = request.typingIndicatorsEnabled;
     }
+    if (request.lastSeenEnabled != null) {
+      data['last_seen_enabled'] = request.lastSeenEnabled;
+      data['lastSeenEnabled'] = request.lastSeenEnabled;
+    }
 
     final result = await _apiService.patch<UserModel>(
       CommonEndpoints.updateProfile,
@@ -95,6 +99,9 @@ class ProfileRepositoryImpl implements ProfileRepository {
         }
         if (request.typingIndicatorsEnabled != null) {
           _storageService.saveTypingIndicatorsEnabled(request.typingIndicatorsEnabled!);
+        }
+        if (request.lastSeenEnabled != null) {
+          _storageService.saveLastSeenEnabled(request.lastSeenEnabled!);
         }
         return ApiResult.success(user);
       },

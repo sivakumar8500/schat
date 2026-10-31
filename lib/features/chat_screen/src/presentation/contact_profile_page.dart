@@ -28,6 +28,14 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/chat_lock_bottom_sheet.dart';
+import 'package:schat/core/storage/chat_message_cache_helper.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
+import 'package:schat/common/widgets/common_loading_overlay.dart';
+import 'package:fast_contacts/fast_contacts.dart';
+import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'dart:convert';
 
 class ContactProfilePage extends StatefulWidget {
@@ -60,6 +68,8 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   bool _isBlocked = false;
   UserModel? _recipientUser;
   bool _isLoadingUser = false;
+  bool _isDeleting = false;
+  bool _isContact = false;
 
   @override
   void initState() {
@@ -68,6 +78,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
     _checkBlockedStatus();
     _checkLockStatus();
     _fetchUserDetails();
+    _checkContactStatus();
   }
 
   Future<void> _checkLockStatus() async {
@@ -110,12 +121,97 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                 _isBlocked = true;
               }
             });
+            _checkContactStatus();
           }
         },
         failure: (_, _) {},
       );
     } catch (_) {}
     if (mounted) setState(() => _isLoadingUser = false);
+  }
+
+  Future<void> _checkContactStatus() async {
+    final bool isContact = await _checkIfContact();
+    if (mounted && _isContact != isContact) {
+      setState(() {
+        _isContact = isContact;
+      });
+    }
+  }
+
+  Future<bool> _checkIfContact() async {
+    final targetId = widget.recipientId ?? _recipientUser?.id;
+    final targetPhone = _recipientUser?.phoneNumber ?? '';
+    final cleanTargetPhone = _cleanPhone(targetPhone);
+
+    // 1. Check if recipientUser has contactName set from contact sync
+    if (_recipientUser?.contactName != null && _recipientUser!.contactName!.trim().isNotEmpty) {
+      return true;
+    }
+
+    // 2. Check cached synced contacts in ContactsRepository
+    try {
+      final contactsRepo = getIt<ContactsRepository>();
+      final cached = await contactsRepo.getCachedContacts();
+      for (final u in cached) {
+        if (targetId != null && targetId.isNotEmpty && u.id == targetId) {
+          return true;
+        }
+        if (cleanTargetPhone.isNotEmpty && _cleanPhone(u.phoneNumber) == cleanTargetPhone) {
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Check ContactsBloc if registered and loaded
+    try {
+      if (getIt.isRegistered<ContactsBloc>()) {
+        final state = getIt<ContactsBloc>().state;
+        if (state is ContactsLoaded) {
+          for (final u in state.syncedContacts) {
+            if (targetId != null && targetId.isNotEmpty && u.id == targetId) {
+              return true;
+            }
+            if (cleanTargetPhone.isNotEmpty && _cleanPhone(u.phoneNumber) == cleanTargetPhone) {
+              return true;
+            }
+          }
+          if (cleanTargetPhone.isNotEmpty) {
+            for (final c in state.contacts) {
+              for (final p in c.phones) {
+                if (_cleanPhone(p.number) == cleanTargetPhone) {
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. Check device contacts directly via FastContacts
+    if (cleanTargetPhone.isNotEmpty) {
+      try {
+        final deviceContacts = await FastContacts.getAllContacts();
+        for (final c in deviceContacts) {
+          for (final p in c.phones) {
+            if (_cleanPhone(p.number) == cleanTargetPhone) {
+              return true;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  String _cleanPhone(String phone) {
+    String clean = phone.replaceAll(RegExp(r'\D'), '');
+    if (clean.length > 10) {
+      clean = clean.substring(clean.length - 10);
+    }
+    return clean;
   }
 
   Future<void> _checkBlockedStatus() async {
@@ -276,38 +372,46 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             foregroundColor: context.colors.textPrimary,
             title: const Text('Contact Info'),
           ),
-          body: ListView(
+          body: Stack(
             children: [
-              // Header Section
-              _buildHeaderSection(),
-              const Divider(height: 1),
+              ListView(
+                children: [
+                  // Header Section
+                  _buildHeaderSection(),
+                  const Divider(height: 1),
 
-              // User Info Section
-              _buildUserInfoSection(),
-              const Divider(height: 32),
+                  // User Info Section (only for contacts)
+                  if (_isContact) ...[
+                    _buildUserInfoSection(),
+                    const Divider(height: 32),
+                  ],
 
-              // Media Section
-              _buildMediaSection(context),
+                  // Media Section
+                  _buildMediaSection(context),
 
-              // Settings Section (only in 1-on-1 direct chat)
-              if (!widget.isFromGroup) ...[
-                const Divider(height: 32),
-                _buildSettingsSection(
-                  context,
-                  isMuted,
-                  isLocked,
-                  disappearingTimer,
-                  readReceiptsEnabled,
-                  typingIndicatorsEnabled,
-                ),
-              ],
+                  // Settings Section (only in 1-on-1 direct chat)
+                  if (!widget.isFromGroup) ...[
+                    const Divider(height: 32),
+                    _buildSettingsSection(
+                      context,
+                      isMuted,
+                      isLocked,
+                      disappearingTimer,
+                      readReceiptsEnabled,
+                      typingIndicatorsEnabled,
+                    ),
+                  ],
 
-              // Destructive Section (Block, Report, Delete Chat - only in 1-on-1 direct chat)
-              if (!widget.isFromGroup) ...[
-                const Divider(height: 32),
-                _buildDestructiveSection(context),
-              ],
-              CommonSpaces.h40,
+                  // Destructive Section (Block, Report, Delete Chat - only in 1-on-1 direct chat)
+                  if (!widget.isFromGroup) ...[
+                    const Divider(height: 32),
+                    _buildDestructiveSection(context),
+                  ],
+                  CommonSpaces.h40,
+                ],
+              ),
+              if (_isDeleting)
+                const CommonLoadingOverlay(),
             ],
           ),
         );
@@ -316,10 +420,14 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   String _formatLastSeen(String lastSeenStr) {
+    if (lastSeenStr.trim().isEmpty || lastSeenStr == 'null' || lastSeenStr == '0') {
+      return 'Offline';
+    }
     try {
       DateTime date;
       final parsedInt = int.tryParse(lastSeenStr);
       if (parsedInt != null) {
+        if (parsedInt <= 0) return 'Offline';
         if (lastSeenStr.length <= 10) {
           date = DateTime.fromMillisecondsSinceEpoch(parsedInt * 1000).toLocal();
         } else {
@@ -328,6 +436,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
       } else {
         date = DateTime.parse(lastSeenStr).toLocal();
       }
+      if (date.year <= 2000) return 'Offline';
       return 'last seen ${timeago.format(date)}';
     } catch (e) {
       return 'Offline';
@@ -405,6 +514,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
   /// Builds the user info section with phone, username, about, and subscription.
   Widget _buildUserInfoSection() {
+    if (!_isContact) return const SizedBox.shrink();
     if (_isLoadingUser) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 20),
@@ -557,6 +667,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                         conversationId: widget.conversationId,
                         initialMediaList: _mediaList,
                         shouldFetch: false,
+                        isReadOnly: true,
                       ),
                     ),
                   );
@@ -629,6 +740,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
             conversationId: widget.conversationId,
             initialMediaList: _mediaList,
             shouldFetch: false,
+            isReadOnly: true,
           ),
         ),
       );
@@ -686,8 +798,9 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         fileName: fileName,
         type: type,
         mediaId: media.id.isNotEmpty ? media.id : null,
-        allowShare: true,
-        allowDownload: true,
+        allowShare: false,
+        allowDownload: false,
+        isReadOnly: true,
       );
     }
 
@@ -1716,7 +1829,7 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
   void _showDeleteConfirmationDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         backgroundColor: context.colors.scaffoldBackground,
         title: Text('Delete Chat?', style: context.titleMedium),
         content: Text(
@@ -1725,20 +1838,84 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              context.read<ChatBloc>().add(const CloseChatEvent());
-              Navigator.pop(context); // Exit Profile Page
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await _handleDeleteChat(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _handleDeleteChat(BuildContext context) async {
+    final convId = widget.conversationId;
+    if (convId.isEmpty) return;
+
+    setState(() {
+      _isDeleting = true;
+    });
+
+    bool isSuccess = false;
+    String? errorMsg;
+
+    try {
+      final result = await getIt<DashboardRepository>().deleteChat(convId);
+      result.when(
+        success: (_) {
+          isSuccess = true;
+        },
+        failure: (msg, code) {
+          if (code == 404) {
+            isSuccess = true;
+          } else {
+            errorMsg = msg;
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Error deleting chat: $e');
+      isSuccess = false;
+      errorMsg = e.toString();
+    }
+
+    if (isSuccess) {
+      await ChatMessageCacheHelper.clearConversation(convId);
+      getIt<StorageService>().saveConversationClearedAt(
+        convId,
+        DateTime.now().toUtc().toIso8601String(),
+      );
+
+      if (getIt.isRegistered<ChatsBloc>()) {
+        getIt<ChatsBloc>().add(RemoveChat(conversationId: convId));
+        getIt<ChatsBloc>().add(const FetchChats());
+      }
+
+      if (mounted) {
+        try {
+          context.read<ChatBloc>().add(const CloseChatEvent());
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        context.showSuccessNotification('Chat deleted');
+
+        // Navigate directly to home screen!
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isDeleting = false;
+        });
+        context.showErrorNotification(errorMsg ?? 'Failed to delete chat');
+      }
+    }
   }
 
   void _showBlockConfirmationDialog(BuildContext context) {

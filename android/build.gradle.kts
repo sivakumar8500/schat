@@ -8,6 +8,11 @@ allprojects {
             force("androidx.test:runner:1.5.2")
             force("androidx.test:rules:1.5.0")
             force("androidx.test:core:1.5.0")
+            dependencySubstitution {
+                substitute(module("com.github.paramsen:noise"))
+                    .using(module("io.livekit:noise:2.0.0"))
+                    .because("16 KB page size support")
+            }
         }
     }
 }
