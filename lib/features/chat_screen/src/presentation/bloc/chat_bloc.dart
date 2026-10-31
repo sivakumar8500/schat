@@ -1033,6 +1033,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         isLocked: initialLock,
         readReceiptsEnabled: event.initialReadReceiptsEnabled,
         typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
+        lastSeenEnabled: event.initialLastSeenEnabled,
       ));
     } else {
       emit(const ChatLoading());
@@ -1338,6 +1339,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           incomingScreenPermissionRequest: incomingScreenPermissionRequest,
           readReceiptsEnabled: event.initialReadReceiptsEnabled,
           typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
+          lastSeenEnabled: event.initialLastSeenEnabled,
           isBlocked: isBlocked,
           isBlockedByMe: isBlockedByMe,
           isBlockedByOther: isBlockedByOther,
@@ -1360,6 +1362,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           success: (user) {
             final currentState = state;
             if (currentState is ChatLoaded) {
+              emit(currentState.copyWith(
+                lastSeenEnabled: user.lastSeenEnabled,
+              ));
               add(UpdateBlockStatusEvent(
                 isBlocked: user.isBlocked,
                 isBlockedByMe: user.isBlockedByMe,
@@ -2094,10 +2099,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           : null;
       final effectiveLastSeen = event.isOnline
           ? currentState.lastSeen
-          : (cleanLastSeen ??
-              ((currentState.isRecipientOnline)
-                  ? DateTime.now().toUtc().toIso8601String()
-                  : currentState.lastSeen));
+          : (currentState.lastSeenEnabled ? cleanLastSeen : null);
       emit(currentState.copyWith(
         isRecipientOnline: _currentIsOnline,
         lastSeen: effectiveLastSeen,

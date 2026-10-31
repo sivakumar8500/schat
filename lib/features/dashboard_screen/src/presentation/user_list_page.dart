@@ -272,6 +272,7 @@ class _UserListPageState extends State<UserListPage> {
                         isBlockedByMe: chat.recipient.isBlockedByMe,
                         isBlockedByOther: chat.recipient.isBlockedByOther,
                         initialLastSeen: chat.recipient.lastSeen,
+                        initialLastSeenEnabled: chat.recipient.lastSeenEnabled,
                       ),
                     ),
                   ).then((_) {

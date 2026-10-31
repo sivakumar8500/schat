@@ -20,6 +20,7 @@ class LoadMessagesEvent extends ChatEvent {
   final bool? initialIsBlockedByOther;
   final bool? initialReadReceiptsEnabled;
   final bool? initialTypingIndicatorsEnabled;
+  final bool initialLastSeenEnabled;
   final bool? initialIsLocked;
   final bool isReadOnly;
   const LoadMessagesEvent({
@@ -35,6 +36,7 @@ class LoadMessagesEvent extends ChatEvent {
     this.initialIsBlockedByOther,
     this.initialReadReceiptsEnabled,
     this.initialTypingIndicatorsEnabled,
+    this.initialLastSeenEnabled = true,
     this.initialIsLocked,
     this.isReadOnly = false,
   });

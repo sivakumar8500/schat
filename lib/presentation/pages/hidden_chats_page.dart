@@ -448,6 +448,8 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
                   initialThemeColor: chat.themeColor,
                   initialReadReceiptsEnabled: chat.readReceiptsEnabled,
                   initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
+                  initialLastSeen: chat.recipient.lastSeen,
+                  initialLastSeenEnabled: chat.recipient.lastSeenEnabled,
                 ),
               ),
             );

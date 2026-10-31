@@ -88,6 +88,7 @@ class ChatLoaded extends ChatState {
   // Privacy settings (null = inherit global, true = on, false = off)
   final bool? readReceiptsEnabled;
   final bool? typingIndicatorsEnabled;
+  final bool lastSeenEnabled;
 
   // Block state
   final bool isBlocked;
@@ -120,6 +121,7 @@ class ChatLoaded extends ChatState {
     this.incomingScreenPermissionRequest,
     this.readReceiptsEnabled,
     this.typingIndicatorsEnabled,
+    this.lastSeenEnabled = true,
     this.isBlocked = false,
     this.isBlockedByMe = false,
     this.isBlockedByOther = false,
@@ -160,6 +162,7 @@ class ChatLoaded extends ChatState {
     bool clearReadReceiptsEnabled = false,
     bool? typingIndicatorsEnabled,
     bool clearTypingIndicatorsEnabled = false,
+    bool? lastSeenEnabled,
     bool? isBlocked,
     bool? isBlockedByMe,
     bool? isBlockedByOther,
@@ -217,6 +220,7 @@ class ChatLoaded extends ChatState {
       typingIndicatorsEnabled: clearTypingIndicatorsEnabled
           ? null
           : (typingIndicatorsEnabled ?? this.typingIndicatorsEnabled),
+      lastSeenEnabled: lastSeenEnabled ?? this.lastSeenEnabled,
       isBlocked: isBlocked ?? this.isBlocked,
       isBlockedByMe: isBlockedByMe ?? this.isBlockedByMe,
       isBlockedByOther: isBlockedByOther ?? this.isBlockedByOther,

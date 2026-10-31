@@ -702,6 +702,8 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
               profilePictureUrl: profilePic,
               recipientId: chat.recipient.id,
               isGroup: chat.isGroup,
+              initialLastSeen: chat.recipient.lastSeen,
+              initialLastSeenEnabled: chat.recipient.lastSeenEnabled,
               isReadOnly: true,
               targetUserId: widget.targetUser.id,
             ),

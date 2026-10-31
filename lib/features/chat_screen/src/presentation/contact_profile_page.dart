@@ -484,17 +484,32 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
         ),
         CommonSpaces.h16,
         Text(widget.contactName, style: context.h3),
-        CommonSpaces.h4,
-        Text(
-          isOnline
-              ? 'Online'
-              : (lastSeenStr != null && lastSeenStr.isNotEmpty
-                  ? _formatLastSeen(lastSeenStr)
-                  : 'Offline'),
-          style: context.bodyMedium.copyWith(
-            color: isOnline ? context.colors.primary : context.colors.textHint,
-            fontWeight: FontWeight.bold,
-          ),
+        Builder(
+          builder: (context) {
+            final bool myLastSeen = getIt<StorageService>().getLastSeenEnabled();
+            final bool recipientLastSeen = _recipientUser?.lastSeenEnabled ?? true;
+            final bool canShowLastSeen = myLastSeen && recipientLastSeen;
+            final String? statusText = isOnline
+                ? 'Online'
+                : (canShowLastSeen && lastSeenStr != null && lastSeenStr.isNotEmpty
+                    ? _formatLastSeen(lastSeenStr)
+                    : null);
+
+            if (statusText == null || statusText.isEmpty) {
+              return const SizedBox.shrink();
+            }
+
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                statusText,
+                style: context.bodyMedium.copyWith(
+                  color: isOnline ? context.colors.primary : context.colors.textHint,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            );
+          },
         ),
         CommonSpaces.h24,
         Row(

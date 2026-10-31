@@ -1895,6 +1895,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
                 initialReadReceiptsEnabled: chat.readReceiptsEnabled,
                 initialTypingIndicatorsEnabled: chat.typingIndicatorsEnabled,
                 initialLastSeen: chat.recipient.lastSeen,
+                initialLastSeenEnabled: chat.recipient.lastSeenEnabled,
               ),
             ),
           );

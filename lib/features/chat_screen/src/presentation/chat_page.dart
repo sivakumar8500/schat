@@ -103,6 +103,7 @@ class ChatPage extends StatefulWidget {
   final bool? initialTypingIndicatorsEnabled;
   final bool initialIsLocked;
   final String? initialLastSeen;
+  final bool initialLastSeenEnabled;
 
   const ChatPage({
     super.key,
@@ -128,6 +129,7 @@ class ChatPage extends StatefulWidget {
     this.initialTypingIndicatorsEnabled,
     this.initialIsLocked = false,
     this.initialLastSeen,
+    this.initialLastSeenEnabled = true,
     this.initialTargetMessageId,
     this.initialSearchQuery,
     this.targetUserId,
@@ -312,6 +314,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       initialIsBlockedByOther: widget.isBlockedByOther,
       initialReadReceiptsEnabled: widget.initialReadReceiptsEnabled,
       initialTypingIndicatorsEnabled: widget.initialTypingIndicatorsEnabled,
+      initialLastSeenEnabled: widget.initialLastSeenEnabled,
       initialIsLocked: widget.initialIsLocked,
       isReadOnly: widget.isReadOnly,
     ));
@@ -5968,9 +5971,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
     final isBlocked = state is ChatLoaded && state.isBlocked;
     final isUnaccepted = _isChatUnaccepted;
+    final myLastSeenEnabled = getIt<StorageService>().getLastSeenEnabled();
+    final recipientLastSeenEnabled = (state is ChatLoaded ? state.lastSeenEnabled : widget.initialLastSeenEnabled);
+    final isLastSeenAllowed = myLastSeenEnabled && recipientLastSeenEnabled;
     final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked && !isUnaccepted;
     final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked && !isUnaccepted && _isTypingIndicatorEnabled();
-    final lastSeen = (isBlocked || isUnaccepted) ? null : (state is ChatLoaded ? state.lastSeen : null);
+    final lastSeen = (isBlocked || isUnaccepted || !isLastSeenAllowed) ? null : (state is ChatLoaded ? state.lastSeen : null);
     final effectivePicUrl = isBlocked ? null : (_effectiveProfilePic ?? widget.profilePictureUrl);
     final isGroup = _effectiveIsGroup || widget.isGroup;
     String? fallbackSenderName;
@@ -6128,21 +6134,36 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   if (!isGroup && (isBlocked || isUnaccepted))
                     const SizedBox.shrink()
                   else
-                    Text(
-                      isTyping
-                          ? 'Typing...'
-                          : (isGroup
-                              ? 'Group Chat'
-                              : (isOnline
-                                  ? 'Online'
-                                  : _formatLastSeenStatus(lastSeen))),
-                      style: context.bodyMedium.copyWith(
-                        color: (isTyping || (!isGroup && isOnline))
-                            ? context.colors.success
-                            : context.colors.textHint,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Builder(
+                      builder: (context) {
+                        String subtitleText = '';
+                        if (isTyping) {
+                          subtitleText = 'Typing...';
+                        } else if (isGroup) {
+                          subtitleText = 'Group Chat';
+                        } else if (isOnline) {
+                          subtitleText = 'Online';
+                        } else if (isLastSeenAllowed && lastSeen != null && lastSeen.isNotEmpty) {
+                          subtitleText = _formatLastSeenStatus(lastSeen);
+                        } else {
+                          subtitleText = '';
+                        }
+
+                        if (subtitleText.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Text(
+                          subtitleText,
+                          style: context.bodyMedium.copyWith(
+                            color: (isTyping || (!isGroup && isOnline))
+                                ? context.colors.success
+                                : context.colors.textHint,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),
