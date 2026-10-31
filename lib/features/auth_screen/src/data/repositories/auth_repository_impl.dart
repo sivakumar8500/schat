@@ -5,6 +5,7 @@ import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/core/services/app_cache_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/auth_screen/src/data/models/send_otp_request.dart';
 import 'package:schat/features/auth_screen/src/data/models/verify_otp_request.dart';
@@ -138,10 +139,11 @@ class AuthRepositoryImpl implements AuthRepository {
     }
 
     try {
-      // 4. Wipe encrypted attachments
+      // 4. Wipe encrypted attachments and clear all app cache
       await getIt<SecureAttachmentService>().clearAllEncryptedData();
+      await AppCacheService.clearAllAppCache(wipeExternalResidual: true);
     } catch (e) {
-      debugPrint('AuthRepositoryImpl: Error clearing encrypted data: $e');
+      debugPrint('AuthRepositoryImpl: Error clearing encrypted data and cache: $e');
     }
 
     // 5. Clear stored tokens, preferences, and user details

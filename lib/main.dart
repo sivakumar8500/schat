@@ -32,6 +32,7 @@ import 'package:schat/features/status_screen/src/presentation/bloc/status_bloc.d
 import 'package:schat/features/status_screen/src/presentation/bloc/status_event.dart';
 import 'package:schat/core/services/phone_call_state_service.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
+import 'package:schat/core/services/app_cache_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
@@ -63,6 +64,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // Clear residual cache by default on fresh install / reinstall after uninstall
+    await AppCacheService.checkAndClearCacheOnFreshInstall();
 
     // Initialize Firebase
     await Firebase.initializeApp(

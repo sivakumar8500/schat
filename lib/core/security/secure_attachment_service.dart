@@ -32,6 +32,13 @@ class SecureAttachmentService {
   static final Map<String, String> _mediaKeyToMediaId = {};
   static String? _cachedDocsPath;
 
+  /// Clears in-memory caching maps.
+  static void clearInMemoryCache() {
+    _mediaKeyToLocalPath.clear();
+    _mediaKeyToMediaId.clear();
+    _cachedDocsPath = null;
+  }
+
   /// Cache mapping of a media key/filename to its local file path and optional mediaId.
   static void cacheMediaMapping({required String key, String? localPath, String? mediaId}) {
     if (key.trim().isEmpty) return;
@@ -400,21 +407,15 @@ class SecureAttachmentService {
     }
     Directory? storageDir;
     if (Platform.isAndroid) {
-      final downloadSchat = Directory('/storage/emulated/0/Download/Schat');
       try {
-        if (!await downloadSchat.exists()) {
-          await downloadSchat.create(recursive: true);
+        final appDir = await getApplicationDocumentsDirectory();
+        final schatDir = Directory('${appDir.path}/Schat');
+        if (!await schatDir.exists()) {
+          await schatDir.create(recursive: true);
         }
-        storageDir = downloadSchat;
+        storageDir = schatDir;
       } catch (e) {
-        debugPrint('SecureAttachmentService: Download/Schat storage fallback ($e)');
-        final rootSchat = Directory('/storage/emulated/0/Schat');
-        try {
-          if (!await rootSchat.exists()) {
-            await rootSchat.create(recursive: true);
-          }
-          storageDir = rootSchat;
-        } catch (_) {}
+        debugPrint('SecureAttachmentService: appDir fallback ($e)');
       }
 
       if (storageDir == null) {
@@ -1175,6 +1176,19 @@ class SecureAttachmentService {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
         debugPrint('SecureAttachmentService: Wiped all temporary decrypted attachment files');
+      }
+      if (Platform.isAndroid) {
+        final legacyDownload = Directory('/storage/emulated/0/Download/Schat');
+        if (await legacyDownload.exists()) {
+          final entities = legacyDownload.listSync(recursive: false);
+          for (final entity in entities) {
+            try {
+              if (entity.path.endsWith('.enc') || entity.path.contains('temp')) {
+                entity.deleteSync(recursive: true);
+              }
+            } catch (_) {}
+          }
+        }
       }
     } catch (e) {
       debugPrint('SecureAttachmentService: Error during logout data wipe: $e');

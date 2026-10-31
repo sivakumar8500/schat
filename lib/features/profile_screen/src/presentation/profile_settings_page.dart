@@ -33,6 +33,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_
 import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
 import 'package:schat/core/services/in_app_update_service.dart';
+import 'package:schat/core/services/app_cache_service.dart';
 
 class ProfileSettingsPage extends StatelessWidget {
   final String username;
@@ -84,11 +85,13 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   bool _lastSeenEnabled = true;
   bool _notificationsEnabled = true;
   String _appVersion = "v1.0.0 (6)";
+  String _cacheSizeString = 'Calculating...';
 
   @override
   void initState() {
     super.initState();
     _loadAppVersion();
+    _loadCacheSize();
     _currentUsername = widget.username;
     _currentImageUrl = widget.profilePicUrl;
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
@@ -123,6 +126,23 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _loadCacheSize() async {
+    try {
+      final bytes = await AppCacheService.getCacheSizeBytes();
+      if (mounted) {
+        setState(() {
+          _cacheSizeString = AppCacheService.formatBytes(bytes);
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _cacheSizeString = '0 B';
+        });
+      }
+    }
   }
 
   Future<void> _loadUserTones() async {
@@ -700,6 +720,13 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                                 context,
                                 MaterialPageRoute(builder: (context) => const ChatSocketPage()),
                               ),
+                            ),
+                            _buildSettingRow(
+                              context: context,
+                              icon: Icons.cleaning_services_rounded,
+                              title: 'Clear Cache',
+                              subtitle: _cacheSizeString,
+                              onTap: () => _showClearCacheBottomSheet(context),
                             ),
                           ],
                         ),
@@ -2236,6 +2263,138 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                         ),
                         child: Text(
                           'Start Scan',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showClearCacheBottomSheet(BuildContext context) {
+    final isDark = context.colors.isDark;
+    final primaryColor = const Color(0xFF00873C);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetCtx).size.height * 0.85,
+        ),
+        decoration: BoxDecoration(
+          color: sheetCtx.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: sheetCtx.colors.textHint.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.cleaning_services_rounded,
+                        color: Color(0xFF00873C),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Clear App Cache',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: sheetCtx.colors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Current cache size: $_cacheSizeString\n\nClearing cache will free up storage space by deleting temporary decrypted files, image cache, and network temporary files.\n\nYour chats, messages, account settings, and contacts will remain safe.',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.45,
+                    color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetCtx),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: BorderSide(color: sheetCtx.colors.border.withValues(alpha: 0.4)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: sheetCtx.colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(sheetCtx);
+                          await AppCacheService.clearAllAppCache(wipeExternalResidual: false);
+                          await _loadCacheSize();
+                          if (context.mounted) {
+                            context.showSuccessNotification('Cache cleared successfully');
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: primaryColor,
+                          foregroundColor: isDark ? Colors.black : Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Clear Now',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.black : Colors.white,
