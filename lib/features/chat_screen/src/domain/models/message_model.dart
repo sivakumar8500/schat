@@ -546,8 +546,9 @@ class MessageModel {
     }
     final String? currentUserId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
     final bool rawIsDeleted = (json['isDeleted'] ?? json['is_deleted'] ?? json['isDeletedForEveryone']) as bool? ?? false;
-    final bool isDeletedForMeOnly = currentUserId != null && deletedForList.contains(currentUserId) && !rawIsDeleted;
-    final bool resolvedIsDeleted = rawIsDeleted || (currentUserId != null && deletedForList.contains(currentUserId));
+    final bool rawIsDeletedForMe = (json['isDeletedForMe'] ?? json['is_deleted_for_me']) as bool? ?? false;
+    final bool isDeletedForMeOnly = rawIsDeletedForMe || (currentUserId != null && deletedForList.contains(currentUserId) && !rawIsDeleted);
+    final bool resolvedIsDeleted = rawIsDeleted || (currentUserId != null && deletedForList.contains(currentUserId)) || rawIsDeletedForMe;
 
     // Extract location data if present
     double? latitude;
@@ -851,7 +852,12 @@ class MessageModel {
     'messageType': messageType,
     'type': (mediaType != null && mediaType!.isNotEmpty && mediaType != 'text') ? mediaType : (messageType != 'text' ? messageType : 'text'),
     'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'isDeletedForEveryone': isDeleted,
     'isDeletedForMe': isDeletedForMe,
+    'is_deleted_for_me': isDeletedForMe,
+    'deletedFor': isDeletedForMe ? (senderId.isNotEmpty ? [senderId] : ['me']) : <String>[],
+    'deleted_for': isDeletedForMe ? (senderId.isNotEmpty ? [senderId] : ['me']) : <String>[],
     'isRead': isRead,
     'isDelivered': isDelivered,
     'status': isRead ? 'read' : (isDelivered ? 'delivered' : 'sent'),

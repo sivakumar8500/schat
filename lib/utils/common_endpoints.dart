@@ -91,6 +91,8 @@ class CommonEndpoints {
   static String getPinnedMessages(String conversationId) => '/messages/$conversationId/pinned';
   static String editMessage(String messageId) => '/messages/$messageId';
   static String deleteMessage(String messageId) => '/messages/$messageId';
+  static String deleteMessageWithType(String messageId, String deleteType) => '/messages/$messageId?delete_type=$deleteType';
+  static const String deleteMessagesBatch = '/messages/delete-batch';
   static String updateMessageSecurity(String messageId) => '/messages/$messageId';
   static String getMessageShares(String messageId) => '/messages/$messageId/shares';
   static String reactToMessage(String messageId) => '/messages/$messageId/reactions';

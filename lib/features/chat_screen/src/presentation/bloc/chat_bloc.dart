@@ -449,6 +449,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (_isSameConversation(convId, _conversationId) && msgId != null) {
             add(ReceiveDeleteMessageEvent(messageId: msgId, conversationId: convId!));
           }
+        } else if (type == 'message_deleted_for_me') {
+          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+            add(DeleteMessagesEvent(messageIds: [msgId], conversationId: convId!, deleteType: 'me'));
+          }
         } else if (type == 'message_edited' || type == 'edit_message') {
           final message = cleanData['message'];
           String? convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
@@ -1084,6 +1090,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final keepDelivered = keepRead || m.isDelivered || cached.isDelivered || m.status == 'delivered' || cached.status == 'delivered';
             final mergedReadBy = <String>{...m.readBy, ...cached.readBy}.toList();
             final mergedDeliveredTo = <String>{...m.deliveredTo, ...cached.deliveredTo}.toList();
+            final isDeleted = m.isDeleted || cached.isDeleted;
+            final isDeletedForMe = m.isDeletedForMe || cached.isDeletedForMe;
             
             bool allowView = m.allowView;
             bool allowShare = m.allowShare;
@@ -1123,11 +1131,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
             m = m.copyWith(
               userView: isMine ? 'send' : m.userView,
+              isDeleted: isDeleted,
+              isDeletedForMe: isDeletedForMe,
               isRead: keepRead,
               isDelivered: keepDelivered,
               readBy: mergedReadBy,
               deliveredTo: mergedDeliveredTo,
-              content: effectiveContent,
+              content: isDeleted ? 'This message was deleted' : effectiveContent,
               mediaUrl: effectiveMediaUrl,
               allowShare: allowShare,
               allowDownload: allowDownload,
@@ -2202,19 +2212,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         return msg;
       }).toList();
 
+      // 1. Emit real-time WebSocket deletes for immediate event propagation
       for (var id in event.messageIds) {
         _socketRepository.deleteMessage(
           conversationId: event.conversationId,
           messageId: id,
           deleteType: event.deleteType,
         );
-        if (event.deleteType == 'everyone') {
-          _chatRepository.deleteMessageForEveryone(id).catchError((e) {
-            debugPrint('Fallback delete API error: $e');
-            return false;
-          });
-        }
       }
+
+      // 2. Persist deletion in PostgreSQL via REST API (handles both batch and fallback)
+      _chatRepository.deleteMessages(
+        messageIds: event.messageIds,
+        conversationId: event.conversationId,
+        deleteType: event.deleteType,
+      ).catchError((e) {
+        debugPrint('Fallback delete API error: $e');
+        return false;
+      });
+
+      // 3. Mark in persistent local Hive cache immediately
+      ChatMessageCacheHelper.markMessagesDeleted(
+        event.conversationId,
+        event.messageIds,
+        deleteType: event.deleteType,
+      );
 
       final updatedPinned = currentState.pinnedMessages
           .where((m) => !event.messageIds.contains(m.id))

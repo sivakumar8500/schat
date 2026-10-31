@@ -1504,23 +1504,68 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<bool> deleteMessageForEveryone(String messageId) async {
+    return deleteMessage(messageId, deleteType: 'everyone');
+  }
+
+  @override
+  Future<bool> deleteMessage(String messageId, {required String deleteType, String? conversationId}) async {
     try {
+      final endpoint = CommonEndpoints.deleteMessageWithType(messageId, deleteType);
       final result = await _apiService.delete(
-        CommonEndpoints.deleteMessage(messageId),
+        endpoint,
         mapper: (data) => data,
       );
       final isSuccess = result.when(
         success: (_) => true,
         failure: (error, _) {
-          debugPrint('deleteMessageForEveryone API error: $error');
+          debugPrint('deleteMessage API error ($deleteType): $error');
           return false;
         },
       );
       return isSuccess;
     } catch (e) {
-      debugPrint('deleteMessageForEveryone exception: $e');
+      debugPrint('deleteMessage exception: $e');
       return false;
     }
+  }
+
+  @override
+  Future<bool> deleteMessages({
+    required List<String> messageIds,
+    required String conversationId,
+    required String deleteType,
+  }) async {
+    if (messageIds.isEmpty) return true;
+    try {
+      final result = await _apiService.post<Map<String, dynamic>>(
+        CommonEndpoints.deleteMessagesBatch,
+        data: {
+          'message_ids': messageIds,
+          'conversation_id': conversationId,
+          'delete_type': deleteType,
+        },
+        mapper: (data) => Map<String, dynamic>.from(data as Map),
+      );
+
+      final success = result.when(
+        success: (_) => true,
+        failure: (error, _) {
+          debugPrint('deleteMessagesBatch failed: $error, falling back to individual deletes');
+          return false;
+        },
+      );
+
+      if (success) return true;
+    } catch (e) {
+      debugPrint('deleteMessagesBatch exception: $e');
+    }
+
+    bool allSuccess = true;
+    for (final id in messageIds) {
+      final ok = await deleteMessage(id, deleteType: deleteType, conversationId: conversationId);
+      if (!ok) allSuccess = false;
+    }
+    return allSuccess;
   }
 
   @override

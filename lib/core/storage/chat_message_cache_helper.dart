@@ -383,6 +383,59 @@ class ChatMessageCacheHelper {
     }
   }
 
+  /// Updates cache for multiple deleted messages (either for everyone or for me).
+  static Future<void> markMessagesDeleted(
+    String conversationId,
+    List<String> messageIds, {
+    required String deleteType,
+  }) async {
+    if (conversationId.isEmpty || messageIds.isEmpty) return;
+    try {
+      final box = await Hive.openBox(boxName);
+      dynamic rawList = box.get(conversationId);
+      if (rawList == null) {
+        final cleanKey = normalizeConversationId(conversationId);
+        rawList = box.get(cleanKey);
+      }
+      if (rawList is List && rawList.isNotEmpty) {
+        final List<dynamic> list = List<dynamic>.from(rawList);
+        final idSet = messageIds.toSet();
+        for (int i = 0; i < list.length; i++) {
+          final item = list[i];
+          if (item is Map) {
+            final id = (item['id'] ?? item['_id'])?.toString();
+            if (id != null && idSet.contains(id)) {
+              final map = Map<String, dynamic>.from(item);
+              if (deleteType == 'me') {
+                map['isDeletedForMe'] = true;
+                map['is_deleted_for_me'] = true;
+              } else {
+                map['isDeleted'] = true;
+                map['is_deleted'] = true;
+                map['isDeletedForEveryone'] = true;
+                if (map['content'] is Map) {
+                  final cMap = Map<String, dynamic>.from(map['content'] as Map);
+                  cMap['text'] = 'This message was deleted';
+                  map['content'] = cMap;
+                } else {
+                  map['content'] = {'text': 'This message was deleted'};
+                }
+              }
+              list[i] = map;
+            }
+          }
+        }
+        await box.put(conversationId, list);
+        final cleanKey = normalizeConversationId(conversationId);
+        if (cleanKey != conversationId) {
+          await box.put(cleanKey, list);
+        }
+      }
+    } catch (e) {
+      debugPrint('ChatMessageCacheHelper: Error marking messages deleted: $e');
+    }
+  }
+
   /// Marks a message as deleted or removes it in cache.
   static Future<void> markMessageDeleted(String conversationId, String messageId) async {
     if (conversationId.isEmpty || messageId.isEmpty) return;

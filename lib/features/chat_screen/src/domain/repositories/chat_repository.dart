@@ -65,6 +65,16 @@ abstract class ChatRepository {
   /// DELETE /messages/{messageId} to delete a message for everyone via REST API.
   Future<bool> deleteMessageForEveryone(String messageId);
 
+  /// Delete a single message for everyone or for the calling user only via REST API.
+  Future<bool> deleteMessage(String messageId, {required String deleteType, String? conversationId});
+
+  /// Delete multiple messages in batch via REST API.
+  Future<bool> deleteMessages({
+    required List<String> messageIds,
+    required String conversationId,
+    required String deleteType,
+  });
+
   /// Fetches the list of available conversation theme colors.
   Future<List<ThemeColorModel>> getThemes();
 
