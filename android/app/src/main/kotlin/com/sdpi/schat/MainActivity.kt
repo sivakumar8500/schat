@@ -27,6 +27,8 @@ import java.util.Locale
 import android.app.Activity
 import android.media.projection.MediaProjectionManager
 import android.util.DisplayMetrics
+import android.content.ContentValues
+import android.webkit.MimeTypeMap
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sdpi.schat/screenshot_detector"
@@ -252,6 +254,17 @@ class MainActivity : FlutterActivity() {
                         result.success(savedPath)
                     } else {
                         result.error("INVALID_ARGS", "bytes cannot be null", null)
+                    }
+                }
+                "saveFileToDownloads" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    val fileName = call.argument<String>("fileName")
+                    val mimeType = call.argument<String>("mimeType")
+                    if (bytes != null && fileName != null) {
+                        val savedPath = saveFileToPublicDownloads(bytes, fileName, mimeType)
+                        result.success(savedPath)
+                    } else {
+                        result.error("INVALID_ARGS", "bytes and fileName cannot be null", null)
                     }
                 }
                 "startInAppRecording" -> {
@@ -1107,6 +1120,80 @@ class MainActivity : FlutterActivity() {
             e.printStackTrace()
         }
         return null
+    }
+
+    private fun saveFileToPublicDownloads(bytes: ByteArray, requestedFileName: String, mimeType: String?): String? {
+        try {
+            var fileName = requestedFileName
+            while (fileName.lowercase().endsWith(".enc")) {
+                fileName = fileName.substring(0, fileName.length - 4)
+            }
+            if (fileName.isEmpty()) fileName = "downloaded_file"
+
+            var resolvedMime = mimeType
+            if (resolvedMime == null || resolvedMime.isEmpty() || resolvedMime == "*/*") {
+                val ext = fileName.substringAfterLast('.', "").lowercase()
+                resolvedMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+            }
+
+            var savedPath: String? = null
+
+            // 1. Android 10+ (API 29+): MediaStore insert into Download/Schat
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                        put(MediaStore.Downloads.MIME_TYPE, resolvedMime)
+                        put(MediaStore.Downloads.RELATIVE_PATH, "Download/Schat")
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+
+                    val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    if (uri != null) {
+                        contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            outputStream.write(bytes)
+                            outputStream.flush()
+                        }
+                        contentValues.clear()
+                        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                        contentResolver.update(uri, contentValues, null, null)
+                        savedPath = "/storage/emulated/0/Download/Schat/$fileName"
+                        android.util.Log.d("DownloadHelper", "Saved to MediaStore.Downloads: $savedPath")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("DownloadHelper", "MediaStore.Downloads failed: ${e.message}")
+                }
+            }
+
+            // 2. Direct filesystem write to /storage/emulated/0/Download/Schat
+            try {
+                val downloadFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Schat")
+                if (!downloadFolder.exists()) {
+                    downloadFolder.mkdirs()
+                }
+                val destFile = File(downloadFolder, fileName)
+                destFile.outputStream().use { fos ->
+                    fos.write(bytes)
+                    fos.flush()
+                }
+                savedPath = destFile.absolutePath
+                MediaScannerConnection.scanFile(
+                    applicationContext,
+                    arrayOf(destFile.absolutePath),
+                    arrayOf(resolvedMime),
+                    null
+                )
+                android.util.Log.d("DownloadHelper", "Direct file saved and scanned: ${destFile.absolutePath}")
+            } catch (e: Exception) {
+                android.util.Log.e("DownloadHelper", "Direct file write error: ${e.message}")
+            }
+
+            return savedPath ?: "/storage/emulated/0/Download/Schat/$fileName"
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.util.Log.e("DownloadHelper", "Error in saveFileToPublicDownloads: ${e.message}")
+            return null
+        }
     }
 
     override fun onDestroy() {

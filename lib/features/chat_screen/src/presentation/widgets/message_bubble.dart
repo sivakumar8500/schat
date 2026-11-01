@@ -206,7 +206,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get isPinned => widget.isPinned;
   bool get isSelected => widget.isSelected;
   bool get isHighlighted => widget.isHighlighted;
-  bool get isUploading => widget.isUploading || (isMe && messageId.startsWith('temp_') && !isFailed);
+  bool get isUploading => widget.isUploading;
   bool get isFailed => widget.isFailed;
   VoidCallback? get onResendPressed => widget.onResendPressed;
   bool get isGroup => widget.isGroup;
@@ -3096,23 +3096,30 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
 
     // 2. If null or dead, check if message is a JSON string containing fileKey / url
-    String? mediaIdToUse = messageId;
-    if (path == null || path.isEmpty) {
-      if (message.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(message);
-          if (decoded is Map) {
-            final key = (decoded['fileKey'] ?? decoded['file_key'] ?? decoded['url'] ?? decoded['mediaUrl'] ?? decoded['media_url'])?.toString();
-            if (key != null && key.isNotEmpty && !key.startsWith('/')) {
-              path = key;
-            }
-            final mId = (decoded['mediaId'] ?? decoded['media_id'])?.toString();
-            if (mId != null && mId.isNotEmpty) {
-              mediaIdToUse = mId;
-            }
+    String? mediaIdToUse;
+    if (message.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(message);
+        if (decoded is Map) {
+          final key = (decoded['fileKey'] ?? decoded['file_key'] ?? decoded['url'] ?? decoded['mediaUrl'] ?? decoded['media_url'])?.toString();
+          if ((path == null || path.isEmpty) && key != null && key.isNotEmpty && !key.startsWith('/')) {
+            path = key;
           }
-        } catch (_) {}
-      }
+          final mId = (decoded['mediaId'] ?? decoded['media_id'])?.toString();
+          if (mId != null && mId.isNotEmpty) {
+            mediaIdToUse = mId;
+          }
+        }
+      } catch (_) {}
+    }
+
+    mediaIdToUse ??= SecureAttachmentService.findMediaId(path) ??
+        SecureAttachmentService.findMediaId(attachmentPath) ??
+        SecureAttachmentService.findMediaId(attachmentName) ??
+        SecureAttachmentService.findMediaId(messageId);
+
+    if (mediaIdToUse == null && RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(messageId)) {
+      mediaIdToUse = messageId;
     }
 
     // 3. If null, check message text fallback
@@ -3295,6 +3302,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (!context.mounted) return;
 
     if (downloadSucceeded) {
+      context.showSuccessNotification('Saved to Downloads/Schat');
       _openInAppViewer(context);
     }
 
@@ -3862,7 +3870,7 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       }
 
       final bool isPlayLocal = !kIsWeb && File(playUrl).existsSync();
-      if (isPlayLocal && (playUrl.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')))) {
+      if (isPlayLocal && (playUrl.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')) || SecureAttachmentService.isFileEncryptedSync(playUrl))) {
         try {
           var cleanName = playUrl.split('/').last;
           while (cleanName.toLowerCase().endsWith('.enc')) {
@@ -3877,6 +3885,13 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
           playUrl = decFile.path;
         } catch (e) {
           debugPrint('Error decrypting video preview: $e');
+        }
+      }
+
+      if (!File(playUrl).existsSync() && !playUrl.startsWith('http://') && !playUrl.startsWith('https://')) {
+        final resolved = _resolveUrl(playUrl);
+        if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+          playUrl = resolved;
         }
       }
 
@@ -3897,9 +3912,15 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       }
     } catch (e) {
       debugPrint('Error initializing video preview: $e, attempting refresh...');
-      if (widget.messageId.isNotEmpty) {
+      final candidateMediaId = SecureAttachmentService.findMediaId(widget.url) ??
+          SecureAttachmentService.findMediaId(widget.messageId);
+      final effectiveMediaId = (candidateMediaId != null && candidateMediaId.isNotEmpty)
+          ? candidateMediaId
+          : (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(widget.messageId) ? widget.messageId : null);
+
+      if (effectiveMediaId != null && effectiveMediaId.isNotEmpty) {
         try {
-          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(widget.messageId);
+          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(effectiveMediaId);
           if (freshUrl != null && freshUrl.isNotEmpty && freshUrl != widget.url) {
             final resolvedFresh = _resolveUrl(freshUrl);
             final freshController = VideoPlayerController.networkUrl(Uri.parse(resolvedFresh));

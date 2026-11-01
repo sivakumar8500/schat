@@ -238,8 +238,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   String? _selectedAttachmentType; // 'image', 'video', 'audio', 'file', 'location', 'contact'
   Uint8List? _selectedAttachmentBytes;
   int _selectedAttachmentSize = 0;
-  bool _attachmentAllowShare = true;
-  bool _attachmentAllowDownload = true;
+  bool _attachmentAllowShare = false;
+  bool _attachmentAllowDownload = false;
   bool _attachmentAllowView = true;
   bool _attachmentIsViewOnce = false;
   int _attachmentViewCount = 1;
@@ -290,6 +290,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     _effectiveContactName = widget.contactName;
     _effectiveProfilePic = widget.profilePictureUrl;
     _effectiveIsGroup = widget.isGroup;
+    _attachmentAllowShare = widget.isGroup;
+    _attachmentAllowDownload = widget.isGroup;
+    _attachmentAllowView = true;
     _resolveConversationDetails();
 
     debugPrint('DEBUG: ChatPage Initializing for conv: ${widget.conversationId}, recipient: ${widget.recipientId}, initialOnline: ${widget.isOnline}');
@@ -2415,11 +2418,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(
-                                    (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : msg.isRead)
+                                    (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : (_isReadReceiptsEnabled() ? msg.isRead : false))
                                         ? Icons.done_all_rounded
                                         : (isDelivered ? Icons.done_all_rounded : Icons.done_rounded),
                                     size: 14,
-                                    color: (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : msg.isRead)
+                                    color: (widget.isGroup ? (readParticipants.length == totalCount && totalCount > 0) : (_isReadReceiptsEnabled() ? msg.isRead : false))
                                         ? skyBlue
                                         : (isDelivered ? emeraldGreen : context.colors.textSecondary),
                                   ),
@@ -2465,14 +2468,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                         Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                            color: (widget.isGroup ? readParticipants.isNotEmpty : (_isReadReceiptsEnabled() ? msg.isRead : false))
                                                 ? skyBlue.withValues(alpha: 0.15)
                                                 : context.colors.textHint.withValues(alpha: 0.1),
                                             shape: BoxShape.circle,
                                           ),
                                           child: Icon(
                                             Icons.done_all_rounded,
-                                            color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                            color: (widget.isGroup ? readParticipants.isNotEmpty : (_isReadReceiptsEnabled() ? msg.isRead : false))
                                                 ? skyBlue
                                                 : context.colors.textHint,
                                             size: 18,
@@ -2488,7 +2491,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                                 style: context.titleSmall.copyWith(
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 15,
-                                                  color: (widget.isGroup ? readParticipants.isNotEmpty : msg.isRead)
+                                                  color: (widget.isGroup ? readParticipants.isNotEmpty : (_isReadReceiptsEnabled() ? msg.isRead : false))
                                                       ? skyBlue
                                                       : context.colors.textPrimary,
                                                 ),
@@ -3693,8 +3696,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _recordedPath = null;
       _recordedName = null;
       _recordedDurationSecs = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = widget.isGroup;
+      _attachmentAllowDownload = widget.isGroup;
       _attachmentAllowView = true;
     });
 
@@ -4229,8 +4232,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _selectedAttachmentName = null;
       _selectedAttachmentType = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = widget.isGroup;
+      _attachmentAllowDownload = widget.isGroup;
       _attachmentAllowView = true;
       _attachmentIsViewOnce = false;
       _attachmentViewCount = 1;
@@ -4382,6 +4385,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     } catch (_) {}
 
+    if (sendPath != null && sendPath.isNotEmpty && !sendPath.startsWith('http')) {
+      SecureAttachmentService.cacheMediaMapping(key: sendPath, localPath: sendPath);
+      SecureAttachmentService.cacheMediaMapping(key: sendName, localPath: sendPath);
+      SecureAttachmentService.cacheMediaMapping(key: tempId, localPath: sendPath);
+    }
+
     // 1. Send optimistic message event immediately to ChatBloc (shows loader)
     _chatBloc.add(SendMessageEvent(
       conversationId: widget.conversationId,
@@ -4416,6 +4425,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       text: previewLabel,
       type: sendType,
     );
+
+    if (!mounted) return;
 
     // 2. Perform the upload and socket broadcast in the background
     _performBackgroundUploadAndSend(
@@ -4477,31 +4488,64 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     }
 
+    final bool isAlreadyRemote = uploadPath != null &&
+        (uploadPath.startsWith('http://') ||
+            uploadPath.startsWith('https://') ||
+            uploadPath.startsWith('chat-media/') ||
+            uploadPath.startsWith('conversations/') ||
+            uploadPath.startsWith('documents/') ||
+            uploadPath.startsWith('voice-notes/') ||
+            uploadPath.startsWith('status-media/'));
+
     String? fileKey;
-    try {
-      final repo = getIt<ChatRepository>();
-      fileKey = await repo.uploadMedia(
-        conversationId: widget.conversationId,
-        recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
-        filePath: uploadPath ?? '',
-        fileName: uploadName,
-        mediaType: _getMediaType(uploadType),
-        mimeType: _getMimeType(uploadName, uploadType),
-        fileSizeBytes: uploadSize,
-        fileBytes: uploadBytes,
-        allowView: allowView,
-        allowDownload: allowDownload,
-        allowShare: allowShare,
-      );
-    } catch (e) {
-      debugPrint('Background upload error: $e');
-      if (context.mounted) {
-        _chatBloc.add(MarkMessageFailedEvent(
-          messageId: tempId,
-          conversationId: widget.conversationId,
-        ));
+    if (isAlreadyRemote) {
+      fileKey = uploadPath;
+      debugPrint('ChatPage._performBackgroundUploadAndSend: File is already uploaded, reusing remote key -> $fileKey');
+    } else {
+      if (uploadPath != null && uploadPath.isNotEmpty && !File(uploadPath).existsSync()) {
+        final recovered = SecureAttachmentService.findCachedLocalPath(uploadPath) ??
+            SecureAttachmentService.findLocalFile(pathOrKey: uploadPath, fileName: uploadName);
+        if (recovered != null && File(recovered).existsSync()) {
+          uploadPath = recovered;
+        }
       }
-      return;
+      if ((uploadPath == null || uploadPath.isEmpty || !File(uploadPath).existsSync()) &&
+          uploadBytes != null &&
+          uploadBytes.isNotEmpty &&
+          !kIsWeb) {
+        try {
+          uploadPath = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+            originalPath: uploadPath ?? '',
+            fileName: uploadName,
+            bytes: uploadBytes,
+          );
+        } catch (_) {}
+      }
+      try {
+        final repo = getIt<ChatRepository>();
+        fileKey = await repo.uploadMedia(
+          conversationId: widget.conversationId,
+          recipientId: _effectiveRecipientId.isNotEmpty ? _effectiveRecipientId : widget.recipientId,
+          filePath: uploadPath ?? '',
+          fileName: uploadName,
+          mediaType: _getMediaType(uploadType),
+          mimeType: _getMimeType(uploadName, uploadType),
+          fileSizeBytes: uploadSize,
+          fileBytes: uploadBytes,
+          allowView: allowView,
+          allowDownload: allowDownload,
+          allowShare: allowShare,
+        );
+      } catch (e) {
+        debugPrint('Background upload error: $e');
+        if (context.mounted) {
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        }
+        return;
+      }
     }
 
     if (fileKey != null && context.mounted) {
@@ -4520,6 +4564,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         storage.saveSenderMediaPermissions(fileKey, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
         storage.saveSenderMediaPermissions(uploadName, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
       } catch (_) {}
+
+      if (uploadPath != null && uploadPath.isNotEmpty && !uploadPath.startsWith('http')) {
+        SecureAttachmentService.cacheMediaMapping(key: fileKey, localPath: uploadPath);
+        SecureAttachmentService.cacheMediaMapping(key: uploadName, localPath: uploadPath);
+        SecureAttachmentService.cacheMediaMapping(key: tempId, localPath: uploadPath);
+      }
 
       final MessageModel mediaMsg = MessageModel(
         id: tempId,
@@ -4745,12 +4795,30 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           }
         });
       } else {
+        String? resolvedPath = msg.mediaUrl;
+        final bool isAlreadyRemote = resolvedPath != null &&
+            (resolvedPath.startsWith('http://') ||
+                resolvedPath.startsWith('https://') ||
+                resolvedPath.startsWith('chat-media/') ||
+                resolvedPath.startsWith('conversations/') ||
+                resolvedPath.startsWith('documents/') ||
+                resolvedPath.startsWith('voice-notes/') ||
+                resolvedPath.startsWith('status-media/'));
+
+        if (!isAlreadyRemote && (resolvedPath == null || !File(resolvedPath).existsSync())) {
+          resolvedPath = SecureAttachmentService.findCachedLocalPath(msg.mediaUrl) ??
+              SecureAttachmentService.findCachedLocalPath(msg.attachmentName) ??
+              SecureAttachmentService.findCachedLocalPath(msg.id) ??
+              SecureAttachmentService.findLocalFile(pathOrKey: msg.mediaUrl, fileName: msg.attachmentName) ??
+              resolvedPath;
+        }
+
         _performBackgroundUploadAndSend(
           context: context,
           type: msg.mediaType!,
           name: msg.attachmentName ?? 'File',
           bytes: msg.attachmentBytes,
-          path: msg.mediaUrl,
+          path: resolvedPath,
           size: msg.fileSize ?? 0,
           caption: msg.content,
           allowShare: msg.allowShare,
@@ -4853,8 +4921,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                     _selectedAttachmentName = null;
                     _selectedAttachmentType = null;
                     _selectedAttachmentSize = 0;
-                    _attachmentAllowShare = true;
-                    _attachmentAllowDownload = true;
+                    _attachmentAllowShare = widget.isGroup;
+                    _attachmentAllowDownload = widget.isGroup;
                     _attachmentAllowView = true;
                     _isTyping = _messageController.text.trim().isNotEmpty;
                   });
@@ -7715,6 +7783,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         return 'application/zip';
       case 'xml':
         return 'application/xml';
+      case 'md':
+        return 'text/markdown';
+      case 'rtf':
+        return 'application/rtf';
+      case 'html':
+      case 'htm':
+        return 'text/html';
       default:
         return 'application/octet-stream';
     }
@@ -7813,8 +7888,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       _selectedAttachmentType = 'contact';
       _selectedAttachmentBytes = null;
       _selectedAttachmentSize = 0;
-      _attachmentAllowShare = true;
-      _attachmentAllowDownload = true;
+      _attachmentAllowShare = widget.isGroup;
+      _attachmentAllowDownload = widget.isGroup;
       _attachmentAllowView = true;
       _isTyping = true;
     });
@@ -7885,6 +7960,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 type: fileType,
                 size: size,
                 contactName: widget.contactName,
+                isGroup: widget.isGroup,
+                initialAllowDownload: widget.isGroup ? true : false,
+                initialAllowShare: widget.isGroup ? true : false,
               ),
             ),
           );
@@ -7899,8 +7977,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               _selectedAttachmentName = (result['name'] as String?) ?? name;
               _selectedAttachmentType = (result['type'] as String?) ?? fileType;
               _selectedAttachmentSize = sendBytes.length;
-              _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+              _attachmentAllowShare = (result['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+              _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
               _attachmentAllowView = (result['allowView'] as bool?) ?? true;
               _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
               _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -7943,14 +8021,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 size: previewItems.first.size,
                 contactName: widget.contactName,
                 extraItems: previewItems,
+                isGroup: widget.isGroup,
+                initialAllowDownload: widget.isGroup ? true : false,
+                initialAllowShare: widget.isGroup ? true : false,
               ),
             ),
           );
 
           if (result != null && result['send'] == true && mounted) {
             final caption = (result['caption'] as String?) ?? '';
-            final allowShare = (result['allowShare'] as bool?) ?? true;
-            final allowDownload = (result['allowDownload'] as bool?) ?? true;
+            final allowShare = (result['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+            final allowDownload = (result['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
             final allowView = (result['allowView'] as bool?) ?? true;
             final isViewOnce = (result['isViewOnce'] as bool?) ?? false;
             final maxViews = (result['maxViews'] as int?) ?? 1;
@@ -8038,6 +8119,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               type: 'image',
               size: size,
               contactName: widget.contactName,
+              isGroup: widget.isGroup,
+              initialAllowDownload: widget.isGroup ? true : false,
+              initialAllowShare: widget.isGroup ? true : false,
             ),
           ),
         );
@@ -8052,8 +8136,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             _selectedAttachmentName = (result['name'] as String?) ?? name;
             _selectedAttachmentType = (result['type'] as String?) ?? 'image';
             _selectedAttachmentSize = sendBytes.length;
-            _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+            _attachmentAllowShare = (result['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+            _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
             _attachmentAllowView = (result['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -8113,6 +8197,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             type: isVideo ? 'video' : 'image',
             size: size,
             contactName: widget.contactName,
+            isGroup: widget.isGroup,
+            initialAllowDownload: widget.isGroup ? true : false,
+            initialAllowShare: widget.isGroup ? true : false,
           ),
         ),
       );
@@ -8129,8 +8216,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           _selectedAttachmentName = sendName;
           _selectedAttachmentType = sendType;
           _selectedAttachmentSize = sendBytes.length;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -8186,6 +8273,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             type: 'video',
             size: size,
             contactName: widget.contactName,
+            isGroup: widget.isGroup,
+            initialAllowDownload: widget.isGroup ? true : false,
+            initialAllowShare: widget.isGroup ? true : false,
           ),
         ),
       );
@@ -8202,8 +8292,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           _selectedAttachmentName = sendName;
           _selectedAttachmentType = sendType;
           _selectedAttachmentSize = sendBytes.length;
-          _attachmentAllowShare = (result['allowShare'] as bool?) ?? true;
-          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? true;
+          _attachmentAllowShare = (result['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+          _attachmentAllowDownload = (result['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
           _attachmentAllowView = (result['allowView'] as bool?) ?? true;
           _attachmentIsViewOnce = (result['isViewOnce'] as bool?) ?? false;
           _attachmentViewCount = (result['maxViews'] as int?) ?? 1;
@@ -8315,11 +8405,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             fileType = 'video';
           } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext)) {
             fileType = 'audio';
-          } else if (ext == 'pdf') {
-            fileType = 'pdf';
-          } else if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(ext)) {
+          } else {
             fileType = 'file';
           }
+        }
+
+        String? localPath = file.path;
+        if (!kIsWeb) {
+          try {
+            localPath = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+              originalPath: file.path ?? '',
+              fileName: file.name,
+              bytes: file.bytes,
+            );
+          } catch (_) {}
         }
 
         if (!mounted) return;
@@ -8327,12 +8426,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           context,
           MaterialPageRoute(
             builder: (context) => AttachmentPreviewPage(
-              path: file.path,
+              path: localPath ?? file.path,
               bytes: file.bytes,
               name: file.name,
               type: fileType,
               size: file.size,
               contactName: widget.contactName,
+              isGroup: widget.isGroup,
+              initialAllowDownload: widget.isGroup ? true : false,
+              initialAllowShare: widget.isGroup ? true : false,
             ),
           ),
         );
@@ -8349,8 +8451,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             _selectedAttachmentName = sendName;
             _selectedAttachmentType = sendType;
             _selectedAttachmentSize = sendBytes?.length ?? (sendPath != null && File(sendPath).existsSync() ? File(sendPath).lengthSync() : file.size);
-            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? true;
-            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? true;
+            _attachmentAllowShare = (previewResult['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+            _attachmentAllowDownload = (previewResult['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
             _attachmentAllowView = (previewResult['allowView'] as bool?) ?? true;
             _attachmentIsViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
             _attachmentViewCount = (previewResult['maxViews'] as int?) ?? 1;
@@ -8405,15 +8507,24 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               fileType = 'video';
             } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext)) {
               fileType = 'audio';
-            } else if (ext == 'pdf') {
-              fileType = 'pdf';
-            } else if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(ext)) {
+            } else {
               fileType = 'file';
             }
           }
 
+          String? itemLocalPath = file.path;
+          if (!kIsWeb) {
+            try {
+              itemLocalPath = await getIt<SecureAttachmentService>().saveToPersistentStorage(
+                originalPath: file.path ?? '',
+                fileName: file.name,
+                bytes: file.bytes,
+              );
+            } catch (_) {}
+          }
+
           previewItems.add(AttachmentPreviewItem(
-            path: file.path,
+            path: itemLocalPath ?? file.path,
             bytes: file.bytes,
             name: file.name,
             type: fileType,
@@ -8433,14 +8544,17 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               size: previewItems.first.size,
               contactName: widget.contactName,
               extraItems: previewItems,
+              isGroup: widget.isGroup,
+              initialAllowDownload: widget.isGroup ? true : false,
+              initialAllowShare: widget.isGroup ? true : false,
             ),
           ),
         );
 
         if (previewResult != null && previewResult['send'] == true && mounted) {
           final caption = (previewResult['caption'] as String?) ?? '';
-          final allowShare = (previewResult['allowShare'] as bool?) ?? true;
-          final allowDownload = (previewResult['allowDownload'] as bool?) ?? true;
+          final allowShare = (previewResult['allowShare'] as bool?) ?? (widget.isGroup ? true : false);
+          final allowDownload = (previewResult['allowDownload'] as bool?) ?? (widget.isGroup ? true : false);
           final allowView = (previewResult['allowView'] as bool?) ?? true;
           final isViewOnce = (previewResult['isViewOnce'] as bool?) ?? false;
           final maxViews = (previewResult['maxViews'] as int?) ?? 1;
@@ -8545,8 +8659,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             _selectedAttachmentType = 'location';
             _selectedAttachmentBytes = null;
             _selectedAttachmentSize = 0;
-            _attachmentAllowShare = true;
-            _attachmentAllowDownload = true;
+            _attachmentAllowShare = widget.isGroup;
+            _attachmentAllowDownload = widget.isGroup;
             _attachmentAllowView = true;
           });
           if (mounted) _uploadAndSendAttachment(context);
@@ -8946,8 +9060,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             mediaId: resolvedMediaId,
             granteeId: targetRecipient,
             canView: true,
-            canDownload: true,
-            canShare: true,
+            canDownload: widget.isGroup ? true : false,
+            canShare: widget.isGroup ? true : false,
           );
         } catch (_) {}
       }
@@ -8982,8 +9096,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         "security": {
           "isLocked": false,
           "accessUsers": [],
-          "allowDownload": true,
-          "allowShare": true,
+          "allowDownload": widget.isGroup ? true : false,
+          "allowShare": widget.isGroup ? true : false,
           "allowView": true
         },
         "viewControl": {
@@ -8992,8 +9106,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           "viewedBy": [],
           "isOpened": false,
           "openedAt": null,
-          "allowDownload": true,
-          "allowShare": true,
+          "allowDownload": widget.isGroup ? true : false,
+          "allowShare": widget.isGroup ? true : false,
           "allowView": true
         },
         "expiry": {

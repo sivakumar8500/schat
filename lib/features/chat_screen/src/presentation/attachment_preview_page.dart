@@ -42,6 +42,7 @@ class AttachmentPreviewPage extends StatefulWidget {
   final String type; // 'image', 'video', 'document', 'audio', 'file', 'location'
   final int size;
   final String contactName;
+  final bool isGroup;
   final bool initialAllowView;
   final bool initialAllowDownload;
   final bool initialAllowShare;
@@ -57,9 +58,10 @@ class AttachmentPreviewPage extends StatefulWidget {
     required this.type,
     required this.size,
     required this.contactName,
+    this.isGroup = false,
     this.initialAllowView = true,
-    this.initialAllowDownload = true,
-    this.initialAllowShare = true,
+    this.initialAllowDownload = false,
+    this.initialAllowShare = false,
     this.initialIsViewOnce = false,
     this.initialViewCount = 1,
     this.extraItems,
@@ -138,8 +140,8 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   @override
   void initState() {
     super.initState();
-    _allowDownload = widget.initialAllowDownload;
-    _allowShare = widget.initialAllowShare;
+    _allowDownload = widget.isGroup ? true : widget.initialAllowDownload;
+    _allowShare = widget.isGroup ? true : widget.initialAllowShare;
     _isViewOnce = widget.initialIsViewOnce;
 
     final resolvedType = _resolveEffectiveType();
@@ -581,8 +583,8 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
         _allowDownload = false;
         _allowShare = false;
       } else {
-        _allowDownload = true;
-        _allowShare = true;
+        _allowDownload = widget.isGroup ? true : widget.initialAllowDownload;
+        _allowShare = widget.isGroup ? true : widget.initialAllowShare;
       }
     });
 
@@ -614,13 +616,27 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     }
     sendBytes ??= _activeInitialBytes;
 
+    final String msgType;
+    if (effectiveType == 'image') {
+      msgType = 'image';
+    } else if (effectiveType == 'video') {
+      msgType = 'video';
+    } else if (effectiveType == 'audio') {
+      msgType = 'audio';
+    } else if (effectiveType == 'location') {
+      msgType = 'location';
+    } else {
+      msgType = 'file';
+    }
+
     Navigator.pop(context, {
       'send': true,
       'caption': _captionController.text.trim(),
       'bytes': sendBytes,
       'path': _resolvedActivePath ?? _activePath,
       'name': cleanName,
-      'type': effectiveType,
+      'type': msgType,
+      'previewType': effectiveType,
       'items': widget.extraItems,
       'allowView': _allowView,
       'allowDownload': _isViewOnce ? false : _allowDownload,
@@ -1507,51 +1523,26 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
               ),
             ),
           // Permission & View Once Controls
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10.0),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  _buildPermissionToggle(
-                    icon: CommonIcons.visibility,
-                    label: 'View',
-                    isActive: true,
-                    onTap: () {
-                      context.showInfoNotification('View is enabled by default. You can remove view access after sending.');
-                    },
-                  ),
-                  CommonSpaces.w8,
-                  _buildPermissionToggle(
-                    icon: _allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
-                    label: 'Download',
-                    isActive: _isViewOnce ? false : _allowDownload,
-                    onTap: () {
-                      if (_isViewOnce) {
-                        context.showInfoNotification('Download is disabled for View Once');
-                        return;
-                      }
-                      setState(() => _allowDownload = !_allowDownload);
-                    },
-                  ),
-                  CommonSpaces.w8,
-                  _buildPermissionToggle(
-                    icon: _allowShare ? CommonIcons.share : CommonIcons.shareOff,
-                    label: 'Share',
-                    isActive: _isViewOnce ? false : _allowShare,
-                    onTap: () {
-                      if (_isViewOnce) {
-                        context.showInfoNotification('Share is disabled for View Once');
-                        return;
-                      }
-                      setState(() => _allowShare = !_allowShare);
-                    },
-                  ),
-                ],
+          if (!widget.isGroup)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10.0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    _buildPermissionToggle(
+                      icon: CommonIcons.visibility,
+                      label: 'View',
+                      isActive: true,
+                      onTap: () {
+                        context.showInfoNotification('In 1-to-1 chats, only View option is enabled.');
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
           Row(
             children: [
               Expanded(

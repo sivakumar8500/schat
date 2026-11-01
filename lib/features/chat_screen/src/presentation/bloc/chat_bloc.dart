@@ -1204,10 +1204,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final effectiveReadReceipts = event.initialReadReceiptsEnabled ?? globalReadReceipts;
 
       if (!event.isReadOnly) {
+        // ONLY send read receipt over socket if read receipts are enabled (or group chat)
+        final isDirectChat = (event.recipientId != null && event.recipientId!.isNotEmpty) ||
+            (_recipientId != null && _recipientId!.isNotEmpty);
+        final canSendReadReceipt = !isDirectChat || effectiveReadReceipts;
         for (var i = 0; i < messages.length; i++) {
           final msg = messages[i];
           if (msg.senderId != myId && (!msg.isRead || msg.status != 'read')) {
-            _socketRepository.sendReadReceipt(msg.conversationId, msg.id);
+            if (canSendReadReceipt) {
+              _socketRepository.sendReadReceipt(msg.conversationId, msg.id);
+            }
             messages[i] = msg.copyWith(
               isRead: true,
               isDelivered: true,
@@ -1222,43 +1228,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         getIt<ChatsBloc>().add(MarkConversationAsRead(conversationId: event.conversationId));
       }
 
-      // ── Infer read/delivered status from message history (ONLY FOR 1-ON-1 DIRECT CHATS) ──
+      // ── Enforce privacy: do not infer read status from recipient replies when read receipts are disabled ──
       if (event.recipientId != null && event.recipientId!.isNotEmpty && !event.isReadOnly) {
-        String? lastRecipientMessageTime;
-        // Walk newest→oldest to find last recipient reply timestamp
-        for (final msg in messages.reversed) {
-          if (msg.senderId != myId) {
-            lastRecipientMessageTime = msg.createdAt;
-            break;
+        messages = messages.map((msg) {
+          if (msg.senderId != myId) return msg;
+          if (msg.isFailed) return msg;
+          bool inferredRead = msg.isRead || msg.status == 'read';
+          bool inferredDelivered = msg.isDelivered || inferredRead || msg.status == 'delivered';
+
+          if (!effectiveReadReceipts) {
+            inferredRead = false;
           }
-        }
-
-        if (lastRecipientMessageTime != null) {
-          messages = messages.map((msg) {
-            if (msg.senderId != myId) return msg;
-            // Skip failed messages — keep their status as-is
-            if (msg.isFailed) return msg;
-            bool inferredRead = msg.isRead || msg.status == 'read';
-            bool inferredDelivered = msg.isDelivered || inferredRead || msg.status == 'delivered';
-
-            if (effectiveReadReceipts && !inferredRead) {
-              // If recipient sent a message after this one, it was read
-              final myTime = _parseTimestamp(msg.createdAt);
-              final recipientTime = _parseTimestamp(lastRecipientMessageTime);
-              if (recipientTime.isAfter(myTime) || recipientTime.isAtSameMomentAs(myTime)) {
-                inferredRead = true;
-                inferredDelivered = true;
-              }
-            } else if (!effectiveReadReceipts) {
-              inferredRead = false;
-            }
-            if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
-            return msg.copyWith(
-              isRead: inferredRead,
-              isDelivered: inferredDelivered,
-            );
-          }).toList();
-        }
+          if (inferredRead == msg.isRead && inferredDelivered == msg.isDelivered) return msg;
+          return msg.copyWith(
+            isRead: inferredRead,
+            isDelivered: inferredDelivered,
+          );
+        }).toList();
       }
 
       // Save fresh resolved messages to cache
@@ -1933,9 +1919,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           });
         _currentIsTyping = false;
         
-        // Send read receipt via socket (clears user's unread count on server, server enforces privacy rules)
+        // Send read receipt via socket ONLY if read receipts are enabled (or group chat)
         final myId = _storageService.getUserId() ?? '';
-        if (newMessage.senderId != myId) {
+        final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
+        final effectiveReadReceipts = currentState.readReceiptsEnabled ?? globalReadReceipts;
+        final isDirectChat = (_recipientId != null && _recipientId!.isNotEmpty) &&
+            (currentState.groupName == null || currentState.groupName!.isEmpty);
+        final canSendReadReceipt = !isDirectChat || effectiveReadReceipts;
+        if (newMessage.senderId != myId && canSendReadReceipt) {
           _socketRepository.sendReadReceipt(newMessage.conversationId, newMessage.id);
         }
 

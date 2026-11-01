@@ -39,15 +39,21 @@ class SecureAttachmentService {
     _cachedDocsPath = null;
   }
 
+  static final RegExp _uuidRegex = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+
   /// Cache mapping of a media key/filename to its local file path and optional mediaId.
   static void cacheMediaMapping({required String key, String? localPath, String? mediaId}) {
     if (key.trim().isEmpty) return;
     final cleanKey = key.trim();
+    final noQuery = cleanKey.split('?').first.trim();
     if (localPath != null && localPath.isNotEmpty) {
       _mediaKeyToLocalPath[cleanKey] = localPath;
+      _mediaKeyToLocalPath[noQuery] = localPath;
       final lastPart = cleanKey.split('/').last;
       _mediaKeyToLocalPath[lastPart] = localPath;
-      var stripped = lastPart;
+      final lastPartNoQuery = noQuery.split('/').last;
+      _mediaKeyToLocalPath[lastPartNoQuery] = localPath;
+      var stripped = lastPartNoQuery;
       while (stripped.toLowerCase().endsWith('.enc')) {
         stripped = stripped.substring(0, stripped.length - 4);
         _mediaKeyToLocalPath[stripped] = localPath;
@@ -55,7 +61,15 @@ class SecureAttachmentService {
     }
     if (mediaId != null && mediaId.isNotEmpty) {
       _mediaKeyToMediaId[cleanKey] = mediaId;
+      _mediaKeyToMediaId[noQuery] = mediaId;
       _mediaKeyToMediaId[cleanKey.split('/').last] = mediaId;
+      final lastPartNoQuery = noQuery.split('/').last;
+      _mediaKeyToMediaId[lastPartNoQuery] = mediaId;
+      var stripped = lastPartNoQuery;
+      while (stripped.toLowerCase().endsWith('.enc')) {
+        stripped = stripped.substring(0, stripped.length - 4);
+        _mediaKeyToMediaId[stripped] = mediaId;
+      }
     }
   }
 
@@ -63,7 +77,11 @@ class SecureAttachmentService {
   static String? findCachedLocalPath(String? key) {
     if (key == null || key.trim().isEmpty) return null;
     final cleanKey = key.trim();
-    var path = _mediaKeyToLocalPath[cleanKey] ?? _mediaKeyToLocalPath[cleanKey.split('/').last];
+    final noQuery = cleanKey.split('?').first.trim();
+    var path = _mediaKeyToLocalPath[cleanKey] ??
+        _mediaKeyToLocalPath[noQuery] ??
+        _mediaKeyToLocalPath[cleanKey.split('/').last] ??
+        _mediaKeyToLocalPath[noQuery.split('/').last];
     if (path != null && !kIsWeb && File(path).existsSync()) return path;
     return null;
   }
@@ -72,7 +90,30 @@ class SecureAttachmentService {
   static String? findMediaId(String? key) {
     if (key == null || key.trim().isEmpty) return null;
     final cleanKey = key.trim();
-    return _mediaKeyToMediaId[cleanKey] ?? _mediaKeyToMediaId[cleanKey.split('/').last];
+    final noQuery = cleanKey.split('?').first.trim();
+    final cached = _mediaKeyToMediaId[cleanKey] ??
+        _mediaKeyToMediaId[noQuery] ??
+        _mediaKeyToMediaId[cleanKey.split('/').last] ??
+        _mediaKeyToMediaId[noQuery.split('/').last];
+    if (cached != null) return cached;
+
+    var baseName = noQuery.split('/').last;
+    while (baseName.toLowerCase().endsWith('.enc')) {
+      baseName = baseName.substring(0, baseName.length - 4);
+    }
+    if (_mediaKeyToMediaId.containsKey(baseName)) {
+      return _mediaKeyToMediaId[baseName];
+    }
+
+    if (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(noQuery)) {
+      return noQuery;
+    }
+
+    final match = _uuidRegex.firstMatch(noQuery);
+    if (match != null) {
+      return match.group(0);
+    }
+    return null;
   }
 
   /// Synchronously probe candidate local storage directories to locate an attachment on device disk.
@@ -81,7 +122,7 @@ class SecureAttachmentService {
 
     // 1. Direct check if pathOrKey is already a valid local path
     if (pathOrKey != null && pathOrKey.isNotEmpty) {
-      final clean = pathOrKey.replaceAll('file://', '').trim();
+      final clean = pathOrKey.replaceAll('file://', '').split('?').first.trim();
       if ((clean.startsWith('/') || clean.contains(':\\')) && File(clean).existsSync()) {
         return clean;
       }
@@ -97,7 +138,8 @@ class SecureAttachmentService {
     final List<String> nameCandidates = [];
     void addCandidate(String? name) {
       if (name == null || name.trim().isEmpty) return;
-      var c = name.trim().split('/').last;
+      var clean = name.trim().split('?').first.trim();
+      var c = clean.split('/').last;
       if (c.isNotEmpty && !nameCandidates.contains(c)) nameCandidates.add(c);
       var stripped = c;
       while (stripped.toLowerCase().endsWith('.enc')) {

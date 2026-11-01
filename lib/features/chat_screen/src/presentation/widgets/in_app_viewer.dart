@@ -9,7 +9,6 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
-import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/platform_view_helper/platform_view_helper.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'dart:convert';
@@ -20,7 +19,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
-import 'package:schat/features/chat_screen/src/presentation/share_forward_target_page.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -256,10 +254,15 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
 
       // If local file does not exist, and resolvedUrl is empty or dead local path or raw S3 URL,
       // attempt to fetch presigned view URL from server using mediaId
-      final effectiveMediaId = widget.mediaId?.isNotEmpty == true
-          ? widget.mediaId
-          : (SecureAttachmentService.findMediaId(widget.url) ??
-              SecureAttachmentService.findMediaId(widget.fileName));
+      String? effectiveMediaId;
+      if (widget.mediaId?.isNotEmpty == true && !widget.mediaId!.startsWith('temp_')) {
+        effectiveMediaId = widget.mediaId;
+      }
+      effectiveMediaId ??= SecureAttachmentService.findMediaId(widget.url) ??
+          SecureAttachmentService.findMediaId(widget.fileName);
+      if (effectiveMediaId == null && widget.mediaId != null && RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(widget.mediaId!)) {
+        effectiveMediaId = widget.mediaId;
+      }
       _effectiveMediaId = effectiveMediaId;
 
       final bool isRawUnsignedS3 = resolvedUrl.contains('amazonaws.com') &&
@@ -340,50 +343,6 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       getIt<SecureAttachmentService>().cleanupTempFile(_tempFileToCleanup);
     }
     super.dispose();
-  }
-
-  void _sendOrForwardMedia(BuildContext context) {
-    final activePath = _decryptedTempFile?.path ?? (File(widget.url).existsSync() ? widget.url : widget.url);
-    var cleanName = widget.fileName;
-    while (cleanName.toLowerCase().endsWith('.enc')) {
-      cleanName = cleanName.substring(0, cleanName.length - 4);
-    }
-    if (cleanName.isEmpty) cleanName = 'attachment';
-
-    var effectiveType = widget.type.toLowerCase();
-    final ext = cleanName.contains('.') ? cleanName.split('.').last.toLowerCase() : '';
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(ext) || effectiveType == 'image') {
-      effectiveType = 'image';
-    } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(ext) || effectiveType == 'video') {
-      effectiveType = 'video';
-    } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma'].contains(ext) || effectiveType == 'audio') {
-      effectiveType = 'audio';
-    } else {
-      effectiveType = 'file';
-    }
-
-    int fileSize = 0;
-    try {
-      if (File(activePath).existsSync()) {
-        fileSize = File(activePath).lengthSync();
-      }
-    } catch (_) {}
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ShareForwardTargetPage(
-          mediaItems: [
-            SharedMediaItem(
-              path: activePath,
-              name: cleanName,
-              type: effectiveType,
-              size: fileSize,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildZoomControls() {
@@ -692,6 +651,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             url: activePath,
             fileName: widget.fileName,
             allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            allowShare: widget.isReadOnly ? false : widget.allowShare,
             isReadOnly: widget.isReadOnly,
             onDownloadPressed: widget.onDownloadPressed,
           );
@@ -711,6 +671,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             url: activePath,
             fileName: widget.fileName,
             allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            allowShare: widget.isReadOnly ? false : widget.allowShare,
             isReadOnly: widget.isReadOnly,
             onDownloadPressed: widget.onDownloadPressed,
           );
@@ -757,12 +718,6 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         actions: widget.isReadOnly
             ? null
             : [
-                if (!widget.isViewOnce)
-                  IconButton(
-                    icon: const Icon(Icons.send_rounded, color: Colors.white),
-                    tooltip: 'Send / Forward to Chat',
-                    onPressed: () => _sendOrForwardMedia(context),
-                  ),
                 if (!widget.isViewOnce && widget.isMe && !widget.isForwarded)
                   IconButton(
                     icon: const Icon(Icons.shield_outlined, color: Colors.white),
@@ -776,63 +731,6 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                         mediaId: idToUse,
                         fileName: widget.fileName,
                       );
-                    },
-                  ),
-                if (!widget.isViewOnce && widget.allowShare)
-                  IconButton(
-                    icon: const Icon(Icons.share, color: Colors.white),
-                    tooltip: 'Share/Forward',
-                    onPressed: () async {
-                      if (widget.onSharePressed != null) {
-                        Navigator.pop(context);
-                        widget.onSharePressed!();
-                      } else {
-                        final shareFile = _decryptedTempFile != null && File(_decryptedTempFile!.path).existsSync()
-                            ? _decryptedTempFile!.path
-                            : (File(widget.url).existsSync() ? widget.url : null);
-                        if (shareFile != null) {
-                          try {
-                            await Share.shareXFiles([XFile(shareFile)], text: widget.fileName);
-                          } catch (e) {
-                            debugPrint('Error sharing file: $e');
-                          }
-                        } else {
-                          context.showInfoNotification('Preparing file for sharing...');
-                        }
-                      }
-                    },
-                  ),
-                if (!widget.isViewOnce && widget.allowDownload)
-                  IconButton(
-                    icon: const Icon(Icons.download, color: Colors.white),
-                    tooltip: 'Download',
-                    onPressed: () async {
-                      try {
-                        final secureService = getIt<SecureAttachmentService>();
-                        final encFile = await secureService.downloadAndEncryptAttachment(
-                          url: widget.url,
-                          fileName: widget.fileName,
-                        );
-
-                        if (await encFile.exists()) {
-                          if (context.mounted) {
-                            context.showSuccessNotification('Encrypted and saved to Schat folder');
-                          }
-                        } else {
-                          if (context.mounted) {
-                            context.showErrorNotification('Failed to download media');
-                          }
-                        }
-                      } catch (e) {
-                        debugPrint('Download error in InAppViewer: $e');
-                        if (context.mounted) {
-                          context.showErrorNotification('Download failed: $e');
-                        }
-                      }
-
-                      if (widget.onDownloadPressed != null) {
-                        widget.onDownloadPressed!();
-                      }
                     },
                   ),
                 CommonSpaces.w8,
@@ -864,6 +762,7 @@ class _MobileDocumentViewer extends StatefulWidget {
   final String url;
   final String fileName;
   final bool allowDownload;
+  final bool allowShare;
   final bool isReadOnly;
   final VoidCallback? onDownloadPressed;
 
@@ -871,6 +770,7 @@ class _MobileDocumentViewer extends StatefulWidget {
     required this.url,
     required this.fileName,
     this.allowDownload = true,
+    this.allowShare = true,
     this.isReadOnly = false,
     this.onDownloadPressed,
   });
@@ -895,32 +795,39 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
     final String path = widget.url;
     final bool isLocal = !path.startsWith('http://') && !path.startsWith('https://');
 
+    final cleanName = widget.fileName.toLowerCase();
+    final cleanPath = path.toLowerCase().replaceAll('file://', '').split('?').first;
+    final isRenderableHtmlOrText = cleanName.endsWith('.html') ||
+        cleanName.endsWith('.htm') ||
+        cleanName.endsWith('.txt') ||
+        cleanName.endsWith('.json') ||
+        cleanName.endsWith('.csv') ||
+        cleanName.endsWith('.xml') ||
+        cleanName.endsWith('.md') ||
+        cleanPath.endsWith('.html') ||
+        cleanPath.endsWith('.htm') ||
+        cleanPath.endsWith('.txt') ||
+        cleanPath.endsWith('.json') ||
+        cleanPath.endsWith('.csv') ||
+        cleanPath.endsWith('.xml') ||
+        cleanPath.endsWith('.md');
+
+    if (!isRenderableHtmlOrText) {
+      // Native binary document (pdf, docx, xlsx, pptx, zip, etc.)
+      // Never pass to WebView, which cannot render binary docs on Android and hangs with infinite spinner!
+      if (mounted) {
+        setState(() {
+          _isNativeBinaryDoc = true;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     if (isLocal) {
-      final cleanPath = path.replaceAll('file://', '');
-      final file = File(cleanPath);
+      final file = File(path.replaceAll('file://', ''));
       if (!file.existsSync()) {
         if (mounted) setState(() => _hasError = true);
-        return;
-      }
-
-      final lower = cleanPath.toLowerCase();
-      final isRenderableHtmlOrText = lower.endsWith('.html') ||
-          lower.endsWith('.htm') ||
-          lower.endsWith('.txt') ||
-          lower.endsWith('.json') ||
-          lower.endsWith('.csv') ||
-          lower.endsWith('.xml') ||
-          lower.endsWith('.md');
-
-      if (!isRenderableHtmlOrText) {
-        // Native binary document (docx, xlsx, pptx, zip, etc.)
-        // Show clean document card instead of crashing WebView
-        if (mounted) {
-          setState(() {
-            _isNativeBinaryDoc = true;
-            _isLoading = false;
-          });
-        }
         return;
       }
     }
@@ -1019,56 +926,19 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                 style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
-              if (!widget.isReadOnly) ...[
+              if (!widget.isReadOnly && isLocal && File(cleanPath).existsSync()) ...[
                 const SizedBox(height: 24),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    ElevatedButton.icon(
-                      icon: Icon(isPdf ? Icons.open_in_new : (isLocal ? Icons.open_in_new : Icons.download)),
-                      label: Text(label),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: context.colors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
-                      onPressed: () {
-                        if (isLocal && File(cleanPath).existsSync()) {
-                          Share.shareXFiles([XFile(cleanPath, name: clean)]);
-                        } else {
-                          downloadFile(widget.url, clean);
-                        }
-                      },
-                    ),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.send_rounded),
-                      label: const Text('Send / Forward'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white24,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ShareForwardTargetPage(
-                              mediaItems: [
-                                SharedMediaItem(
-                                  path: cleanPath,
-                                  name: clean,
-                                  type: isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'file',
-                                  size: isLocal && File(cleanPath).existsSync() ? File(cleanPath).lengthSync() : 0,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text(label),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: context.colors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  onPressed: () {
+                    Share.shareXFiles([XFile(cleanPath, name: clean)]);
+                  },
                 ),
               ],
             ],
@@ -1656,6 +1526,8 @@ class _MobileVideoPlayer extends StatefulWidget {
 
 class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
   VideoPlayerController? _controller;
+  File? _tempDecryptedFile;
+  File? _tempDownloadedFile;
   bool _isInitialized = false;
   bool _hasError = false;
 
@@ -1673,6 +1545,25 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
     }
 
     try {
+      if (_controller != null) {
+        try {
+          await _controller!.dispose();
+        } catch (_) {}
+        _controller = null;
+      }
+      if (_tempDecryptedFile != null) {
+        try {
+          await getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+        } catch (_) {}
+        _tempDecryptedFile = null;
+      }
+      if (_tempDownloadedFile != null) {
+        try {
+          await getIt<SecureAttachmentService>().cleanupTempFile(_tempDownloadedFile);
+        } catch (_) {}
+        _tempDownloadedFile = null;
+      }
+
       final isLocal = !kIsWeb && File(cleanUrl).existsSync();
       String effectiveUrl = cleanUrl;
       if (!isLocal && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
@@ -1681,16 +1572,46 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
         if (local != null && File(local).existsSync()) {
           effectiveUrl = local;
         } else {
-          debugPrint('_MobileVideoPlayer: URL is not a local file and not a valid HTTP URL -> $cleanUrl');
-          if (mounted) setState(() => _hasError = true);
-          return;
+          final resolved = SecureAttachmentService.resolveFullUrl(cleanUrl);
+          if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+            effectiveUrl = resolved;
+          } else {
+            debugPrint('_MobileVideoPlayer: URL is not a local file and not a valid HTTP URL -> $cleanUrl');
+          }
         }
       }
 
       final bool isNowLocal = !kIsWeb && File(effectiveUrl).existsSync();
-      final controller = isNowLocal
-          ? VideoPlayerController.file(File(effectiveUrl))
-          : VideoPlayerController.networkUrl(Uri.parse(effectiveUrl));
+
+      // If local file is encrypted with .enc or AES ciphertext, decrypt to a temp file before initializing VideoPlayer
+      if (isNowLocal && (effectiveUrl.toLowerCase().endsWith('.enc') || SecureAttachmentService.isFileEncryptedSync(effectiveUrl))) {
+        try {
+          var cleanName = effectiveUrl.split('/').last;
+          while (cleanName.toLowerCase().endsWith('.enc')) {
+            cleanName = cleanName.substring(0, cleanName.length - 4);
+          }
+          if (cleanName.isEmpty) cleanName = 'video.mp4';
+          final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+            encryptedFilePath: effectiveUrl,
+            originalFileName: cleanName,
+          );
+          _tempDecryptedFile = decFile;
+          effectiveUrl = decFile.path;
+        } catch (e) {
+          debugPrint('_MobileVideoPlayer: Error decrypting local video: $e');
+        }
+      }
+
+      final bool isFinalLocal = !kIsWeb && File(effectiveUrl).existsSync();
+      VideoPlayerController controller;
+      if (isFinalLocal) {
+        controller = VideoPlayerController.file(File(effectiveUrl));
+      } else {
+        if (!effectiveUrl.startsWith('http://') && !effectiveUrl.startsWith('https://')) {
+          throw Exception('Invalid video playback URL: $effectiveUrl');
+        }
+        controller = VideoPlayerController.networkUrl(Uri.parse(effectiveUrl));
+      }
 
       _controller = controller;
 
@@ -1708,14 +1629,34 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
         controller.setLooping(true);
       }
     } catch (e) {
-      debugPrint('Video player initialization error: $e, attempting fresh URL refresh...');
-      if (widget.mediaId != null && widget.mediaId!.isNotEmpty) {
+      debugPrint('Video player initialization error: $e, attempting recovery/fallback...');
+
+      final candidateMediaId = (widget.mediaId != null && widget.mediaId!.isNotEmpty && !widget.mediaId!.startsWith('temp_'))
+          ? widget.mediaId
+          : (SecureAttachmentService.findMediaId(cleanUrl) ??
+              (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(widget.mediaId ?? '') ? widget.mediaId : null));
+
+      String? freshViewUrl;
+      if (candidateMediaId != null && candidateMediaId.isNotEmpty) {
         try {
-          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(widget.mediaId!);
-          if (freshUrl != null && freshUrl.isNotEmpty && freshUrl != cleanUrl) {
-            final resolvedFresh = SecureAttachmentService.resolveFullUrl(freshUrl);
-            final freshController = VideoPlayerController.networkUrl(Uri.parse(resolvedFresh));
-            await freshController.initialize().timeout(const Duration(seconds: 35));
+          freshViewUrl = await getIt<ChatRepository>().getMediaViewUrl(candidateMediaId);
+        } catch (fetchError) {
+          debugPrint('_MobileVideoPlayer: getMediaViewUrl error: $fetchError');
+        }
+      }
+
+      final candidateRemoteUrl = (freshViewUrl != null && freshViewUrl.isNotEmpty)
+          ? SecureAttachmentService.resolveFullUrl(freshViewUrl)
+          : (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')
+              ? SecureAttachmentService.resolveFullUrl(cleanUrl)
+              : null);
+
+      if (candidateRemoteUrl != null && candidateRemoteUrl.isNotEmpty) {
+        // Fallback 1: Try network streaming with freshViewUrl if different
+        if (freshViewUrl != null && freshViewUrl != cleanUrl) {
+          try {
+            final freshController = VideoPlayerController.networkUrl(Uri.parse(candidateRemoteUrl));
+            await freshController.initialize().timeout(const Duration(seconds: 25));
             if (mounted) {
               _controller?.dispose();
               _controller = freshController;
@@ -1727,11 +1668,56 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
               freshController.setLooping(true);
               return;
             }
+          } catch (netErr) {
+            debugPrint('_MobileVideoPlayer: Fresh network stream also failed: $netErr, downloading to temp file');
           }
-        } catch (retryError) {
-          debugPrint('Video player refresh retry failed: $retryError');
+        }
+
+        // Fallback 2: Direct network streaming failed or timed out. Download to temp file and play via VideoPlayerController.file!
+        try {
+          final tempDir = Directory.systemTemp;
+          final String ext = cleanUrl.contains('.') ? cleanUrl.split('?').first.split('.').last.toLowerCase() : 'mp4';
+          final localTempFile = File('${tempDir.path}/stream_cache_${DateTime.now().millisecondsSinceEpoch}.$ext');
+
+          final dio = Dio(BaseOptions(
+            connectTimeout: const Duration(seconds: 20),
+            receiveTimeout: const Duration(seconds: 60),
+          ));
+
+          await dio.download(candidateRemoteUrl, localTempFile.path);
+
+          if (localTempFile.existsSync() && localTempFile.lengthSync() > 0) {
+            String playPath = localTempFile.path;
+            if (SecureAttachmentService.isFileEncryptedSync(playPath)) {
+              final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+                encryptedFilePath: playPath,
+                originalFileName: 'video.$ext',
+              );
+              _tempDecryptedFile = decFile;
+              playPath = decFile.path;
+            }
+
+            final fileController = VideoPlayerController.file(File(playPath));
+            await fileController.initialize().timeout(const Duration(seconds: 25));
+
+            if (mounted) {
+              _controller?.dispose();
+              _controller = fileController;
+              _tempDownloadedFile = localTempFile;
+              setState(() {
+                _isInitialized = true;
+                _hasError = false;
+              });
+              fileController.play();
+              fileController.setLooping(true);
+              return;
+            }
+          }
+        } catch (downloadErr) {
+          debugPrint('_MobileVideoPlayer: Fallback temp download failed: $downloadErr');
         }
       }
+
       if (mounted) {
         setState(() {
           _hasError = true;
@@ -1743,6 +1729,16 @@ class _MobileVideoPlayerState extends State<_MobileVideoPlayer> {
   @override
   void dispose() {
     _controller?.dispose();
+    if (_tempDecryptedFile != null) {
+      try {
+        getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+      } catch (_) {}
+    }
+    if (_tempDownloadedFile != null) {
+      try {
+        getIt<SecureAttachmentService>().cleanupTempFile(_tempDownloadedFile);
+      } catch (_) {}
+    }
     super.dispose();
   }
 
@@ -2087,27 +2083,88 @@ class _InAppPdfViewerState extends State<_InAppPdfViewer> {
   int _currentPage = 0;
   bool _isReady = false;
   String _errorMessage = '';
+  Timer? _fallbackTimer;
+  bool _showFallback = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Modern Android (API 35/36 with Vulkan/Impeller) can fail native Pdfium platform view buffer allocation
+    // without invoking onRender or onError. Fallback automatically after 2.5s to ensure zero hang.
+    _fallbackTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted && !_isReady) {
+        setState(() => _showFallback = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _fallbackTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _buildPdfFallback(BuildContext context) {
+    var cleanName = widget.fileName;
+    while (cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = cleanName.substring(0, cleanName.length - 4);
+    }
+    final cleanPath = widget.filePath.replaceAll('file://', '');
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 68),
+            const SizedBox(height: 16),
+            Text(
+              cleanName,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Tap below to open and read this PDF in your default PDF reader',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.open_in_new, size: 20),
+              label: const Text('Open with PDF Reader', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                String? targetPath = cleanPath;
+                if (!File(targetPath).existsSync()) {
+                  targetPath = SecureAttachmentService.findCachedLocalPath(widget.filePath) ??
+                      SecureAttachmentService.findLocalFile(pathOrKey: widget.filePath, fileName: cleanName);
+                }
+                if (targetPath != null && File(targetPath).existsSync()) {
+                  Share.shareXFiles([XFile(targetPath, name: cleanName)]);
+                } else {
+                  context.showInfoNotification('PDF file is not available on local storage');
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_errorMessage.isNotEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white54, size: 64),
-              const SizedBox(height: 16),
-              Text(
-                'Error rendering PDF: $_errorMessage',
-                style: const TextStyle(color: Colors.white70),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
+    if (_showFallback || _errorMessage.isNotEmpty) {
+      return _buildPdfFallback(context);
     }
 
     return Stack(
@@ -2120,27 +2177,33 @@ class _InAppPdfViewerState extends State<_InAppPdfViewer> {
           pageFling: true,
           pageSnap: true,
           defaultPage: _currentPage,
-          fitPolicy: FitPolicy.BOTH,
+          fitPolicy: FitPolicy.WIDTH,
           preventLinkNavigation: false,
           onRender: (pages) {
+            _fallbackTimer?.cancel();
             if (mounted) {
               setState(() {
                 _totalPages = pages ?? 0;
                 _isReady = true;
+                _showFallback = false;
               });
             }
           },
           onError: (error) {
+            _fallbackTimer?.cancel();
             if (mounted) {
               setState(() {
                 _errorMessage = error.toString();
+                _showFallback = true;
               });
             }
           },
           onPageError: (page, error) {
+            _fallbackTimer?.cancel();
             if (mounted) {
               setState(() {
                 _errorMessage = 'Page $page error: $error';
+                _showFallback = true;
               });
             }
           },

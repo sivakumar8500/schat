@@ -326,33 +326,59 @@ class ChatRepositoryImpl implements ChatRepository {
             resolvedMime = 'audio/mpeg';
         }
       } else if (resolvedMediaType == 'DOCUMENT') {
-        switch (ext) {
-          case 'pdf':
-            resolvedMime = 'application/pdf';
-            break;
-          case 'doc':
-            resolvedMime = 'application/msword';
-            break;
-          case 'docx':
-            resolvedMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            break;
-          case 'xls':
-            resolvedMime = 'application/vnd.ms-excel';
-            break;
-          case 'xlsx':
-            resolvedMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            break;
-          case 'ppt':
-            resolvedMime = 'application/vnd.ms-powerpoint';
-            break;
-          case 'pptx':
-            resolvedMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            break;
-          case 'zip':
-            resolvedMime = 'application/zip';
-            break;
-          default:
-            resolvedMime = 'application/pdf';
+        if (resolvedMime.isEmpty || resolvedMime == 'application/octet-stream') {
+          switch (ext) {
+            case 'pdf':
+              resolvedMime = 'application/pdf';
+              break;
+            case 'doc':
+              resolvedMime = 'application/msword';
+              break;
+            case 'docx':
+              resolvedMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              break;
+            case 'xls':
+              resolvedMime = 'application/vnd.ms-excel';
+              break;
+            case 'xlsx':
+              resolvedMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+              break;
+            case 'ppt':
+              resolvedMime = 'application/vnd.ms-powerpoint';
+              break;
+            case 'pptx':
+              resolvedMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+              break;
+            case 'zip':
+              resolvedMime = 'application/zip';
+              break;
+            case 'txt':
+            case 'text':
+            case 'log':
+              resolvedMime = 'text/plain';
+              break;
+            case 'csv':
+              resolvedMime = 'text/csv';
+              break;
+            case 'json':
+              resolvedMime = 'application/json';
+              break;
+            case 'xml':
+              resolvedMime = 'application/xml';
+              break;
+            case 'md':
+              resolvedMime = 'text/markdown';
+              break;
+            case 'html':
+            case 'htm':
+              resolvedMime = 'text/html';
+              break;
+            case 'rtf':
+              resolvedMime = 'application/rtf';
+              break;
+            default:
+              resolvedMime = 'application/octet-stream';
+          }
         }
       }
 

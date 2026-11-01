@@ -418,6 +418,8 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     String payloadType = type;
     if (type == 'voice_note' || (mimeType != null && mimeType.startsWith('audio/'))) {
       payloadType = 'audio';
+    } else if (type == 'document' || type == 'pdf') {
+      payloadType = 'file';
     }
 
     final resolvedSecurity = security != null ? {
