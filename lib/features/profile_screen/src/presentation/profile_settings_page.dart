@@ -81,7 +81,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   String _callRingtoneName = "Digital Horizon (Default)";
   String _messageToneName = "S-CHAT Pop (Default)";
   bool _readReceiptsEnabled = true;
-  bool _typingIndicatorsEnabled = true;
   bool _lastSeenEnabled = true;
   bool _notificationsEnabled = true;
   String _appVersion = "v1.0.0 (6)";
@@ -97,7 +96,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     _currentEmail = getIt<StorageService>().getEmail() ?? "";
     _defaultDisappearingTimer = getIt<StorageService>().getDefaultDisappearingTimer();
     _readReceiptsEnabled = getIt<StorageService>().getReadReceiptsEnabled();
-    _typingIndicatorsEnabled = getIt<StorageService>().getTypingIndicatorsEnabled();
     _lastSeenEnabled = getIt<StorageService>().getLastSeenEnabled();
     _notificationsEnabled = getIt<StorageService>().getNotificationsEnabled();
 
@@ -402,7 +400,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             _currentEmail = getIt<StorageService>().getEmail() ?? "";
             if (state.user != null) {
               _readReceiptsEnabled = state.user!.readReceiptsEnabled;
-              _typingIndicatorsEnabled = state.user!.typingIndicatorsEnabled;
               _lastSeenEnabled = state.user!.lastSeenEnabled;
               _notificationsEnabled = state.user!.notificationsEnabled;
               _defaultDisappearingTimer = state.user!.defaultDisappearingTimer;
@@ -536,32 +533,11 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                             ),
                             _buildSettingRow(
                               context: context,
-                              icon: Icons.keyboard_rounded,
-                              title: 'Typing Indicators',
-                              subtitle: _typingIndicatorsEnabled
-                                  ? 'Others can see when you are typing'
-                                  : 'Typing indicators are turned off for all chats',
-                              trailing: Switch.adaptive(
-                                value: _typingIndicatorsEnabled,
-                                activeThumbColor: const Color(0xFF00873C),
-                                onChanged: (val) {
-                                  setState(() {
-                                    _typingIndicatorsEnabled = val;
-                                  });
-                                  getIt<StorageService>().saveTypingIndicatorsEnabled(val);
-                                  context.read<ProfileBloc>().add(
-                                    UpdateGlobalPrivacyEvent(typingIndicatorsEnabled: val),
-                                  );
-                                },
-                              ),
-                            ),
-                            _buildSettingRow(
-                              context: context,
                               icon: Icons.access_time_rounded,
-                              title: 'Last Seen',
+                              title: 'Last Seen & Online',
                               subtitle: _lastSeenEnabled
-                                  ? 'Others can see when you were last active'
-                                  : 'Your last seen timestamp is hidden from everyone',
+                                  ? 'Others can see when you are online or last active'
+                                  : 'If turned off, you won\'t share your Last Seen and Online status, and you won\'t be able to see other people\'s Last Seen and Online status',
                               trailing: Switch.adaptive(
                                 value: _lastSeenEnabled,
                                 activeThumbColor: const Color(0xFF00873C),

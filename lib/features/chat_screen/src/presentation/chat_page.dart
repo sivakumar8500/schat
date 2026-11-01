@@ -4165,7 +4165,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
       final bool isSocketConnected = getIt<ChatSocketRepository>().isConnected;
       if (isSocketConnected) {
-        // Send via socket
+        // Primary real-time transport: Send via socket
         context.read<ChatSocketBloc>().add(SendMessage(
           conversationId: widget.conversationId,
           type: 'text',
@@ -4173,30 +4173,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           replyMessageId: _replyingToMessage?.id,
           expiry: _getExpiryData(),
         ));
+      } else {
+        // Fallback: Send via REST when socket is disconnected
+        getIt<ChatRepository>().sendMessageAndGetResult(msgToSend).then((confirmedMsg) {
+          if (confirmedMsg != null) {
+            debugPrint('ChatPage._sendMessage: Persisted via REST -> ${confirmedMsg.id}');
+            _chatBloc.add(ReceiveMessageEvent(
+              messageData: confirmedMsg.toJson()..['userView'] = 'send',
+            ));
+          } else {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        }).catchError((e) {
+          debugPrint('ChatPage._sendMessage: REST error $e');
+          _chatBloc.add(MarkMessageFailedEvent(
+            messageId: tempId,
+            conversationId: widget.conversationId,
+          ));
+        });
       }
-
-      // Guaranteed delivery via REST API
-      getIt<ChatRepository>().sendMessageAndGetResult(msgToSend).then((confirmedMsg) {
-        if (confirmedMsg != null) {
-          debugPrint('ChatPage._sendMessage: Persisted via REST -> ${confirmedMsg.id}');
-          _chatBloc.add(ReceiveMessageEvent(
-            messageData: confirmedMsg.toJson()..['userView'] = 'send',
-          ));
-        } else if (!isSocketConnected) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        }
-      }).catchError((e) {
-        debugPrint('ChatPage._sendMessage: REST error $e');
-        if (!isSocketConnected) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        }
-      });
 
       setState(() {
         _replyingToMessage = null;
@@ -4323,25 +4321,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         ));
       }
 
-      getIt<ChatRepository>().sendMessageAndGetResult(locOrContactMsg).then((confirmedMsg) {
-        if (confirmedMsg != null) {
-          _chatBloc.add(ReceiveMessageEvent(
-            messageData: confirmedMsg.toJson()..['userView'] = 'send',
-          ));
-        } else if (!isSocketConnected) {
+      if (!isSocketConnected) {
+        getIt<ChatRepository>().sendMessageAndGetResult(locOrContactMsg).then((confirmedMsg) {
+          if (confirmedMsg != null) {
+            _chatBloc.add(ReceiveMessageEvent(
+              messageData: confirmedMsg.toJson()..['userView'] = 'send',
+            ));
+          } else {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        }).catchError((e) {
           _chatBloc.add(MarkMessageFailedEvent(
             messageId: tempId,
             conversationId: widget.conversationId,
           ));
-        }
-      }).catchError((e) {
-        if (!isSocketConnected) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        }
-      });
+        });
+      }
       return;
     }
 
@@ -4570,27 +4568,29 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         ));
       }
 
-      getIt<ChatRepository>().sendMessageAndGetResult(mediaMsg).then((confirmedMsg) {
-        if (confirmedMsg != null) {
-          debugPrint('ChatPage._performBackgroundUploadAndSend: Persisted via REST -> ${confirmedMsg.id}');
-          _chatBloc.add(ReceiveMessageEvent(
-            messageData: confirmedMsg.toJson()..['userView'] = 'send',
-          ));
-        } else if (!isSocketConnected && context.mounted) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        }
-      }).catchError((e) {
-        debugPrint('ChatPage._performBackgroundUploadAndSend: REST error $e');
-        if (!isSocketConnected && context.mounted) {
-          _chatBloc.add(MarkMessageFailedEvent(
-            messageId: tempId,
-            conversationId: widget.conversationId,
-          ));
-        }
-      });
+      if (!isSocketConnected) {
+        getIt<ChatRepository>().sendMessageAndGetResult(mediaMsg).then((confirmedMsg) {
+          if (confirmedMsg != null) {
+            debugPrint('ChatPage._performBackgroundUploadAndSend: Persisted via REST -> ${confirmedMsg.id}');
+            _chatBloc.add(ReceiveMessageEvent(
+              messageData: confirmedMsg.toJson()..['userView'] = 'send',
+            ));
+          } else if (context.mounted) {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        }).catchError((e) {
+          debugPrint('ChatPage._performBackgroundUploadAndSend: REST error $e');
+          if (context.mounted) {
+            _chatBloc.add(MarkMessageFailedEvent(
+              messageId: tempId,
+              conversationId: widget.conversationId,
+            ));
+          }
+        });
+      }
     } else if (context.mounted) {
       _chatBloc.add(MarkMessageFailedEvent(
         messageId: tempId,
@@ -5974,7 +5974,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     final myLastSeenEnabled = getIt<StorageService>().getLastSeenEnabled();
     final recipientLastSeenEnabled = (state is ChatLoaded ? state.lastSeenEnabled : widget.initialLastSeenEnabled);
     final isLastSeenAllowed = myLastSeenEnabled && recipientLastSeenEnabled;
-    final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked && !isUnaccepted;
+    final isOnline = (state is ChatLoaded ? state.isRecipientOnline : widget.isOnline) && !isBlocked && !isUnaccepted && isLastSeenAllowed;
     final isTyping = (state is ChatLoaded && state.isRecipientTyping) && !isBlocked && !isUnaccepted && _isTypingIndicatorEnabled();
     final lastSeen = (isBlocked || isUnaccepted || !isLastSeenAllowed) ? null : (state is ChatLoaded ? state.lastSeen : null);
     final effectivePicUrl = isBlocked ? null : (_effectiveProfilePic ?? widget.profilePictureUrl);

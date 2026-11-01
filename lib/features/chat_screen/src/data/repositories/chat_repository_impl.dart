@@ -889,6 +889,15 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> markConversationAsRead(String conversationId) async {
+    try {
+      await _apiService.post(CommonEndpoints.markChatAsRead(conversationId));
+    } catch (e) {
+      debugPrint('ChatRepositoryImpl.markConversationAsRead error: $e');
+    }
+  }
+
+  @override
   Future<String?> clearChat(String conversationId, {String clearType = 'me'}) async {
     final result = await _apiService.post<Map<String, dynamic>>(
       CommonEndpoints.clearChat(conversationId),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
@@ -761,6 +762,8 @@ class _UserListPageState extends State<UserListPage> {
     final name = user.displayName;
     final isSelected = _selectedUsers.any((u) => u.id == user.id);
     final isBlockMode = widget.title == 'Block Contact';
+    final bool myLastSeen = getIt<StorageService>().getLastSeenEnabled();
+    final bool canShowOnline = user.isOnline && !isBlockMode && myLastSeen && user.lastSeenEnabled;
 
     return InkWell(
       onTap: () {
@@ -813,7 +816,7 @@ class _UserListPageState extends State<UserListPage> {
                         )
                       : null,
                 ),
-                if (user.isOnline && !isBlockMode)
+                if (canShowOnline)
                   Positioned(
                     right: 0,
                     bottom: 0,

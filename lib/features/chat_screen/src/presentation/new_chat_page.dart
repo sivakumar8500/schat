@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
@@ -483,6 +484,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
   Widget _buildSyncedUserTile(BuildContext context, UserModel user) {
     final name = user.displayName;
     final isDark = context.colors.isDark;
+    final bool canShowOnline = user.isOnline && getIt<StorageService>().getLastSeenEnabled() && user.lastSeenEnabled;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -529,7 +531,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
                     )
                   : null,
             ),
-            if (user.isOnline)
+            if (canShowOnline)
               Positioned(
                 right: 0,
                 bottom: 0,

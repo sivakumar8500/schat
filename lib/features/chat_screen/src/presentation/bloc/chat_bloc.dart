@@ -1199,10 +1199,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         debugPrint('Warning: Could not fetch pinned messages: $e');
       }
 
-      // Mark unread messages from recipient as read (send read receipt to server) if enabled
+      // Mark unread messages from recipient as read (send read receipt to server and clear own unread count)
       final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
       final effectiveReadReceipts = event.initialReadReceiptsEnabled ?? globalReadReceipts;
-      if (effectiveReadReceipts && !event.isReadOnly) {
+
+      if (!event.isReadOnly) {
         for (var i = 0; i < messages.length; i++) {
           final msg = messages[i];
           if (msg.senderId != myId && (!msg.isRead || msg.status != 'read')) {
@@ -1213,6 +1214,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             );
           }
         }
+        // Fallback REST call to guarantee unread count is cleared on server
+        _chatRepository.markConversationAsRead(event.conversationId);
       }
 
       if (getIt.isRegistered<ChatsBloc>()) {
@@ -1357,11 +1360,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Fetch recipient profile for initial lastSeen and block status in background
     final rId = (_recipientId != null && _recipientId!.isNotEmpty) ? _recipientId : event.recipientId;
     if (rId != null && rId.isNotEmpty) {
-      getIt<ProfileRepository>().getUserById(rId).then((result) {
+      try {
+        final result = await getIt<ProfileRepository>().getUserById(rId);
         result.when(
           success: (user) {
             final currentState = state;
-            if (currentState is ChatLoaded) {
+            if (currentState is ChatLoaded && !emit.isDone) {
               emit(currentState.copyWith(
                 lastSeenEnabled: user.lastSeenEnabled,
               ));
@@ -1381,9 +1385,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           },
           failure: (_, _) {},
         );
-      }).catchError((e) {
+      } catch (e) {
         debugPrint('Error fetching recipient profile: $e');
-      });
+      }
     }
   }
 
@@ -1863,6 +1867,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             allowView: allowView,
             allowDownload: allowDownload,
             allowShare: allowShare,
+            isRead: (oldTemp != null && oldTemp.isRead) || newMessage.isRead,
+            isDelivered: (oldTemp != null && oldTemp.isDelivered) || newMessage.isDelivered,
+            readBy: (oldTemp != null && oldTemp.readBy.isNotEmpty) ? oldTemp.readBy : newMessage.readBy,
+            deliveredTo: (oldTemp != null && oldTemp.deliveredTo.isNotEmpty) ? oldTemp.deliveredTo : newMessage.deliveredTo,
             isUploading: false,
           );
 
@@ -1873,8 +1881,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               reactions: newMessage.reactions.isNotEmpty ? newMessage.reactions : existing.reactions,
               isEdited: newMessage.isEdited || existing.isEdited,
               editedAt: newMessage.editedAt ?? existing.editedAt,
-              isRead: newMessage.isRead || existing.isRead,
-              isDelivered: newMessage.isDelivered || existing.isDelivered,
+              isRead: confirmedMessage.isRead || existing.isRead,
+              isDelivered: confirmedMessage.isDelivered || existing.isDelivered,
+              readBy: confirmedMessage.readBy.isNotEmpty ? confirmedMessage.readBy : existing.readBy,
+              deliveredTo: confirmedMessage.deliveredTo.isNotEmpty ? confirmedMessage.deliveredTo : existing.deliveredTo,
             );
             if (index != -1 && index != existingIndex) {
               updatedMessages.removeAt(index);
@@ -1923,10 +1933,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           });
         _currentIsTyping = false;
         
-        // Send read receipt back to sender via socket if enabled
-        final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
-        final effectiveReadReceipts = currentState.readReceiptsEnabled ?? globalReadReceipts;
-        if (effectiveReadReceipts) {
+        // Send read receipt via socket (clears user's unread count on server, server enforces privacy rules)
+        final myId = _storageService.getUserId() ?? '';
+        if (newMessage.senderId != myId) {
           _socketRepository.sendReadReceipt(newMessage.conversationId, newMessage.id);
         }
 
@@ -2091,6 +2100,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ));
         return;
       }
+      final myLastSeen = _storageService.getLastSeenEnabled();
+      final canSeeStatus = myLastSeen && currentState.lastSeenEnabled;
+      if (!canSeeStatus) {
+        emit(currentState.copyWith(
+          isRecipientOnline: false,
+          lastSeen: null,
+        ));
+        return;
+      }
       final cleanLastSeen = (event.lastSeen != null &&
               event.lastSeen!.trim().isNotEmpty &&
               event.lastSeen != 'null' &&
@@ -2141,15 +2159,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       if (!effectiveRead) {
         return;
       }
-      final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
+      int targetIndex = currentState.messages.indexWhere((m) =>
+          _isSameConversation(m.id, event.messageId) || m.id == event.messageId);
+      if (targetIndex == -1 && event.messageId.isNotEmpty) {
+        // If not found by server UUID (e.g. still an optimistic temp message), target the latest outgoing message
+        targetIndex = currentState.messages.lastIndexWhere((m) =>
+            _isSenderMessage(m, currentState.myId));
+      }
       final msgs = currentState.messages;
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
         final isTarget = (targetIndex != -1)
             ? (i <= targetIndex)
-            : (event.messageId.isEmpty || msg.id == event.messageId);
-        if (msg.senderId == currentState.myId && isTarget) {
+            : (event.messageId.isEmpty || _isSameConversation(msg.id, event.messageId) || msg.id == event.messageId);
+        if (_isSenderMessage(msg, currentState.myId) && isTarget) {
           final newReadBy = List<String>.from(msg.readBy);
           final newDeliveredTo = List<String>.from(msg.deliveredTo);
           if (event.readerId != null && event.readerId!.isNotEmpty) {
@@ -2166,6 +2190,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           updated.add(msg);
         }
       }
+      debugPrint('DEBUG: MarkMessageReadEvent applied for messageId=${event.messageId}. TargetIndex=$targetIndex, read messages count=${updated.where((m) => m.isRead).length}');
       emit(currentState.copyWith(messages: updated));
       _saveToCache(event.conversationId, updated);
     }
@@ -2174,15 +2199,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onMarkMessageDelivered(MarkMessageDeliveredEvent event, Emitter<ChatState> emit) {
     final currentState = state;
     if (currentState is ChatLoaded) {
-      final targetIndex = currentState.messages.indexWhere((m) => m.id == event.messageId);
+      int targetIndex = currentState.messages.indexWhere((m) =>
+          _isSameConversation(m.id, event.messageId) || m.id == event.messageId);
+      if (targetIndex == -1 && event.messageId.isNotEmpty) {
+        targetIndex = currentState.messages.lastIndexWhere((m) =>
+            _isSenderMessage(m, currentState.myId));
+      }
       final msgs = currentState.messages;
       final updated = <MessageModel>[];
       for (int i = 0; i < msgs.length; i++) {
         final msg = msgs[i];
         final isTarget = (targetIndex != -1)
             ? (i <= targetIndex)
-            : (event.messageId.isEmpty || msg.id == event.messageId);
-        if (msg.senderId == currentState.myId && isTarget) {
+            : (event.messageId.isEmpty || _isSameConversation(msg.id, event.messageId) || msg.id == event.messageId);
+        if (_isSenderMessage(msg, currentState.myId) && isTarget) {
           final newDeliveredTo = List<String>.from(msg.deliveredTo);
           if (event.recipientId != null && event.recipientId!.isNotEmpty) {
             if (!newDeliveredTo.contains(event.recipientId!)) newDeliveredTo.add(event.recipientId!);
@@ -2195,6 +2225,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           updated.add(msg);
         }
       }
+      debugPrint('DEBUG: MarkMessageDeliveredEvent applied for messageId=${event.messageId}. TargetIndex=$targetIndex, delivered count=${updated.where((m) => m.isDelivered).length}');
       emit(currentState.copyWith(messages: updated));
       _saveToCache(event.conversationId, updated);
     }

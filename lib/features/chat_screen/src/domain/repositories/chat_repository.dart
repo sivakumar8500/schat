@@ -58,6 +58,9 @@ abstract class ChatRepository {
   Future<void> unpinMessage(String messageId);
   Future<List<MessageModel>> getPinnedMessages(String conversationId);
 
+  /// Marks all messages in [conversationId] as read on the backend (clears unread badge).
+  Future<void> markConversationAsRead(String conversationId);
+
   /// Clears all messages in [conversationId] for the calling user only or for everyone.
   /// Returns the server-side `clearedAt` ISO-8601 timestamp.
   Future<String?> clearChat(String conversationId, {String clearType = 'me'});

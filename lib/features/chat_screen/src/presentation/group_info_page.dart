@@ -568,6 +568,8 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                   p['is_admin'] == true
                               ) ?? false;
                               
+                              final bool canShowOnline = user.isOnline && getIt<StorageService>().getLastSeenEnabled() && user.lastSeenEnabled;
+
                               return ListTile(
                                 leading: Stack(
                                   children: [
@@ -591,7 +593,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
                                               style: TextStyle(color: context.colors.primary),
                                             ),
                                     ),
-                                    if (user.isOnline)
+                                    if (canShowOnline)
                                       Positioned(
                                         right: 0,
                                         bottom: 0,

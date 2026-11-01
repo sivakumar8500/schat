@@ -1645,7 +1645,8 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
 
     final imageUrl = chat.recipient.profilePictureUrl;
     final name = chat.recipient.displayName;
-    final isOnline = chat.recipient.isOnline;
+    final myLastSeen = getIt<StorageService>().getLastSeenEnabled();
+    final isOnline = chat.recipient.isOnline && myLastSeen && chat.recipient.lastSeenEnabled;
 
     Widget buildInitialFallback() {
       return Center(

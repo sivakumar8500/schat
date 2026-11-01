@@ -445,8 +445,11 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
 
   Widget _buildHeaderSection() {
     final bool isUserBlocked = _isBlocked || (_recipientUser?.isBlocked ?? false);
-    final isOnline = isUserBlocked ? false : (_recipientUser?.isOnline ?? widget.isOnline);
-    final lastSeenStr = isUserBlocked ? null : _recipientUser?.lastSeen;
+    final bool myLastSeen = getIt<StorageService>().getLastSeenEnabled();
+    final bool recipientLastSeen = _recipientUser?.lastSeenEnabled ?? true;
+    final bool canShowLastSeen = myLastSeen && recipientLastSeen;
+    final isOnline = (isUserBlocked || !canShowLastSeen) ? false : (_recipientUser?.isOnline ?? widget.isOnline);
+    final lastSeenStr = (isUserBlocked || !canShowLastSeen) ? null : _recipientUser?.lastSeen;
     final String? effectivePicUrl = isUserBlocked ? null : (widget.profilePictureUrl ?? _recipientUser?.profilePictureUrl);
 
     return Column(

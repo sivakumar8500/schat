@@ -58,6 +58,7 @@ class CommonEndpoints {
   static String demoteGroupAdmin(String groupId, String userId) => '/groups/$groupId/admins/$userId';
 
   // Chat Actions
+  static String markChatAsRead(String conversationId) => '/chats/$conversationId/read';
   static String favoriteChat(String conversationId) => '/chats/$conversationId/favorite';
   static String unfavoriteChat(String conversationId) => '/chats/$conversationId/unfavorite';
   static String muteChat(String conversationId) => '/chats/$conversationId/mute';

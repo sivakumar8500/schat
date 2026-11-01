@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:schat/injection.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_transfer_screen/src/domain/models/chat_view_user_model.dart';
 import 'package:schat/features/chat_transfer_screen/src/presentation/bloc/chat_transfer_bloc.dart';
@@ -844,7 +846,8 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
 
     final imageUrl = chat.recipient.profilePictureUrl;
     final name = chat.recipient.displayName;
-    final isOnline = chat.recipient.isOnline;
+    final myLastSeen = getIt<StorageService>().getLastSeenEnabled();
+    final isOnline = chat.recipient.isOnline && myLastSeen && chat.recipient.lastSeenEnabled;
 
     Widget buildInitialFallback() {
       return Center(
