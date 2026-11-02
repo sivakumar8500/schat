@@ -4062,6 +4062,7 @@ class _AudioWaveformPlayer extends StatefulWidget {
 
 class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   final AudioPlayer _audioPlayer = AudioPlayer();
+  File? _tempDecryptedFile;
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
@@ -4123,6 +4124,11 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   @override
   void dispose() {
     _audioPlayer.dispose();
+    try {
+      if (_tempDecryptedFile != null) {
+        getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+      }
+    } catch (_) {}
     super.dispose();
   }
 
@@ -4157,10 +4163,39 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
     } else {
       try {
         if (!_isSourceInitialized) {
-          final url = _resolveUrl(widget.audioUrl!);
-          final bool isLocal = !kIsWeb && File(url).existsSync();
+          String playPath = _resolveUrl(widget.audioUrl!);
+          if (!kIsWeb && !File(playPath).existsSync()) {
+            final recovered = SecureAttachmentService.findCachedLocalPath(widget.audioUrl) ??
+                SecureAttachmentService.findLocalFile(pathOrKey: widget.audioUrl);
+            if (recovered != null && File(recovered).existsSync()) {
+              playPath = recovered;
+            }
+          }
+          final bool isLocal = !kIsWeb && File(playPath).existsSync();
+          if (isLocal) {
+            final bool isEnc = playPath.toLowerCase().endsWith('.enc') ||
+                (widget.audioUrl != null && widget.audioUrl!.toLowerCase().endsWith('.enc')) ||
+                SecureAttachmentService.isFileEncryptedSync(playPath);
+            if (isEnc) {
+              try {
+                var cleanName = playPath.split('/').last;
+                while (cleanName.toLowerCase().endsWith('.enc')) {
+                  cleanName = cleanName.substring(0, cleanName.length - 4);
+                }
+                if (cleanName.isEmpty) cleanName = 'audio_track.mp3';
+                final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+                  encryptedFilePath: playPath,
+                  originalFileName: cleanName,
+                );
+                _tempDecryptedFile = decFile;
+                playPath = decFile.path;
+              } catch (e) {
+                debugPrint('Error decrypting audio for playback: $e');
+              }
+            }
+          }
           await _audioPlayer.play(
-            isLocal ? DeviceFileSource(url) : UrlSource(url),
+            isLocal ? DeviceFileSource(playPath) : UrlSource(playPath),
           );
           _isSourceInitialized = true;
         } else {

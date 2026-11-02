@@ -4352,8 +4352,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     String? sendPath = path;
     int sendSize = size;
 
-    if (sendName.toLowerCase().endsWith('.enc') ||
-        (sendPath != null && sendPath.isNotEmpty && sendPath.toLowerCase().endsWith('.enc'))) {
+    final bool isSendEnc = sendName.toLowerCase().endsWith('.enc') ||
+        (sendPath != null && sendPath.isNotEmpty && (sendPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(sendPath)))) ||
+        (sendBytes != null && sendBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(sendBytes, sendName));
+
+    if (isSendEnc) {
       try {
         final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
           filePath: sendPath,
@@ -4468,8 +4471,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     String? uploadPath = path;
     int uploadSize = size;
 
-    if (uploadName.toLowerCase().endsWith('.enc') ||
-        (uploadPath != null && uploadPath.isNotEmpty && uploadPath.toLowerCase().endsWith('.enc'))) {
+    final bool isUploadEnc = uploadName.toLowerCase().endsWith('.enc') ||
+        (uploadPath != null && uploadPath.isNotEmpty && (uploadPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(uploadPath)))) ||
+        (uploadBytes != null && uploadBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(uploadBytes, uploadName));
+
+    if (isUploadEnc) {
       try {
         final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
           filePath: uploadPath,
@@ -8356,7 +8362,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         // Automatically decrypt encrypted .enc files selected from storage/downloads
         bool wasDecrypted = false;
         final bool isEnc = file.name.toLowerCase().endsWith('.enc') ||
-            (file.path != null && file.path!.toLowerCase().endsWith('.enc'));
+            (file.path != null && (file.path!.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(file.path!)))) ||
+            (file.bytes != null && file.bytes!.length >= 16 && !SecureAttachmentService.isPlaintextFile(file.bytes!, file.name));
 
         String fileType = explicitType ?? (type == FileType.audio
             ? 'audio'
@@ -8466,7 +8473,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         for (int i = 0; i < result.files.length; i++) {
           PlatformFile file = result.files[i];
           final bool isEnc = file.name.toLowerCase().endsWith('.enc') ||
-              (file.path != null && file.path!.toLowerCase().endsWith('.enc'));
+              (file.path != null && (file.path!.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(file.path!)))) ||
+              (file.bytes != null && file.bytes!.length >= 16 && !SecureAttachmentService.isPlaintextFile(file.bytes!, file.name));
 
           String fileType = explicitType ?? (type == FileType.audio
               ? 'audio'
@@ -8571,8 +8579,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             String? itemPath = item.path;
             int itemSize = item.size;
 
-            if (itemName.toLowerCase().endsWith('.enc') ||
-                (itemPath != null && itemPath.isNotEmpty && itemPath.toLowerCase().endsWith('.enc'))) {
+            final bool isItemEnc = itemName.toLowerCase().endsWith('.enc') ||
+                (itemPath != null && itemPath.isNotEmpty && (itemPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(itemPath)))) ||
+                (itemBytes != null && itemBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(itemBytes, itemName));
+
+            if (isItemEnc) {
               try {
                 final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
                   filePath: itemPath,
@@ -9002,7 +9013,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         mimeType = _getMimeType(attachment.path, messageTypeStr);
         String filePathToUpload = attachment.path;
 
-        if (fileName.toLowerCase().endsWith('.enc') || filePathToUpload.toLowerCase().endsWith('.enc')) {
+        final bool isDirectEnc = fileName.toLowerCase().endsWith('.enc') ||
+            filePathToUpload.toLowerCase().endsWith('.enc') ||
+            (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(filePathToUpload));
+
+        if (isDirectEnc) {
           try {
             final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
               filePath: filePathToUpload,

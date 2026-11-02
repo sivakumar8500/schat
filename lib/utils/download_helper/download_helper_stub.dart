@@ -13,18 +13,20 @@ Future<File?> downloadFile(
   try {
     final secureService = getIt<SecureAttachmentService>();
 
-    // 1. Download and obtain the raw/decrypted file
-    final normalFile = await secureService.getDecryptedTempFileForViewing(
+    // 1. Download and securely encrypt the attachment with AES-256 following the .enc encryption flow
+    final encryptedFile = await secureService.downloadAndEncryptAttachment(
       url: url,
       fileName: fileName,
+      onProgress: onProgress,
     );
 
-    if (!await normalFile.exists()) {
-      throw Exception('Failed to download or decrypt attachment');
+    if (!await encryptedFile.exists()) {
+      throw Exception('Failed to download and encrypt attachment');
     }
 
-    final bytes = await normalFile.readAsBytes();
+    final encryptedBytes = await encryptedFile.readAsBytes();
 
+    // 2. Determine target .enc filename
     var cleanName = fileName.trim();
     if (cleanName.contains('?')) {
       cleanName = cleanName.split('?').first.trim();
@@ -32,14 +34,21 @@ Future<File?> downloadFile(
     if (cleanName.contains('/')) {
       cleanName = cleanName.split('/').last.trim();
     }
-    while (cleanName.toLowerCase().endsWith('.enc')) {
-      cleanName = cleanName.substring(0, cleanName.length - 4);
+    if (cleanName.isEmpty || cleanName == 'File' || cleanName == 'downloaded_file') {
+      final urlName = url.split('?').first.split('/').last.trim();
+      if (urlName.isNotEmpty && urlName.contains('.')) {
+        cleanName = urlName;
+      } else {
+        cleanName = encryptedFile.path.split('/').last;
+      }
     }
-    if (cleanName.isEmpty) cleanName = 'downloaded_file';
+    if (!cleanName.toLowerCase().endsWith('.enc')) {
+      cleanName = '$cleanName.enc';
+    }
 
     File? savedPublicFile;
 
-    // 2. Save to public /storage/emulated/0/Download/Schat on Android
+    // 3. Save encrypted .enc file to public /storage/emulated/0/Download/Schat on Android
     if (Platform.isAndroid) {
       try {
         final schatDir = Directory('/storage/emulated/0/Download/Schat');
@@ -47,22 +56,20 @@ Future<File?> downloadFile(
           await schatDir.create(recursive: true);
         }
         final target = File('${schatDir.path}/$cleanName');
-        await target.writeAsBytes(bytes, flush: true);
+        await target.writeAsBytes(encryptedBytes, flush: true);
         savedPublicFile = target;
-        debugPrint('downloadFile: Saved directly to public path -> ${target.path}');
+        debugPrint('downloadFile: Saved encrypted .enc file to public path -> ${target.path}');
       } catch (e) {
         debugPrint('downloadFile: Direct save error: $e');
       }
 
-      // 3. Also invoke native MediaStore.Downloads via channel to guarantee visibility on Android 10+
+      // 4. Also invoke native MediaStore.Downloads via channel to guarantee visibility on Android 10+
       try {
         const channel = MethodChannel('com.sdpi.schat/screenshot_detector');
-        final ext = cleanName.contains('.') ? cleanName.split('.').last.toLowerCase() : '';
-        final mimeType = SecureAttachmentService.getMimeTypeForExtension(ext);
         final String? nativeSavedPath = await channel.invokeMethod<String>('saveFileToDownloads', {
-          'bytes': bytes,
+          'bytes': encryptedBytes,
           'fileName': cleanName,
-          'mimeType': mimeType,
+          'mimeType': 'application/octet-stream',
         });
         if (nativeSavedPath != null && nativeSavedPath.isNotEmpty) {
           final f = File(nativeSavedPath);
@@ -74,7 +81,7 @@ Future<File?> downloadFile(
         debugPrint('downloadFile: Native MediaStore channel error: $e');
       }
 
-      // 4. Trigger MediaScanner
+      // 5. Trigger MediaScanner
       if (savedPublicFile != null) {
         try {
           if (getIt.isRegistered<ScreenProtectionService>()) {
@@ -84,16 +91,23 @@ Future<File?> downloadFile(
       }
     }
 
-    // Keep cached in persistent storage
+    final effectiveFile = savedPublicFile ?? encryptedFile;
+
+    // 6. Cache the local mapping for url, fileName, and cleanName
+    SecureAttachmentService.cacheMediaMapping(key: url, localPath: effectiveFile.path);
+    SecureAttachmentService.cacheMediaMapping(key: fileName, localPath: effectiveFile.path);
+    SecureAttachmentService.cacheMediaMapping(key: cleanName, localPath: effectiveFile.path);
+
+    // 7. Keep cached in persistent storage
     try {
       await secureService.saveToPersistentStorage(
-        originalPath: savedPublicFile?.path ?? normalFile.path,
+        originalPath: effectiveFile.path,
         fileName: cleanName,
-        bytes: bytes,
+        bytes: encryptedBytes,
       );
     } catch (_) {}
 
-    return savedPublicFile ?? normalFile;
+    return effectiveFile;
   } catch (e) {
     debugPrint('Error downloading secure attachment: $e');
     return null;

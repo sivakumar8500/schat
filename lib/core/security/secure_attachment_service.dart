@@ -1073,9 +1073,12 @@ class SecureAttachmentService {
 
     // 3. Decrypt bytes if encrypted
     Uint8List normalBytes = rawBytes;
+    final bool hasEncExtension = fileName.toLowerCase().endsWith('.enc') ||
+        (filePath != null && filePath.toLowerCase().endsWith('.enc'));
+
     if (rawBytes.length >= 16) {
-      final bool isPlain = _isPlaintextFile(rawBytes, cleanName);
-      if (!isPlain) {
+      final bool shouldAttemptDecryption = hasEncExtension || !_isPlaintextFile(rawBytes, cleanName);
+      if (shouldAttemptDecryption) {
         final ivBytes = rawBytes.sublist(0, 16);
         final cipherBytes = rawBytes.sublist(16);
 

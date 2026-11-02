@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
@@ -57,7 +58,11 @@ class TicketsRepositoryImpl implements TicketsRepository {
         String uploadFilePath = file.path;
         String fileName = file.path.split('/').last.split('\\').last;
 
-        if (fileName.toLowerCase().endsWith('.enc')) {
+        final bool isEnc = fileName.toLowerCase().endsWith('.enc') ||
+            uploadFilePath.toLowerCase().endsWith('.enc') ||
+            (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(uploadFilePath));
+
+        if (isEnc) {
           try {
             final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
               filePath: file.path,

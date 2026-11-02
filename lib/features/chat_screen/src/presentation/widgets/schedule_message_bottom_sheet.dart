@@ -520,7 +520,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             fileSize = await _attachedFile!.length();
             mimeType = _getMimeType(_attachedFile!.path, typeStr);
 
-            if (fileName.toLowerCase().endsWith('.enc') || _attachedFile!.path.toLowerCase().endsWith('.enc')) {
+            final bool isEnc = fileName.toLowerCase().endsWith('.enc') ||
+                _attachedFile!.path.toLowerCase().endsWith('.enc') ||
+                (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(_attachedFile!.path));
+
+            if (isEnc) {
               try {
                 final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
                   filePath: _attachedFile!.path,
@@ -745,7 +749,11 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               fileSize = await _attachedFile!.length();
               mimeType = _getMimeType(_attachedFile!.path, typeStr);
 
-              if (fileName.toLowerCase().endsWith('.enc') || _attachedFile!.path.toLowerCase().endsWith('.enc')) {
+              final bool isEnc = fileName.toLowerCase().endsWith('.enc') ||
+                _attachedFile!.path.toLowerCase().endsWith('.enc') ||
+                (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(_attachedFile!.path));
+
+            if (isEnc) {
                 try {
                   final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
                     filePath: _attachedFile!.path,

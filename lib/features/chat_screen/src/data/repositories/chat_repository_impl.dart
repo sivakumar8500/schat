@@ -253,8 +253,11 @@ class ChatRepositoryImpl implements ChatRepository {
       String resolvedMime = mimeType;
 
       // Automatically remove encryption and normalize .enc files to standard format before upload
-      if (resolvedFileName.toLowerCase().endsWith('.enc') ||
-          (resolvedFilePath.isNotEmpty && resolvedFilePath.toLowerCase().endsWith('.enc'))) {
+      final bool isEncrypted = resolvedFileName.toLowerCase().endsWith('.enc') ||
+          (resolvedFilePath.isNotEmpty && (resolvedFilePath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(resolvedFilePath)))) ||
+          (resolvedFileBytes != null && resolvedFileBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(resolvedFileBytes, resolvedFileName));
+
+      if (isEncrypted) {
         try {
           final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
             filePath: resolvedFilePath.isNotEmpty ? resolvedFilePath : null,
@@ -270,9 +273,9 @@ class ChatRepositoryImpl implements ChatRepository {
           }
           resolvedMime = normal.mimeType;
           resolvedFileSizeBytes = normal.fileSizeBytes;
-          debugPrint('ChatRepository.uploadMedia: Successfully normalized .enc -> $resolvedFileName ($resolvedMime, $resolvedMediaType)');
+          debugPrint('ChatRepository.uploadMedia: Successfully normalized encrypted file -> $resolvedFileName ($resolvedMime, $resolvedMediaType)');
         } catch (e) {
-          debugPrint('ChatRepository.uploadMedia: Error auto-decrypting .enc file: $e');
+          debugPrint('ChatRepository.uploadMedia: Error auto-decrypting encrypted file: $e');
         }
       }
 

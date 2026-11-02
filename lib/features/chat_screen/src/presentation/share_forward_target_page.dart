@@ -363,7 +363,7 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
             }
           }
 
-          // If item is a local file or bytes, normalize and decrypt .enc files
+          // If item is a local file, normalize and decrypt .enc files
           final bool isLocal = !kIsWeb && itemPath.isNotEmpty && File(itemPath).existsSync();
           if (isLocal) {
             try {

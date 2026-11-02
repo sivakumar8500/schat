@@ -1157,15 +1157,16 @@ class MainActivity : FlutterActivity() {
     private fun saveFileToPublicDownloads(bytes: ByteArray, requestedFileName: String, mimeType: String?): String? {
         try {
             var fileName = requestedFileName
-            while (fileName.lowercase().endsWith(".enc")) {
-                fileName = fileName.substring(0, fileName.length - 4)
-            }
-            if (fileName.isEmpty()) fileName = "downloaded_file"
+            if (fileName.isEmpty()) fileName = "downloaded_file.enc"
 
             var resolvedMime = mimeType
             if (resolvedMime == null || resolvedMime.isEmpty() || resolvedMime == "*/*") {
-                val ext = fileName.substringAfterLast('.', "").lowercase()
-                resolvedMime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                resolvedMime = if (fileName.lowercase().endsWith(".enc")) {
+                    "application/octet-stream"
+                } else {
+                    val ext = fileName.substringAfterLast('.', "").lowercase()
+                    MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+                }
             }
 
             var savedPath: String? = null

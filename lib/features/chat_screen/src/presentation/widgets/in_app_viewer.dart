@@ -936,8 +936,20 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),
-                  onPressed: () {
-                    Share.shareXFiles([XFile(cleanPath, name: clean)]);
+                  onPressed: () async {
+                    String sharePath = cleanPath;
+                    final bool isEnc = sharePath.toLowerCase().endsWith('.enc') ||
+                        (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(sharePath));
+                    if (isEnc) {
+                      try {
+                        final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+                          encryptedFilePath: sharePath,
+                          originalFileName: clean,
+                        );
+                        sharePath = decFile.path;
+                      } catch (_) {}
+                    }
+                    Share.shareXFiles([XFile(sharePath, name: clean)]);
                   },
                 ),
               ],
@@ -2142,14 +2154,25 @@ class _InAppPdfViewerState extends State<_InAppPdfViewer> {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              onPressed: () {
+              onPressed: () async {
                 String? targetPath = cleanPath;
                 if (!File(targetPath).existsSync()) {
                   targetPath = SecureAttachmentService.findCachedLocalPath(widget.filePath) ??
                       SecureAttachmentService.findLocalFile(pathOrKey: widget.filePath, fileName: cleanName);
                 }
                 if (targetPath != null && File(targetPath).existsSync()) {
-                  Share.shareXFiles([XFile(targetPath, name: cleanName)]);
+                  final bool isEnc = targetPath.toLowerCase().endsWith('.enc') ||
+                      (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(targetPath));
+                  if (isEnc) {
+                    try {
+                      final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+                        encryptedFilePath: targetPath,
+                        originalFileName: cleanName,
+                      );
+                      targetPath = decFile.path;
+                    } catch (_) {}
+                  }
+                  Share.shareXFiles([XFile(targetPath!, name: cleanName)]);
                 } else {
                   context.showInfoNotification('PDF file is not available on local storage');
                 }
