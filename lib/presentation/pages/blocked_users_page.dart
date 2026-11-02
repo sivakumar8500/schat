@@ -4,12 +4,12 @@ import 'package:hive/hive.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/user_list_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class BlockedUsersPage extends StatefulWidget {
   const BlockedUsersPage({super.key});
@@ -206,18 +206,14 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Home Wave Lines Background matching Home Screen
-          Positioned.fill(
+          // Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

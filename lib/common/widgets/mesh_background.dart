@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:schat/utils/common_colors.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class MeshBackground extends StatelessWidget {
   final Widget child;
@@ -8,23 +7,12 @@ class MeshBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-
     return Stack(
       children: [
-        // Base background color
-        Positioned.fill(
-          child: Container(
-            color: context.colors.scaffoldBackground,
-          ),
-        ),
-
-        // Home Wave Lines Background matching Home Screen (Top-Right & Bottom-Left)
-        Positioned.fill(
+        // App background matching Home Screen
+        const Positioned.fill(
           child: IgnorePointer(
-            child: CustomPaint(
-              painter: HomeBackgroundWavePainter(isDark: isDark),
-            ),
+            child: AppHomeBackground(),
           ),
         ),
 
@@ -34,4 +22,3 @@ class MeshBackground extends StatelessWidget {
     );
   }
 }
-

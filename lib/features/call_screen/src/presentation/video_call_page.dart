@@ -95,13 +95,17 @@ class _VideoCallPageState extends State<VideoCallPage>
       debugPrint('Wakelock error in VideoCallPage: $e');
     }
 
+    _webRtcService.initRenderers();
+
     if (_webRtcService.currentLocalStream != null) {
-      _webRtcService.localRenderer.srcObject = null;
-      _webRtcService.localRenderer.srcObject = _webRtcService.currentLocalStream;
+      if (_webRtcService.localRenderer.srcObject != _webRtcService.currentLocalStream) {
+        _webRtcService.localRenderer.srcObject = _webRtcService.currentLocalStream;
+      }
     }
     if (_webRtcService.currentRemoteStream != null) {
-      _webRtcService.remoteRenderer.srcObject = null;
-      _webRtcService.remoteRenderer.srcObject = _webRtcService.currentRemoteStream;
+      if (_webRtcService.remoteRenderer.srcObject != _webRtcService.currentRemoteStream) {
+        _webRtcService.remoteRenderer.srcObject = _webRtcService.currentRemoteStream;
+      }
     }
 
     LiveKitCallService.instance.participantsNotifier.addListener(_onLiveKitParticipantsUpdated);

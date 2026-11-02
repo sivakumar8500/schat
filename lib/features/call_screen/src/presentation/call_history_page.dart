@@ -21,6 +21,7 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/features/call_screen/src/domain/models/ongoing_group_call.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 enum CallFilter { all, missed, audio, video, incoming, outgoing }
 
@@ -29,10 +30,28 @@ class CallHistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider.value(
+    final content = BlocProvider.value(
       value: getIt<CallHistoryCubit>()..fetchCallHistory(),
       child: const _CallHistoryPageContent(),
     );
+
+    if (Navigator.canPop(context)) {
+      return Scaffold(
+        backgroundColor: context.colors.scaffoldBackground,
+        body: Stack(
+          children: [
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: AppHomeBackground(),
+              ),
+            ),
+            SafeArea(child: content),
+          ],
+        ),
+      );
+    }
+
+    return content;
   }
 }
 

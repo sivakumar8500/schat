@@ -39,7 +39,7 @@ class CallConnecting extends CallWebRtcState {
     this.extraParticipants = const [],
     this.connectedParticipantIds = const {},
     this.disconnectedParticipantIds = const {},
-  }) : isSpeakerOn = isSpeakerOn ?? true;
+  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
 
   CallConnecting copyWith({
     String? contactName,
@@ -102,7 +102,7 @@ class CallRinging extends CallWebRtcState {
     this.extraParticipants = const [],
     this.connectedParticipantIds = const {},
     this.disconnectedParticipantIds = const {},
-  }) : isSpeakerOn = isSpeakerOn ?? true;
+  }) : isSpeakerOn = isSpeakerOn ?? isVideo;
   
   CallRinging copyWith({
     bool? isSpeakerOn,

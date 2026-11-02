@@ -7,9 +7,9 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fonts.dart';
 import 'package:schat/utils/common_fontstyles.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class TonePickerScreen extends StatefulWidget {
   final ToneType toneType;
@@ -239,12 +239,10 @@ class _TonePickerScreenState extends State<TonePickerScreen>
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Wave lines background matching Home & Emergency Contacts
-          Positioned.fill(
+          // Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

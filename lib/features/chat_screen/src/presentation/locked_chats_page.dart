@@ -9,6 +9,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class LockedChatsPage extends StatefulWidget {
   final List<SearchChatItem>? initialLockedChats;
@@ -117,7 +118,7 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
     return Scaffold(
       backgroundColor: colors.scaffoldBackground,
       appBar: AppBar(
-        backgroundColor: colors.scaffoldBackground,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, color: colors.textPrimary, size: 20),
@@ -180,10 +181,20 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _fetchLockedChats,
-        color: primaryColor,
-        child: _buildBody(colors, primaryColor, isDark),
+      body: Stack(
+        children: [
+          // Home background wallpaper
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: AppHomeBackground(),
+            ),
+          ),
+          RefreshIndicator(
+            onRefresh: _fetchLockedChats,
+            color: primaryColor,
+            child: _buildBody(colors, primaryColor, isDark),
+          ),
+        ],
       ),
     );
   }

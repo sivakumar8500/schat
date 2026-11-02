@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/tickets_screen/src/domain/models/ticket_model.dart';
 import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_bloc.dart';
 import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_event.dart';
@@ -11,6 +10,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/chat_screen/src/presentation/full_screen_image_page.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class TicketsPage extends StatefulWidget {
   const TicketsPage({super.key});
@@ -299,7 +299,6 @@ class _TicketsPageState extends State<TicketsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
     const primaryColor = Color(0xFF00873C);
 
     return BlocListener<TicketsBloc, TicketsState>(
@@ -316,12 +315,10 @@ class _TicketsPageState extends State<TicketsPage> {
         backgroundColor: context.colors.scaffoldBackground,
         body: Stack(
           children: [
-            // 1. Full screen wave background
-            Positioned.fill(
+            // 1. Home background wallpaper
+            const Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(
-                  painter: HomeBackgroundWavePainter(isDark: isDark),
-                ),
+                child: AppHomeBackground(),
               ),
             ),
 

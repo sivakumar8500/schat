@@ -10,7 +10,6 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_s
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -20,6 +19,7 @@ import 'package:schat/injection.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class UserListPage extends StatefulWidget {
   final bool forceSync;
@@ -50,7 +50,7 @@ class _UserListPageState extends State<UserListPage> {
   final List<UserModel> _selectedUsers = [];
   bool _isSyncInProgress = false;
 
-  final String _appLink = 'https://schat.app';
+  final String _appLink = 'https://play.google.com/store/apps/details?id=com.sdpi.schat&pcampaignid=web_share';
   final String _inviteTitle = 'Join S-CHAT - Secure Messaging';
 
   void _triggerSync() {
@@ -240,8 +240,6 @@ class _UserListPageState extends State<UserListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-
     return MultiBlocProvider(
       providers: [
         BlocProvider.value(
@@ -312,11 +310,9 @@ class _UserListPageState extends State<UserListPage> {
             body: Stack(
               children: [
                 if (widget.isPicker)
-                  Positioned.fill(
+                  const Positioned.fill(
                     child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: HomeBackgroundWavePainter(isDark: isDark),
-                      ),
+                      child: AppHomeBackground(),
                     ),
                   ),
                 SafeArea(

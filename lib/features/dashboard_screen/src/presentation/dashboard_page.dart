@@ -46,6 +46,7 @@ import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_soc
 import 'package:schat/features/chat_socket_screen/src/presentation/bloc/chat_socket_event.dart';
 import 'package:schat/features/subscription_screen/subscription_screen.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -722,29 +723,6 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
     HomeThemeBottomSheet.show(context);
   }
 
-  Widget _buildHomeWallpaperImage(String url) {
-    if (!kIsWeb && !url.startsWith('http://') && !url.startsWith('https://')) {
-      final file = File(url);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-        );
-      }
-    }
-
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      errorWidget: (context, url, error) => const SizedBox.shrink(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     debugPrint('DEBUG: Building DashboardPage');
@@ -754,66 +732,10 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Full-screen background (waves / custom wallpaper / theme color)
-          Positioned.fill(
+          // Full-screen background (waves / custom wallpaper / theme color / default pastel background)
+          const Positioned.fill(
             child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: getIt<ThemeController>(),
-                builder: (context, _) {
-                  final themeCtrl = getIt<ThemeController>();
-                  final wallpaper = themeCtrl.homeWallpaperUrl;
-                  final themeColor = themeCtrl.homeThemeColor;
-
-                  if (wallpaper != null && wallpaper.isNotEmpty) {
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildHomeWallpaperImage(wallpaper),
-                        // Soft scrim overlay for pristine readability of text & cards
-                        Container(
-                          color: (isDark ? Colors.black : Colors.white).withValues(
-                            alpha: isDark ? 0.35 : 0.20,
-                          ),
-                        ),
-                      ],
-                    );
-                  }
-
-                  if (themeColor != null) {
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: isDark
-                                  ? [
-                                      themeColor.withValues(alpha: 0.35),
-                                      context.colors.scaffoldBackground,
-                                      themeColor.withValues(alpha: 0.18),
-                                    ]
-                                  : [
-                                      themeColor.withValues(alpha: 0.25),
-                                      context.colors.scaffoldBackground,
-                                      themeColor.withValues(alpha: 0.10),
-                                    ],
-                            ),
-                          ),
-                        ),
-                        CustomPaint(
-                          painter: HomeBackgroundWavePainter(isDark: isDark),
-                        ),
-                      ],
-                    );
-                  }
-
-                  return CustomPaint(
-                    painter: HomeBackgroundWavePainter(isDark: isDark),
-                  );
-                },
-              ),
+              child: AppHomeBackground(),
             ),
           ),
           SafeArea(
@@ -1987,45 +1909,62 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
 
         return Container(
           decoration: BoxDecoration(
-            color: context.colors.scaffoldBackground,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
                 blurRadius: 16,
                 offset: const Offset(0, -4),
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: SafeArea(
-            top: false,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+          child: ClipRect(
+            child: Stack(
               children: [
-                _buildNavItem(
-                  index: 0,
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: 'Messages',
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: AppHomeBackground(),
+                  ),
                 ),
-                _buildNavItem(
-                  index: 1,
-                  icon: Icons.motion_photos_on_outlined,
-                  activeIcon: Icons.motion_photos_on_rounded,
-                  label: 'Status',
-                  showDot: hasUnviewedStatus,
-                ),
-                _buildNavItem(
-                  index: 2,
-                  icon: Icons.call_outlined,
-                  activeIcon: Icons.phone_rounded,
-                  label: 'Calls',
-                ),
-                _buildNavItem(
-                  index: 3,
-                  icon: Icons.person_add_outlined,
-                  activeIcon: Icons.person_add_alt_1_rounded,
-                  label: 'New Chat',
+                Container(
+                  color: (isDark ? Colors.black : Colors.white).withValues(
+                    alpha: isDark ? 0.40 : 0.20,
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildNavItem(
+                            index: 0,
+                            icon: Icons.chat_bubble_outline_rounded,
+                            activeIcon: Icons.chat_bubble_rounded,
+                            label: 'Messages',
+                          ),
+                          _buildNavItem(
+                            index: 1,
+                            icon: Icons.motion_photos_on_outlined,
+                            activeIcon: Icons.motion_photos_on_rounded,
+                            label: 'Status',
+                            showDot: hasUnviewedStatus,
+                          ),
+                          _buildNavItem(
+                            index: 2,
+                            icon: Icons.call_outlined,
+                            activeIcon: Icons.phone_rounded,
+                            label: 'Calls',
+                          ),
+                          _buildNavItem(
+                            index: 3,
+                            icon: Icons.person_add_outlined,
+                            activeIcon: Icons.person_add_alt_1_rounded,
+                            label: 'New Chat',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

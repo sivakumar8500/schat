@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:schat/core/security/security_scanner_service.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/security_scanner/domain/entities/scan_report_model.dart';
 import 'package:schat/features/security_scanner/presentation/controllers/scan_progress_controller.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/features/security_scanner/presentation/widgets/radar_scan_widget.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class ScanResultScreen extends StatefulWidget {
   const ScanResultScreen({super.key});
@@ -54,12 +54,10 @@ class _ScanResultScreenState extends State<ScanResultScreen> {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // 1. Full-screen Flowing Wave Background spanning status bar & bottom bar
-          Positioned.fill(
+          // 1. Full-screen Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

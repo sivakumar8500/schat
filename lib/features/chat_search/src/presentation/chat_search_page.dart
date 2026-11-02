@@ -7,7 +7,6 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_even
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/recipient_model.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
 import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/features/chat_search/src/domain/models/global_search_model.dart';
@@ -21,6 +20,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_b
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:collection/collection.dart';
 import 'package:schat/injection.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class ChatSearchPage extends StatefulWidget {
   const ChatSearchPage({super.key});
@@ -166,12 +166,10 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Background wave pattern matching Home Screen
-          Positioned.fill(
+          // Background wallpaper matching Home Screen
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
           SafeArea(

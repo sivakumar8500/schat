@@ -11,6 +11,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/permission_helper.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class PermissionsPage extends StatefulWidget {
   const PermissionsPage({super.key});
@@ -122,19 +123,16 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
     final primaryColor = context.colors.primary;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Wave background matching Home Screen
-          Positioned.fill(
+          // Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

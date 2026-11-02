@@ -23,6 +23,7 @@ import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_sizes.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class StatusPage extends StatelessWidget {
   const StatusPage({super.key});
@@ -539,13 +540,11 @@ class StatusPageContent extends StatelessWidget {
         final viewedRecent = recentStatuses.where((c) => c.allViewed).toList();
         final isDark = context.colors.isDark;
 
-        return Scaffold(
-          backgroundColor: Colors.transparent,
-          body: RefreshIndicator(
-            onRefresh: () async {
-              context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
-            },
-            child: CustomScrollView(
+        final bodyContent = RefreshIndicator(
+          onRefresh: () async {
+            context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
+          },
+          child: CustomScrollView(
               slivers: [
                 // App Bar
                 SliverAppBar(
@@ -773,7 +772,22 @@ class StatusPageContent extends StatelessWidget {
                 const SliverToBoxAdapter(child: SizedBox(height: CommonSizes.p100)),
               ],
             ),
-          ),
+          );
+
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Navigator.canPop(context)
+              ? Stack(
+                  children: [
+                    const Positioned.fill(
+                      child: IgnorePointer(
+                        child: AppHomeBackground(),
+                      ),
+                    ),
+                    SafeArea(child: bodyContent),
+                  ],
+                )
+              : bodyContent,
         );
       },
     );

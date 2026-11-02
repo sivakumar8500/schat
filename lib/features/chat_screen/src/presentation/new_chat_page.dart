@@ -10,7 +10,6 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_s
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -19,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:schat/injection.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class NewChatPage extends StatefulWidget {
   const NewChatPage({super.key});
@@ -58,7 +58,7 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
     }
   }
 
-  final String _appLink = 'https://schat.app';
+  final String _appLink = 'https://play.google.com/store/apps/details?id=com.sdpi.schat&pcampaignid=web_share';
   final String _inviteTitle = 'Join S-CHAT - Secure Messaging';
 
   void _showInviteBottomSheet(String name, String phone) {
@@ -217,8 +217,6 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-
     return MultiBlocProvider(
       providers: [
         BlocProvider.value(
@@ -259,12 +257,10 @@ class _NewChatPageState extends State<NewChatPage> with WidgetsBindingObserver {
           backgroundColor: context.colors.scaffoldBackground,
           body: Stack(
             children: [
-              // Flowing Wave Lines Background matching Home Screen
-              Positioned.fill(
+              // Pastel Waves Background matching Home Screen
+              const Positioned.fill(
                 child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: HomeBackgroundWavePainter(isDark: isDark),
-                  ),
+                  child: AppHomeBackground(),
                 ),
               ),
 

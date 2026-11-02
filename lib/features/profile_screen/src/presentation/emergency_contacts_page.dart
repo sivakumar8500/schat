@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/profile_screen/src/domain/repositories/profile_repository.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/emergency_contacts_cubit.dart';
 import 'package:schat/features/profile_screen/src/presentation/bloc/emergency_contacts_state.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -11,6 +10,7 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 enum EmergencyFilter { all, personal, helplines }
 
@@ -340,12 +340,10 @@ class _EmergencyContactsViewState extends State<_EmergencyContactsView> {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // Home Wave Lines Background matching Home Screen
-          Positioned.fill(
+          // Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

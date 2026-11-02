@@ -806,7 +806,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         isGroup: event.isGroup,
         groupName: event.groupName,
         extraParticipants: event.extraParticipants,
-        isSpeakerOn: true,
+        isSpeakerOn: event.isVideo,
       ));
       
       // Start back ring early so the caller hears it immediately
@@ -992,7 +992,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
       if (callerId.isNotEmpty) {
         connectedSet.add(callerId);
       }
-      bool ringingSpeaker = true;
+      bool ringingSpeaker = isVideo;
       if (state is CallRinging) {
         connectedSet.addAll((state as CallRinging).connectedParticipantIds);
         ringingSpeaker = (state as CallRinging).isSpeakerOn;
@@ -1651,7 +1651,7 @@ class CallWebRtcBloc extends Bloc<CallWebRtcEvent, CallWebRtcState> with Widgets
         disconnectedSet.remove(senderId);
       }
       
-      bool speaker = true;
+      bool speaker = isVideo;
       if (currentState is CallConnecting) {
         speaker = currentState.isSpeakerOn;
       }

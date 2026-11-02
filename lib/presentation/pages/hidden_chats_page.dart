@@ -6,11 +6,11 @@ import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dar
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/features/chat_screen/chat_screen.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class HiddenChatsPage extends StatefulWidget {
   const HiddenChatsPage({super.key});
@@ -98,8 +98,7 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.colors.isDark;
-    final primaryColor = const Color(0xFF00873C);
+    const primaryColor = Color(0xFF00873C);
 
     final filteredChats = _hiddenChats.where((chat) {
       final name = chat.isGroup
@@ -112,12 +111,10 @@ class _HiddenChatsPageState extends State<HiddenChatsPage> {
       backgroundColor: context.colors.scaffoldBackground,
       body: Stack(
         children: [
-          // 1. Flowing Wave Lines Background matching Home Screen (Full Screen)
-          Positioned.fill(
+          // 1. Home background wallpaper
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: HomeBackgroundWavePainter(isDark: isDark),
-              ),
+              child: AppHomeBackground(),
             ),
           ),
 

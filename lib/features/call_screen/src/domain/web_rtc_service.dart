@@ -39,6 +39,7 @@ class WebRtcService {
   bool _isCleaningUp = false;
   bool _isSwitchingCamera = false;
   bool _isTogglingSpeaker = false;
+  bool _isSpeakerOn = false;
   Timer? _reconnectTimer;
   StreamSubscription? _connectivitySubscription;
 
@@ -51,6 +52,7 @@ class WebRtcService {
   Stream<CallSignalState> get callSignalState => _callSignalController.stream;
   MediaStream? get currentLocalStream => _localStream;
   MediaStream? get currentRemoteStream => _remoteStream;
+  bool get isSpeakerOn => _isSpeakerOn;
 
   RTCPeerConnection? get peerConnection => _peerConnection;
   Map<String, RTCPeerConnection> get peerConnections => _peerConnections;
@@ -232,6 +234,9 @@ class WebRtcService {
       },
     });
 
+    // 5. Initialize audio routing: video defaults to speaker, audio defaults to earpiece
+    await toggleSpeaker(isVideo);
+
     debugPrint('WebRTC: call_initiate sent for conv=$conversationId (recipient=$recipientId, isGroup=$isGroup, sender=$myId)');
   }
 
@@ -412,6 +417,9 @@ class WebRtcService {
       'type': 'call_answered',
     });
 
+    // Initialize audio routing: video defaults to speaker, audio defaults to earpiece
+    await toggleSpeaker(isVideo);
+
     debugPrint('WebRTC: call_response & call_answered (accept) sent for conv=$conversationId from $myId to $targetId');
   }
 
@@ -523,6 +531,7 @@ class WebRtcService {
       await _peerConnection!.setRemoteDescription(remoteAnswer);
       await _processRemoteCandidateQueue();
       _callSignalController.add(CallSignalState.active);
+      await toggleSpeaker(_isSpeakerOn);
       debugPrint('WebRTC: Remote answer set successfully — call is ACTIVE');
     } catch (e, st) {
       debugPrint('WebRTC: Error setting remote description in handleCallAnswered: $e\n$st');
@@ -1118,6 +1127,7 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   Future<void> toggleSpeaker(bool speakerOn) async {
+    _isSpeakerOn = speakerOn;
     if (_isTogglingSpeaker) {
       debugPrint('WebRTC: toggleSpeaker skipped, already toggling');
       return;
@@ -1376,13 +1386,15 @@ class WebRtcService {
       
       // Ensure renderers refresh video texture
       if (_localStream != null) {
-        localRenderer.srcObject = null;
-        localRenderer.srcObject = _localStream;
+        if (localRenderer.srcObject != _localStream) {
+          localRenderer.srcObject = _localStream;
+        }
         _localStreamController.add(_localStream);
       }
       if (_remoteStream != null) {
-        remoteRenderer.srcObject = null;
-        remoteRenderer.srcObject = _remoteStream;
+        if (remoteRenderer.srcObject != _remoteStream) {
+          remoteRenderer.srcObject = _remoteStream;
+        }
         _remoteStreamController.add(_remoteStream);
       }
       _callSignalController.add(CallSignalState.active);
@@ -1571,6 +1583,7 @@ class WebRtcService {
 
       _localStreamController.add(null);
       _remoteStreamController.add(null);
+      _isSpeakerOn = false;
 
       try {
         await _nativeAudioChannel.invokeMethod('resetAudioMode');
@@ -1587,18 +1600,6 @@ class WebRtcService {
   // ─────────────────────────────────────────────
 
   String _optimizeOpusAudio(String sdp) {
-    if (sdp.contains('a=fmtp:111')) {
-      return sdp.replaceAllMapped(
-        RegExp(r'a=fmtp:111 ([^\r\n]+)'),
-        (match) {
-          final existing = match.group(1) ?? '';
-          if (!existing.contains('maxaveragebitrate')) {
-            return 'a=fmtp:111 $existing;maxaveragebitrate=64000;stereo=0;sprop-stereo=0;cbr=0';
-          }
-          return match.group(0)!;
-        },
-      );
-    }
     return sdp;
   }
 
@@ -1608,15 +1609,16 @@ class WebRtcService {
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
-        'highpassFilter': false,
-        'typingNoiseDetection': false,
       },
       'video': isVideo
           ? {
+              'mandatory': {
+                'minWidth': '640',
+                'minHeight': '480',
+                'minFrameRate': '30',
+              },
               'facingMode': 'user',
-              'width': {'ideal': 640, 'max': 1280},
-              'height': {'ideal': 480, 'max': 720},
-              'frameRate': {'ideal': 24, 'max': 30},
+              'optional': [],
             }
           : false,
     };
@@ -1636,12 +1638,8 @@ class WebRtcService {
               'echoCancellation': true,
               'noiseSuppression': true,
               'autoGainControl': true,
-              'highpassFilter': false,
             },
             'video': {
-              'width': {'ideal': 640},
-              'height': {'ideal': 480},
-              'frameRate': {'ideal': 30},
               'facingMode': 'user',
             },
           });
@@ -1650,15 +1648,27 @@ class WebRtcService {
           }
           return stream;
         } catch (e2) {
-          debugPrint('WebRTC: Retrying getUserMedia with audio-only fallback...');
-          final stream = await navigator.mediaDevices.getUserMedia({
-            'audio': true,
-            'video': false,
-          });
-          for (var track in stream.getAudioTracks()) {
-            track.enabled = true;
+          debugPrint('WebRTC: Retrying getUserMedia with minimal video constraints: $e2');
+          try {
+            final stream = await navigator.mediaDevices.getUserMedia({
+              'audio': true,
+              'video': true,
+            });
+            for (var track in stream.getAudioTracks()) {
+              track.enabled = true;
+            }
+            return stream;
+          } catch (e3) {
+            debugPrint('WebRTC: Video getUserMedia completely failed: $e3. Falling back to audio.');
+            final stream = await navigator.mediaDevices.getUserMedia({
+              'audio': true,
+              'video': false,
+            });
+            for (var track in stream.getAudioTracks()) {
+              track.enabled = true;
+            }
+            return stream;
           }
-          return stream;
         }
       } else {
         debugPrint('WebRTC: Retrying pure audio getUserMedia...');
@@ -1721,9 +1731,7 @@ class WebRtcService {
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams.first;
       } else {
-        if (_remoteStream == null) {
-          _remoteStream = await createLocalMediaStream('remote_stream_${DateTime.now().millisecondsSinceEpoch}');
-        }
+        _remoteStream ??= await createLocalMediaStream('remote_stream_${DateTime.now().millisecondsSinceEpoch}');
         _remoteStream?.addTrack(event.track);
       }
       if (_remoteStream != null) {
@@ -1735,8 +1743,9 @@ class WebRtcService {
             } catch (_) {}
           }
         }
-        remoteRenderer.srcObject = null;
-        remoteRenderer.srcObject = _remoteStream;
+        if (remoteRenderer.srcObject != _remoteStream) {
+          remoteRenderer.srcObject = _remoteStream;
+        }
         _remoteStreamController.add(_remoteStream);
       }
 
@@ -1755,8 +1764,9 @@ class WebRtcService {
           } catch (_) {}
         }
       }
-      remoteRenderer.srcObject = null;
-      remoteRenderer.srcObject = _remoteStream;
+      if (remoteRenderer.srcObject != _remoteStream) {
+        remoteRenderer.srcObject = _remoteStream;
+      }
       _remoteStreamController.add(_remoteStream);
       _callSignalController.add(CallSignalState.active);
     };
@@ -1765,6 +1775,7 @@ class WebRtcService {
       debugPrint('WebRTC Peer Connection State: $state');
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
         _callSignalController.add(CallSignalState.active);
+        toggleSpeaker(_isSpeakerOn);
       }
     };
 

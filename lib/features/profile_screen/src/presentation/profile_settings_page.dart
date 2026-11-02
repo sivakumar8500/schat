@@ -14,7 +14,6 @@ import 'package:schat/features/chat_screen/src/presentation/full_screen_image_pa
 import 'package:schat/presentation/pages/blocked_users_page.dart';
 import 'package:schat/features/tickets_screen/src/presentation/tickets_page.dart';
 import 'package:schat/features/tickets_screen/src/presentation/bloc/tickets_bloc.dart';
-import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -32,6 +31,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/chat_lock_bo
 import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 import 'package:schat/core/services/in_app_update_service.dart';
 import 'package:schat/core/services/app_cache_service.dart';
 
@@ -427,12 +427,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
         backgroundColor: context.colors.scaffoldBackground,
         body: Stack(
           children: [
-            // Flowing Wave Lines Background matching Home Screen
-            Positioned.fill(
+            // Home background wallpaper
+            const Positioned.fill(
               child: IgnorePointer(
-                child: CustomPaint(
-                  painter: HomeBackgroundWavePainter(isDark: isDark),
-                ),
+                child: AppHomeBackground(),
               ),
             ),
 

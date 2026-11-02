@@ -16,6 +16,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.content.Context
 import android.telephony.TelephonyManager
 import android.telecom.TelecomManager
@@ -371,7 +372,34 @@ class MainActivity : FlutterActivity() {
                         val speakerOn = call.argument<Boolean>("speakerOn") ?: true
                         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                        audioManager.isSpeakerphoneOn = speakerOn
+                        audioManager.isMicrophoneMute = false
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val devices = audioManager.availableCommunicationDevices
+                            if (speakerOn) {
+                                val speakerDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                                if (speakerDevice != null) {
+                                    audioManager.setCommunicationDevice(speakerDevice)
+                                }
+                            } else {
+                                val targetDevice = devices.firstOrNull {
+                                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                                    it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                                }
+                                if (targetDevice != null) {
+                                    audioManager.setCommunicationDevice(targetDevice)
+                                } else {
+                                    audioManager.clearCommunicationDevice()
+                                }
+                            }
+                        } else {
+                            @Suppress("DEPRECATION")
+                            audioManager.isSpeakerphoneOn = speakerOn
+                        }
+
                         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
                         audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0)
                         result.success(true)
@@ -382,6 +410,10 @@ class MainActivity : FlutterActivity() {
                 "resetAudioMode" -> {
                     try {
                         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            audioManager.clearCommunicationDevice()
+                        }
+                        @Suppress("DEPRECATION")
                         audioManager.isSpeakerphoneOn = false
                         audioManager.mode = AudioManager.MODE_NORMAL
                         result.success(true)

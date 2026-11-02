@@ -19,6 +19,10 @@ import 'package:schat/utils/theme_controller.dart';
 /// Pre-seeded curated wallpaper images matching chat presets
 const List<Map<String, String>> kPresetWallpapers = [
   {
+    'name': 'Default Waves',
+    'url': 'assets/images/home_bg.jpg',
+  },
+  {
     'name': 'Dark Geometry',
     'url': 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
   },
@@ -974,6 +978,13 @@ class _HomeThemeBottomSheetState extends State<HomeThemeBottomSheet>
   }
 
   Widget _buildWallpaperImagePreview(String url) {
+    if (url.startsWith('assets/')) {
+      return Image.asset(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholder(),
+      );
+    }
     if (url.startsWith('data:')) {
       try {
         final base64Str = url.contains(',') ? url.split(',')[1] : url;
