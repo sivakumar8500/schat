@@ -12,6 +12,8 @@ class LiveKitCallService {
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
+  Future<bool>? _joiningFuture;
+  String? _activeConversationId;
 
   final ValueNotifier<List<Participant>> participantsNotifier =
       ValueNotifier<List<Participant>>([]);
@@ -21,6 +23,16 @@ class LiveKitCallService {
 
   Room? get room => _room;
   bool get isConnected => _room != null && isConnectedNotifier.value;
+  int get remoteParticipantCount => _room?.remoteParticipants.length ?? 0;
+  Set<String> get remoteParticipantIdentities =>
+      _room?.remoteParticipants.values
+          .map((p) => p.identity)
+          .where((id) => id.isNotEmpty)
+          .toSet() ??
+      <String>{};
+
+  void Function(String participantIdentity, String? conversationId, int remainingRemoteCount)?
+      onRemoteParticipantDisconnected;
 
   /// 1. Request OS Permissions
   Future<bool> requestPermissions({bool isVideo = true}) async {
@@ -84,9 +96,23 @@ class LiveKitCallService {
     isConnectingNotifier.value = true;
     errorNotifier.value = null;
 
+    // Ensure any previous room/listener is cleanly disposed before creating a new one
+    if (_room != null || _listener != null) {
+      try {
+        await _listener?.dispose();
+        await _room?.disconnect();
+        await _room?.dispose();
+      } catch (_) {}
+      _room = null;
+      _listener = null;
+    }
+
     final roomOptions = RoomOptions(
-      adaptiveStream: true,
+      adaptiveStream: false,
       dynacast: true,
+      defaultCameraCaptureOptions: const CameraCaptureOptions(
+        cameraPosition: CameraPosition.front,
+      ),
       defaultVideoPublishOptions: const VideoPublishOptions(
         simulcast: true,
         videoEncoding: VideoEncoding(
@@ -128,7 +154,7 @@ class LiveKitCallService {
         await _room!.localParticipant?.setMicrophoneEnabled(true);
       }
       if (enableVideo) {
-        await _room!.localParticipant?.setCameraEnabled(true);
+        await _enableCameraReliably();
       }
 
       // Route audio to speakerphone by default for calls
@@ -151,14 +177,83 @@ class LiveKitCallService {
     }
   }
 
+  Future<void> _enableCameraReliably() async {
+    final localParticipant = _room?.localParticipant;
+    if (localParticipant == null) return;
+
+    try {
+      await localParticipant.setCameraEnabled(
+        true,
+        cameraCaptureOptions: const CameraCaptureOptions(
+          cameraPosition: CameraPosition.front,
+        ),
+      );
+      _updateParticipants();
+
+      // Verify the local camera track is actively producing frames; if muted or null, restart once
+      final localTrack = getLocalVideoTrack();
+      if (localTrack == null) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        await localParticipant.setCameraEnabled(false);
+        await localParticipant.setCameraEnabled(
+          true,
+          cameraCaptureOptions: const CameraCaptureOptions(
+            cameraPosition: CameraPosition.front,
+          ),
+        );
+        _updateParticipants();
+      } else if (localTrack is LocalVideoTrack) {
+        try {
+          await localTrack.restartTrack(
+            const CameraCaptureOptions(
+              cameraPosition: CameraPosition.front,
+            ),
+          );
+          _updateParticipants();
+        } catch (e) {
+          debugPrint('LiveKit: restartTrack skipped: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('LiveKit: Initial setCameraEnabled failed, retrying: $e');
+      try {
+        await Future.delayed(const Duration(milliseconds: 300));
+        await localParticipant.setCameraEnabled(false);
+        await localParticipant.setCameraEnabled(
+          true,
+          cameraCaptureOptions: const CameraCaptureOptions(
+            cameraPosition: CameraPosition.front,
+          ),
+        );
+        _updateParticipants();
+      } catch (retryError) {
+        debugPrint('LiveKit: Retry setCameraEnabled error: $retryError');
+      }
+    }
+  }
+
   void _setupListeners() {
     if (_listener == null) return;
 
     _listener!
       ..on<ParticipantConnectedEvent>((_) => _updateParticipants())
-      ..on<ParticipantDisconnectedEvent>((_) => _updateParticipants())
+      ..on<ParticipantDisconnectedEvent>((event) {
+        _updateParticipants();
+        final identity = event.participant.identity;
+        final remaining = _room?.remoteParticipants.length ?? 0;
+        onRemoteParticipantDisconnected?.call(
+          identity,
+          _activeConversationId,
+          remaining,
+        );
+      })
+      ..on<LocalTrackPublishedEvent>((_) => _updateParticipants())
+      ..on<LocalTrackUnpublishedEvent>((_) => _updateParticipants())
+      ..on<TrackPublishedEvent>((_) => _updateParticipants())
+      ..on<TrackUnpublishedEvent>((_) => _updateParticipants())
       ..on<TrackSubscribedEvent>((_) => _updateParticipants())
       ..on<TrackUnsubscribedEvent>((_) => _updateParticipants())
+      ..on<TrackStreamStateUpdatedEvent>((_) => _updateParticipants())
       ..on<TrackMutedEvent>((_) => _updateParticipants())
       ..on<TrackUnmutedEvent>((_) => _updateParticipants())
       ..on<ActiveSpeakersChangedEvent>((_) => _updateParticipants());
@@ -189,6 +284,31 @@ class LiveKitCallService {
   Future<bool> joinGroupCall({
     required String conversationId,
     bool isVideo = true,
+  }) async {
+    if (isConnected && _activeConversationId == conversationId) {
+      debugPrint('LiveKitCallService: Already connected to group call $conversationId');
+      return true;
+    }
+    if (_joiningFuture != null && _activeConversationId == conversationId) {
+      debugPrint('LiveKitCallService: Join already in progress for $conversationId, awaiting existing future');
+      return _joiningFuture!;
+    }
+
+    _activeConversationId = conversationId;
+    _joiningFuture = _performJoinGroupCall(
+      conversationId: conversationId,
+      isVideo: isVideo,
+    );
+    try {
+      return await _joiningFuture!;
+    } finally {
+      _joiningFuture = null;
+    }
+  }
+
+  Future<bool> _performJoinGroupCall({
+    required String conversationId,
+    required bool isVideo,
   }) async {
     final token = getIt<StorageService>().getAccessToken();
     if (token == null || token.isEmpty) {
@@ -245,6 +365,7 @@ class LiveKitCallService {
       } else {
         await track.setCameraPosition(CameraPosition.back);
       }
+      _updateParticipants();
     }
   }
 
@@ -291,6 +412,8 @@ class LiveKitCallService {
 
   /// Disconnect and Clean Up
   Future<void> disconnect() async {
+    _joiningFuture = null;
+    _activeConversationId = null;
     try {
       await _listener?.dispose();
       await _room?.disconnect();

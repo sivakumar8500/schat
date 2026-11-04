@@ -136,4 +136,8 @@ class ClearConversationMessages extends ChatsEvent {
   });
 }
 
+class ClearAllTypingIndicators extends ChatsEvent {
+  const ClearAllTypingIndicators();
+}
+
 

@@ -25,6 +25,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   final ChatSocketRepository _socketRepository;
   final StorageService _storageService;
   StreamSubscription? _socketSubscription;
+  final Map<String, Timer> _typingTimers = {};
 
   ChatsBloc(
     this._getChatsUseCase,
@@ -41,6 +42,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<RemoveChat>(_onRemoveChat);
     on<CallLogUpdated>(_onCallLogUpdated);
     on<UpdateChatTypingStatus>(_onUpdateChatTypingStatus);
+    on<ClearAllTypingIndicators>(_onClearAllTypingIndicators);
     on<MessageDeleted>(_onMessageDeleted);
     on<UpdateDisappearingTimer>(_onUpdateDisappearingTimer);
     on<UpdateMessageStatus>(_onUpdateMessageStatus);
@@ -48,6 +50,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     on<ClearConversationMessages>(_onClearConversationMessages);
 
     _listenToSocket();
+  }
+
+  void resetAllTypingIndicators() {
+    add(const ClearAllTypingIndicators());
   }
 
   Map<String, dynamic> _cleanMap(Map<dynamic, dynamic> map) {
@@ -119,13 +125,18 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         } else if (type == 'message_edited' || type == 'edit_message') {
           final message = cleanData['message'];
           if (message is Map) {
-            final convId = (message['conversationId'] ?? message['conversation_id'])?.toString();
+            final msgMap = Map<String, dynamic>.from(message);
+            // Parse via MessageModel.fromJson so StorageService media permissions are updated even on Dashboard
+            try {
+              MessageModel.fromJson(msgMap);
+            } catch (_) {}
+            final convId = (msgMap['conversationId'] ?? msgMap['conversation_id'])?.toString();
             if (convId != null) {
               add(MessageEdited(
                 conversationId: convId,
-                message: LastMessageModel.fromJson(Map<String, dynamic>.from(message)),
+                message: LastMessageModel.fromJson(msgMap),
               ));
-              ChatMessageCacheHelper.appendRawMessage(convId, Map<String, dynamic>.from(message));
+              ChatMessageCacheHelper.appendRawMessage(convId, msgMap);
             }
           }
         } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
@@ -324,10 +335,15 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     });
   }
 
+  static String _normalizeConvId(dynamic id) {
+    if (id == null) return '';
+    return id.toString().replaceAll('-', '').toLowerCase().trim();
+  }
+
   static bool _isSameConversation(dynamic id1, dynamic id2) {
     if (id1 == null || id2 == null) return false;
-    final s1 = id1.toString().replaceAll('-', '').toLowerCase().trim();
-    final s2 = id2.toString().replaceAll('-', '').toLowerCase().trim();
+    final s1 = _normalizeConvId(id1);
+    final s2 = _normalizeConvId(id2);
     return s1.isNotEmpty && s1 == s2;
   }
 
@@ -443,9 +459,14 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                   merged = merged.copyWith(unreadCount: 0);
                 }
 
-                // 4. Preserve active typing indicator
-                if (existing.isTyping) {
+                // 4. Preserve active typing indicator ONLY if an active unexpired typing timer exists
+                final normChatId = _normalizeConvId(existing.id);
+                final normRecipId = _normalizeConvId(existing.recipient.id);
+                final hasActiveTimer = _typingTimers.containsKey(normChatId) || _typingTimers.containsKey(normRecipId);
+                if (hasActiveTimer && existing.isTyping) {
                   merged = merged.copyWith(isTyping: true);
+                } else {
+                  merged = merged.copyWith(isTyping: false);
                 }
 
                 return merged;
@@ -515,14 +536,22 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   }
 
   void _onNewMessageReceived(NewMessageReceived event, Emitter<ChatsState> emit) {
+    final normId = _normalizeConvId(event.conversationId);
+    _typingTimers.remove(normId)?.cancel();
+
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
-      final index = updatedChats.indexWhere((c) => _isSameConversation(c.id, event.conversationId));
+      final index = updatedChats.indexWhere((c) =>
+          _isSameConversation(c.id, event.conversationId) ||
+          (!c.isGroup && _isSameConversation(c.recipient.id, event.conversationId)));
       final currentUserId = _storageService.getUserId();
       
       if (index != -1) {
         final chat = updatedChats.removeAt(index);
+        final normRecipientId = _normalizeConvId(chat.recipient.id);
+        _typingTimers.remove(normRecipientId)?.cancel();
+
         final isFromMe = event.lastMessage.senderId == currentUserId;
         
         int newUnreadCount = event.unreadCount ?? chat.unreadCount;
@@ -536,6 +565,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           lastMessage: event.lastMessage,
           updatedAt: event.updatedAt,
           unreadCount: newUnreadCount,
+          isTyping: false,
         );
         updatedChats.insert(0, updatedChat);
         updatedChats.sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
@@ -609,6 +639,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
       if (index != -1) {
         final chat = updatedChats.removeAt(index);
+        final normId = _normalizeConvId(event.conversationId);
+        final normRecipientId = _normalizeConvId(chat.recipient.id);
+        _typingTimers.remove(normId)?.cancel();
+        _typingTimers.remove(normRecipientId)?.cancel();
+
         final currentUserId = _storageService.getUserId() ?? '';
         final senderId = (event.callMeta['senderId'] ?? event.callMeta['sender_id'] ?? '').toString();
         final isFromMe = senderId.isNotEmpty && senderId == currentUserId;
@@ -637,6 +672,7 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           lastMessage: updatedLastMessage,
           updatedAt: nowIso,
           unreadCount: (!isFromMe && isMissed) ? chat.unreadCount + 1 : chat.unreadCount,
+          isTyping: false,
         );
 
         updatedChats.insert(0, updatedChat);
@@ -678,17 +714,54 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   }
 
   void _onUpdateChatTypingStatus(UpdateChatTypingStatus event, Emitter<ChatsState> emit) {
+    final normId = _normalizeConvId(event.conversationId);
+    _typingTimers[normId]?.cancel();
+
+    if (event.isTyping) {
+      // Auto-expire typing indicator after 4 seconds if no new typing or message event arrives
+      _typingTimers[normId] = Timer(const Duration(seconds: 4), () {
+        _typingTimers.remove(normId);
+        if (!isClosed) {
+          add(UpdateChatTypingStatus(conversationId: event.conversationId, isTyping: false));
+        }
+      });
+    } else {
+      _typingTimers.remove(normId);
+    }
+
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final globalTyping = _storageService.getTypingIndicatorsEnabled();
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (_isSameConversation(chat.id, event.conversationId)) {
+        if (_isSameConversation(chat.id, event.conversationId) ||
+            (!chat.isGroup && _isSameConversation(chat.recipient.id, event.conversationId))) {
           final isAllowed = chat.typingIndicatorsEnabled ?? globalTyping;
           return chat.copyWith(isTyping: isAllowed ? event.isTyping : false);
         }
         return chat;
       }).toList();
       emit(ChatsLoaded(updatedChats));
+    }
+  }
+
+  void _onClearAllTypingIndicators(ClearAllTypingIndicators event, Emitter<ChatsState> emit) {
+    for (final timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _typingTimers.clear();
+
+    final currentState = state;
+    if (currentState is ChatsLoaded) {
+      final hasTyping = currentState.chats.any((c) => c.isTyping);
+      if (hasTyping) {
+        final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+          if (chat.isTyping) {
+            return chat.copyWith(isTyping: false);
+          }
+          return chat;
+        }).toList();
+        emit(ChatsLoaded(updatedChats));
+      }
     }
   }
 
@@ -812,6 +885,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
   @override
   Future<void> close() {
+    for (final timer in _typingTimers.values) {
+      timer.cancel();
+    }
+    _typingTimers.clear();
     _socketSubscription?.cancel();
     return super.close();
   }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_permissions_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -143,6 +144,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     try {
       final repo = getIt<ChatRepository>();
       await repo.revokeAllMediaShares(widget.mediaId);
+      try {
+        getIt<ChatSocketRepository>().sendFileAction(
+          type: 'media_access_revoked',
+          conversationId: '',
+          messageId: widget.mediaId,
+          fileKey: widget.mediaId,
+          permissions: const {
+            'can_view': false,
+            'can_download': false,
+            'can_share': false,
+            'allowView': false,
+            'allowDownload': false,
+            'allowShare': false,
+          },
+        );
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _isActionProcessing = false;
@@ -194,6 +211,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     try {
       final repo = getIt<ChatRepository>();
       await repo.revokeMediaShareGrant(mediaId: widget.mediaId, grantId: grantId);
+      try {
+        getIt<ChatSocketRepository>().sendFileAction(
+          type: 'media_access_revoked',
+          conversationId: '',
+          messageId: widget.mediaId,
+          fileKey: widget.mediaId,
+          permissions: const {
+            'can_view': false,
+            'can_download': false,
+            'can_share': false,
+            'allowView': false,
+            'allowDownload': false,
+            'allowShare': false,
+          },
+        );
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _isActionProcessing = false;
@@ -324,6 +357,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           canDownload: canDownload,
           canShare: canShare,
         );
+        try {
+          getIt<ChatSocketRepository>().sendFileAction(
+            type: canView ? 'media_permissions_updated' : 'media_access_revoked',
+            conversationId: '',
+            messageId: widget.mediaId,
+            fileKey: widget.mediaId,
+            permissions: {
+              'can_view': canView,
+              'can_download': canDownload,
+              'can_share': canShare,
+              'allowView': canView,
+              'allowDownload': canDownload,
+              'allowShare': canShare,
+            },
+          );
+        } catch (_) {}
         if (mounted) {
           setState(() {
             _isActionProcessing = false;

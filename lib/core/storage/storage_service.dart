@@ -356,6 +356,63 @@ class StorageService {
     return null;
   }
 
+  Future<void> markMediaAsOwnedByMe(String key) async {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return;
+    await _prefs.setBool('media_owner_$cleanKey', true);
+    final noQuery = cleanKey.split('?').first.trim();
+    if (noQuery.isNotEmpty && noQuery != cleanKey) {
+      await _prefs.setBool('media_owner_$noQuery', true);
+    }
+    final fileName = noQuery.split('/').last.trim();
+    if (fileName.isNotEmpty && fileName != cleanKey) {
+      await _prefs.setBool('media_owner_$fileName', true);
+    }
+  }
+
+  Future<void> markMediaAsNotOwned(String key) async {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return;
+    await _prefs.setBool('media_owner_$cleanKey', false);
+    final noQuery = cleanKey.split('?').first.trim();
+    if (noQuery.isNotEmpty && noQuery != cleanKey) {
+      await _prefs.setBool('media_owner_$noQuery', false);
+    }
+    final fileName = noQuery.split('/').last.trim();
+    if (fileName.isNotEmpty && fileName != cleanKey) {
+      await _prefs.setBool('media_owner_$fileName', false);
+    }
+  }
+
+  bool isMediaOwnedByMe(String key) {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return false;
+    final val1 = _prefs.getBool('media_owner_$cleanKey');
+    if (val1 != null) return val1;
+    final noQuery = cleanKey.split('?').first.trim();
+    if (noQuery.isNotEmpty) {
+      final val2 = _prefs.getBool('media_owner_$noQuery');
+      if (val2 != null) return val2;
+    }
+    final fileName = noQuery.split('/').last.trim();
+    if (fileName.isNotEmpty) {
+      final val3 = _prefs.getBool('media_owner_$fileName');
+      if (val3 != null) return val3;
+    }
+    return false;
+  }
+
+  bool isMediaNotOwnedByMe(String key) {
+    final cleanKey = key.trim();
+    if (cleanKey.isEmpty) return false;
+    if (_prefs.getBool('media_owner_$cleanKey') == false) return true;
+    final noQuery = cleanKey.split('?').first.trim();
+    if (noQuery.isNotEmpty && _prefs.getBool('media_owner_$noQuery') == false) return true;
+    final fileName = noQuery.split('/').last.trim();
+    if (fileName.isNotEmpty && _prefs.getBool('media_owner_$fileName') == false) return true;
+    return false;
+  }
+
   // --- Conversation Cleared Timestamp ---
   Future<void> saveConversationClearedAt(String conversationId, String timestamp) async {
     await _prefs.setString('cleared_at_$conversationId', timestamp);

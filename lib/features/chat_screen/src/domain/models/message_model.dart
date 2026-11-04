@@ -151,6 +151,7 @@ class MessageModel {
   final bool isForwarded;
   final String? forwardedFromMessageId;
   final int? forwardCount;
+  final String? mediaOwnerId;
 
   /// True if this message was sent as an initial share (not a forwarded / reshared copy)
   bool get isInitialShare => !isForwarded && (forwardedFromMessageId == null || forwardedFromMessageId!.isEmpty);
@@ -212,6 +213,7 @@ class MessageModel {
     this.isForwarded = false,
     this.forwardedFromMessageId,
     this.forwardCount,
+    this.mediaOwnerId,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> json) {
@@ -461,6 +463,57 @@ class MessageModel {
       allowShare = false;
     }
 
+    if (getIt.isRegistered<StorageService>()) {
+      try {
+        final storage = getIt<StorageService>();
+        final myId = storage.getUserId();
+        final senderIdStr = (json['senderId'] ?? json['sender_id'] ?? json['sender'])?.toString();
+        final isSentByMe = myId != null && myId.isNotEmpty && senderIdStr == myId;
+        final msgId = (json['id'] ?? json['_id'])?.toString();
+        final fwdId = (json['forwardedFromMessageId'] ?? json['forwarded_from_message_id'] ?? json['forwarded_from'] ?? json['forwardedFrom'] ?? json['original_message_id'] ?? json['originalMessageId'])?.toString();
+        final attName = (attachment is Map ? (attachment['fileName'] ?? attachment['name']) : null) ?? json['attachment_name'] ?? json['attachmentName'];
+        final cleanUrl = mediaUrl != null ? mediaUrl.split('?').first : null;
+        final fileBase = cleanUrl != null ? cleanUrl.split('/').last : null;
+        if (isSentByMe) {
+          final saved = (msgId != null ? storage.getSenderMediaPermissions(msgId) : null) ??
+              (fwdId != null ? storage.getSenderMediaPermissions(fwdId) : null) ??
+              (mediaUrl != null ? storage.getSenderMediaPermissions(mediaUrl) : null) ??
+              (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null) ??
+              (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
+              (attName != null ? storage.getSenderMediaPermissions(attName.toString()) : null);
+          if (saved != null) {
+            if (saved['allowView'] != null) allowView = saved['allowView'] == true;
+            if (saved['allowDownload'] != null) allowDownload = (!allowView) ? false : (saved['allowDownload'] == true);
+            if (saved['allowShare'] != null) allowShare = (!allowView) ? false : (saved['allowShare'] == true);
+          }
+        } else if (cleanUrl != null && cleanUrl.isNotEmpty) {
+          // For received messages, sync latest server permissions into StorageService so forwarding respects them
+          storage.saveSenderMediaPermissions(
+            cleanUrl,
+            allowView: allowView,
+            allowDownload: allowDownload,
+            allowShare: allowShare,
+          );
+          if (fileBase != null && fileBase.isNotEmpty) {
+            storage.saveSenderMediaPermissions(
+              fileBase,
+              allowView: allowView,
+              allowDownload: allowDownload,
+              allowShare: allowShare,
+            );
+          }
+          if (msgId != null && msgId.isNotEmpty) {
+            storage.saveSenderMediaPermissions(
+              msgId,
+              allowView: allowView,
+              allowDownload: allowDownload,
+              allowShare: allowShare,
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
     if (json['isFileViewed'] != null) {
       isFileViewed = json['isFileViewed'] as bool;
     } else if (json['file_viewed'] != null) isFileViewed = json['file_viewed'] as bool;
@@ -696,12 +749,19 @@ class MessageModel {
     }
 
     final dynamic rawForwarded = json['isForwarded'] ?? json['is_forwarded'] ?? 
-        (contentData is Map ? (contentData['isForwarded'] ?? contentData['is_forwarded']) : null);
+        json['forwarded'] ?? json['is_forward'] ?? json['isForward'] ??
+        (contentData is Map ? (contentData['isForwarded'] ?? contentData['is_forwarded'] ?? contentData['forwarded']) : null);
     final String? parsedForwardedFromId = (json['forwardedFromMessageId'] ?? json['forwarded_from_message_id'] ?? 
-        (contentData is Map ? (contentData['forwardedFromMessageId'] ?? contentData['forwarded_from_message_id']) : null))?.toString();
+        json['forwarded_from'] ?? json['forwardedFrom'] ?? json['original_message_id'] ?? json['originalMessageId'] ??
+        (contentData is Map ? (contentData['forwardedFromMessageId'] ?? contentData['forwarded_from_message_id'] ?? contentData['forwarded_from']) : null))?.toString();
     final bool isForwarded = (rawForwarded == true) || (parsedForwardedFromId != null && parsedForwardedFromId.isNotEmpty);
     final int? forwardCount = int.tryParse((json['forwardCount'] ?? json['forward_count'] ?? 
         (contentData is Map ? (contentData['forwardCount'] ?? contentData['forward_count']) : null))?.toString() ?? '');
+    final String? mediaOwnerId = (json['media_owner_id'] ?? json['mediaOwnerId'] ?? 
+        json['owner_id'] ?? json['ownerId'] ?? 
+        json['uploader_id'] ?? json['uploaderId'] ?? 
+        json['original_sender_id'] ?? json['originalSenderId'] ??
+        (contentData is Map ? (contentData['media_owner_id'] ?? contentData['owner_id'] ?? contentData['uploader_id'] ?? contentData['original_sender_id']) : null))?.toString();
 
     return MessageModel(
       id: (json['id'] ?? json['_id'])?.toString() ?? '',
@@ -789,6 +849,7 @@ class MessageModel {
       isForwarded: isForwarded,
       forwardedFromMessageId: parsedForwardedFromId,
       forwardCount: forwardCount,
+      mediaOwnerId: mediaOwnerId,
     );
   }
 
@@ -908,7 +969,6 @@ class MessageModel {
     'readBy': readBy,
     'viewedBy': readBy,
     'deliveredTo': deliveredTo,
-    'deletedFor': deletedFor,
     'reactions': reactions.map((r) => r.toJson()).toList(),
     if (userView != null) 'userView': userView,
     if (callMeta != null) 'callMeta': callMeta!.toJson(),
@@ -918,6 +978,7 @@ class MessageModel {
     'isForwarded': isForwarded,
     if (forwardedFromMessageId != null) 'forwardedFromMessageId': forwardedFromMessageId,
     if (forwardCount != null) 'forwardCount': forwardCount,
+    if (mediaOwnerId != null) 'mediaOwnerId': mediaOwnerId,
   };
 
   MessageModel copyWith({
@@ -977,6 +1038,7 @@ class MessageModel {
     bool? isForwarded,
     String? forwardedFromMessageId,
     int? forwardCount,
+    String? mediaOwnerId,
   }) {
     return MessageModel(
       id: id ?? this.id,
@@ -1035,6 +1097,7 @@ class MessageModel {
       isForwarded: isForwarded ?? this.isForwarded,
       forwardedFromMessageId: forwardedFromMessageId ?? this.forwardedFromMessageId,
       forwardCount: forwardCount ?? this.forwardCount,
+      mediaOwnerId: mediaOwnerId ?? this.mediaOwnerId,
     );
   }
 }

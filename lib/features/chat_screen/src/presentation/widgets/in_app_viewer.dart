@@ -2005,13 +2005,6 @@ class _InAppTextViewerState extends State<_InAppTextViewer> {
                   tooltip: 'Copy all text',
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: _content!));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Text copied to clipboard'),
-                        duration: Duration(seconds: 2),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
                   },
                 ),
               ],

@@ -109,9 +109,9 @@ class SecureAttachmentService {
       return noQuery;
     }
 
-    final match = _uuidRegex.firstMatch(noQuery);
-    if (match != null) {
-      return match.group(0);
+    final matches = _uuidRegex.allMatches(noQuery);
+    if (matches.isNotEmpty) {
+      return matches.last.group(0);
     }
     return null;
   }

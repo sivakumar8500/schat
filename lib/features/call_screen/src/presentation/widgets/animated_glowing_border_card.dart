@@ -57,52 +57,47 @@ class _AnimatedGlowingBorderCardState extends State<AnimatedGlowingBorderCard>
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.isSpeaking) {
-      return Container(
-        padding: widget.padding,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(widget.borderRadius),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.18),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: widget.child,
-      );
-    }
-
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, _) {
+      child: widget.child,
+      builder: (context, child) {
         return CustomPaint(
-          painter: _RotatingGradientBorderPainter(
-            animationValue: _controller.value,
-            borderRadius: widget.borderRadius,
-            borderWidth: widget.borderWidth,
-          ),
+          painter: widget.isSpeaking
+              ? _RotatingGradientBorderPainter(
+                  animationValue: _controller.value,
+                  borderRadius: widget.borderRadius,
+                  borderWidth: widget.borderWidth,
+                )
+              : null,
           child: Container(
             padding: widget.padding,
             decoration: BoxDecoration(
-              color: widget.baseColor,
+              color: widget.isSpeaking
+                  ? widget.baseColor
+                  : Colors.white.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(widget.borderRadius),
+              border: widget.isSpeaking
+                  ? null
+                  : Border.all(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      width: 1.5,
+                    ),
               boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF00A859).withValues(alpha: 0.35),
-                  blurRadius: 16,
-                  spreadRadius: 1,
-                  offset: const Offset(0, 2),
-                ),
+                widget.isSpeaking
+                    ? BoxShadow(
+                        color: const Color(0xFF00A859).withValues(alpha: 0.35),
+                        blurRadius: 16,
+                        spreadRadius: 1,
+                        offset: const Offset(0, 2),
+                      )
+                    : BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
               ],
             ),
-            child: widget.child,
+            child: child,
           ),
         );
       },

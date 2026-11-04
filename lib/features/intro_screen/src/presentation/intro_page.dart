@@ -20,64 +20,64 @@ class _IntroPageState extends State<IntroPage> {
 
   final List<_SecurityFeature> _features = const [
     _SecurityFeature(
-      title: 'End-to-end\nEncryption',
-      description: 'All messages & calls fully encrypted.',
+      title: 'End-to-End\nEncryption',
+      description: 'Only You Can\nAccess.',
       iconAsset: 'assets/firstscreen/icon_encryption.jpg',
       fallbackIcon: Icons.security_rounded,
     ),
     _SecurityFeature(
-      title: 'Disappearing\nMessages',
-      description: 'Set timers to auto-delete messages.',
-      iconAsset: 'assets/firstscreen/icon_disappearing.jpg',
-      fallbackIcon: Icons.timer_outlined,
-    ),
-    _SecurityFeature(
-      title: 'Private\nCalls',
-      description: 'Crystal clear calls with identity protection.',
+      title: 'Private Calls\n& Messages',
+      description: 'Your Conversations.\nYour Privacy.',
       iconAsset: 'assets/firstscreen/icon_private_calls.jpg',
       fallbackIcon: Icons.phone_locked_rounded,
     ),
     _SecurityFeature(
-      title: 'Secure File\nSharing',
-      description: 'Encrypted transfers of any file type.',
-      iconAsset: 'assets/firstscreen/icon_secure_file.jpg',
-      fallbackIcon: Icons.folder_shared_rounded,
+      title: 'Disappearing\nMessages',
+      description: 'Messages That\nDisappear.',
+      iconAsset: 'assets/firstscreen/icon_disappearing.jpg',
+      fallbackIcon: Icons.timer_outlined,
     ),
     _SecurityFeature(
-      title: 'Stealth\nMode',
-      description: 'Hide online status, typing & last seen.',
+      title: 'Lock\nChats',
+      description: 'Lock Your Chats.\nStay Safe.',
+      iconAsset: 'assets/firstscreen/icon_twostep.jpg',
+      fallbackIcon: Icons.lock_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Status\nPrivacy',
+      description: 'Your Status.\nYour Choice.',
       iconAsset: 'assets/firstscreen/icon_stealth_mode.jpg',
       fallbackIcon: Icons.visibility_off_rounded,
     ),
     _SecurityFeature(
-      title: 'Multi-device\nSync',
-      description: 'Secure across all your devices.',
+      title: 'File Sharing\nProtection',
+      description: 'Share Securely.\nStay Protected.',
+      iconAsset: 'assets/firstscreen/icon_secure_file.jpg',
+      fallbackIcon: Icons.folder_shared_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Screen\nSharing',
+      description: 'Share Your Screen.\nConnect Instantly.',
       iconAsset: 'assets/firstscreen/icon_multidevice.jpg',
-      fallbackIcon: Icons.devices_rounded,
+      fallbackIcon: Icons.screen_share_rounded,
     ),
     _SecurityFeature(
-      title: 'Two-step\nVerification',
-      description: 'Add an extra layer of account security.',
-      iconAsset: 'assets/firstscreen/icon_twostep.jpg',
-      fallbackIcon: Icons.verified_user_rounded,
-    ),
-    _SecurityFeature(
-      title: 'Screenshot\nProtection',
-      description: 'Block screenshots in chats.',
-      iconAsset: 'assets/firstscreen/icon_screenshot.jpg',
-      fallbackIcon: Icons.no_photography_rounded,
-    ),
-    _SecurityFeature(
-      title: 'VPN & Proxy\nSupport',
-      description: 'Stay anonymous on any network.',
-      iconAsset: 'assets/firstscreen/icon_vpn.jpg',
-      fallbackIcon: Icons.vpn_lock_rounded,
-    ),
-    _SecurityFeature(
-      title: 'Intrusion\nAlerts',
-      description: 'Get notified of suspicious activity.',
+      title: 'Screen\nRecording',
+      description: 'Capture What\nMatters.',
       iconAsset: 'assets/firstscreen/icon_intrusion.jpg',
-      fallbackIcon: Icons.add_alert_rounded,
+      fallbackIcon: Icons.fiber_manual_record_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Secure App\nScreen',
+      description: 'Security on\nEvery Screen.',
+      iconAsset: 'assets/firstscreen/icon_screenshot.jpg',
+      fallbackIcon: Icons.phonelink_lock_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Scheduled\nMessages',
+      description: 'Send at the\nPerfect Time.',
+      iconAsset: 'assets/intro_designs/Icons/future_messages.png',
+      fallbackIcon: Icons.schedule_send_rounded,
     ),
   ];
 
@@ -390,15 +390,15 @@ class _IntroPageState extends State<IntroPage> {
             height: 32,
             padding: const EdgeInsets.all(2.5),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
+              color: Colors.black,
               shape: BoxShape.circle,
               border: Border.all(
-                color: _neonGreen.withValues(alpha: 0.25),
-                width: 0.8,
+                color: _neonGreen.withValues(alpha: 0.35),
+                width: 0.9,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: _neonGreen.withValues(alpha: 0.15),
+                  color: _neonGreen.withValues(alpha: 0.2),
                   blurRadius: 5,
                   spreadRadius: 0.4,
                 ),
@@ -420,30 +420,41 @@ class _IntroPageState extends State<IntroPage> {
           const SizedBox(height: 4),
 
           // Feature Title
-          Text(
-            feature.title,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 7.5,
-              fontWeight: FontWeight.w700,
-              height: 1.08,
+          SizedBox(
+            height: 20,
+            child: Center(
+              child: Text(
+                feature.title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 7.2,
+                  fontWeight: FontWeight.w700,
+                  height: 1.08,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 2),
 
           // Feature Subtext Description
-          Text(
-            feature.description,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _subtextColor,
-              fontSize: 5.8,
-              fontWeight: FontWeight.w400,
-              height: 1.08,
+          SizedBox(
+            height: 18,
+            child: Center(
+              child: Text(
+                feature.description,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _subtextColor,
+                  fontSize: 5.6,
+                  fontWeight: FontWeight.w400,
+                  height: 1.08,
+                ),
+              ),
             ),
           ),
         ],

@@ -1529,14 +1529,44 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildPermissionToggle(
                       icon: CommonIcons.visibility,
                       label: 'View',
-                      isActive: true,
+                      isActive: _allowView,
                       onTap: () {
-                        context.showInfoNotification('In 1-to-1 chats, only View option is enabled.');
+                        context.showInfoNotification('View is enabled by default. You can remove view access after sending.');
+                      },
+                    ),
+                    CommonSpaces.w8,
+                    _buildPermissionToggle(
+                      icon: (_isViewOnce ? false : _allowDownload) ? CommonIcons.download : CommonIcons.downloadOff,
+                      label: 'Download',
+                      isActive: _isViewOnce ? false : _allowDownload,
+                      onTap: () {
+                        if (_isViewOnce) {
+                          context.showInfoNotification('Download cannot be enabled for View Once media');
+                          return;
+                        }
+                        setState(() {
+                          _allowDownload = !_allowDownload;
+                        });
+                      },
+                    ),
+                    CommonSpaces.w8,
+                    _buildPermissionToggle(
+                      icon: (_isViewOnce ? false : _allowShare) ? CommonIcons.share : CommonIcons.shareOff,
+                      label: 'Share',
+                      isActive: _isViewOnce ? false : _allowShare,
+                      onTap: () {
+                        if (_isViewOnce) {
+                          context.showInfoNotification('Share cannot be enabled for View Once media');
+                          return;
+                        }
+                        setState(() {
+                          _allowShare = !_allowShare;
+                        });
                       },
                     ),
                   ],

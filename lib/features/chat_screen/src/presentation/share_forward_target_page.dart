@@ -211,19 +211,7 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
   }
 
   void _showToast(String message, {bool isWarning = false}) {
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: isWarning ? const Color(0xFFE53935) : context.colors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    debugPrint('Share toast suppressed: $message');
   }
 
   void _onCancelClose() {

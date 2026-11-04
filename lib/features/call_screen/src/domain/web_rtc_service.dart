@@ -1065,6 +1065,8 @@ class WebRtcService {
     required String conversationId,
     String? messageId,
     required ChatSocketRepository repository,
+    bool isGroup = false,
+    bool endEntireCall = false,
   }) async {
     final myId = getIt<StorageService>().getUserId()?.toString() ?? '';
     repository.emit('message', {
@@ -1074,6 +1076,9 @@ class WebRtcService {
       'sender_id': myId,
       'senderId': myId,
       'user_id': myId,
+      if (isGroup) 'is_group': true,
+      if (isGroup) 'isGroup': true,
+      if (endEntireCall) 'end_entire_call': true,
     });
     _callSignalController.add(CallSignalState.ended);
     await cleanup();

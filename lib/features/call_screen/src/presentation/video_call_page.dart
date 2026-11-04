@@ -21,7 +21,14 @@ import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/features/profile_screen/src/domain/models/user_model.dart';
 import 'package:schat/features/call_screen/src/presentation/widgets/animated_glowing_border_card.dart';
 import 'package:schat/core/storage/storage_service.dart';
-import 'package:livekit_client/livekit_client.dart' show VideoTrackRenderer;
+import 'package:livekit_client/livekit_client.dart'
+    show
+        VideoTrack,
+        LocalVideoTrack,
+        CameraCaptureOptions,
+        CameraPosition,
+        EventsListener,
+        TrackEvent;
 import 'package:schat/services/livekit_call_service.dart';
 
 /// 1-to-1 & Group Video Call Page — renders RTCVideoView with sleek participant sheet,
@@ -378,8 +385,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                                       ? (state.isRemoteVideoOff
                                           ? _buildRemoteVideoOffPlaceholder(state)
                                           : (isLiveKitActive && lkRemoteTrack != null
-                                              ? VideoTrackRenderer(
-                                                  lkRemoteTrack,
+                                              ? _StableLiveKitVideoView(
+                                                  track: lkRemoteTrack,
                                                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                                 )
                                               : RTCVideoView(
@@ -391,8 +398,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                                       : (isVideoOff
                                           ? _buildLocalVideoOffPlaceholder()
                                           : (isLiveKitActive && lkLocalTrack != null
-                                              ? VideoTrackRenderer(
-                                                  lkLocalTrack,
+                                              ? _StableLiveKitVideoView(
+                                                  track: lkLocalTrack,
                                                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                                 )
                                               : RTCVideoView(
@@ -404,8 +411,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                                   : (isVideoOff
                                       ? _buildWaitingScreen()
                                       : (isLiveKitActive && lkLocalTrack != null
-                                          ? VideoTrackRenderer(
-                                              lkLocalTrack,
+                                          ? _StableLiveKitVideoView(
+                                              track: lkLocalTrack,
                                               fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                             )
                                           : RTCVideoView(
@@ -738,8 +745,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                       ? (isVideoOff
                           ? _buildLocalVideoOffPlaceholder()
                           : (LiveKitCallService.instance.isConnected && LiveKitCallService.instance.getLocalVideoTrack() != null
-                              ? VideoTrackRenderer(
-                                  LiveKitCallService.instance.getLocalVideoTrack()!,
+                              ? _StableLiveKitVideoView(
+                                  track: LiveKitCallService.instance.getLocalVideoTrack()!,
                                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                 )
                               : RTCVideoView(
@@ -751,8 +758,8 @@ class _VideoCallPageState extends State<VideoCallPage>
                       : (state == null || state.isRemoteVideoOff
                           ? _buildRemoteVideoOffPlaceholder(state)
                           : (LiveKitCallService.instance.isConnected && LiveKitCallService.instance.getActiveRemoteVideoTrack() != null
-                              ? VideoTrackRenderer(
-                                  LiveKitCallService.instance.getActiveRemoteVideoTrack()!,
+                              ? _StableLiveKitVideoView(
+                                  track: LiveKitCallService.instance.getActiveRemoteVideoTrack()!,
                                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                                 )
                               : RTCVideoView(
@@ -1001,7 +1008,8 @@ class _VideoCallPageState extends State<VideoCallPage>
     final bool isLiveKitActive = liveKitService.isConnected;
 
     // 1. Local user ("You")
-    final bool localSpeaking = !isMuted && (state is CallActive || state is CallConnecting);
+    final bool localSpeaking =
+        !isMuted && (liveKitService.room?.localParticipant?.isSpeaking ?? false);
     final myPic = (widget.myProfilePictureUrl != null && widget.myProfilePictureUrl!.isNotEmpty)
         ? widget.myProfilePictureUrl
         : getIt<StorageService>().getProfilePic();
@@ -1023,9 +1031,9 @@ class _VideoCallPageState extends State<VideoCallPage>
       child: isVideoOff
           ? _buildLocalVideoOffPlaceholder()
           : (lkLocalTrack != null
-              ? VideoTrackRenderer(
-                  lkLocalTrack,
+              ? _StableLiveKitVideoView(
                   key: ValueKey('grid_lk_local_${lkLocalTrack.sid ?? 'local'}'),
+                  track: lkLocalTrack,
                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 )
               : _buildLocalVideoOffPlaceholder()),
@@ -1046,12 +1054,14 @@ class _VideoCallPageState extends State<VideoCallPage>
     final disconnectedIds = state is CallActive
         ? state.disconnectedParticipantIds
         : (state is CallConnecting ? state.disconnectedParticipantIds : const <String>{});
+    final videoOffIds = state is CallActive ? state.videoOffParticipantIds : const <String>{};
 
     final Set<String> processedUserIds = {};
 
     // 2a. Remote participants from LiveKit room
     if (isLiveKitActive && liveKitService.room != null) {
-      final remoteParticipants = liveKitService.room!.remoteParticipants.values;
+      final remoteParticipants = liveKitService.room!.remoteParticipants.values.toList()
+        ..sort((a, b) => a.identity.toLowerCase().compareTo(b.identity.toLowerCase()));
       for (final p in remoteParticipants) {
         final pIdentity = p.identity;
         processedUserIds.add(pIdentity.toLowerCase());
@@ -1069,7 +1079,8 @@ class _VideoCallPageState extends State<VideoCallPage>
             : (p.name.isNotEmpty ? p.name : 'Participant');
         final avatar = matchedUser?.profilePictureUrl;
         final videoTrack = liveKitService.getRemoteVideoTrack(p);
-        final hasVideo = videoTrack != null;
+        final isSignaledVideoOff = videoOffIds.any((id) => id.toLowerCase() == pIdentity.toLowerCase());
+        final hasVideo = videoTrack != null && !isSignaledVideoOff;
         final isRemoteSpeaking = p.isSpeaking;
         final isUserMuted = p.isMuted;
 
@@ -1086,11 +1097,11 @@ class _VideoCallPageState extends State<VideoCallPage>
         ));
 
         connectedTiles.add(_buildGridTile(
-          key: ValueKey('grid_tile_lk_$pIdentity'),
+          key: ValueKey('grid_tile_peer_${pIdentity.toLowerCase()}'),
           child: hasVideo
-              ? VideoTrackRenderer(
-                  videoTrack,
+              ? _StableLiveKitVideoView(
                   key: ValueKey('grid_lk_track_${videoTrack.sid ?? pIdentity}'),
+                  track: videoTrack,
                   fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 )
               : _buildRemoteParticipantPlaceholder(name, avatar, isSpeaking: isRemoteSpeaking),
@@ -1126,7 +1137,7 @@ class _VideoCallPageState extends State<VideoCallPage>
 
       if (isConnectedPeer) {
         connectedTiles.add(_buildGridTile(
-          key: ValueKey('grid_tile_connecting_${user.id}'),
+          key: ValueKey('grid_tile_peer_${user.id.toLowerCase()}'),
           child: _buildRemoteParticipantPlaceholder(user.displayName, user.profilePictureUrl, isSpeaking: false),
           label: '${user.displayName} (Joining...)',
           isMuted: isUserMuted,
@@ -1981,6 +1992,119 @@ class _SpeakerPulsingAvatarState extends State<_SpeakerPulsingAvatar>
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _StableLiveKitVideoView extends StatefulWidget {
+  final VideoTrack track;
+  final RTCVideoViewObjectFit fit;
+
+  const _StableLiveKitVideoView({
+    super.key,
+    required this.track,
+    this.fit = RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+  });
+
+  @override
+  State<_StableLiveKitVideoView> createState() => _StableLiveKitVideoViewState();
+}
+
+class _StableLiveKitVideoViewState extends State<_StableLiveKitVideoView> {
+  RTCVideoRenderer? _renderer;
+  bool _isReady = false;
+  EventsListener<TrackEvent>? _listener;
+
+  @override
+  void initState() {
+    super.initState();
+    _initRenderer();
+  }
+
+  Future<void> _initRenderer() async {
+    final renderer = RTCVideoRenderer();
+    await renderer.initialize();
+    if (!mounted) {
+      await renderer.dispose();
+      return;
+    }
+    _renderer = renderer;
+    _attachTrack(widget.track);
+    setState(() {
+      _isReady = true;
+    });
+  }
+
+  void _attachTrack(VideoTrack track) {
+    if (_renderer == null) return;
+    if (_renderer!.srcObject?.id != track.mediaStream.id) {
+      _renderer!.srcObject = track.mediaStream;
+    }
+    _listener?.dispose();
+    _listener = track.createListener()
+      ..listen((_) {
+        if (!mounted || _renderer == null) return;
+        if (_renderer!.srcObject?.id != widget.track.mediaStream.id) {
+          _renderer!.srcObject = widget.track.mediaStream;
+        }
+        setState(() {});
+      });
+  }
+
+  @override
+  void didUpdateWidget(covariant _StableLiveKitVideoView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.track != oldWidget.track ||
+        widget.track.sid != oldWidget.track.sid ||
+        _renderer?.srcObject?.id != widget.track.mediaStream.id) {
+      _attachTrack(widget.track);
+    }
+  }
+
+  @override
+  void dispose() {
+    _listener?.dispose();
+    _listener = null;
+    final r = _renderer;
+    _renderer = null;
+    if (r != null) {
+      r.srcObject = null;
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  bool _shouldMirror() {
+    final track = widget.track;
+    if (track is LocalVideoTrack) {
+      try {
+        final settings = track.mediaStreamTrack.getSettings();
+        final facingMode = settings['facingMode'];
+        if (facingMode != null) {
+          return facingMode == 'user';
+        }
+      } catch (_) {}
+      final options = track.currentOptions;
+      if (options is CameraCaptureOptions) {
+        return options.cameraPosition == CameraPosition.front;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isReady || _renderer == null) {
+      return const ColoredBox(color: Color(0xFF141419));
+    }
+    return RepaintBoundary(
+      child: RTCVideoView(
+        _renderer!,
+        objectFit: widget.fit,
+        mirror: _shouldMirror(),
+        filterQuality: FilterQuality.medium,
       ),
     );
   }

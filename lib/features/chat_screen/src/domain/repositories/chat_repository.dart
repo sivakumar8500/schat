@@ -24,8 +24,8 @@ abstract class ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = true,
-    bool allowShare = true,
+    bool allowDownload = false,
+    bool allowShare = false,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);
@@ -39,7 +39,10 @@ abstract class ChatRepository {
     bool? readReceiptsEnabled,
     bool? typingIndicatorsEnabled,
   });
-  Future<void> forwardMessage({required String messageId, required String targetConversationId});
+  Future<dynamic> forwardMessage({
+    required String messageId,
+    required String targetConversationId,
+  });
   Future<void> setDisappearingTimer({required String conversationId, int? seconds});
   Future<void> deleteGroup(String groupId);
   Future<void> updateGroupInfo({

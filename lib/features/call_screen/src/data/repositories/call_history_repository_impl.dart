@@ -4,6 +4,7 @@ import 'package:schat/core/network/api_service.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/features/call_screen/src/domain/call_history.dart';
 import 'package:schat/features/call_screen/src/domain/repositories/call_history_repository.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 
 @LazySingleton(as: CallHistoryRepository)
 class CallHistoryRepositoryImpl implements CallHistoryRepository {
@@ -164,7 +165,10 @@ class CallHistoryRepositoryImpl implements CallHistoryRepository {
       debugPrint('CallHistoryRepositoryImpl: Error fetching conversations call logs: $e');
     }
 
-    final allCalls = callsMap.values.toList();
+    final allCalls = callsMap.values.where((c) {
+      if (CallWebRtcBloc.suppressedCallMessageIds.contains(c.id)) return false;
+      return true;
+    }).toList();
 
     // Sort by createdAt descending (newest first)
     allCalls.sort((a, b) {
@@ -176,7 +180,31 @@ class CallHistoryRepositoryImpl implements CallHistoryRepository {
       return bDate.compareTo(aDate);
     });
 
-    return allCalls;
+    // Deduplicate calls from same call attempt session
+    final deduplicated = <CallHistoryModel>[];
+    for (int i = 0; i < allCalls.length; i++) {
+      final current = allCalls[i];
+      if (deduplicated.isNotEmpty) {
+        final prev = deduplicated.last;
+        if (prev.conversationId == current.conversationId && prev.callerId == current.callerId) {
+          final pDate = prev.createdAt != null ? DateTime.tryParse(prev.createdAt!) : null;
+          final cDate = current.createdAt != null ? DateTime.tryParse(current.createdAt!) : null;
+          if (pDate != null && cDate != null) {
+            final diffSec = pDate.difference(cDate).inSeconds.abs();
+            if (diffSec < 180) {
+              if (current.status == 'completed' && prev.status != 'completed') {
+                deduplicated.removeLast();
+                deduplicated.add(current);
+              }
+              continue;
+            }
+          }
+        }
+      }
+      deduplicated.add(current);
+    }
+
+    return deduplicated;
   }
 
   @override

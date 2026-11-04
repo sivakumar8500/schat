@@ -5,6 +5,7 @@ import 'package:collection/collection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/utils/common_notifications.dart';
@@ -287,6 +288,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
+      const maxVideoBytes = 1024 * 1024 * 1024; // Strictly < 1 GB
       const maxFileBytes = 100 * 1024 * 1024; // Strictly < 100 MB
       const validVideoExts = ['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp', 'flv'];
       const validAudioExts = ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'];
@@ -331,9 +333,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             });
             return;
           }
-          if (size >= maxFileBytes) {
+          if (size >= maxVideoBytes) {
             setState(() {
-              _errorMessage = 'Video file size must be less than 100 MB.';
+              _errorMessage = 'Video file size must be less than 1 GB.';
             });
             return;
           }
@@ -502,16 +504,19 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
           if (_attachedFile != null) {
             final fLen = await _attachedFile!.length();
-            if (fLen >= 100 * 1024 * 1024) {
+            final maxLimit = _selectedType == ScheduledMessageType.video ? 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+            if (fLen >= maxLimit) {
               setState(() {
-                _errorMessage = 'File size must be less than 100 MB.';
+                _errorMessage = _selectedType == ScheduledMessageType.video
+                    ? 'Video file size must be less than 1 GB.'
+                    : 'File size must be less than 100 MB.';
                 _isSubmitting = false;
               });
               return;
             }
             if (_selectedType == ScheduledMessageType.document) {
               setState(() {
-                _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
+                _errorMessage = 'Other formats are not allowed. Only video and audio file messages are allowed.';
                 _isSubmitting = false;
               });
               return;
@@ -553,6 +558,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
               fileSizeBytes: fileSize,
               allowView: true,
+              allowDownload: false,
+              allowShare: false,
               onProgress: (p) {
                 if (mounted) {
                   setState(() {
@@ -619,7 +626,27 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             } catch (_) {}
           }
 
-          final bool isMedia = _selectedType != ScheduledMessageType.text;
+          try {
+            final storage = getIt<StorageService>();
+            if (fileKey != null && fileKey.isNotEmpty) {
+              await storage.saveSenderMediaPermissions(fileKey, allowView: true, allowDownload: false, allowShare: false);
+              await storage.saveSenderMediaPermissions(fileKey.split('?').first, allowView: true, allowDownload: false, allowShare: false);
+              await storage.saveSenderMediaPermissions(fileKey.split('?').first.split('/').last, allowView: true, allowDownload: false, allowShare: false);
+            }
+            if (fileName != null && fileName.isNotEmpty) {
+              await storage.saveSenderMediaPermissions(fileName, allowView: true, allowDownload: false, allowShare: false);
+            }
+            if (mediaId != null && mediaId.isNotEmpty) {
+              await storage.saveSenderMediaPermissions(mediaId, allowView: true, allowDownload: false, allowShare: false);
+            }
+            if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+              await storage.saveSenderMediaPermissions(resolvedMediaId, allowView: true, allowDownload: false, allowShare: false);
+            }
+            if (_attachedFile != null && _attachedFile!.path.isNotEmpty) {
+              await storage.saveSenderMediaPermissions(_attachedFile!.path, allowView: true, allowDownload: false, allowShare: false);
+            }
+          } catch (_) {}
+
           final updatePayload = <String, dynamic>{
             'messageType': typeStr,
             'message_type': typeStr,
@@ -641,8 +668,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             'security': {
               'isLocked': false,
               'accessUsers': [],
-              'allowDownload': true,
-              'allowShare': true,
+              'allowDownload': false,
+              'allowShare': false,
               'allowView': true,
             },
             'viewControl': {
@@ -650,8 +677,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               'maxViews': 1,
               'viewedBy': [],
               'isOpened': false,
-              'allowDownload': true,
-              'allowShare': true,
+              'allowDownload': false,
+              'allowShare': false,
               'allowView': true,
             },
             'scheduledAt': scheduled.toUtc().toIso8601String(),
@@ -731,16 +758,19 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
             if (_attachedFile != null) {
               final fLen = await _attachedFile!.length();
-              if (fLen >= 100 * 1024 * 1024) {
+              final maxLimit = _selectedType == ScheduledMessageType.video ? 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+              if (fLen >= maxLimit) {
                 setState(() {
-                  _errorMessage = 'File size must be less than 100 MB.';
+                  _errorMessage = _selectedType == ScheduledMessageType.video
+                      ? 'Video file size must be less than 1 GB.'
+                      : 'File size must be less than 100 MB.';
                   _isSubmitting = false;
                 });
                 return;
               }
               if (_selectedType == ScheduledMessageType.document) {
                 setState(() {
-                  _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
+                  _errorMessage = 'Other formats are not allowed. Only video and audio file messages are allowed.';
                   _isSubmitting = false;
                 });
                 return;
@@ -782,6 +812,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 mimeType: mimeType ?? _getMimeType(_attachedFile!.path, typeStr),
                 fileSizeBytes: fileSize,
                 allowView: true,
+                allowDownload: false,
+                allowShare: false,
                 onProgress: (p) {
                   if (mounted) {
                     setState(() {
@@ -850,7 +882,27 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               }
             }
 
-            final bool isMedia = _selectedType != ScheduledMessageType.text;
+            try {
+              final storage = getIt<StorageService>();
+              if (fileKey != null && fileKey.isNotEmpty) {
+                await storage.saveSenderMediaPermissions(fileKey, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(fileKey.split('?').first, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(fileKey.split('?').first.split('/').last, allowView: true, allowDownload: false, allowShare: false);
+              }
+              if (fileName != null && fileName.isNotEmpty) {
+                await storage.saveSenderMediaPermissions(fileName, allowView: true, allowDownload: false, allowShare: false);
+              }
+              if (mediaId != null && mediaId.isNotEmpty) {
+                await storage.saveSenderMediaPermissions(mediaId, allowView: true, allowDownload: false, allowShare: false);
+              }
+              if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+                await storage.saveSenderMediaPermissions(resolvedMediaId, allowView: true, allowDownload: false, allowShare: false);
+              }
+              if (_attachedFile != null && _attachedFile!.path.isNotEmpty) {
+                await storage.saveSenderMediaPermissions(_attachedFile!.path, allowView: true, allowDownload: false, allowShare: false);
+              }
+            } catch (_) {}
+
             final requestData = <String, dynamic>{
               "conversationId": widget.conversationId,
               "conversation_id": widget.conversationId,
@@ -880,8 +932,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               "security": {
                 "isLocked": false,
                 "accessUsers": [],
-                "allowDownload": true,
-                "allowShare": true,
+                "allowDownload": false,
+                "allowShare": false,
                 "allowView": true,
               },
               "viewControl": {
@@ -889,8 +941,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 "maxViews": 1,
                 "viewedBy": [],
                 "isOpened": false,
-                "allowDownload": true,
-                "allowShare": true,
+                "allowDownload": false,
+                "allowShare": false,
                 "allowView": true,
               },
               "expiry": {
@@ -1416,7 +1468,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Allowed file size: < 100 MB. Other formats are not allowed.',
+                        'Allowed file size: Video < 1 GB, Audio/Image < 100 MB. Other formats are not allowed.',
                         style: context.bodySmall.copyWith(
                           color: context.colors.textPrimary,
                           fontSize: 11.5,
@@ -1745,7 +1797,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         case ScheduledMessageType.video:
           pickerIcon = Icons.videocam_rounded;
           pickerTitle = 'Choose Video to Schedule';
-          pickerHint = 'Supports MP4, MOV, WEBM, MKV (< 100 MB)';
+          pickerHint = 'Supports MP4, MOV, WEBM, MKV (< 1 GB)';
           pickerColor = Colors.red;
           break;
         case ScheduledMessageType.audio:
@@ -1757,7 +1809,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
         default:
           pickerIcon = Icons.attach_file_rounded;
           pickerTitle = 'Choose Media to Schedule';
-          pickerHint = 'Only video and audio formats (< 100 MB) are allowed';
+          pickerHint = 'Only video (< 1 GB) and audio (< 100 MB) formats are allowed';
           pickerColor = context.colors.primary;
       }
 

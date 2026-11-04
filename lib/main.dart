@@ -150,6 +150,18 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       try {
         getIt<PushNotificationService>().clearAllNotifications();
       } catch (_) {}
+      try {
+        if (getIt.isRegistered<ChatsBloc>()) {
+          getIt<ChatsBloc>().resetAllTypingIndicators();
+          getIt<ChatsBloc>().add(const FetchChats());
+        }
+      } catch (_) {}
+    } else if (state == AppLifecycleState.paused) {
+      try {
+        if (getIt.isRegistered<ChatsBloc>()) {
+          getIt<ChatsBloc>().resetAllTypingIndicators();
+        }
+      } catch (_) {}
     }
   }
 

@@ -171,12 +171,22 @@ class ChatRepositoryImpl implements ChatRepository {
         }
       }
 
+      if (message.isForwarded) {
+        contentMap['isForwarded'] = true;
+      }
+      if (message.forwardedFromMessageId != null && message.forwardedFromMessageId!.isNotEmpty) {
+        contentMap['forwardedFromMessageId'] = message.forwardedFromMessageId;
+      }
+
       final Map<String, dynamic> payload = {
         'conversationId': message.conversationId,
         'type': payloadType,
         if (contentMap.isNotEmpty) 'content': contentMap,
         if (message.replyMessageId != null && message.replyMessageId!.isNotEmpty)
           'replyMessageId': message.replyMessageId,
+        if (message.isForwarded) 'isForwarded': true,
+        if (message.forwardedFromMessageId != null && message.forwardedFromMessageId!.isNotEmpty)
+          'forwardedFromMessageId': message.forwardedFromMessageId,
         'security': {
           'isLocked': false,
           'accessUsers': [],
@@ -234,8 +244,8 @@ class ChatRepositoryImpl implements ChatRepository {
     Uint8List? fileBytes,
     void Function(double progress)? onProgress,
     bool allowView = true,
-    bool allowDownload = true,
-    bool allowShare = true,
+    bool allowDownload = false,
+    bool allowShare = false,
   }) async {
     try {
       if (!kIsWeb) {
@@ -472,16 +482,32 @@ class ChatRepositoryImpl implements ChatRepository {
         SecureAttachmentService.cacheMediaMapping(key: objectKey, localPath: resolvedFilePath, mediaId: mediaId);
         SecureAttachmentService.cacheMediaMapping(key: resolvedFileName, localPath: resolvedFilePath, mediaId: mediaId);
         SecureAttachmentService.cacheMediaMapping(key: objectKey.split('/').last, localPath: resolvedFilePath, mediaId: mediaId);
+        if (getIt.isRegistered<StorageService>()) {
+          final storage = getIt<StorageService>();
+          storage.markMediaAsOwnedByMe(mediaId);
+          storage.markMediaAsOwnedByMe(objectKey);
+          storage.markMediaAsOwnedByMe(resolvedFileName);
+          storage.markMediaAsOwnedByMe(objectKey.split('/').last);
+        }
       }
 
       // 2. Perform direct S3/MinIO upload with retry
-      Uint8List bytes;
+      Uint8List? bytes;
+      int uploadContentLength = 0;
+      File? uploadLocalFile;
+
       if (resolvedFileBytes != null && resolvedFileBytes.isNotEmpty) {
         bytes = resolvedFileBytes;
+        uploadContentLength = bytes.length;
       } else if (!kIsWeb && resolvedFilePath.isNotEmpty) {
         final file = File(resolvedFilePath);
         if (!await file.exists()) throw Exception('File does not exist at path: $resolvedFilePath');
-        bytes = await file.readAsBytes();
+        uploadLocalFile = file;
+        uploadContentLength = await file.length();
+        // For files <= 25MB, caching bytes in memory is fine; for large files (up to 1GB), stream from disk to avoid OOM
+        if (uploadContentLength <= 25 * 1024 * 1024) {
+          bytes = await file.readAsBytes();
+        }
       } else {
         throw Exception('No file data available for upload');
       }
@@ -508,20 +534,24 @@ class ChatRepositoryImpl implements ChatRepository {
       final uploadDio = Dio(
         BaseOptions(
           connectTimeout: const Duration(minutes: 5),
-          sendTimeout: const Duration(minutes: 10),
+          sendTimeout: const Duration(minutes: 45),
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
 
       for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
         try {
+          final Stream<List<int>> uploadStream = bytes != null
+              ? Stream.fromIterable(<List<int>>[bytes])
+              : uploadLocalFile!.openRead();
+
           final uploadResponse = await uploadDio.put(
             uploadUrl,
-            data: Stream.fromIterable(<List<int>>[bytes]),
+            data: uploadStream,
             options: Options(
               headers: {
                 'Content-Type': finalUploadMime,
-                'Content-Length': bytes.length.toString(),
+                'Content-Length': uploadContentLength.toString(),
               },
             ),
             onSendProgress: (sent, total) {
@@ -749,14 +779,17 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<void> forwardMessage({required String messageId, required String targetConversationId}) async {
+  Future<dynamic> forwardMessage({
+    required String messageId,
+    required String targetConversationId,
+  }) async {
     final result = await _apiService.post(
       CommonEndpoints.forwardMessage(messageId),
       data: {'conversationId': targetConversationId},
       mapper: (data) => data,
     );
-    result.when(
-      success: (_) {},
+    return result.when(
+      success: (data) => data,
       failure: (error, statusCode) => throw Exception(error),
     );
   }
@@ -1253,8 +1286,9 @@ class ChatRepositoryImpl implements ChatRepository {
     bool canDownload = false,
     bool canShare = false,
   }) async {
+    final cleanMediaId = SecureAttachmentService.findMediaId(mediaId) ?? mediaId;
     final result = await _apiService.post(
-      CommonEndpoints.shareMedia(mediaId),
+      CommonEndpoints.shareMedia(cleanMediaId),
       data: {
         'grantee_id': granteeId,
         ...?parentGrantId == null ? null : {'parent_grant_id': parentGrantId},

@@ -38,6 +38,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/link_preview
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/chat_screen/src/presentation/chat_page.dart';
@@ -108,6 +109,7 @@ class MessageBubble extends StatefulWidget {
   final VoidCallback? onStopLiveLocation;
   final bool isForwarded;
   final String? forwardedFromMessageId;
+  final String? mediaOwnerId;
   final bool isReadOnly;
 
   const MessageBubble({
@@ -173,6 +175,7 @@ class MessageBubble extends StatefulWidget {
     this.onStopLiveLocation,
     this.isForwarded = false,
     this.forwardedFromMessageId,
+    this.mediaOwnerId,
     this.isReadOnly = false,
   });
 
@@ -190,6 +193,58 @@ class _MessageBubbleState extends State<MessageBubble> {
   String? get senderProfilePictureUrl => widget.senderProfilePictureUrl;
   String get time => widget.time;
   bool get isMe => widget.isMe;
+
+  /// True ONLY if this user is the initial creator/owner of this media.
+  /// Forwarded messages, reshared media, or media uploaded by another user are NEVER owned.
+  bool get isTrueOwner {
+    if (widget.isReadOnly) return false;
+    if (!isMe) return false;
+    if (isForwarded) return false;
+    if (widget.forwardedFromMessageId != null && widget.forwardedFromMessageId!.isNotEmpty) return false;
+    if (widget.mediaOwnerId != null && widget.mediaOwnerId!.isNotEmpty) {
+      final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+      if (myId != null && widget.mediaOwnerId != myId) {
+        return false;
+      }
+    }
+    if (attachmentPath != null && attachmentPath!.isNotEmpty) {
+      final s3Match = RegExp(
+        r'(?:chat-media|documents|voice-notes)/([0-9a-fA-F-]{36})/([0-9a-fA-F-]{36})/',
+      ).firstMatch(attachmentPath!);
+      if (s3Match != null) {
+        final urlUploaderId = s3Match.group(1)!;
+        final urlOrigConvId = s3Match.group(2)!;
+        final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+        if (myId != null && myId.isNotEmpty && urlUploaderId != myId) {
+          return false;
+        }
+        if (conversationId.isNotEmpty && urlOrigConvId != conversationId) {
+          return false;
+        }
+        if (myId != null && myId.isNotEmpty && urlUploaderId == myId && urlOrigConvId == conversationId) {
+          return true;
+        }
+      }
+    }
+    if (getIt.isRegistered<StorageService>()) {
+      final storage = getIt<StorageService>();
+      if (storage.isMediaNotOwnedByMe(messageId)) return false;
+      if (attachmentPath != null && attachmentPath!.isNotEmpty && storage.isMediaNotOwnedByMe(attachmentPath!)) {
+        return false;
+      }
+      if (attachmentName != null && attachmentName!.isNotEmpty && storage.isMediaNotOwnedByMe(attachmentName!)) {
+        return false;
+      }
+      final keyToCheck = attachmentPath ?? attachmentName;
+      if (keyToCheck != null && keyToCheck.isNotEmpty) {
+        // If this device never uploaded this media and never saved permissions for it, it's not the initial owner!
+        if (!storage.isMediaOwnedByMe(keyToCheck) && !storage.isMediaOwnedByMe(messageId) && storage.getSenderMediaPermissions(messageId) == null) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
   bool get isRead => widget.isRead;
   bool get isDelivered => widget.isDelivered;
   bool get isDeleted => widget.isDeleted;
@@ -268,11 +323,16 @@ class _MessageBubbleState extends State<MessageBubble> {
     return spans;
   }
   bool get allowView {
-    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
+    if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
+        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
+        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
         final saved = storage.getSenderMediaPermissions(messageId) ??
+            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
             (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
+            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
             (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
         if (saved != null && saved['allowView'] != null) {
           return saved['allowView']!;
@@ -283,12 +343,17 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   bool get allowDownload {
-    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
-      if (!allowView) return false;
+    if (!allowView) return false;
+    if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
+        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
+        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
         final saved = storage.getSenderMediaPermissions(messageId) ??
+            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
             (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
+            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
             (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
         if (saved != null && saved['allowDownload'] != null) {
           return saved['allowDownload']!;
@@ -299,12 +364,17 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   bool get allowShare {
-    if (isMe && !isForwarded && getIt.isRegistered<StorageService>()) {
-      if (!allowView) return false;
+    if (!allowView) return false;
+    if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
+        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
+        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
         final saved = storage.getSenderMediaPermissions(messageId) ??
+            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
             (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
+            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
+            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
             (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
         if (saved != null && saved['allowShare'] != null) {
           return saved['allowShare']!;
@@ -1203,7 +1273,6 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    const disabledRed = Color(0xFFFF5252);
     final textColor = context.colors.textPrimary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -1267,18 +1336,17 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
+    const disabledRed = Colors.redAccent;
+    final bool canToggleAsOwner = isTrueOwner;
     final List<Widget> actionButtons = [];
-    final bool canToggleAsOwner = !widget.isReadOnly && isMe && !isForwarded;
 
-    // 1. View Action: Toggles permission if initial sender (canToggleAsOwner), opens viewer if recipient or forwarder
+    // 1. View Action: Owner can always toggle View on/off; Non-owners see View only if allowed
     if (canToggleAsOwner || allowView) {
       final isViewActive = allowView;
       final iconColor = canToggleAsOwner
           ? (isViewActive ? accentGreen : disabledRed)
           : (isViewActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = canToggleAsOwner
-          ? (isViewActive ? textColor : disabledRed)
-          : textColor;
+      final labelColor = (canToggleAsOwner && !isViewActive) ? disabledRed : textColor;
 
       actionButtons.add(
         Expanded(
@@ -1291,13 +1359,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 context.showSuccessNotification(
                   nextVal ? 'View enabled for recipient' : 'View disabled for recipient',
                 );
-                return;
+              } else {
+                if (!allowView) {
+                  context.showInfoNotification('View permission is restricted by sender');
+                  return;
+                }
+                _openInAppViewer(context);
               }
-              if (!allowView) {
-                context.showInfoNotification('View permission is restricted by sender');
-                return;
-              }
-              _openInAppViewer(context);
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -1321,8 +1389,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                           color: labelColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 10.0,
-                          decoration: (!isViewActive && canToggleAsOwner) ? TextDecoration.lineThrough : null,
-                          decorationColor: disabledRed,
+                          decoration: (canToggleAsOwner && !isViewActive) ? TextDecoration.lineThrough : null,
                         ),
                       ),
                     ),
@@ -1335,15 +1402,13 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    // 2. Download Action: Toggles permission if initial sender (canToggleAsOwner), triggers download if recipient or forwarder
+    // 2. Download Action: Owner always sees Download to enable/disable it; Non-owners see Download only if allowed
     if (canToggleAsOwner || allowDownload) {
       final isDownloadActive = allowDownload;
       final iconColor = canToggleAsOwner
           ? (isDownloadActive ? accentGreen : disabledRed)
           : (isDownloadActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = canToggleAsOwner
-          ? (isDownloadActive ? textColor : disabledRed)
-          : textColor;
+      final labelColor = (canToggleAsOwner && !isDownloadActive) ? disabledRed : textColor;
 
       final String downloadText = _isDownloading
           ? (_downloadProgress != null && _downloadProgress! > 0
@@ -1362,13 +1427,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 context.showSuccessNotification(
                   nextVal ? 'Download enabled for recipient' : 'Download disabled for recipient',
                 );
-                return;
+              } else {
+                if (!allowDownload) {
+                  context.showInfoNotification('Download permission is locked by sender');
+                  return;
+                }
+                _triggerDownload(context);
               }
-              if (!allowDownload) {
-                context.showInfoNotification('Download permission is locked by sender');
-                return;
-              }
-              _triggerDownload(context);
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -1402,8 +1467,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                           color: _isDownloading ? accentGreen : labelColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 10.0,
-                          decoration: (!isDownloadActive && canToggleAsOwner) ? TextDecoration.lineThrough : null,
-                          decorationColor: disabledRed,
+                          decoration: (canToggleAsOwner && !isDownloadActive && !_isDownloading) ? TextDecoration.lineThrough : null,
                         ),
                       ),
                     ),
@@ -1416,15 +1480,13 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    // 3. Share Action: Toggles permission if initial sender (canToggleAsOwner), triggers share if recipient or forwarder
+    // 3. Share Action: Owner always sees Share to enable/disable it; Non-owners see Share only if allowed
     if (canToggleAsOwner || allowShare) {
       final isShareActive = allowShare;
       final iconColor = canToggleAsOwner
           ? (isShareActive ? accentGreen : disabledRed)
           : (isShareActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = canToggleAsOwner
-          ? (isShareActive ? textColor : disabledRed)
-          : textColor;
+      final labelColor = (canToggleAsOwner && !isShareActive) ? disabledRed : textColor;
 
       actionButtons.add(
         Expanded(
@@ -1437,13 +1499,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 context.showSuccessNotification(
                   nextVal ? 'Share enabled for recipient' : 'Share disabled for recipient',
                 );
-                return;
+              } else {
+                if (!allowShare) {
+                  context.showInfoNotification('Share permission is locked by sender');
+                  return;
+                }
+                _triggerShare(context);
               }
-              if (!allowShare) {
-                context.showInfoNotification('Share permission is locked by sender');
-                return;
-              }
-              _triggerShare(context);
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -1467,8 +1529,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                           color: labelColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 10.0,
-                          decoration: (!isShareActive && canToggleAsOwner) ? TextDecoration.lineThrough : null,
-                          decorationColor: disabledRed,
+                          decoration: (canToggleAsOwner && !isShareActive) ? TextDecoration.lineThrough : null,
                         ),
                       ),
                     ),
@@ -1516,8 +1577,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    // Show share details ONLY for initial share person (original creator/sender of media and not in group, not a forwarded/reshared copy) and NEVER in chat transfer / read-only mode
-    final bool showShareDetails = !widget.isReadOnly && isMe && !isGroup && _isMediaMessage && !isForwarded;
+    // Show share details ONLY for initial owner (original creator/sender of media and not in group, not a forwarded/reshared copy) and NEVER in chat transfer / read-only mode
+    final bool showShareDetails = !widget.isReadOnly && isMe && !isGroup && _isMediaMessage && !isForwarded && isTrueOwner;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
@@ -1596,8 +1657,14 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _openShareDetailsBottomSheet(BuildContext context) {
-    final cachedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
+    String? cachedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
         SecureAttachmentService.findMediaId(attachmentName);
+    if ((cachedMediaId == null || cachedMediaId.isEmpty) && attachmentPath != null) {
+      final match = RegExp(r'/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+(?:\?|$)').firstMatch(attachmentPath!);
+      if (match != null) {
+        cachedMediaId = match.group(1);
+      }
+    }
     final idToUse = (cachedMediaId != null && cachedMediaId.isNotEmpty) ? cachedMediaId : widget.messageId;
     final name = attachmentName ?? (type == 'image' ? 'Image File' : (type == 'video' ? 'Video File' : (type == 'audio' ? 'Audio File' : 'Media Attachment')));
     MediaProtectionBottomSheet.show(
@@ -2802,7 +2869,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    final bool canToggleAsOwner = !widget.isReadOnly && isMe && !isForwarded;
+    final bool canToggleAsOwner = isTrueOwner;
     if (canToggleAsOwner) {
       final activeBg = context.colors.primary.withValues(alpha: 0.12);
       final activeIcon = context.colors.primary;
@@ -3026,6 +3093,29 @@ class _MessageBubbleState extends State<MessageBubble> {
       });
     }
 
+    if (widget.recipientId != null && widget.recipientId!.isNotEmpty) {
+      String? resolvedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
+          SecureAttachmentService.findMediaId(attachmentName);
+      if ((resolvedMediaId == null || resolvedMediaId.isEmpty) && attachmentPath != null) {
+        final match = RegExp(r'/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+(?:\?|$)').firstMatch(attachmentPath!);
+        if (match != null) {
+          resolvedMediaId = match.group(1);
+        }
+      }
+      if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+        getIt<ChatRepository>().shareMedia(
+          mediaId: resolvedMediaId,
+          granteeId: widget.recipientId!,
+          canView: newView,
+          canDownload: newDownload,
+          canShare: newShare,
+        ).catchError((e) {
+          debugPrint('Failed to update media share grant: $e');
+          return false;
+        });
+      }
+    }
+
     if (attachmentPath != null && attachmentPath!.isNotEmpty) {
       getIt<ChatSocketRepository>().sendFileAction(
         type: newView ? 'media_permissions_updated' : 'media_access_revoked',
@@ -3183,8 +3273,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       allowShare: (widget.isReadOnly || isViewOnce) ? false : allowShare,
       allowDownload: (widget.isReadOnly || isViewOnce) ? false : allowDownload,
       isViewOnce: isViewOnce,
-      isMe: widget.isReadOnly ? false : isMe,
-      isForwarded: isForwarded,
+      isMe: widget.isReadOnly ? false : isTrueOwner,
+      isForwarded: !isTrueOwner || isForwarded,
       isReadOnly: widget.isReadOnly,
       onViewed: () {
         if (isViewOnce) {
@@ -3253,6 +3343,10 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _triggerDownload(BuildContext context) async {
+    if (!allowDownload) {
+      context.showInfoNotification('Download permission is locked by sender');
+      return;
+    }
     final String? path = attachmentPath;
     if (path == null || path.isEmpty || _isDownloading) return;
     String url = path;
@@ -3320,7 +3414,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  void _triggerShare(BuildContext context) {
+  void _triggerShare(BuildContext context) async {
     if (!allowShare) {
       context.showInfoNotification('Share permission is locked by sender');
       return;
@@ -3337,6 +3431,34 @@ class _MessageBubbleState extends State<MessageBubble> {
           fileKey: attachmentPath!,
         );
       }
+    } else {
+      await _shareFileExternally(context);
+    }
+  }
+
+  Future<void> _shareFileExternally(BuildContext context) async {
+    try {
+      final path = attachmentPath;
+      if (path == null || path.isEmpty) return;
+      final clean = attachmentName ?? (type == 'video' ? 'video.mp4' : 'file');
+      String? localPath = SecureAttachmentService.findCachedLocalPath(path) ??
+          SecureAttachmentService.findLocalFile(pathOrKey: path, fileName: clean);
+      if (localPath != null && File(localPath).existsSync()) {
+        final isEnc = localPath.toLowerCase().endsWith('.enc') ||
+            (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(localPath));
+        if (isEnc) {
+          final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+            encryptedFilePath: localPath,
+            originalFileName: clean,
+          );
+          localPath = decFile.path;
+        }
+        await Share.shareXFiles([XFile(localPath, name: clean)]);
+      } else {
+        context.showInfoNotification('Please download the file first before sharing');
+      }
+    } catch (e) {
+      debugPrint('Error sharing file externally: $e');
     }
   }
 

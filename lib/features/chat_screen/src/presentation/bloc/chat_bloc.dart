@@ -20,6 +20,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
+import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'chat_event.dart';
 import 'chat_state.dart';
 
@@ -206,6 +207,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       return true;
     }).toList();
 
+    // Deduplicate consecutive/clustered call messages from same call session
+    filtered = _deduplicateCallMessages(filtered);
+
     if (timer == null || timer == 0) {
       return filtered;
     }
@@ -216,6 +220,53 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       }
       return true;
     }).toList();
+  }
+
+  /// Collapses duplicate call records generated during the same call session (e.g. repeated "Call Again" taps)
+  List<MessageModel> _deduplicateCallMessages(List<MessageModel> messages) {
+    if (messages.length <= 1) return messages;
+
+    final result = <MessageModel>[];
+    for (int i = 0; i < messages.length; i++) {
+      final current = messages[i];
+      if (current.messageType != 'call' && current.mediaType != 'call' && current.callMeta == null) {
+        result.add(current);
+        continue;
+      }
+
+      if (CallWebRtcBloc.suppressedCallMessageIds.contains(current.id)) {
+        continue;
+      }
+
+      // Check if previous message is from the same conversation, same sender, and within 3 minutes
+      if (result.isNotEmpty) {
+        final prev = result.last;
+        final bool prevIsCall = prev.messageType == 'call' || prev.mediaType == 'call' || prev.callMeta != null;
+        if (prevIsCall && prev.senderId == current.senderId) {
+          final prevDate = _parseTimestamp(prev.createdAt);
+          final currDate = _parseTimestamp(current.createdAt);
+          final diffSec = currDate.difference(prevDate).inSeconds.abs();
+
+          // If within 180s (3 minutes), they belong to the same call attempt/reinvite session!
+          if (diffSec < 180) {
+            // Keep the more informative record (completed > rejected > missed)
+            final prevStatus = prev.callMeta?.status.toLowerCase() ?? '';
+            final currStatus = current.callMeta?.status.toLowerCase() ?? '';
+            final bool currIsCompleted = currStatus == 'completed';
+            final bool prevIsCompleted = prevStatus == 'completed';
+
+            if (currIsCompleted && !prevIsCompleted) {
+              result.removeLast();
+              result.add(current);
+            }
+            continue; // Collapsed duplicate!
+          }
+        }
+      }
+
+      result.add(current);
+    }
+    return result;
   }
 
   List<MessageModel> _applyPersistentViewOnceStates(List<MessageModel> messages, [List<MessageModel>? existingMessages]) {
@@ -278,13 +329,52 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   MessageModel _resolveSenderPermissions(MessageModel m, String myId, [String? userView]) {
     if (!_isSenderMessage(m, myId, userView)) return m;
+    final cleanUrl = (m.mediaUrl != null && m.mediaUrl!.isNotEmpty) ? m.mediaUrl!.split('?').first : null;
+    final fileBase = (cleanUrl != null && cleanUrl.isNotEmpty) ? cleanUrl.split('/').last : null;
+    final mediaId = SecureAttachmentService.findMediaId(m.mediaUrl) ??
+        SecureAttachmentService.findMediaId(m.attachmentName);
     final saved = _storageService.getSenderMediaPermissions(m.id) ??
+        (m.forwardedFromMessageId != null ? _storageService.getSenderMediaPermissions(m.forwardedFromMessageId!) : null) ??
+        (mediaId != null ? _storageService.getSenderMediaPermissions(mediaId) : null) ??
         (m.mediaUrl != null ? _storageService.getSenderMediaPermissions(m.mediaUrl!) : null) ??
+        (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null) ??
+        (fileBase != null ? _storageService.getSenderMediaPermissions(fileBase) : null) ??
         (m.attachmentName != null ? _storageService.getSenderMediaPermissions(m.attachmentName!) : null);
     if (saved != null) {
       final view = saved['allowView'] ?? m.allowView;
       final download = (!view) ? false : (saved['allowDownload'] ?? m.allowDownload);
       final share = (!view) ? false : (saved['allowShare'] ?? m.allowShare);
+      if (download != m.allowDownload || share != m.allowShare || view != m.allowView) {
+        _storageService.saveSenderMediaPermissions(
+          m.id,
+          allowView: view,
+          allowDownload: download,
+          allowShare: share,
+        );
+        if (!m.id.startsWith('temp_')) {
+          Future.microtask(() async {
+            try {
+              await _chatRepository.updateMessageSecurity(
+                m.id,
+                allowShare: share,
+                allowDownload: download,
+                allowView: view,
+              );
+            } catch (_) {}
+            _socketRepository.editMessage(
+              messageId: m.id,
+              conversationId: m.conversationId,
+              security: {
+                'isLocked': false,
+                'accessUsers': [],
+                'allowShare': share,
+                'allowDownload': download,
+                'allowView': view,
+              },
+            );
+          });
+        }
+      }
       return m.copyWith(
         userView: 'send',
         allowView: view,
@@ -293,6 +383,59 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     }
     return m;
+  }
+
+  void _syncNonOwnedMediaPermissions(String myId) {
+    Future.microtask(() async {
+      final currentState = state;
+      if (currentState is! ChatLoaded) return;
+      final checkedMediaIds = <String>{};
+      final recentMedia = currentState.messages.reversed
+          .where((m) => !m.isDeleted && m.mediaUrl != null && m.mediaUrl!.isNotEmpty)
+          .take(15)
+          .toList();
+
+      for (final m in recentMedia) {
+        final mediaUrl = m.mediaUrl!;
+        String? urlUploaderId;
+        final s3Match = RegExp(
+          r'(?:chat-media|documents|voice-notes)/([0-9a-fA-F-]{36})/',
+        ).firstMatch(mediaUrl);
+        if (s3Match != null) {
+          urlUploaderId = s3Match.group(1);
+        }
+        final isOwnedByMe = !m.isForwarded &&
+            (m.forwardedFromMessageId == null || m.forwardedFromMessageId!.isEmpty) &&
+            m.senderId == myId &&
+            (urlUploaderId == null || urlUploaderId == myId);
+        if (isOwnedByMe) continue;
+
+        final mediaId = SecureAttachmentService.findMediaId(mediaUrl) ??
+            SecureAttachmentService.findMediaId(m.attachmentName);
+        if (mediaId == null || mediaId.isEmpty || !checkedMediaIds.add(mediaId)) {
+          continue;
+        }
+        try {
+          final perms = await _chatRepository.getMediaPermissions(mediaId);
+          if (!perms.isOwner) {
+            final pView = perms.permissions.canView;
+            final pDownload = pView ? perms.permissions.canDownload : false;
+            final pShare = pView ? perms.permissions.canShare : false;
+            if (pView != m.allowView || pDownload != m.allowDownload || pShare != m.allowShare) {
+              add(ReceiveMediaPermissionsUpdatedEvent(
+                mediaId: mediaId,
+                fileKey: mediaUrl,
+                fileName: m.attachmentName,
+                allowView: pView,
+                allowDownload: pDownload,
+                allowShare: pShare,
+                isRevoked: !pView,
+              ));
+            }
+          }
+        } catch (_) {}
+      }
+    });
   }
 
   String? _resolveBestMediaUrl({
@@ -573,6 +716,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               allowDownload: allowDownload,
               allowView: (isLocked == true) ? false : allowView,
               isLocked: isLocked,
+            ));
+          }
+          // Also propagate media permission updates across forwarded copies and other conversations
+          if ((allowShare != null || allowDownload != null || allowView != null || isLocked != null) &&
+              ((newMediaUrl != null && newMediaUrl.isNotEmpty) || (msgId != null && msgId.isNotEmpty))) {
+            final effectiveView = (isLocked == true) ? false : allowView;
+            final resolvedMediaId = SecureAttachmentService.findMediaId(newMediaUrl) ?? msgId ?? '';
+            add(ReceiveMediaPermissionsUpdatedEvent(
+              mediaId: resolvedMediaId,
+              fileKey: newMediaUrl,
+              allowShare: allowShare,
+              allowDownload: allowDownload,
+              allowView: effectiveView,
+              isRevoked: effectiveView == false,
             ));
           }
         } else if (type == 'message_pinned' || type == 'pin_message') {
@@ -1099,8 +1256,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             bool allowDownload = m.allowDownload;
 
             if (isMine) {
+              final cleanUrl = (m.mediaUrl != null && m.mediaUrl!.isNotEmpty) ? m.mediaUrl!.split('?').first : null;
+              final fileBase = (cleanUrl != null && cleanUrl.isNotEmpty) ? cleanUrl.split('/').last : null;
               final saved = _storageService.getSenderMediaPermissions(m.id) ??
+                  (m.forwardedFromMessageId != null ? _storageService.getSenderMediaPermissions(m.forwardedFromMessageId!) : null) ??
                   (m.mediaUrl != null ? _storageService.getSenderMediaPermissions(m.mediaUrl!) : null) ??
+                  (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null) ??
+                  (fileBase != null ? _storageService.getSenderMediaPermissions(fileBase) : null) ??
                   (m.attachmentName != null ? _storageService.getSenderMediaPermissions(m.attachmentName!) : null);
               if (saved != null) {
                 allowView = saved['allowView'] ?? m.allowView;
@@ -1335,6 +1497,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isLocked: initialLock,
         ));
       }
+      _syncNonOwnedMediaPermissions(myId);
     } catch (e) {
       if (state is! ChatLoaded) {
         emit(ChatError(errorMessage: e.toString()));
@@ -1420,6 +1583,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
             if (isMine) {
               final saved = _storageService.getSenderMediaPermissions(m.id) ??
+                  (m.forwardedFromMessageId != null ? _storageService.getSenderMediaPermissions(m.forwardedFromMessageId!) : null) ??
                   (m.mediaUrl != null ? _storageService.getSenderMediaPermissions(m.mediaUrl!) : null) ??
                   (m.attachmentName != null ? _storageService.getSenderMediaPermissions(m.attachmentName!) : null);
               if (saved != null) {
@@ -1806,10 +1970,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           }
 
           final oldTemp = (index != -1) ? updatedMessages[index] : null;
+          final cleanUrl = (newMessage.mediaUrl != null && newMessage.mediaUrl!.isNotEmpty)
+              ? newMessage.mediaUrl!.split('?').first
+              : null;
+          final fileBase = (cleanUrl != null && cleanUrl.isNotEmpty)
+              ? cleanUrl.split('/').last
+              : null;
+          final mediaId = SecureAttachmentService.findMediaId(newMessage.mediaUrl) ??
+              SecureAttachmentService.findMediaId(newMessage.attachmentName);
 
           final savedPerms = (oldTemp != null ? _storageService.getSenderMediaPermissions(oldTemp.id) : null) ??
               _storageService.getSenderMediaPermissions(newMessage.id) ??
+              (mediaId != null ? _storageService.getSenderMediaPermissions(mediaId) : null) ??
               (newMessage.mediaUrl != null ? _storageService.getSenderMediaPermissions(newMessage.mediaUrl!) : null) ??
+              (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null) ??
+              (fileBase != null ? _storageService.getSenderMediaPermissions(fileBase) : null) ??
               (newMessage.attachmentName != null ? _storageService.getSenderMediaPermissions(newMessage.attachmentName!) : null) ??
               (oldTemp?.attachmentName != null ? _storageService.getSenderMediaPermissions(oldTemp!.attachmentName!) : null) ??
               (oldTemp?.mediaUrl != null ? _storageService.getSenderMediaPermissions(oldTemp!.mediaUrl!) : null);
@@ -1817,6 +1992,34 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final allowView = savedPerms?['allowView'] ?? (oldTemp != null ? oldTemp.allowView : newMessage.allowView);
           final allowDownload = (!allowView) ? false : (savedPerms?['allowDownload'] ?? (oldTemp != null ? oldTemp.allowDownload : newMessage.allowDownload));
           final allowShare = (!allowView) ? false : (savedPerms?['allowShare'] ?? (oldTemp != null ? oldTemp.allowShare : newMessage.allowShare));
+
+          if (savedPerms != null &&
+              !newMessage.id.startsWith('temp_') &&
+              (allowDownload != newMessage.allowDownload ||
+                  allowShare != newMessage.allowShare ||
+                  allowView != newMessage.allowView)) {
+            Future.microtask(() async {
+              try {
+                await _chatRepository.updateMessageSecurity(
+                  newMessage.id,
+                  allowShare: allowShare,
+                  allowDownload: allowDownload,
+                  allowView: allowView,
+                );
+              } catch (_) {}
+              _socketRepository.editMessage(
+                messageId: newMessage.id,
+                conversationId: newMessage.conversationId,
+                security: {
+                  'isLocked': false,
+                  'accessUsers': [],
+                  'allowShare': allowShare,
+                  'allowDownload': allowDownload,
+                  'allowView': allowView,
+                },
+              );
+            });
+          }
 
           _storageService.saveSenderMediaPermissions(
             newMessage.id,
@@ -1939,6 +2142,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           isRecipientTyping: false,
         ));
         _saveToCache(_conversationId!, updatedMessages);
+        if (newMessage.mediaUrl != null && newMessage.mediaUrl!.isNotEmpty) {
+          _syncNonOwnedMediaPermissions(myId);
+        }
         _typingTimer?.cancel();
       } catch (e) {
         debugPrint('Error parsing incoming message: $e');
@@ -2442,6 +2648,35 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             updatedMediaUrl = SecureAttachmentService.findCachedLocalPath(msg.attachmentName) ??
                 SecureAttachmentService.findCachedLocalPath(msg.id);
           }
+          final nextShare = event.allowShare ?? msg.allowShare;
+          final nextDownload = event.allowDownload ?? msg.allowDownload;
+          final nextView = event.allowView ?? msg.allowView;
+          try {
+            _storageService.saveSenderMediaPermissions(
+              msg.id,
+              allowView: nextView,
+              allowDownload: nextDownload,
+              allowShare: nextShare,
+            );
+            if (updatedMediaUrl != null && updatedMediaUrl.isNotEmpty) {
+              final cleanUrl = updatedMediaUrl.split('?').first;
+              final fileBase = cleanUrl.split('/').last;
+              _storageService.saveSenderMediaPermissions(
+                cleanUrl,
+                allowView: nextView,
+                allowDownload: nextDownload,
+                allowShare: nextShare,
+              );
+              if (fileBase.isNotEmpty) {
+                _storageService.saveSenderMediaPermissions(
+                  fileBase,
+                  allowView: nextView,
+                  allowDownload: nextDownload,
+                  allowShare: nextShare,
+                );
+              }
+            }
+          } catch (_) {}
           return msg.copyWith(
             content: (event.newContent != null && event.newContent!.isNotEmpty && event.newContent != '[View Restricted]')
                 ? event.newContent
@@ -2450,9 +2685,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             isEdited: true,
             updatedAt: editedAtStr,
             editedAt: event.editedAt,
-            allowShare: event.allowShare ?? msg.allowShare,
-            allowDownload: event.allowDownload ?? msg.allowDownload,
-            allowView: event.allowView ?? msg.allowView,
+            allowShare: nextShare,
+            allowDownload: nextDownload,
+            allowView: nextView,
           );
         }
         return msg;
@@ -2649,6 +2884,33 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final effectiveShare = (!updatedView) ? false : updatedShare;
           final effectiveDownload = (!updatedView) ? false : updatedDownload;
 
+          try {
+            _storageService.saveSenderMediaPermissions(
+              msg.id,
+              allowView: updatedView,
+              allowDownload: effectiveDownload,
+              allowShare: effectiveShare,
+            );
+            if (mediaKey.isNotEmpty) {
+              final cleanUrl = mediaKey.split('?').first;
+              final fileBase = cleanUrl.split('/').last;
+              _storageService.saveSenderMediaPermissions(
+                cleanUrl,
+                allowView: updatedView,
+                allowDownload: effectiveDownload,
+                allowShare: effectiveShare,
+              );
+              if (fileBase.isNotEmpty) {
+                _storageService.saveSenderMediaPermissions(
+                  fileBase,
+                  allowView: updatedView,
+                  allowDownload: effectiveDownload,
+                  allowShare: effectiveShare,
+                );
+              }
+            }
+          } catch (_) {}
+
           final shouldClearRestricted = updatedView && msg.content == '[View Restricted]';
           String? newMediaUrl = msg.mediaUrl;
           if (updatedView && (newMediaUrl == null || newMediaUrl.isEmpty)) {
@@ -2783,6 +3045,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     var msgId = (event.callLogData['message_id'] ?? event.callLogData['messageId'] ?? event.callLogData['id'])?.toString();
     if (msgId == null && callMetaMap is Map) {
       msgId = (callMetaMap['message_id'] ?? callMetaMap['messageId'])?.toString();
+    }
+
+    if (msgId != null && msgId.isNotEmpty && CallWebRtcBloc.suppressedCallMessageIds.contains(msgId)) {
+      debugPrint('ChatBloc: Ignoring suppressed reinvite call log update for message $msgId');
+      return;
     }
 
     final callMeta = callMetaMap is Map ? CallMeta.fromJson(Map<String, dynamic>.from(callMetaMap)) : null;

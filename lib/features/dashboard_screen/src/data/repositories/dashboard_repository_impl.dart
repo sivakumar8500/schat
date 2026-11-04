@@ -5,6 +5,8 @@ import 'package:schat/core/network/api_service.dart';
 import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/features/dashboard_screen/src/domain/models/chat_model.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/dashboard_repository.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
+import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -49,6 +51,9 @@ class DashboardRepositoryImpl implements DashboardRepository {
     String? groupDescription,
     required List<String> participantIds,
   }) async {
+    if (!isGroup && participantIds.length == 1) {
+      return startDirectChat(participantIds.first);
+    }
     final result = await _apiService.post<ChatModel>(
       CommonEndpoints.getChats,
       data: {
@@ -67,13 +72,51 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ApiResult<ChatModel>> startDirectChat(String participantId) async {
+    final targetId = participantId.trim();
+    // 1. Check in-memory ChatsBloc state first to avoid redundant POST /chats/ (which 500s on existing 1-to-1 chats)
+    try {
+      if (getIt.isRegistered<ChatsBloc>()) {
+        final chatsState = getIt<ChatsBloc>().state;
+        if (chatsState is ChatsLoaded) {
+          for (final c in chatsState.chats) {
+            if (!c.isGroup && c.recipient.id.trim() == targetId && c.id.isNotEmpty) {
+              debugPrint('DEBUG: startDirectChat found existing chat in ChatsBloc: ${c.id} for recipient $targetId');
+              return ApiResult.success(c);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Check server chat list before attempting to create a new 1-to-1 chat
+    try {
+      final existingResult = await getChats();
+      ChatModel? matchedChat;
+      existingResult.when(
+        success: (chats) {
+          for (final c in chats) {
+            if (!c.isGroup && c.recipient.id.trim() == targetId && c.id.isNotEmpty) {
+              matchedChat = c;
+              break;
+            }
+          }
+        },
+        failure: (_, _) {},
+      );
+      if (matchedChat != null) {
+        debugPrint('DEBUG: startDirectChat found existing chat via getChats(): ${matchedChat!.id} for recipient $targetId');
+        return ApiResult.success(matchedChat!);
+      }
+    } catch (_) {}
+
+    // 3. Create new direct chat if none exists
     final result = await _apiService.post<ChatModel>(
       CommonEndpoints.getChats,
       data: {
         'is_group': false,
         'group_name': 'string',
         'group_description': 'string',
-        'participant_ids': [participantId],
+        'participant_ids': [targetId],
       },
       mapper: (json) => ChatModel.fromJson(json as Map<String, dynamic>),
     );

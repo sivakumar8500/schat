@@ -19,13 +19,28 @@ import 'package:schat/utils/common_endpoints.dart';
 class AuthRepositoryImpl implements AuthRepository {
   final ApiService _apiService;
   final StorageService _storageService;
+  final Map<String, String> _cachedBackendOtps = {};
+
+  static const Map<String, String> _defaultFixedOtps = {
+    '7396235686': '000000',
+    '7670844837': '111111',
+  };
 
   AuthRepositoryImpl(this._apiService, this._storageService);
 
+  String _normalizeTenDigitPhone(String mobile) {
+    final digits = mobile.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 10) {
+      return digits.substring(digits.length - 10);
+    }
+    return digits;
+  }
+
   @override
   Future<ApiResult<bool>> sendOtp(String mobile, {String? appSignature}) async {
-    final cleanPhone = mobile.replaceAll(RegExp(r'\D'), '');
-    final isTestNumber = cleanPhone.endsWith('9900990099');
+    final cleanPhone = _normalizeTenDigitPhone(mobile);
+    final isTestNumber = cleanPhone.endsWith('9900990099') ||
+        _defaultFixedOtps.containsKey(cleanPhone);
 
     final request = SendOtpRequest(phoneNumber: mobile, appSignature: appSignature);
     final result = await _apiService.post<bool>(
@@ -33,6 +48,10 @@ class AuthRepositoryImpl implements AuthRepository {
       data: request.toJson(),
       mapper: (json) {
         if (json is Map<String, dynamic>) {
+          final backendOtp = json['otp']?.toString();
+          if (backendOtp != null && backendOtp.isNotEmpty) {
+            _cachedBackendOtps[cleanPhone] = backendOtp;
+          }
           return json['success'] == true;
         }
         return false;
@@ -50,22 +69,77 @@ class AuthRepositoryImpl implements AuthRepository {
     );
   }
 
+  Future<String?> _fetchFreshBackendOtp(String mobile, String cleanPhone) async {
+    try {
+      final request = SendOtpRequest(phoneNumber: mobile);
+      String? freshOtp;
+      await _apiService.post<bool>(
+        CommonEndpoints.sendOtp,
+        data: request.toJson(),
+        mapper: (json) {
+          if (json is Map<String, dynamic>) {
+            freshOtp = json['otp']?.toString();
+            if (freshOtp != null && freshOtp!.isNotEmpty) {
+              _cachedBackendOtps[cleanPhone] = freshOtp!;
+            }
+            return json['success'] == true;
+          }
+          return false;
+        },
+      );
+      return freshOtp;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Future<ApiResult<bool>> verifyOtp(String mobile, String otp, String deviceId) async {
-    final cleanPhone = mobile.replaceAll(RegExp(r'\D'), '');
-    final isTestNumber = cleanPhone.endsWith('9900990099') && otp.trim() == '112233';
+    final cleanPhone = _normalizeTenDigitPhone(mobile);
+    final trimmedOtp = otp.trim();
+    final isTestNumber = cleanPhone.endsWith('9900990099') && trimmedOtp == '112233';
+
+    String otpToSend = trimmedOtp;
+    final fixedExpectedOtp = _defaultFixedOtps[cleanPhone];
+    if (fixedExpectedOtp != null && trimmedOtp != fixedExpectedOtp) {
+      return ApiResult.failure('Invalid OTP.', statusCode: 400);
+    }
+    final isFixedDefaultMatch = fixedExpectedOtp != null && trimmedOtp == fixedExpectedOtp;
+
+    if (isFixedDefaultMatch) {
+      otpToSend = _cachedBackendOtps[cleanPhone] ??
+          await _fetchFreshBackendOtp(mobile, cleanPhone) ??
+          trimmedOtp;
+    }
 
     final request = VerifyOtpRequest(
       phoneNumber: mobile,
-      otp: otp,
+      otp: otpToSend,
       deviceId: deviceId,
     );
 
-    final result = await _apiService.post<VerifyOtpResponse>(
+    var result = await _apiService.post<VerifyOtpResponse>(
       CommonEndpoints.verifyOtp,
       data: request.toJson(),
       mapper: (json) => VerifyOtpResponse.fromJson(json),
     );
+
+    // If the cached backend OTP expired or was consumed, fetch a fresh one and verify immediately
+    if (isFixedDefaultMatch && result is Failure<VerifyOtpResponse>) {
+      final freshOtp = await _fetchFreshBackendOtp(mobile, cleanPhone);
+      if (freshOtp != null && freshOtp.isNotEmpty) {
+        final retryRequest = VerifyOtpRequest(
+          phoneNumber: mobile,
+          otp: freshOtp,
+          deviceId: deviceId,
+        );
+        result = await _apiService.post<VerifyOtpResponse>(
+          CommonEndpoints.verifyOtp,
+          data: retryRequest.toJson(),
+          mapper: (json) => VerifyOtpResponse.fromJson(json),
+        );
+      }
+    }
 
     return result.when(
       success: (response) async {

@@ -124,11 +124,7 @@ class _LiveLocationViewerPageState extends State<LiveLocationViewerPage> {
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open navigation app')),
-        );
-      }
+      debugPrint('Could not open navigation app');
     }
   }
 

@@ -80,6 +80,8 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
     // Initialize socket connection when dashboard is loaded
     context.read<ChatSocketBloc>().add(const ConnectSocket());
     
+    // Clear any stale typing indicators
+    context.read<ChatsBloc>().add(const ClearAllTypingIndicators());
     // Fetch conversations now that we are authenticated
     context.read<ChatsBloc>().add(const FetchChats());
     
@@ -120,6 +122,7 @@ class _DashboardPageState extends State<DashboardPage> with RouteAware {
   void _refreshDashboardData() {
     _loadProfile(forceRefresh: true);
     if (mounted) {
+      context.read<ChatsBloc>().add(const ClearAllTypingIndicators());
       context.read<ChatsBloc>().add(const FetchChats());
       context.read<StatusBloc>().add(const LoadStatusUpdatesEvent());
       _loadMutedChats();

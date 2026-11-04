@@ -122,9 +122,7 @@ class _CameraMediaPickerBottomSheetState extends State<CameraMediaPickerBottomSh
         widget.onMediaSelected(file, isVideo);
       } else {
         setState(() => _loadingAssetId = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load media file')),
-        );
+        debugPrint('Failed to load media file');
       }
     } catch (e) {
       debugPrint('Error getting asset file: $e');
