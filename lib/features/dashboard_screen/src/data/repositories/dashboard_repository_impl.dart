@@ -73,6 +73,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
   @override
   Future<ApiResult<ChatModel>> startDirectChat(String participantId) async {
     final targetId = participantId.trim();
+    final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+    if (myId != null && myId.trim() == targetId) {
+      return ApiResult.failure('Cannot start a chat with yourself');
+    }
     // 1. Check in-memory ChatsBloc state first to avoid redundant POST /chats/ (which 500s on existing 1-to-1 chats)
     try {
       if (getIt.isRegistered<ChatsBloc>()) {

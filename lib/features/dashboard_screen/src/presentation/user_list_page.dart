@@ -280,7 +280,10 @@ class _UserListPageState extends State<UserListPage> {
                     }
                   });
                 },
-                error: (message) {},
+                error: (message) {
+                  context.showErrorNotification(message);
+                  context.read<ChatsBloc>().add(const FetchChats());
+                },
                 orElse: () {},
               );
             },
@@ -555,16 +558,27 @@ class _UserListPageState extends State<UserListPage> {
       final hiddenPhones = state.hiddenPhoneNumbers.toSet();
       final allExcludedPhones = {...lockedPhones, ...hiddenPhones};
 
+      final String? myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+      final String? myPhone = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getPhoneNumber() : null;
+      final String normMyPhone = myPhone != null ? myPhone.replaceAll(RegExp(r'\D'), '') : '';
+      final String last10MyPhone = normMyPhone.length > 10 ? normMyPhone.substring(normMyPhone.length - 10) : normMyPhone;
+
       final syncedUsers = state.syncedContacts.where((user) {
+        if (myId != null && myId.isNotEmpty && user.id == myId) {
+          return false;
+        }
+        final rawPhone = user.phoneNumber;
+        final normPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
+        final last10 = normPhone.length > 10 ? normPhone.substring(normPhone.length - 10) : normPhone;
+        if (last10MyPhone.isNotEmpty && last10 == last10MyPhone) {
+          return false;
+        }
         if (widget.excludeUserIds != null && widget.excludeUserIds!.contains(user.id)) {
           return false;
         }
         if (lockedUserIds.contains(user.id) || hiddenUserIds.contains(user.id)) {
           return false;
         }
-        final rawPhone = user.phoneNumber;
-        final normPhone = rawPhone.replaceAll(RegExp(r'\D'), '');
-        final last10 = normPhone.length > 10 ? normPhone.substring(normPhone.length - 10) : normPhone;
         if (allExcludedPhones.contains(rawPhone) ||
             allExcludedPhones.contains(normPhone) ||
             (last10.isNotEmpty && allExcludedPhones.contains(last10))) {

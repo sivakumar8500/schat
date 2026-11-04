@@ -231,7 +231,18 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
     final allExcludedUserIds = {...privacy.lockedUserIds, ...privacy.hiddenUserIds};
     final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
 
+    final String? myId = _storageService.getUserId();
+    final String? myPhone = _storageService.getPhoneNumber();
+    final String normMyPhone = myPhone != null ? _normalizePhone(myPhone) : '';
+
     bool isUserExcluded(UserModel user) {
+      if (myId != null && myId.isNotEmpty && user.id == myId) return true;
+      if (normMyPhone.isNotEmpty) {
+        final norm = _normalizePhone(user.phoneNumber);
+        if (norm == normMyPhone || (norm.length >= 10 && normMyPhone.endsWith(norm)) || (normMyPhone.length >= 10 && norm.endsWith(normMyPhone))) {
+          return true;
+        }
+      }
       if (user.id.isNotEmpty && allExcludedUserIds.contains(user.id)) return true;
       if (user.phoneNumber.isNotEmpty && allExcludedPhones.contains(user.phoneNumber)) return true;
       final norm = _normalizePhone(user.phoneNumber);
@@ -346,7 +357,13 @@ class ContactsBloc extends Bloc<ContactsEvent, ContactsState> {
         final allExcludedUserIds = {...privacy.lockedUserIds, ...privacy.hiddenUserIds};
         final allExcludedPhones = {...privacy.lockedPhoneNumbers, ...privacy.hiddenPhoneNumbers};
 
+        final String? myId = _storageService.getUserId();
+        final String? myPhone = _storageService.getPhoneNumber();
+        final String normMyPhone = myPhone != null ? _normalizePhone(myPhone) : '';
+
         final filtered = result.data.where((u) {
+          if (myId != null && myId.isNotEmpty && u.id == myId) return false;
+          if (normMyPhone.isNotEmpty && _normalizePhone(u.phoneNumber) == normMyPhone) return false;
           if (u.id.isNotEmpty && allExcludedUserIds.contains(u.id)) return false;
           if (u.phoneNumber.isNotEmpty && allExcludedPhones.contains(u.phoneNumber)) return false;
           final norm = _normalizePhone(u.phoneNumber);
