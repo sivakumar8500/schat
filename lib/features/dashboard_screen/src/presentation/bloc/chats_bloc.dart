@@ -844,17 +844,31 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             final lm = c.lastMessage!;
             final lmDate = ChatMessageCacheHelper.parseTimestamp(lm.createdAt);
             if (clearedAt == null || lmDate.isAfter(clearedAt)) {
+              String synthesizedContent = lm.content;
+              String? synthesizedAttName;
+              final isFile = lm.mediaType == 'file' || lm.mediaType == 'document' || lm.mediaType == 'image' || lm.mediaType == 'video' || lm.mediaType == 'audio';
+              if (isFile && lm.content.isNotEmpty) {
+                if (lm.content.contains(' · ')) {
+                  final parts = lm.content.split(' · ');
+                  synthesizedAttName = parts.first.trim();
+                  synthesizedContent = parts.length > 1 ? parts.sublist(1).join(' · ').trim() : '';
+                } else if (lm.content.contains('.')) {
+                  synthesizedAttName = lm.content.trim();
+                }
+              }
               final msgModel = MessageModel(
                 id: lm.id,
                 conversationId: c.id,
                 senderId: lm.senderId,
-                content: lm.content,
+                content: synthesizedContent,
+                attachmentName: synthesizedAttName,
                 mediaUrl: lm.mediaUrl,
-                mediaType: lm.mediaType,
-                messageType: lm.mediaType ?? 'text',
+                mediaType: lm.mediaType == 'document' ? 'file' : lm.mediaType,
+                messageType: (lm.mediaType == 'document' || lm.mediaType == 'file') ? 'file' : (lm.mediaType ?? 'text'),
                 isDeleted: lm.isDeleted,
                 isRead: lm.isRead,
                 isDelivered: lm.isDelivered,
+                allowView: true,
                 createdAt: lm.createdAt,
                 updatedAt: lm.updatedAt,
               );

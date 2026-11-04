@@ -1072,17 +1072,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final lm = matchedChat.lastMessage!;
             final existsInCache = cachedMessages.any((m) => m.id == lm.id);
             if (!existsInCache) {
+              String synthesizedContent = lm.content;
+              String? synthesizedAttName;
+              final isFile = lm.mediaType == 'file' || lm.mediaType == 'document' || lm.mediaType == 'image' || lm.mediaType == 'video' || lm.mediaType == 'audio';
+              if (isFile && lm.content.isNotEmpty) {
+                if (lm.content.contains(' · ')) {
+                  final parts = lm.content.split(' · ');
+                  synthesizedAttName = parts.first.trim();
+                  synthesizedContent = parts.length > 1 ? parts.sublist(1).join(' · ').trim() : '';
+                } else if (lm.content.contains('.')) {
+                  synthesizedAttName = lm.content.trim();
+                }
+              }
               final synthesized = MessageModel(
                 id: lm.id,
                 conversationId: event.conversationId,
                 senderId: lm.senderId,
-                content: lm.content,
+                content: synthesizedContent,
+                attachmentName: synthesizedAttName,
                 mediaUrl: lm.mediaUrl,
-                mediaType: lm.mediaType,
-                messageType: lm.mediaType ?? 'text',
+                mediaType: lm.mediaType == 'document' ? 'file' : lm.mediaType,
+                messageType: (lm.mediaType == 'document' || lm.mediaType == 'file') ? 'file' : (lm.mediaType ?? 'text'),
                 isDeleted: lm.isDeleted,
                 isRead: lm.isRead,
                 isDelivered: lm.isDelivered,
+                allowView: true,
                 createdAt: lm.createdAt,
                 updatedAt: lm.updatedAt,
               );
@@ -1354,13 +1368,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         messages = messages.map((m) => m.copyWith(expiry: 0)).toList();
       }
 
-      List<MessageModel> pinnedMessages = [];
-      try {
-        pinnedMessages = await _chatRepository.getPinnedMessages(event.conversationId);
-      } catch (e) {
-        debugPrint('Warning: Could not fetch pinned messages: $e');
-      }
-
       // Mark unread messages from recipient as read (send read receipt to server and clear own unread count)
       final globalReadReceipts = getIt<StorageService>().getReadReceiptsEnabled();
       final effectiveReadReceipts = event.initialReadReceiptsEnabled ?? globalReadReceipts;
@@ -1412,28 +1419,65 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Save fresh resolved messages to cache
       _saveToCache(event.conversationId, messages);
 
-      List<ScreenPermissionModel> activeScreenPermissions = [];
-      if (!event.isReadOnly) {
-        try {
-          activeScreenPermissions = await _chatRepository.getActiveScreenPermissions(event.conversationId);
-        } catch (_) {}
+      // ── CRITICAL FIX: Emit fresh messages immediately so the user sees latest messages without any delay ──
+      final instantState = state;
+      if (instantState is ChatLoaded) {
+        emit(instantState.copyWith(
+          messages: messages,
+        ));
+      } else {
+        emit(ChatLoaded(
+          messages: messages,
+          myId: myId,
+          isMuted: isMuted,
+          isRecipientOnline: isBlocked ? false : _currentIsOnline,
+          isRecipientTyping: isBlocked ? false : _currentIsTyping,
+          lastSeen: event.initialLastSeen,
+          customBgColor: savedColor,
+          customWallpaperUrl: savedWallpaper,
+          themeColor: savedThemeColor,
+          disappearingTimer: disappearingTimer,
+          isBlocked: isBlocked,
+          isBlockedByMe: isBlockedByMe,
+          isBlockedByOther: isBlockedByOther,
+          isLocked: initialLock,
+          readReceiptsEnabled: event.initialReadReceiptsEnabled,
+          typingIndicatorsEnabled: event.initialTypingIndicatorsEnabled,
+          lastSeenEnabled: event.initialLastSeenEnabled,
+        ));
       }
 
+      // Fetch pinned messages and screen permissions in parallel in background
+      List<MessageModel> pinnedMessages = [];
+      List<ScreenPermissionModel> activeScreenPermissions = [];
       ScreenPermissionModel? incomingScreenPermissionRequest;
-      if (!event.isReadOnly) {
-        try {
-          final pendingList = await _chatRepository.getPendingScreenPermissions();
-          final myId = (_storageService.getUserId() ?? '').trim();
-          for (final req in pendingList) {
-            if (req.isPending && (req.conversationId == event.conversationId || req.senderId == event.recipientId)) {
-              if (req.receiverId == myId || (myId.isNotEmpty && req.senderId != myId)) {
-                incomingScreenPermissionRequest = req;
-                break;
-              }
+
+      try {
+        final results = await Future.wait([
+          _chatRepository.getPinnedMessages(event.conversationId).catchError((e) {
+            debugPrint('Warning: Could not fetch pinned messages: $e');
+            return <MessageModel>[];
+          }),
+          (!event.isReadOnly)
+              ? _chatRepository.getActiveScreenPermissions(event.conversationId).catchError((_) => <ScreenPermissionModel>[])
+              : Future.value(<ScreenPermissionModel>[]),
+          (!event.isReadOnly)
+              ? _chatRepository.getPendingScreenPermissions().catchError((_) => <ScreenPermissionModel>[])
+              : Future.value(<ScreenPermissionModel>[]),
+        ]);
+        pinnedMessages = results[0] as List<MessageModel>;
+        activeScreenPermissions = results[1] as List<ScreenPermissionModel>;
+        final pendingList = results[2] as List<ScreenPermissionModel>;
+        final myCurrentId = (_storageService.getUserId() ?? '').trim();
+        for (final req in pendingList) {
+          if (req.isPending && (req.conversationId == event.conversationId || req.senderId == event.recipientId)) {
+            if (req.receiverId == myCurrentId || (myCurrentId.isNotEmpty && req.senderId != myCurrentId)) {
+              incomingScreenPermissionRequest = req;
+              break;
             }
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
 
       final currentState = state;
       if (currentState is ChatLoaded) {
