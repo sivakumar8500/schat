@@ -1387,21 +1387,18 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               ),
             ),
             CommonSpaces.h8,
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildTypeChip(ScheduledMessageType.text, 'Text', CommonIcons.textFields),
-                  CommonSpaces.w6,
-                  _buildTypeChip(ScheduledMessageType.image, 'Image', CommonIcons.gallery),
-                  CommonSpaces.w6,
-                  _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
-                  CommonSpaces.w6,
-                  _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
-                  CommonSpaces.w6,
-                  _buildTypeChip(ScheduledMessageType.document, 'File', Icons.insert_drive_file_rounded),
-                ],
-              ),
+            Row(
+              children: [
+                _buildTypeChip(ScheduledMessageType.text, 'Text', CommonIcons.textFields),
+                CommonSpaces.w6,
+                _buildTypeChip(ScheduledMessageType.image, 'Image', CommonIcons.gallery),
+                CommonSpaces.w6,
+                _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
+                CommonSpaces.w6,
+                _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
+                CommonSpaces.w6,
+                _buildTypeChip(ScheduledMessageType.document, 'File', Icons.insert_drive_file_rounded),
+              ],
             ),
             CommonSpaces.h14,
 
@@ -3346,7 +3343,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           });
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
           decoration: BoxDecoration(
             color: isSelected
                 ? context.colors.primary
@@ -3359,6 +3356,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             ),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
@@ -3370,12 +3368,15 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               CommonSpaces.h4,
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: context.bodySmall.copyWith(
                   color: isSelected
                       ? context.colors.textLight
                       : context.colors.textSecondary,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  fontSize: 12,
+                  fontSize: 11,
                 ),
               ),
             ],
