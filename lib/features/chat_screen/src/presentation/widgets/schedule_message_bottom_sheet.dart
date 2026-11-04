@@ -385,10 +385,32 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             _errorMessage = null;
           });
         }
-      } else {
-        setState(() {
-          _errorMessage = 'Other formats are not allowed. Only video and audio file messages under 100 MB are allowed.';
-        });
+      } else if (_selectedType == ScheduledMessageType.document) {
+        FilePickerResult? result;
+        try {
+          result = await FilePicker.pickFiles(type: FileType.any);
+        } catch (_) {}
+        final docRes = result;
+        if (docRes != null && docRes.files.isNotEmpty && docRes.files.single.path != null) {
+          final f = File(docRes.files.single.path!);
+          final size = docRes.files.single.size > 0 ? docRes.files.single.size : await f.length();
+          final pickedName = docRes.files.single.name;
+
+          if (size >= maxFileBytes) {
+            setState(() {
+              _errorMessage = 'File size must be less than 100 MB.';
+            });
+            return;
+          }
+
+          setState(() {
+            _selectedType = ScheduledMessageType.document;
+            _attachedFile = f;
+            _attachedFileName = pickedName;
+            _attachedFileSize = size;
+            _errorMessage = null;
+          });
+        }
       }
     } catch (e) {
       if (!e.toString().contains('multiple_request')) {
@@ -510,13 +532,6 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 _errorMessage = _selectedType == ScheduledMessageType.video
                     ? 'Video file size must be less than 1 GB.'
                     : 'File size must be less than 100 MB.';
-                _isSubmitting = false;
-              });
-              return;
-            }
-            if (_selectedType == ScheduledMessageType.document) {
-              setState(() {
-                _errorMessage = 'Other formats are not allowed. Only video and audio file messages are allowed.';
                 _isSubmitting = false;
               });
               return;
@@ -764,13 +779,6 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   _errorMessage = _selectedType == ScheduledMessageType.video
                       ? 'Video file size must be less than 1 GB.'
                       : 'File size must be less than 100 MB.';
-                  _isSubmitting = false;
-                });
-                return;
-              }
-              if (_selectedType == ScheduledMessageType.document) {
-                setState(() {
-                  _errorMessage = 'Other formats are not allowed. Only video and audio file messages are allowed.';
                   _isSubmitting = false;
                 });
                 return;
@@ -1379,16 +1387,21 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               ),
             ),
             CommonSpaces.h8,
-            Row(
-              children: [
-                _buildTypeChip(ScheduledMessageType.text, 'Text', CommonIcons.textFields),
-                CommonSpaces.w6,
-                _buildTypeChip(ScheduledMessageType.image, 'Image', CommonIcons.gallery),
-                CommonSpaces.w6,
-                _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
-                CommonSpaces.w6,
-                _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildTypeChip(ScheduledMessageType.text, 'Text', CommonIcons.textFields),
+                  CommonSpaces.w6,
+                  _buildTypeChip(ScheduledMessageType.image, 'Image', CommonIcons.gallery),
+                  CommonSpaces.w6,
+                  _buildTypeChip(ScheduledMessageType.video, 'Video', Icons.videocam_rounded),
+                  CommonSpaces.w6,
+                  _buildTypeChip(ScheduledMessageType.audio, 'Audio', CommonIcons.audio),
+                  CommonSpaces.w6,
+                  _buildTypeChip(ScheduledMessageType.document, 'File', Icons.insert_drive_file_rounded),
+                ],
+              ),
             ),
             CommonSpaces.h14,
 
@@ -1468,7 +1481,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Allowed file size: Video < 1 GB, Audio/Image < 100 MB. Other formats are not allowed.',
+                        'Allowed file size: Video < 1 GB, Files/Audio/Image < 100 MB.',
                         style: context.bodySmall.copyWith(
                           color: context.colors.textPrimary,
                           fontSize: 11.5,
@@ -1806,10 +1819,16 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           pickerHint = 'Supports MP3, M4A, WAV, AAC, OGG (< 100 MB)';
           pickerColor = const Color(0xFF9C27B0);
           break;
+        case ScheduledMessageType.document:
+          pickerIcon = Icons.insert_drive_file_rounded;
+          pickerTitle = 'Choose File to Schedule';
+          pickerHint = 'Supports PDF, DOC, ZIP, TXT, all formats (< 100 MB)';
+          pickerColor = const Color(0xFFFF9800);
+          break;
         default:
           pickerIcon = Icons.attach_file_rounded;
-          pickerTitle = 'Choose Media to Schedule';
-          pickerHint = 'Only video (< 1 GB) and audio (< 100 MB) formats are allowed';
+          pickerTitle = 'Choose File/Media to Schedule';
+          pickerHint = 'Video (< 1 GB), Files/Audio (< 100 MB)';
           pickerColor = context.colors.primary;
       }
 
