@@ -1139,9 +1139,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     final isDark = context.colors.isDark;
 
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.88,
-      ),
+      height: MediaQuery.of(context).size.height * 0.88,
       decoration: BoxDecoration(
         color: context.colors.scaffoldBackground,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -1149,7 +1147,6 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
       child: SafeArea(
         top: false,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             // Top Drag Handle
             Padding(
@@ -1270,7 +1267,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             ),
 
             // Tab Views Content
-            Flexible(
+            Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
