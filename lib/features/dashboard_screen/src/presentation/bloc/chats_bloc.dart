@@ -63,7 +63,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       if (val is Map) {
         result[k] = _cleanMap(val);
       } else if (val is List) {
-        result[k] = val.map((item) => item is Map ? _cleanMap(item) : item).toList();
+        result[k] = val
+            .map((item) => item is Map ? _cleanMap(item) : item)
+            .toList();
       } else {
         result[k] = val;
       }
@@ -74,52 +76,85 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _listenToSocket() {
     _socketSubscription = _socketRepository.onMessage.listen((data) {
       if (data == null) return;
-      
+
       try {
         final Map mapData = data is Map ? data : {};
         if (mapData.isEmpty) return;
-        
+
         final cleanData = _cleanMap(Map<dynamic, dynamic>.from(mapData));
         final type = cleanData['type']?.toString();
-        
-        if (type == 'user_status' || type == 'user_online' || type == 'user_offline') {
-          final userId = (cleanData['userId'] ?? cleanData['user_id'] ?? cleanData['id'] ?? cleanData['sender_id'])
-              ?.toString();
+
+        if (type == 'user_status' ||
+            type == 'user_online' ||
+            type == 'user_offline') {
+          final userId =
+              (cleanData['userId'] ??
+                      cleanData['user_id'] ??
+                      cleanData['id'] ??
+                      cleanData['sender_id'])
+                  ?.toString();
           final status = cleanData['status']?.toString();
-          final isOnline = type == 'user_online' || (type == 'user_status' && status == 'online');
-          final lastSeen = (cleanData['last_seen'] ?? cleanData['lastSeen'])?.toString();
+          final isOnline =
+              type == 'user_online' ||
+              (type == 'user_status' && status == 'online');
+          final lastSeen = (cleanData['last_seen'] ?? cleanData['lastSeen'])
+              ?.toString();
           if (userId != null) {
-            add(UpdateUserStatus(
-              userId: userId,
-              isOnline: isOnline,
-              lastSeen: lastSeen,
-            ));
+            add(
+              UpdateUserStatus(
+                userId: userId,
+                isOnline: isOnline,
+                lastSeen: lastSeen,
+              ),
+            );
           }
         } else if (type == 'new_message' || type == 'message') {
-          final message = cleanData['message'] ?? (cleanData.containsKey('id') ? cleanData : null);
+          final message =
+              cleanData['message'] ??
+              (cleanData.containsKey('id') ? cleanData : null);
           if (message is Map) {
-            final convId = (message['conversationId'] ?? message['conversation_id'])?.toString();
-            final updatedAt = (message['updatedAt'] ?? message['created_at'])?.toString();
-            final unreadCount = int.tryParse(cleanData['unread_count']?.toString() ?? '') ?? 
-                                int.tryParse(cleanData['unreadCount']?.toString() ?? '') ??
-                                int.tryParse(cleanData['unread']?.toString() ?? '');
-            final senderId = (message['senderId'] ?? message['sender_id'] ?? message['sender'])?.toString();
-            final msgId = (message['id'] ?? message['messageId'] ?? message['_id'])?.toString();
+            final convId =
+                (message['conversationId'] ?? message['conversation_id'])
+                    ?.toString();
+            final updatedAt = (message['updatedAt'] ?? message['created_at'])
+                ?.toString();
+            final unreadCount =
+                int.tryParse(cleanData['unread_count']?.toString() ?? '') ??
+                int.tryParse(cleanData['unreadCount']?.toString() ?? '') ??
+                int.tryParse(cleanData['unread']?.toString() ?? '');
+            final senderId =
+                (message['senderId'] ??
+                        message['sender_id'] ??
+                        message['sender'])
+                    ?.toString();
+            final msgId =
+                (message['id'] ?? message['messageId'] ?? message['_id'])
+                    ?.toString();
             final myId = _storageService.getUserId() ?? '';
-            
-            if (convId != null && msgId != null && senderId != myId && senderId != null) {
+
+            if (convId != null &&
+                msgId != null &&
+                senderId != myId &&
+                senderId != null) {
               _socketRepository.sendDeliveryReceipt(convId, msgId);
             }
-            
+
             if (convId != null) {
-              add(NewMessageReceived(
-                conversationId: convId,
-                lastMessage: LastMessageModel.fromJson(Map<String, dynamic>.from(message)),
-                updatedAt: updatedAt ?? DateTime.now().toIso8601String(),
-                unreadCount: unreadCount,
-              ));
+              add(
+                NewMessageReceived(
+                  conversationId: convId,
+                  lastMessage: LastMessageModel.fromJson(
+                    Map<String, dynamic>.from(message),
+                  ),
+                  updatedAt: updatedAt ?? DateTime.now().toIso8601String(),
+                  unreadCount: unreadCount,
+                ),
+              );
               // Cache incoming message immediately so opening the chat shows it with zero delay!
-              ChatMessageCacheHelper.appendRawMessage(convId, Map<String, dynamic>.from(message));
+              ChatMessageCacheHelper.appendRawMessage(
+                convId,
+                Map<String, dynamic>.from(message),
+              );
             }
           }
         } else if (type == 'message_edited' || type == 'edit_message') {
@@ -130,110 +165,182 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             try {
               MessageModel.fromJson(msgMap);
             } catch (_) {}
-            final convId = (msgMap['conversationId'] ?? msgMap['conversation_id'])?.toString();
+            final convId =
+                (msgMap['conversationId'] ?? msgMap['conversation_id'])
+                    ?.toString();
             if (convId != null) {
-              add(MessageEdited(
-                conversationId: convId,
-                message: LastMessageModel.fromJson(msgMap),
-              ));
+              add(
+                MessageEdited(
+                  conversationId: convId,
+                  message: LastMessageModel.fromJson(msgMap),
+                ),
+              );
               ChatMessageCacheHelper.appendRawMessage(convId, msgMap);
             }
           }
-        } else if (type == 'message_deleted_for_everyone' || type == 'delete_message') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
+        } else if (type == 'message_deleted_for_everyone' ||
+            type == 'delete_message') {
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
+          final msgId =
+              (cleanData['messageId'] ??
+                      cleanData['message_id'] ??
+                      cleanData['id'])
+                  ?.toString();
           if (convId != null && msgId != null) {
             add(MessageDeleted(conversationId: convId, messageId: msgId));
             ChatMessageCacheHelper.markMessageDeleted(convId, msgId);
           }
         } else if (type == 'conversation_deleted') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
           if (convId != null) {
             add(RemoveChat(conversationId: convId));
           }
         } else if (type == 'participant_left') {
-           // If myId left, remove chat. If someone else left and it's a group, maybe update participant count.
-           // For now, if we receive participant_left for a 1-on-1, it's basically conversation_deleted.
-           final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
-           if (convId != null) {
-              // Check if it's 1-on-1 and other user left
-              add(RemoveChat(conversationId: convId));
-           }
+          // If myId left, remove chat. If someone else left and it's a group, maybe update participant count.
+          // For now, if we receive participant_left for a 1-on-1, it's basically conversation_deleted.
+          final convId =
+              (cleanData['conversation_id'] ?? cleanData['conversationId'])
+                  ?.toString();
+          if (convId != null) {
+            // Check if it's 1-on-1 and other user left
+            add(RemoveChat(conversationId: convId));
+          }
         } else if (type == 'call_log_updated') {
-          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
+          final convId =
+              (cleanData['conversation_id'] ?? cleanData['conversationId'])
+                  ?.toString();
           final callMeta = cleanData['call_meta'] ?? cleanData['callMeta'];
-          var msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString();
+          var msgId = (cleanData['message_id'] ?? cleanData['messageId'])
+              ?.toString();
           if (msgId == null && callMeta is Map) {
-            msgId = (callMeta['message_id'] ?? callMeta['messageId'])?.toString();
+            msgId = (callMeta['message_id'] ?? callMeta['messageId'])
+                ?.toString();
           }
           msgId ??= 'call_${DateTime.now().millisecondsSinceEpoch}';
           if (convId != null && callMeta is Map) {
-             add(CallLogUpdated(
-               conversationId: convId, 
-               messageId: msgId, 
-               callMeta: Map<String, dynamic>.from(callMeta),
-             ));
+            add(
+              CallLogUpdated(
+                conversationId: convId,
+                messageId: msgId,
+                callMeta: Map<String, dynamic>.from(callMeta),
+              ),
+            );
           }
         } else if (type == 'call_initiated' || type == 'call_incoming') {
-          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
-          final msgId = (cleanData['message_id'] ?? cleanData['messageId'])?.toString() ?? 'call_${DateTime.now().millisecondsSinceEpoch}';
-          final callType = (cleanData['call_type'] ?? cleanData['callType'])?.toString() ?? 'audio';
+          final convId =
+              (cleanData['conversation_id'] ?? cleanData['conversationId'])
+                  ?.toString();
+          final msgId =
+              (cleanData['message_id'] ?? cleanData['messageId'])?.toString() ??
+              'call_${DateTime.now().millisecondsSinceEpoch}';
+          final callType =
+              (cleanData['call_type'] ?? cleanData['callType'])?.toString() ??
+              'audio';
           if (convId != null) {
-            add(CallLogUpdated(
-              conversationId: convId,
-              messageId: msgId,
-              callMeta: {
-                'callType': callType,
-                'status': 'calling',
-                'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
-              },
-            ));
+            add(
+              CallLogUpdated(
+                conversationId: convId,
+                messageId: msgId,
+                callMeta: {
+                  'callType': callType,
+                  'status': 'calling',
+                  'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
+                },
+              ),
+            );
           }
         } else if (type == 'call_answered' || type == 'call_hangup') {
-          final convId = (cleanData['conversation_id'] ?? cleanData['conversationId'])?.toString();
-          final response = (cleanData['response'] ?? cleanData['status'] ?? (type == 'call_hangup' ? 'completed' : '')).toString();
-          final callType = (cleanData['call_type'] ?? cleanData['callType'])?.toString() ?? 'audio';
+          final convId =
+              (cleanData['conversation_id'] ?? cleanData['conversationId'])
+                  ?.toString();
+          final response =
+              (cleanData['response'] ??
+                      cleanData['status'] ??
+                      (type == 'call_hangup' ? 'completed' : ''))
+                  .toString();
+          final callType =
+              (cleanData['call_type'] ?? cleanData['callType'])?.toString() ??
+              'audio';
           if (convId != null) {
-            add(CallLogUpdated(
-              conversationId: convId,
-              messageId: (cleanData['message_id'] ?? cleanData['messageId'])?.toString() ?? 'call_${DateTime.now().millisecondsSinceEpoch}',
-              callMeta: {
-                'callType': callType,
-                'status': response.isNotEmpty ? response : 'answered',
-                'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
-              },
-            ));
+            add(
+              CallLogUpdated(
+                conversationId: convId,
+                messageId:
+                    (cleanData['message_id'] ?? cleanData['messageId'])
+                        ?.toString() ??
+                    'call_${DateTime.now().millisecondsSinceEpoch}',
+                callMeta: {
+                  'callType': callType,
+                  'status': response.isNotEmpty ? response : 'answered',
+                  'senderId': cleanData['sender_id'] ?? cleanData['senderId'],
+                },
+              ),
+            );
           }
         } else if (type == 'user_typing' || type == 'typing') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
           final isTypingField = cleanData['is_typing'] ?? cleanData['isTyping'];
           final isTyping = isTypingField is bool ? isTypingField : true;
-          final senderId = (cleanData['sender_id'] ?? cleanData['senderId'] ?? cleanData['sender'])?.toString();
+          final senderId =
+              (cleanData['sender_id'] ??
+                      cleanData['senderId'] ??
+                      cleanData['sender'])
+                  ?.toString();
           final myId = _storageService.getUserId() ?? '';
 
           if (convId != null && senderId != myId) {
-            add(UpdateChatTypingStatus(
-              conversationId: convId,
-              isTyping: isTyping,
-            ));
+            add(
+              UpdateChatTypingStatus(
+                conversationId: convId,
+                isTyping: isTyping,
+              ),
+            );
           }
-        } else if (type == 'conversation_settings_updated' || type == 'disappearing_timer_updated') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+        } else if (type == 'conversation_settings_updated' ||
+            type == 'disappearing_timer_updated') {
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
           if (convId != null) {
-            final dynamic rawTimer = cleanData['disappearing_timer'] ?? cleanData['disappearingTimer'] ?? cleanData['timer'] ?? cleanData['timer_seconds'];
-            final int? timerSec = rawTimer != null ? int.tryParse(rawTimer.toString()) : null;
-            add(UpdateDisappearingTimer(conversationId: convId, seconds: timerSec));
+            final dynamic rawTimer =
+                cleanData['disappearing_timer'] ??
+                cleanData['disappearingTimer'] ??
+                cleanData['timer'] ??
+                cleanData['timer_seconds'];
+            final int? timerSec = rawTimer != null
+                ? int.tryParse(rawTimer.toString())
+                : null;
+            add(
+              UpdateDisappearingTimer(
+                conversationId: convId,
+                seconds: timerSec,
+              ),
+            );
           }
         } else if (type == 'screen_permission_request') {
           final req = cleanData['request'] ?? cleanData['data'] ?? cleanData;
           if (req is Map) {
-            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
-            final senderId = (req['senderId'] ?? req['sender_id'])?.toString() ?? '';
-            final senderName = (req['senderName'] ?? req['sender_name'])?.toString() ?? 'Contact';
-            final permType = (req['permissionType'] ?? req['permission_type'])?.toString() ?? 'screenshot';
+            final convId = (req['conversationId'] ?? req['conversation_id'])
+                ?.toString();
+            final senderId =
+                (req['senderId'] ?? req['sender_id'])?.toString() ?? '';
+            final senderName =
+                (req['senderName'] ?? req['sender_name'])?.toString() ??
+                'Contact';
+            final permType =
+                (req['permissionType'] ?? req['permission_type'])?.toString() ??
+                'screenshot';
             final myId = _storageService.getUserId() ?? '';
             final isMe = myId.isNotEmpty && senderId == myId;
-            final permLabel = permType == 'screen_record' ? 'screen record' : 'screenshot';
+            final permLabel = permType == 'screen_record'
+                ? 'screen record'
+                : 'screenshot';
             final count = req['allowedCount'] ?? req['allowed_count'];
             final duration = req['durationSeconds'] ?? req['duration_seconds'];
             final detail = permType == 'screenshot'
@@ -245,7 +352,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
             if (convId != null) {
               final lastMsg = LastMessageModel(
-                id: (req['id'] ?? req['_id'] ?? 'perm_${DateTime.now().millisecondsSinceEpoch}').toString(),
+                id:
+                    (req['id'] ??
+                            req['_id'] ??
+                            'perm_${DateTime.now().millisecondsSinceEpoch}')
+                        .toString(),
                 conversationId: convId,
                 senderId: senderId,
                 content: contentText,
@@ -253,20 +364,30 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 createdAt: DateTime.now().toIso8601String(),
                 updatedAt: DateTime.now().toIso8601String(),
               );
-              add(NewMessageReceived(
-                conversationId: convId,
-                lastMessage: lastMsg,
-                updatedAt: DateTime.now().toIso8601String(),
-              ));
+              add(
+                NewMessageReceived(
+                  conversationId: convId,
+                  lastMessage: lastMsg,
+                  updatedAt: DateTime.now().toIso8601String(),
+                ),
+              );
             }
           }
         } else if (type == 'screen_permission_response') {
           final req = cleanData['request'] ?? cleanData['data'] ?? cleanData;
-          final action = cleanData['action']?.toString() ?? cleanData['status']?.toString() ?? 'rejected';
+          final action =
+              cleanData['action']?.toString() ??
+              cleanData['status']?.toString() ??
+              'rejected';
           if (req is Map) {
-            final convId = (req['conversationId'] ?? req['conversation_id'])?.toString();
-            final permType = (req['permissionType'] ?? req['permission_type'])?.toString() ?? 'screenshot';
-            final permLabel = permType == 'screen_record' ? 'screen record' : 'screenshot';
+            final convId = (req['conversationId'] ?? req['conversation_id'])
+                ?.toString();
+            final permType =
+                (req['permissionType'] ?? req['permission_type'])?.toString() ??
+                'screenshot';
+            final permLabel = permType == 'screen_record'
+                ? 'screen record'
+                : 'screenshot';
             final isAccepted = action == 'accept' || action == 'accepted';
             final contentText = isAccepted
                 ? '✅ $permLabel permission granted'
@@ -274,57 +395,89 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
             if (convId != null) {
               final lastMsg = LastMessageModel(
-                id: (req['id'] ?? req['_id'] ?? 'perm_resp_${DateTime.now().millisecondsSinceEpoch}').toString(),
+                id:
+                    (req['id'] ??
+                            req['_id'] ??
+                            'perm_resp_${DateTime.now().millisecondsSinceEpoch}')
+                        .toString(),
                 conversationId: convId,
-                senderId: (req['receiverId'] ?? req['receiver_id'])?.toString() ?? '',
+                senderId:
+                    (req['receiverId'] ?? req['receiver_id'])?.toString() ?? '',
                 content: contentText,
                 mediaType: 'system',
                 createdAt: DateTime.now().toIso8601String(),
                 updatedAt: DateTime.now().toIso8601String(),
               );
-              add(NewMessageReceived(
-                conversationId: convId,
-                lastMessage: lastMsg,
-                updatedAt: DateTime.now().toIso8601String(),
-              ));
+              add(
+                NewMessageReceived(
+                  conversationId: convId,
+                  lastMessage: lastMsg,
+                  updatedAt: DateTime.now().toIso8601String(),
+                ),
+              );
             }
           }
-        } else if (type == 'message_read' || type == 'read_receipt' || type == 'message_opened') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          final msgIdsListRaw = cleanData['messageIds'] ?? cleanData['message_ids'];
+        } else if (type == 'message_read' ||
+            type == 'read_receipt' ||
+            type == 'message_opened') {
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
+          final msgId =
+              (cleanData['messageId'] ??
+                      cleanData['message_id'] ??
+                      cleanData['id'])
+                  ?.toString();
+          final msgIdsListRaw =
+              cleanData['messageIds'] ?? cleanData['message_ids'];
           List<String>? msgIdsList;
           if (msgIdsListRaw is List) {
             msgIdsList = msgIdsListRaw.map((e) => e.toString()).toList();
           }
           if (convId != null) {
-            add(UpdateMessageStatus(
-              conversationId: convId,
-              messageId: msgId,
-              messageIds: msgIdsList,
-              status: 'read',
-            ));
+            add(
+              UpdateMessageStatus(
+                conversationId: convId,
+                messageId: msgId,
+                messageIds: msgIdsList,
+                status: 'read',
+              ),
+            );
           }
         } else if (type == 'delivery_receipt' || type == 'message_delivered') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
-          final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          final msgIdsListRaw = cleanData['messageIds'] ?? cleanData['message_ids'];
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
+          final msgId =
+              (cleanData['messageId'] ??
+                      cleanData['message_id'] ??
+                      cleanData['id'])
+                  ?.toString();
+          final msgIdsListRaw =
+              cleanData['messageIds'] ?? cleanData['message_ids'];
           List<String>? msgIdsList;
           if (msgIdsListRaw is List) {
             msgIdsList = msgIdsListRaw.map((e) => e.toString()).toList();
           }
           if (convId != null) {
-            add(UpdateMessageStatus(
-              conversationId: convId,
-              messageId: msgId,
-              messageIds: msgIdsList,
-              status: 'delivered',
-            ));
+            add(
+              UpdateMessageStatus(
+                conversationId: convId,
+                messageId: msgId,
+                messageIds: msgIdsList,
+                status: 'delivered',
+              ),
+            );
           }
         } else if (type == 'chat_cleared' || type == 'clear_chat') {
-          final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
+          final convId =
+              (cleanData['conversationId'] ?? cleanData['conversation_id'])
+                  ?.toString();
           if (convId != null) {
-            _storageService.saveConversationClearedAt(convId, DateTime.now().toUtc().toIso8601String());
+            _storageService.saveConversationClearedAt(
+              convId,
+              DateTime.now().toUtc().toIso8601String(),
+            );
             ChatMessageCacheHelper.clearConversation(convId);
             add(ClearConversationMessages(conversationId: convId));
           }
@@ -354,7 +507,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       if (raw > 100000000000) {
         return DateTime.fromMillisecondsSinceEpoch(raw.toInt(), isUtc: true);
       } else if (raw > 0) {
-        return DateTime.fromMillisecondsSinceEpoch((raw * 1000).toInt(), isUtc: true);
+        return DateTime.fromMillisecondsSinceEpoch(
+          (raw * 1000).toInt(),
+          isUtc: true,
+        );
       }
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
@@ -366,7 +522,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       if (numVal > 100000000000) {
         return DateTime.fromMillisecondsSinceEpoch(numVal.toInt(), isUtc: true);
       } else {
-        return DateTime.fromMillisecondsSinceEpoch((numVal * 1000).toInt(), isUtc: true);
+        return DateTime.fromMillisecondsSinceEpoch(
+          (numVal * 1000).toInt(),
+          isUtc: true,
+        );
       }
     }
 
@@ -407,14 +566,22 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       debugPrint('DEBUG: ChatsBloc _getChatsUseCase result received');
       result.when(
         success: (chats) {
-          debugPrint('DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}');
+          debugPrint(
+            'DEBUG: ChatsBloc _onFetchChats SUCCESS, chats count: ${chats.length}',
+          );
 
           // Filter out lastMessage if older than conversation cleared_at timestamp
           final effectiveChats = chats.map((chat) {
-            final clearedAtStr = _storageService.getConversationClearedAt(chat.id);
-            final DateTime? clearedAt = clearedAtStr != null ? DateTime.tryParse(clearedAtStr) : null;
+            final clearedAtStr = _storageService.getConversationClearedAt(
+              chat.id,
+            );
+            final DateTime? clearedAt = clearedAtStr != null
+                ? DateTime.tryParse(clearedAtStr)
+                : null;
             if (clearedAt != null && chat.lastMessage != null) {
-              final msgDt = ChatMessageCacheHelper.parseTimestamp(chat.lastMessage!.createdAt);
+              final msgDt = ChatMessageCacheHelper.parseTimestamp(
+                chat.lastMessage!.createdAt,
+              );
               if (!msgDt.isAfter(clearedAt)) {
                 return chat.copyWith(lastMessage: null, unreadCount: 0);
               }
@@ -426,17 +593,23 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           if (_hasInitialLoaded && state is ChatsLoaded) {
             final existingChats = (state as ChatsLoaded).chats;
             final existingMap = {for (var c in existingChats) c.id: c};
-            final existingUserMap = {for (var c in existingChats) c.recipient.id: c};
+            final existingUserMap = {
+              for (var c in existingChats) c.recipient.id: c,
+            };
 
             finalChats = effectiveChats.map((newChat) {
-              final existing = existingMap[newChat.id] ?? existingUserMap[newChat.recipient.id];
+              final existing =
+                  existingMap[newChat.id] ??
+                  existingUserMap[newChat.recipient.id];
               if (existing != null) {
                 var merged = newChat;
 
                 // 1. Respect server profile picture if present, otherwise fallback to existing
                 final existingPic = existing.recipient.profilePictureUrl;
                 final newPic = newChat.recipient.profilePictureUrl;
-                if ((newPic == null || newPic.isEmpty) && existingPic != null && existingPic.isNotEmpty) {
+                if ((newPic == null || newPic.isEmpty) &&
+                    existingPic != null &&
+                    existingPic.isNotEmpty) {
                   merged = merged.copyWith(
                     recipient: merged.recipient.copyWith(
                       profilePictureUrl: existingPic,
@@ -447,7 +620,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 // 2. Preserve newer local lastMessage (optimistic send) if backend query hasn't caught up
                 final existingActivity = getChatActivityTime(existing);
                 final newActivity = getChatActivityTime(newChat);
-                if (existingActivity.isAfter(newActivity) && existing.lastMessage != null) {
+                if (existingActivity.isAfter(newActivity) &&
+                    existing.lastMessage != null) {
                   merged = merged.copyWith(
                     lastMessage: existing.lastMessage,
                     updatedAt: existing.updatedAt,
@@ -455,14 +629,17 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 }
 
                 // 3. Avoid resurrecting unreadCount if conversation was marked read locally and no newer message arrived
-                if (existing.unreadCount == 0 && !newActivity.isAfter(existingActivity)) {
+                if (existing.unreadCount == 0 &&
+                    !newActivity.isAfter(existingActivity)) {
                   merged = merged.copyWith(unreadCount: 0);
                 }
 
                 // 4. Preserve active typing indicator ONLY if an active unexpired typing timer exists
                 final normChatId = _normalizeConvId(existing.id);
                 final normRecipId = _normalizeConvId(existing.recipient.id);
-                final hasActiveTimer = _typingTimers.containsKey(normChatId) || _typingTimers.containsKey(normRecipId);
+                final hasActiveTimer =
+                    _typingTimers.containsKey(normChatId) ||
+                    _typingTimers.containsKey(normRecipId);
                 if (hasActiveTimer && existing.isTyping) {
                   merged = merged.copyWith(isTyping: true);
                 } else {
@@ -480,12 +657,17 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
 
           // Sort by most recent message/activity time descending (newest at top)
           final sortedChats = finalChats
-            ..sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
+            ..sort(
+              (a, b) =>
+                  getChatActivityTime(b).compareTo(getChatActivityTime(a)),
+            );
           emit(ChatsLoaded(sortedChats));
           _prefetchUnreadMessages(sortedChats);
         },
         failure: (error, statusCode) {
-          debugPrint('DEBUG: ChatsBloc _onFetchChats FAILURE: $error, status: $statusCode');
+          debugPrint(
+            'DEBUG: ChatsBloc _onFetchChats FAILURE: $error, status: $statusCode',
+          );
           if (state is! ChatsLoaded) {
             emit(ChatsError(error));
           }
@@ -499,19 +681,20 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onMarkConversationAsRead(MarkConversationAsRead event, Emitter<ChatsState> emit) {
+  void _onMarkConversationAsRead(
+    MarkConversationAsRead event,
+    Emitter<ChatsState> emit,
+  ) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (_isSameConversation(chat.id, event.conversationId)) {
           final lastMsg = chat.lastMessage;
-          final updatedLastMsg = (lastMsg != null && (!lastMsg.isRead || lastMsg.status != 'read'))
+          final updatedLastMsg =
+              (lastMsg != null && (!lastMsg.isRead || lastMsg.status != 'read'))
               ? lastMsg.copyWith(isRead: true, status: 'read')
               : lastMsg;
-          return chat.copyWith(
-            unreadCount: 0,
-            lastMessage: updatedLastMsg,
-          );
+          return chat.copyWith(unreadCount: 0, lastMessage: updatedLastMsg);
         }
         return chat;
       }).toList();
@@ -519,15 +702,15 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onClearConversationMessages(ClearConversationMessages event, Emitter<ChatsState> emit) {
+  void _onClearConversationMessages(
+    ClearConversationMessages event,
+    Emitter<ChatsState> emit,
+  ) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (_isSameConversation(chat.id, event.conversationId)) {
-          return chat.copyWith(
-            lastMessage: null,
-            unreadCount: 0,
-          );
+          return chat.copyWith(lastMessage: null, unreadCount: 0);
         }
         return chat;
       }).toList();
@@ -535,25 +718,33 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onNewMessageReceived(NewMessageReceived event, Emitter<ChatsState> emit) {
+  void _onNewMessageReceived(
+    NewMessageReceived event,
+    Emitter<ChatsState> emit,
+  ) {
     final normId = _normalizeConvId(event.conversationId);
     _typingTimers.remove(normId)?.cancel();
 
     final currentState = state;
     if (currentState is ChatsLoaded) {
-      final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
-      final index = updatedChats.indexWhere((c) =>
-          _isSameConversation(c.id, event.conversationId) ||
-          (!c.isGroup && _isSameConversation(c.recipient.id, event.conversationId)));
+      final List<ChatModel> updatedChats = List<ChatModel>.from(
+        currentState.chats,
+      );
+      final index = updatedChats.indexWhere(
+        (c) =>
+            _isSameConversation(c.id, event.conversationId) ||
+            (!c.isGroup &&
+                _isSameConversation(c.recipient.id, event.conversationId)),
+      );
       final currentUserId = _storageService.getUserId();
-      
+
       if (index != -1) {
         final chat = updatedChats.removeAt(index);
         final normRecipientId = _normalizeConvId(chat.recipient.id);
         _typingTimers.remove(normRecipientId)?.cancel();
 
         final isFromMe = event.lastMessage.senderId == currentUserId;
-        
+
         int newUnreadCount = event.unreadCount ?? chat.unreadCount;
         if (event.unreadCount == null && !isFromMe) {
           newUnreadCount = chat.unreadCount + 1;
@@ -568,7 +759,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           isTyping: false,
         );
         updatedChats.insert(0, updatedChat);
-        updatedChats.sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
+        updatedChats.sort(
+          (a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)),
+        );
         emit(ChatsLoaded(updatedChats));
       } else {
         add(const FetchChats());
@@ -582,7 +775,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (_isSameConversation(chat.id, event.conversationId) && chat.lastMessage?.id == event.message.id) {
+        if (_isSameConversation(chat.id, event.conversationId) &&
+            chat.lastMessage?.id == event.message.id) {
           return chat.copyWith(lastMessage: event.message);
         }
         return chat;
@@ -595,8 +789,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (_isSameConversation(chat.id, event.conversationId) && chat.lastMessage?.id == event.messageId) {
-          final updatedLastMessage = chat.lastMessage?.copyWith(isDeleted: true);
+        if (_isSameConversation(chat.id, event.conversationId) &&
+            chat.lastMessage?.id == event.messageId) {
+          final updatedLastMessage = chat.lastMessage?.copyWith(
+            isDeleted: true,
+          );
           return chat.copyWith(lastMessage: updatedLastMessage);
         }
         return chat;
@@ -618,16 +815,27 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onCallLogUpdated(CallLogUpdated event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
-      final List<ChatModel> updatedChats = List<ChatModel>.from(currentState.chats);
-      final index = updatedChats.indexWhere((c) => _isSameConversation(c.id, event.conversationId));
+      final List<ChatModel> updatedChats = List<ChatModel>.from(
+        currentState.chats,
+      );
+      final index = updatedChats.indexWhere(
+        (c) => _isSameConversation(c.id, event.conversationId),
+      );
 
-      final callType = event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
-      final status = (event.callMeta['status'] ?? 'completed').toString().toLowerCase();
+      final callType =
+          event.callMeta['callType'] ?? event.callMeta['call_type'] ?? 'audio';
+      final status = (event.callMeta['status'] ?? 'completed')
+          .toString()
+          .toLowerCase();
       final String content;
 
       if (status == 'missed') {
         content = 'Missed $callType call';
-      } else if (status == 'rejected' || status == 'busy' || status == 'reject' || status == 'decline' || status == 'declined') {
+      } else if (status == 'rejected' ||
+          status == 'busy' ||
+          status == 'reject' ||
+          status == 'decline' ||
+          status == 'declined') {
         content = 'Declined $callType call';
       } else if (status == 'calling') {
         content = '$callType call';
@@ -645,9 +853,16 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         _typingTimers.remove(normRecipientId)?.cancel();
 
         final currentUserId = _storageService.getUserId() ?? '';
-        final senderId = (event.callMeta['senderId'] ?? event.callMeta['sender_id'] ?? '').toString();
+        final senderId =
+            (event.callMeta['senderId'] ?? event.callMeta['sender_id'] ?? '')
+                .toString();
         final isFromMe = senderId.isNotEmpty && senderId == currentUserId;
-        final isMissed = status == 'missed' || status == 'reject' || status == 'rejected' || status == 'decline' || status == 'declined';
+        final isMissed =
+            status == 'missed' ||
+            status == 'reject' ||
+            status == 'rejected' ||
+            status == 'decline' ||
+            status == 'declined';
 
         final existingMsg = chat.lastMessage;
         final updatedLastMessage = existingMsg != null
@@ -671,12 +886,16 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         final updatedChat = chat.copyWith(
           lastMessage: updatedLastMessage,
           updatedAt: nowIso,
-          unreadCount: (!isFromMe && isMissed) ? chat.unreadCount + 1 : chat.unreadCount,
+          unreadCount: (!isFromMe && isMissed)
+              ? chat.unreadCount + 1
+              : chat.unreadCount,
           isTyping: false,
         );
 
         updatedChats.insert(0, updatedChat);
-        updatedChats.sort((a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)));
+        updatedChats.sort(
+          (a, b) => getChatActivityTime(b).compareTo(getChatActivityTime(a)),
+        );
         emit(ChatsLoaded(updatedChats));
       } else {
         add(const FetchChats());
@@ -687,9 +906,11 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
   void _onUpdateUserStatus(UpdateUserStatus event, Emitter<ChatsState> emit) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
-       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
-        if (!chat.isGroup && _isSameConversation(chat.recipient.id, event.userId)) {
-          final cleanLastSeen = (event.lastSeen != null &&
+      final List<ChatModel> updatedChats = currentState.chats.map((chat) {
+        if (!chat.isGroup &&
+            _isSameConversation(chat.recipient.id, event.userId)) {
+          final cleanLastSeen =
+              (event.lastSeen != null &&
                   event.lastSeen!.trim().isNotEmpty &&
                   event.lastSeen != 'null' &&
                   event.lastSeen != '0')
@@ -698,9 +919,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
           final effectiveLastSeen = event.isOnline
               ? chat.recipient.lastSeen
               : (cleanLastSeen ??
-                  ((chat.recipient.isOnline)
-                      ? DateTime.now().toUtc().toIso8601String()
-                      : chat.recipient.lastSeen));
+                    ((chat.recipient.isOnline)
+                        ? DateTime.now().toUtc().toIso8601String()
+                        : chat.recipient.lastSeen));
           final updatedRecipient = chat.recipient.copyWith(
             isOnline: event.isOnline,
             lastSeen: effectiveLastSeen,
@@ -713,7 +934,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onUpdateChatTypingStatus(UpdateChatTypingStatus event, Emitter<ChatsState> emit) {
+  void _onUpdateChatTypingStatus(
+    UpdateChatTypingStatus event,
+    Emitter<ChatsState> emit,
+  ) {
     final normId = _normalizeConvId(event.conversationId);
     _typingTimers[normId]?.cancel();
 
@@ -722,7 +946,12 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       _typingTimers[normId] = Timer(const Duration(seconds: 4), () {
         _typingTimers.remove(normId);
         if (!isClosed) {
-          add(UpdateChatTypingStatus(conversationId: event.conversationId, isTyping: false));
+          add(
+            UpdateChatTypingStatus(
+              conversationId: event.conversationId,
+              isTyping: false,
+            ),
+          );
         }
       });
     } else {
@@ -734,7 +963,8 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
       final globalTyping = _storageService.getTypingIndicatorsEnabled();
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
         if (_isSameConversation(chat.id, event.conversationId) ||
-            (!chat.isGroup && _isSameConversation(chat.recipient.id, event.conversationId))) {
+            (!chat.isGroup &&
+                _isSameConversation(chat.recipient.id, event.conversationId))) {
           final isAllowed = chat.typingIndicatorsEnabled ?? globalTyping;
           return chat.copyWith(isTyping: isAllowed ? event.isTyping : false);
         }
@@ -744,7 +974,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onClearAllTypingIndicators(ClearAllTypingIndicators event, Emitter<ChatsState> emit) {
+  void _onClearAllTypingIndicators(
+    ClearAllTypingIndicators event,
+    Emitter<ChatsState> emit,
+  ) {
     for (final timer in _typingTimers.values) {
       timer.cancel();
     }
@@ -765,7 +998,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onUpdateDisappearingTimer(UpdateDisappearingTimer event, Emitter<ChatsState> emit) {
+  void _onUpdateDisappearingTimer(
+    UpdateDisappearingTimer event,
+    Emitter<ChatsState> emit,
+  ) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final List<ChatModel> updatedChats = currentState.chats.map((chat) {
@@ -778,7 +1014,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
     }
   }
 
-  void _onUpdateMessageStatus(UpdateMessageStatus event, Emitter<ChatsState> emit) {
+  void _onUpdateMessageStatus(
+    UpdateMessageStatus event,
+    Emitter<ChatsState> emit,
+  ) {
     final currentState = state;
     if (currentState is ChatsLoaded) {
       final globalRead = _storageService.getReadReceiptsEnabled();
@@ -786,17 +1025,28 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         if (_isSameConversation(chat.id, event.conversationId)) {
           final lastMsg = chat.lastMessage;
           if (lastMsg != null) {
-            final isTarget = event.messageId == null ||
+            final isTarget =
+                event.messageId == null ||
                 lastMsg.id == event.messageId ||
-                (event.messageIds != null && event.messageIds!.contains(lastMsg.id));
+                (event.messageIds != null &&
+                    event.messageIds!.contains(lastMsg.id));
             if (isTarget) {
               final isReadAllowed = chat.readReceiptsEnabled ?? globalRead;
-              final isRead = (event.status == 'read' && isReadAllowed) || (lastMsg.isRead && isReadAllowed);
-              final isDelivered = event.status == 'delivered' || event.status == 'read' || isRead || lastMsg.isDelivered || lastMsg.isRead;
+              final isRead =
+                  (event.status == 'read' && isReadAllowed) ||
+                  (lastMsg.isRead && isReadAllowed);
+              final isDelivered =
+                  event.status == 'delivered' ||
+                  event.status == 'read' ||
+                  isRead ||
+                  lastMsg.isDelivered ||
+                  lastMsg.isRead;
               final updatedLastMsg = lastMsg.copyWith(
                 isRead: isRead,
                 isDelivered: isDelivered,
-                status: isRead ? 'read' : (isDelivered ? 'delivered' : lastMsg.status),
+                status: isRead
+                    ? 'read'
+                    : (isDelivered ? 'delivered' : lastMsg.status),
               );
               return chat.copyWith(
                 lastMessage: updatedLastMsg,
@@ -837,7 +1087,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
         final c = chats[i];
         if (c.id.isNotEmpty && (c.unreadCount > 0 || c.lastMessage != null)) {
           final clearedAtStr = _storageService.getConversationClearedAt(c.id);
-          final DateTime? clearedAt = clearedAtStr != null ? DateTime.tryParse(clearedAtStr) : null;
+          final DateTime? clearedAt = clearedAtStr != null
+              ? DateTime.tryParse(clearedAtStr)
+              : null;
 
           // 1. Immediately cache the lastMessage if available and not cleared
           if (c.lastMessage != null && c.lastMessage!.id.isNotEmpty) {
@@ -846,12 +1098,19 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
             if (clearedAt == null || lmDate.isAfter(clearedAt)) {
               String synthesizedContent = lm.content;
               String? synthesizedAttName;
-              final isFile = lm.mediaType == 'file' || lm.mediaType == 'document' || lm.mediaType == 'image' || lm.mediaType == 'video' || lm.mediaType == 'audio';
+              final isFile =
+                  lm.mediaType == 'file' ||
+                  lm.mediaType == 'document' ||
+                  lm.mediaType == 'image' ||
+                  lm.mediaType == 'video' ||
+                  lm.mediaType == 'audio';
               if (isFile && lm.content.isNotEmpty) {
                 if (lm.content.contains(' · ')) {
                   final parts = lm.content.split(' · ');
                   synthesizedAttName = parts.first.trim();
-                  synthesizedContent = parts.length > 1 ? parts.sublist(1).join(' · ').trim() : '';
+                  synthesizedContent = parts.length > 1
+                      ? parts.sublist(1).join(' · ').trim()
+                      : '';
                 } else if (lm.content.contains('.')) {
                   synthesizedAttName = lm.content.trim();
                 }
@@ -864,7 +1123,10 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 attachmentName: synthesizedAttName,
                 mediaUrl: lm.mediaUrl,
                 mediaType: lm.mediaType == 'document' ? 'file' : lm.mediaType,
-                messageType: (lm.mediaType == 'document' || lm.mediaType == 'file') ? 'file' : (lm.mediaType ?? 'text'),
+                messageType:
+                    (lm.mediaType == 'document' || lm.mediaType == 'file')
+                    ? 'file'
+                    : (lm.mediaType ?? 'text'),
                 isDeleted: lm.isDeleted,
                 isRead: lm.isRead,
                 isDelivered: lm.isDelivered,
@@ -884,11 +1146,19 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
               final chatRepo = getIt<ChatRepository>();
               final msgs = await chatRepo.getMessages(c.id, limit: 50, skip: 0);
               final validMsgs = (clearedAt != null)
-                  ? msgs.where((m) => ChatMessageCacheHelper.parseTimestamp(m.createdAt).isAfter(clearedAt)).toList()
+                  ? msgs
+                        .where(
+                          (m) => ChatMessageCacheHelper.parseTimestamp(
+                            m.createdAt,
+                          ).isAfter(clearedAt),
+                        )
+                        .toList()
                   : msgs;
               if (validMsgs.isNotEmpty) {
                 await ChatMessageCacheHelper.saveMessages(c.id, validMsgs);
-                debugPrint('ChatsBloc: Prefetched ${validMsgs.length} messages for conv ${c.id}');
+                debugPrint(
+                  'ChatsBloc: Prefetched ${validMsgs.length} messages for conv ${c.id}',
+                );
               }
             } catch (_) {}
           }
