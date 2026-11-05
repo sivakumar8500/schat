@@ -536,6 +536,7 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
         controller: controller,
         focusNode: focusNode,
         obscureText: obscureText,
+        obscuringCharacter: '*',
         keyboardType: TextInputType.text,
         textInputAction: TextInputAction.done,
         style: TextStyle(
@@ -549,18 +550,110 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
             fontSize: 14,
           ),
           prefixIcon: Icon(prefixIcon, color: context.colors.textHint, size: 20),
-          suffixIcon: IconButton(
-            icon: Icon(
-              obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-              color: context.colors.textHint,
-              size: 20,
-            ),
-            onPressed: onToggleObscure,
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.emoji_emotions_outlined,
+                  color: Color(0xFF00873C),
+                  size: 20,
+                ),
+                tooltip: 'Insert Emoji',
+                onPressed: () => _showQuickEmojiSheet(controller),
+              ),
+              IconButton(
+                icon: Icon(
+                  obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                  color: context.colors.textHint,
+                  size: 20,
+                ),
+                onPressed: onToggleObscure,
+              ),
+            ],
           ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
       ),
+    );
+  }
+
+  void _showQuickEmojiSheet(TextEditingController controller) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.colors.scaffoldBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        const emojis = [
+          '🔒', '🔑', '❤️', '🤫', '🤐', '🔥', '⭐', '🛡️',
+          '⚡', '✨', '💎', '🎯', '🐾', '🌸', '🍕', '🎉',
+          '🚀', '🍀', '🌈', '🌙', '☀️', '☕', '🐱', '🐶',
+        ];
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Secret Code Emoji',
+                      style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: emojis.map((e) {
+                    return InkWell(
+                      onTap: () {
+                        final text = controller.text;
+                        final selection = controller.selection;
+                        final newText = (selection.start >= 0 && selection.end >= 0)
+                            ? text.replaceRange(selection.start, selection.end, e)
+                            : text + e;
+                        controller.text = newText;
+                        final newOffset = (selection.start >= 0) ? selection.start + e.length : newText.length;
+                        controller.selection = TextSelection.collapsed(offset: newOffset);
+                        setState(() {});
+                        Navigator.pop(ctx);
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: context.colors.isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(e, style: const TextStyle(fontSize: 26)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

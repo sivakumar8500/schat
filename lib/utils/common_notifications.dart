@@ -5,6 +5,49 @@ import 'package:schat/main.dart';
 extension NotificationExt on BuildContext {
   void showErrorNotification(String message) {
     debugPrint('Error notification: $message');
+    if (message.trim().isEmpty) return;
+    try {
+      final messenger = ScaffoldMessenger.maybeOf(this) ??
+          (navigatorKey.currentContext != null
+              ? ScaffoldMessenger.maybeOf(navigatorKey.currentContext!)
+              : null);
+      if (messenger != null) {
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFD32F2F),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to display error snackbar: $e');
+    }
   }
 
   void showSuccessNotification(String message) {

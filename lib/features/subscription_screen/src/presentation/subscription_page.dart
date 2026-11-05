@@ -9,6 +9,8 @@ import 'package:schat/features/subscription_screen/src/presentation/bloc/subscri
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/utils/common_colors.dart';
+import 'package:schat/common/widgets/app_home_background.dart';
 
 class SubscriptionPage extends StatelessWidget {
   const SubscriptionPage({super.key});
@@ -52,82 +54,100 @@ class SubscriptionPage extends StatelessWidget {
               }
 
               return Scaffold(
-                backgroundColor: const Color(0xFFEDF1F5),
-                appBar: AppBar(
-                  backgroundColor: const Color(0xFFEDF1F5),
-                  elevation: 0,
-                  scrolledUnderElevation: 0,
-                  leading: Navigator.canPop(context)
-                      ? IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back_ios_new_rounded,
-                            color: Color(0xFF3E4C59),
-                            size: 20,
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                        )
-                      : null,
-                  centerTitle: true,
-                  title: Text(
-                    'CHOOSE A PLAN',
-                    style: context.h2.copyWith(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                      color: const Color(0xFF3E4C59),
+                backgroundColor: context.colors.scaffoldBackground,
+                body: Stack(
+                  children: [
+                    // Home background wallpaper
+                    const Positioned.fill(
+                      child: IgnorePointer(
+                        child: AppHomeBackground(),
+                      ),
                     ),
-                  ),
-                ),
-                body: SafeArea(
-                  child: isInitialLoading && plans.isEmpty
-                      ? const Center(child: CircularProgressIndicator())
-                      : SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24.0,
-                            vertical: 16.0,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Select the plan that fits your needs',
-                                textAlign: TextAlign.center,
-                                style: context.bodyMedium.copyWith(
-                                  fontSize: 14,
-                                  color: const Color(0xFF616E7C),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              CommonSpaces.h24,
-                              ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: plans.length,
-                                itemBuilder: (context, index) {
-                                  final plan = plans[index];
-                                  final isSelected = selectedPlanIndex == index;
 
-                                  return Center(
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 320,
-                                      ),
-                                      child: _buildPricingTableCard(
-                                        context: context,
-                                        plan: plan,
-                                        index: index,
-                                        isSelected: isSelected,
-                                        isLoading: isLoading && isSelected,
-                                      ),
+                    // Main Content
+                    SafeArea(
+                      child: Column(
+                        children: [
+                          AppBar(
+                            backgroundColor: Colors.transparent,
+                            elevation: 0,
+                            scrolledUnderElevation: 0,
+                            leading: Navigator.canPop(context)
+                                ? IconButton(
+                                    icon: Icon(
+                                      Icons.arrow_back_ios_new_rounded,
+                                      color: context.colors.textPrimary,
+                                      size: 20,
                                     ),
-                                  );
-                                },
+                                    onPressed: () => Navigator.pop(context),
+                                  )
+                                : null,
+                            centerTitle: true,
+                            title: Text(
+                              'UPGRADE YOUR PLAN',
+                              style: context.h2.copyWith(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.2,
+                                color: context.colors.textPrimary,
                               ),
-                              CommonSpaces.h20,
-                            ],
+                            ),
                           ),
-                        ),
+                          Expanded(
+                            child: isInitialLoading && plans.isEmpty
+                                ? const Center(child: CircularProgressIndicator())
+                                : SingleChildScrollView(
+                                    physics: const BouncingScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24.0,
+                                      vertical: 8.0,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          'Select the plan that fits your needs',
+                                          textAlign: TextAlign.center,
+                                          style: context.bodyMedium.copyWith(
+                                            fontSize: 14,
+                                            color: context.colors.textSecondary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        CommonSpaces.h24,
+                                        ListView.builder(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          itemCount: plans.length,
+                                          itemBuilder: (context, index) {
+                                            final plan = plans[index];
+                                            final isSelected = selectedPlanIndex == index;
+
+                                            return Center(
+                                              child: ConstrainedBox(
+                                                constraints: const BoxConstraints(
+                                                  maxWidth: 320,
+                                                ),
+                                                child: _buildPricingTableCard(
+                                                  context: context,
+                                                  plan: plan,
+                                                  index: index,
+                                                  isSelected: isSelected,
+                                                  isLoading: isLoading && isSelected,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        CommonSpaces.h20,
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               );
             },

@@ -52,5 +52,7 @@ schat_backend/
 android/build/
 android/.kotlin/
 .gradle/
-
-
+# Keystore & Signing
+*.jks
+*.keystore
+**/key.properties

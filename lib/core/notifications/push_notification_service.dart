@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:injectable/injectable.dart';
@@ -27,6 +28,10 @@ import 'package:schat/features/profile_screen/src/domain/repositories/profile_re
 
 @lazySingleton
 class PushNotificationService {
+  static const String messageChannelId = 'schat_messages_channel_v2';
+  static const String messageChannelName = 'Messages & Notifications';
+  static final Int64List messageVibrationPattern = Int64List.fromList([0, 350, 200, 350]);
+
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   
@@ -72,19 +77,41 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
-    // Create high-priority Android Notification Channel
+    // Create high-priority Android Notification Channel with explicit vibration waveform
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      const channel = AndroidNotificationChannel(
+      // 1. Delete legacy channel to ensure new vibration waveform takes effect
+      try {
+        await androidPlugin.deleteNotificationChannel(channelId: 'schat_general_channel');
+      } catch (_) {}
+
+      // 2. Create updated message channel with vibration pattern
+      final channel = AndroidNotificationChannel(
+        messageChannelId,
+        messageChannelName,
+        description: 'Notifications for chats and other alerts with vibration',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: messageVibrationPattern,
+        showBadge: true,
+      );
+      await androidPlugin.createNotificationChannel(channel);
+
+      // Recreate legacy channel as fallback with vibration pattern as well
+      final legacyChannel = AndroidNotificationChannel(
         'schat_general_channel',
         'General Notifications',
         description: 'Notifications for chats and other alerts',
         importance: Importance.max,
         playSound: true,
         enableVibration: true,
+        vibrationPattern: messageVibrationPattern,
+        showBadge: true,
       );
-      await androidPlugin.createNotificationChannel(channel);
+      await androidPlugin.createNotificationChannel(legacyChannel);
+
       await androidPlugin.requestNotificationsPermission();
     }
 
@@ -885,15 +912,16 @@ class PushNotificationService {
     }
 
     final androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'schat_general_channel', // id
-      'General Notifications', // name
-      channelDescription: 'Notifications for chats and other alerts',
+      messageChannelId, // id
+      messageChannelName, // name
+      channelDescription: 'Notifications for chats and other alerts with vibration',
       importance: Importance.max,
       priority: Priority.high,
       showWhen: true,
       icon: '@mipmap/launcher_icon',
       playSound: true,
       enableVibration: true,
+      vibrationPattern: messageVibrationPattern,
       styleInformation: BigTextStyleInformation(
         body,
         contentTitle: title,
@@ -950,5 +978,9 @@ class PushNotificationService {
       notificationDetails: platformChannelSpecifics,
       payload: jsonEncode(payloadMap),
     );
+
+    try {
+      HapticFeedback.vibrate();
+    } catch (_) {}
   }
 }

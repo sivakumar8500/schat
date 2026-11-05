@@ -34,6 +34,7 @@ import 'package:schat/common/widgets/animated_tagline.dart';
 import 'package:schat/common/widgets/app_home_background.dart';
 import 'package:schat/core/services/in_app_update_service.dart';
 import 'package:schat/core/services/app_cache_service.dart';
+import 'package:schat/features/subscription_screen/src/presentation/subscription_page.dart';
 
 class ProfileSettingsPage extends StatelessWidget {
   final String username;
@@ -421,6 +422,8 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
           );
         } else if (state is ProfileSuccess) {
           context.read<ProfileBloc>().add(const LoadProfileEvent());
+        } else if (state is ProfileFailure) {
+          context.showErrorNotification(state.errorMessage);
         }
       },
       child: Scaffold(
@@ -445,12 +448,26 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                       children: [
                         // Hero Profile Card
                         _buildHeroProfileCard(context),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 14),
+
+                        // Upgrade Your Plan Banner
+                        _buildUpgradePlanBanner(context),
+                        const SizedBox(height: 18),
 
                         // Section 1: Account & Chats
                         _buildSectionContainer(
                           title: 'Account & Security',
                           items: [
+                            _buildSettingRow(
+                              context: context,
+                              icon: Icons.workspace_premium_rounded,
+                              title: 'Upgrade Your Plan',
+                              subtitle: 'Explore plans, pricing & membership benefits',
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+                              ),
+                            ),
                             _buildSettingRow(
                               context: context,
                               icon: Icons.block_rounded,
@@ -1055,6 +1072,177 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     );
   }
 
+  Widget _buildUpgradePlanBanner(BuildContext context) {
+    final isDark = context.colors.isDark;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  const Color(0xFF133825),
+                  const Color(0xFF092015),
+                ]
+              : [
+                  const Color(0xFF00873C),
+                  const Color(0xFF005C2B),
+                ],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00873C).withValues(alpha: isDark ? 0.35 : 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+        border: Border.all(
+          color: isDark
+              ? const Color(0xFF00B350).withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.25),
+          width: 1.2,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                // Golden Crown Container
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFD54F), Color(0xFFFFA000)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFB300).withValues(alpha: 0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Text details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: const Text(
+                              'Upgrade Your Plan',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFD54F),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: const Text(
+                              'PRO',
+                              style: TextStyle(
+                                color: Color(0xFF332000),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Unlock unlimited chats, calls & features',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 11.5,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Action Pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Upgrade',
+                        style: TextStyle(
+                          color: Color(0xFF00873C),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                      SizedBox(width: 3),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 13,
+                        color: Color(0xFF00873C),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSectionContainer({
     required String title,
     required List<Widget> items,
@@ -1091,22 +1279,27 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
               ),
             ],
           ),
-          child: Column(
-            children: List.generate(items.length, (index) {
-              final isLast = index == items.length - 1;
-              return Column(
-                children: [
-                  items[index],
-                  if (!isLast)
-                    Divider(
-                      height: 1,
-                      indent: 64,
-                      endIndent: 16,
-                      color: context.colors.border.withValues(alpha: 0.3),
-                    ),
-                ],
-              );
-            }),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(22),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: List.generate(items.length, (index) {
+                final isLast = index == items.length - 1;
+                return Column(
+                  children: [
+                    items[index],
+                    if (!isLast)
+                      Divider(
+                        height: 1,
+                        indent: 64,
+                        endIndent: 16,
+                        color: context.colors.border.withValues(alpha: 0.3),
+                      ),
+                  ],
+                );
+              }),
+            ),
           ),
         ),
       ],

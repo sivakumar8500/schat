@@ -169,13 +169,14 @@ class CallNotificationService {
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      const callChannel = AndroidNotificationChannel(
+      final callChannel = AndroidNotificationChannel(
         _callChannelId,
         _callChannelName,
         description: 'Incoming video and audio calls with Decline and Accept actions',
         importance: Importance.max,
         playSound: true,
         enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
         showBadge: true,
       );
       await androidPlugin.createNotificationChannel(callChannel);
@@ -629,6 +630,7 @@ class CallNotificationService {
         fullScreenIntent: true,
         playSound: true,
         enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000]),
         ongoing: true,
         autoCancel: false,
         timeoutAfter: 35000,
@@ -1120,27 +1122,29 @@ class CallNotificationService {
       final androidPlugin = flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
-        const channel = AndroidNotificationChannel(
-          'schat_general_channel',
-          'General Notifications',
-          description: 'Notifications for chats and other alerts',
+        final channel = AndroidNotificationChannel(
+          'schat_messages_channel_v2',
+          'Messages & Notifications',
+          description: 'Notifications for chats and other alerts with vibration',
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          vibrationPattern: Int64List.fromList([0, 350, 200, 350]),
         );
         await androidPlugin.createNotificationChannel(channel);
       }
 
       final androidPlatformChannelSpecifics = AndroidNotificationDetails(
-        'schat_general_channel',
-        'General Notifications',
-        channelDescription: 'Notifications for chats and other alerts',
+        'schat_messages_channel_v2',
+        'Messages & Notifications',
+        channelDescription: 'Notifications for chats and other alerts with vibration',
         importance: Importance.max,
         priority: Priority.high,
         showWhen: true,
         icon: '@mipmap/launcher_icon',
         playSound: true,
         enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 350, 200, 350]),
         styleInformation: BigTextStyleInformation(
           body,
           contentTitle: title,

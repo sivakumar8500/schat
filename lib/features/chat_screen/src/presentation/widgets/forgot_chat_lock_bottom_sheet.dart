@@ -549,6 +549,8 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
           controller: _newPasswordController,
           focusNode: _newPasswordFocusNode,
           obscureText: _obscureNewPassword,
+          obscuringCharacter: '*',
+          keyboardType: TextInputType.text,
           style: context.bodyLarge.copyWith(color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Enter secret code (e.g. 1234 or 🔒🔑❤️)',
@@ -560,13 +562,27 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
             ),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscureNewPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                color: colors.textSecondary,
-                size: 20,
-              ),
-              onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.emoji_emotions_outlined,
+                    color: Color(0xFF00873C),
+                    size: 20,
+                  ),
+                  tooltip: 'Insert Emoji',
+                  onPressed: () => _showQuickEmojiSheet(_newPasswordController),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _obscureNewPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                    color: colors.textSecondary,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
+                ),
+              ],
             ),
           ),
         ),
@@ -586,6 +602,8 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
           controller: _confirmPasswordController,
           focusNode: _confirmPasswordFocusNode,
           obscureText: _obscureConfirmPassword,
+          obscuringCharacter: '*',
+          keyboardType: TextInputType.text,
           style: context.bodyLarge.copyWith(color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Re-enter new secret code',
@@ -597,13 +615,27 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
             ),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                color: colors.textSecondary,
-                size: 20,
-              ),
-              onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.emoji_emotions_outlined,
+                    color: Color(0xFF00873C),
+                    size: 20,
+                  ),
+                  tooltip: 'Insert Emoji',
+                  onPressed: () => _showQuickEmojiSheet(_confirmPasswordController),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                    color: colors.textSecondary,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                ),
+              ],
             ),
           ),
         ),
@@ -630,6 +662,84 @@ class _ForgotChatLockBottomSheetState extends State<ForgotChatLockBottomSheet> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showQuickEmojiSheet(TextEditingController controller) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.colors.scaffoldBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        const emojis = [
+          '🔒', '🔑', '❤️', '🤫', '🤐', '🔥', '⭐', '🛡️',
+          '⚡', '✨', '💎', '🎯', '🐾', '🌸', '🍕', '🎉',
+          '🚀', '🍀', '🌈', '🌙', '☀️', '☕', '🐱', '🐶',
+        ];
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Secret Code Emoji',
+                      style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: emojis.map((e) {
+                    return InkWell(
+                      onTap: () {
+                        final text = controller.text;
+                        final selection = controller.selection;
+                        final newText = (selection.start >= 0 && selection.end >= 0)
+                            ? text.replaceRange(selection.start, selection.end, e)
+                            : text + e;
+                        controller.text = newText;
+                        final newOffset = (selection.start >= 0) ? selection.start + e.length : newText.length;
+                        controller.selection = TextSelection.collapsed(offset: newOffset);
+                        setState(() {});
+                        Navigator.pop(ctx);
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: context.colors.isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(e, style: const TextStyle(fontSize: 26)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
