@@ -3047,6 +3047,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
     if (context.mounted) {
       final Set<UserModel> selectedUsers = {};
+      final bool isMediaMessage = (msg.mediaUrl != null && msg.mediaUrl!.isNotEmpty) ||
+          (msg.attachmentName != null && msg.attachmentName!.isNotEmpty) ||
+          msg.messageType == 'image' || msg.messageType == 'video' || msg.messageType == 'audio' || msg.messageType == 'document' || msg.messageType == 'file' ||
+          msg.mediaType == 'image' || msg.mediaType == 'video' || msg.mediaType == 'audio' || msg.mediaType == 'document' || msg.mediaType == 'file';
 
       StreamSubscription? contactsSub;
       showModalBottomSheet(
@@ -3057,6 +3061,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           List<UserModel> localContacts = List.from(contacts);
           bool isSyncing = false;
           String forwardSearchQuery = '';
+
+          bool canViewToggle = true; // Always true
+          bool canDownloadToggle = msg.allowDownload;
+          bool canShareToggle = msg.allowShare;
+
+          final bool isDownloadSwitchEnabled = msg.allowDownload;
+          final bool isShareSwitchEnabled = msg.allowShare;
 
           return StatefulBuilder(
             builder: (context, setModalState) {
@@ -3088,7 +3099,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Forward Message',
+                                isMediaMessage
+                                    ? 'Share File${msg.attachmentName != null && msg.attachmentName!.isNotEmpty ? ': ${msg.attachmentName}' : ''}'
+                                    : 'Forward Message',
                                 style: context.titleLarge.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: context.colors.textPrimary,
@@ -3189,7 +3202,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                     ),
                     ConstrainedBox(
                       constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(context).size.height * 0.45,
+                        maxHeight: MediaQuery.of(context).size.height * (isMediaMessage ? 0.30 : 0.45),
                       ),
                       child: Builder(
                         builder: (context) {
@@ -3307,8 +3320,104 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                         },
                       ),
                     ),
+                    if (isMediaMessage) ...[
+                      const Divider(height: 1),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.shield_outlined, size: 16, color: context.colors.primary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Permissions for Recipient:',
+                                  style: context.titleSmall.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: context.colors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: context.colors.isDark ? const Color(0xFF1E2830) : const Color(0xFFF7F9F8),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: context.colors.isDark ? const Color(0xFF2A3630) : const Color(0xFFE8ECE9),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  SwitchListTile(
+                                    dense: true,
+                                    title: const Text('Allow View', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                    subtitle: const Text('Always permitted for recipient', style: TextStyle(fontSize: 11)),
+                                    value: canViewToggle,
+                                    activeThumbColor: context.colors.primary,
+                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                    onChanged: null,
+                                  ),
+                                  const Divider(height: 1),
+                                  SwitchListTile(
+                                    dense: true,
+                                    title: const Text('Allow Download', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                    subtitle: Text(
+                                      isDownloadSwitchEnabled
+                                          ? 'Allows saving to local device gallery'
+                                          : 'Download restricted by original sender',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isDownloadSwitchEnabled ? null : context.colors.error,
+                                      ),
+                                    ),
+                                    value: canDownloadToggle,
+                                    activeThumbColor: context.colors.primary,
+                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                    onChanged: isDownloadSwitchEnabled
+                                        ? (val) {
+                                            setModalState(() {
+                                              canDownloadToggle = val;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                  const Divider(height: 1),
+                                  SwitchListTile(
+                                    dense: true,
+                                    title: const Text('Allow Re-sharing / Forwarding', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                    subtitle: Text(
+                                      isShareSwitchEnabled
+                                          ? 'Allows forwarding to other contacts'
+                                          : 'Forwarding restricted by original sender',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isShareSwitchEnabled ? null : context.colors.error,
+                                      ),
+                                    ),
+                                    value: canShareToggle,
+                                    activeThumbColor: context.colors.primary,
+                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                    onChanged: isShareSwitchEnabled
+                                        ? (val) {
+                                            setModalState(() {
+                                              canShareToggle = val;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     Padding(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                       child: SizedBox(
                         width: double.infinity,
                         height: 54,
@@ -3336,9 +3445,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                       final chat = targetChat!;
 
                                       final storage = getIt<StorageService>();
-                                      final effectiveView = msg.allowView;
-                                      final effectiveDownload = msg.allowDownload;
-                                      final effectiveShare = msg.allowShare;
+                                      final effectiveView = isMediaMessage ? canViewToggle : msg.allowView;
+                                      final effectiveDownload = isMediaMessage ? canDownloadToggle : msg.allowDownload;
+                                      final effectiveShare = isMediaMessage ? canShareToggle : msg.allowShare;
 
                                       // Save inherited permissions across all keys
                                       await storage.saveSenderMediaPermissions(
@@ -3519,8 +3628,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                           ),
                           child: Text(
                             selectedUsers.isEmpty 
-                                ? 'Select Contacts' 
-                                : 'Send to ${selectedUsers.length} Contact${selectedUsers.length > 1 ? 's' : ''}',
+                                ? (isMediaMessage ? 'Select Recipient' : 'Select Contacts') 
+                                : (isMediaMessage
+                                    ? 'Send File (${selectedUsers.length})'
+                                    : 'Send to ${selectedUsers.length} Contact${selectedUsers.length > 1 ? 's' : ''}'),
                             style: context.bodyLarge.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,

@@ -1815,7 +1815,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => _buildMaskedImagePreview(
               context,
-              title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+              title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
               subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
               icon: CommonIcons.imageNotSupported,
             ),
@@ -1823,7 +1823,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         } else if (snapshot.hasError) {
           return _buildMaskedImagePreview(
             context,
-            title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+            title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
             subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
             icon: CommonIcons.imageNotSupported,
           );
@@ -1866,7 +1866,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             },
             child: _buildMaskedImagePreview(
               context,
-              title: viewLocked ? 'View Restricted' : 'Preview Unavailable',
+              title: viewLocked ? 'Access Revoked' : 'Preview Unavailable',
               subtitle: viewLocked ? 'Access restricted by sender' : 'Media preview could not be loaded',
               icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
             ),
@@ -1957,7 +1957,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   }
                   return _buildMaskedImagePreview(
                     context,
-                    title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+                    title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
                     subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image preview',
                     icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
                   );
@@ -1968,7 +1968,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         } else {
           imageWidget = _buildMaskedImagePreview(
             context,
-            title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+            title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
             subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image',
             icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
           );
@@ -1976,7 +1976,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       } else {
         imageWidget = _buildMaskedImagePreview(
           context,
-          title: viewLocked ? 'View Restricted' : 'Image Unavailable',
+          title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
           subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image',
         );
       }
@@ -2958,31 +2958,36 @@ class _MessageBubbleState extends State<MessageBubble> {
               _buildCapsuleChip(
                 context: context,
                 icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
-                label: allowView ? 'View' : 'View Locked',
+                label: allowView ? 'View' : 'Access Revoked',
                 backgroundColor: allowView ? activeBg : inactiveBg,
                 textColor: allowView ? activeIcon : inactiveIcon,
                 borderColor: allowView ? activeBorder : inactiveBorder,
-                onTap: allowView ? () => _openInAppViewer(context) : null,
+                onTap: allowView
+                    ? () => _openInAppViewer(context)
+                    : () => context.showInfoNotification('Access revoked by sender'),
               ),
               _buildCapsuleChip(
                 context: context,
                 icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
-                label: allowDownload ? 'Download' : 'Download Locked',
+                label: allowDownload ? 'Download' : 'Download Restricted',
                 backgroundColor: allowDownload ? activeBg : inactiveBg,
                 textColor: allowDownload ? activeIcon : inactiveIcon,
                 borderColor: allowDownload ? activeBorder : inactiveBorder,
-                onTap: allowDownload ? () => _triggerDownload(context) : null,
+                onTap: allowDownload
+                    ? () => _triggerDownload(context)
+                    : () => context.showInfoNotification('Download restricted by sender'),
               ),
-              if (allowShare)
-                _buildCapsuleChip(
-                  context: context,
-                  icon: CommonIcons.share,
-                  label: 'Share',
-                  backgroundColor: activeBg,
-                  textColor: activeIcon,
-                  borderColor: activeBorder,
-                  onTap: () => _triggerShare(context),
-                ),
+              _buildCapsuleChip(
+                context: context,
+                icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
+                label: allowShare ? 'Share' : 'Forwarding Restricted',
+                backgroundColor: allowShare ? activeBg : inactiveBg,
+                textColor: allowShare ? activeIcon : inactiveIcon,
+                borderColor: allowShare ? activeBorder : inactiveBorder,
+                onTap: allowShare
+                    ? () => _triggerShare(context)
+                    : () => context.showInfoNotification('Forwarding restricted by sender'),
+              ),
             ],
           ),
         ),
@@ -3344,12 +3349,32 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   void _triggerDownload(BuildContext context) async {
     if (!allowDownload) {
-      context.showInfoNotification('Download permission is locked by sender');
+      context.showInfoNotification('Download restricted by sender');
       return;
     }
     final String? path = attachmentPath;
     if (path == null || path.isEmpty || _isDownloading) return;
     String url = path;
+
+    // Check backend download url if mediaId is present
+    final resolvedMediaId = SecureAttachmentService.findMediaId(path) ??
+        SecureAttachmentService.findMediaId(attachmentName);
+    if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+      try {
+        final secureUrl = await getIt<ChatRepository>().getMediaDownloadUrl(resolvedMediaId);
+        if (secureUrl != null && secureUrl.isNotEmpty) {
+          url = secureUrl;
+        }
+      } catch (e) {
+        final err = e.toString().toLowerCase();
+        if (err.contains('403') || err.contains('permission') || err.contains('forbidden')) {
+          if (context.mounted) {
+            context.showErrorNotification('You do not have permission to download this media');
+          }
+          return;
+        }
+      }
+    }
 
     url = SecureAttachmentService.resolveFullUrl(url);
 
@@ -3416,7 +3441,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   void _triggerShare(BuildContext context) async {
     if (!allowShare) {
-      context.showInfoNotification('Share permission is locked by sender');
+      context.showInfoNotification('Forwarding restricted by sender');
       return;
     }
     if (onSharePressed != null) {

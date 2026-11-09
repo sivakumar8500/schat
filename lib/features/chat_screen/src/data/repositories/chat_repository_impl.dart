@@ -1287,18 +1287,34 @@ class ChatRepositoryImpl implements ChatRepository {
     bool canShare = false,
   }) async {
     final cleanMediaId = SecureAttachmentService.findMediaId(mediaId) ?? mediaId;
-    final result = await _apiService.post(
-      CommonEndpoints.shareMedia(cleanMediaId),
-      data: {
-        'grantee_id': granteeId,
-        ...?parentGrantId == null ? null : {'parent_grant_id': parentGrantId},
-        'permissions': {
-          'can_view': canView,
-          'can_download': canDownload,
-          'can_share': canShare,
-        },
+    final payload = {
+      'recipient_user_id': granteeId,
+      'grantee_id': granteeId,
+      ...?parentGrantId == null ? null : {'parent_grant_id': parentGrantId},
+      'permissions': {
+        'can_view': canView,
+        'can_download': canDownload,
+        'can_share': canShare,
       },
+    };
+
+    // Primary: POST /media/{media_id}/shares (as per File Control Integration Guide)
+    var result = await _apiService.post(
+      CommonEndpoints.mediaShares(cleanMediaId),
+      data: payload,
     );
+
+    // Fallback: POST /media/{media_id}/share if /shares returns 404
+    final is404 = result.when(
+      success: (_) => false,
+      failure: (_, statusCode) => statusCode == 404,
+    );
+    if (is404) {
+      result = await _apiService.post(
+        CommonEndpoints.shareMedia(cleanMediaId),
+        data: payload,
+      );
+    }
 
     return result.when(
       success: (_) => true,
@@ -1362,9 +1378,21 @@ class ChatRepositoryImpl implements ChatRepository {
     required String mediaId,
     required String grantId,
   }) async {
-    final result = await _apiService.delete(
-      CommonEndpoints.mediaRevokeGrant(mediaId, grantId),
+    // Primary: POST /media/{media_id}/shares/{grant_id}/revoke (as per Integration Guide)
+    var result = await _apiService.post(
+      CommonEndpoints.mediaRevokeShare(mediaId, grantId),
     );
+
+    // Fallback: DELETE /media/{media_id}/grants/{grant_id} if /shares/{grant_id}/revoke returns 404 or 405
+    final shouldFallback = result.when(
+      success: (_) => false,
+      failure: (_, statusCode) => statusCode == 404 || statusCode == 405,
+    );
+    if (shouldFallback) {
+      result = await _apiService.delete(
+        CommonEndpoints.mediaRevokeGrant(mediaId, grantId),
+      );
+    }
 
     return result.when(
       success: (_) => true,
