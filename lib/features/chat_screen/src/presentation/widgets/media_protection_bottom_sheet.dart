@@ -19,7 +19,8 @@ class MediaProtectionBottomSheet extends StatefulWidget {
   final bool? initialAllowView;
   final bool? initialAllowDownload;
   final bool? initialAllowShare;
-  final void Function(bool allowView, bool allowDownload, bool allowShare)? onPermissionsChanged;
+  final void Function(bool allowView, bool allowDownload, bool allowShare)?
+  onPermissionsChanged;
 
   const MediaProtectionBottomSheet({
     super.key,
@@ -44,7 +45,8 @@ class MediaProtectionBottomSheet extends StatefulWidget {
     bool? initialAllowView,
     bool? initialAllowDownload,
     bool? initialAllowShare,
-    void Function(bool allowView, bool allowDownload, bool allowShare)? onPermissionsChanged,
+    void Function(bool allowView, bool allowDownload, bool allowShare)?
+    onPermissionsChanged,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -65,10 +67,12 @@ class MediaProtectionBottomSheet extends StatefulWidget {
   }
 
   @override
-  State<MediaProtectionBottomSheet> createState() => _MediaProtectionBottomSheetState();
+  State<MediaProtectionBottomSheet> createState() =>
+      _MediaProtectionBottomSheetState();
 }
 
-class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet> {
+class _MediaProtectionBottomSheetState
+    extends State<MediaProtectionBottomSheet> {
   MediaPermissionsModel? _permissions;
   MediaAccessTreeModel? _accessTree;
   Future<MediaAccessTreeModel?>? _accessTreeFuture;
@@ -86,9 +90,14 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         widget.initialAllowDownload != null ||
         widget.initialAllowShare != null) {
       final v = widget.initialAllowView ?? true;
-      final d = (!v) ? false : (widget.initialAllowDownload ?? false);
-      final s = (!v || !d) ? false : (widget.initialAllowShare ?? false);
-      _ownerRecipientPerms = FilePermissions(canView: v, canDownload: d, canShare: s);
+      final d = widget.initialAllowDownload ?? false;
+      final s = widget.initialAllowShare ?? false;
+      final s = (!v) ? false : (widget.initialAllowShare ?? false);
+      _ownerRecipientPerms = FilePermissions(
+        canView: v,
+        canDownload: d,
+        canShare: s,
+      );
     }
     _loadData();
   }
@@ -106,6 +115,25 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   orElse: () => v.accessTree.first,
                 );
                 _ownerRecipientPerms = activeNode.effectivePermissions;
+                final targetRecipientId = widget.recipientId;
+                if (targetRecipientId != null && targetRecipientId.isNotEmpty) {
+                  final matchingNodes = v.accessTree.where(
+                    (n) => n.grantee.id == targetRecipientId,
+                  );
+                  if (matchingNodes.isNotEmpty) {
+                    final activeMatch = matchingNodes.firstWhere(
+                      (n) => n.status.toLowerCase() == 'active',
+                      orElse: () => matchingNodes.first,
+                    );
+                    _ownerRecipientPerms = activeMatch.effectivePermissions;
+                  }
+                } else {
+                  final activeNode = v.accessTree.firstWhere(
+                    (n) => n.status.toLowerCase() == 'active',
+                    orElse: () => v.accessTree.first,
+                  );
+                  _ownerRecipientPerms = activeNode.effectivePermissions;
+                }
               }
             });
           }
@@ -151,34 +179,49 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
+        backgroundColor: context.colors.isDark
+            ? const Color(0xFF1E2830)
+            : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.redAccent,
+              size: 28,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Revoke All Shares?',
-                style: context.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                style: context.titleMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
         ),
         content: Text(
           'This will immediately disable viewing, downloading, and sharing for all recipients who received or forwarded this file.',
-          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+          style: context.bodyMedium.copyWith(
+            color: context.colors.textSecondary,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.colors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Revoke All'),
@@ -226,7 +269,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
+        backgroundColor: context.colors.isDark
+            ? const Color(0xFF1E2830)
+            : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Revoke Access for $userName?',
@@ -234,18 +279,25 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         ),
         content: Text(
           'This will revoke access for $userName and any downstream users they shared this file with.',
-          style: context.bodyMedium.copyWith(color: context.colors.textSecondary),
+          style: context.bodyMedium.copyWith(
+            color: context.colors.textSecondary,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.colors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Revoke'),
@@ -259,7 +311,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     setState(() => _isActionProcessing = true);
     try {
       final repo = getIt<ChatRepository>();
-      await repo.revokeMediaShareGrant(mediaId: widget.mediaId, grantId: grantId);
+      await repo.revokeMediaShareGrant(
+        mediaId: widget.mediaId,
+        grantId: grantId,
+      );
       try {
         getIt<ChatSocketRepository>().sendFileAction(
           type: 'media_access_revoked',
@@ -299,14 +354,6 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     bool newDownload = download ?? currentPerms.canDownload;
     bool newShare = share ?? currentPerms.canShare;
 
-    if (share == true || download == true) {
-      newView = true;
-    } else if (view == false) {
-      newView = false;
-      newDownload = false;
-      newShare = false;
-    }
-
     setState(() {
       _ownerRecipientPerms = FilePermissions(
         canView: newView,
@@ -325,6 +372,14 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           allowDownload: newDownload,
           allowShare: newShare,
         );
+        if (_permissions?.isOwner == true) {
+          storage.saveSenderMediaPermissions(
+            widget.mediaId,
+            allowView: newView,
+            allowDownload: newDownload,
+            allowShare: newShare,
+          );
+        }
         if (widget.messageId != null && widget.messageId!.isNotEmpty) {
           storage.saveSenderMediaPermissions(
             widget.messageId!,
@@ -342,6 +397,33 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       final repo = getIt<ChatRepository>();
       final grants = _accessTree?.accessTree ?? [];
       if (grants.isNotEmpty) {
+      final targetRecipientId = widget.recipientId;
+      if (targetRecipientId != null && targetRecipientId.isNotEmpty) {
+        final matchingActive = grants
+            .where((node) =>
+                node.grantee.id == targetRecipientId &&
+                node.status.toLowerCase() == 'active')
+            .toList();
+        if (matchingActive.isNotEmpty) {
+          for (final node in matchingActive) {
+            await repo.updateMediaSharePermissions(
+              mediaId: widget.mediaId,
+              grantId: node.grantId,
+              canView: newView,
+              canDownload: newDownload,
+              canShare: newShare,
+            );
+          }
+        } else {
+          await repo.shareMedia(
+            mediaId: widget.mediaId,
+            granteeId: targetRecipientId,
+            canView: newView,
+            canDownload: newDownload,
+            canShare: newShare,
+          );
+        }
+      } else if (grants.isNotEmpty) {
         for (final node in grants) {
           if (node.status.toLowerCase() == 'active') {
             await repo.updateMediaSharePermissions(
@@ -382,8 +464,12 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
 
     final updated = await showModalBottomSheet<bool>(
       context: context,
-      backgroundColor: context.colors.isDark ? const Color(0xFF1E2830) : Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: context.colors.isDark
+          ? const Color(0xFF1E2830)
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
@@ -399,10 +485,15 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                       children: [
                         CircleAvatar(
                           radius: 16,
-                          backgroundColor: modalCtx.colors.primary.withValues(alpha: 0.15),
+                          backgroundColor: modalCtx.colors.primary.withValues(
+                            alpha: 0.15,
+                          ),
                           child: Text(
                             node.grantee.initials,
-                            style: TextStyle(fontWeight: FontWeight.bold, color: modalCtx.colors.primary),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: modalCtx.colors.primary,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -412,11 +503,16 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                             children: [
                               Text(
                                 'Permissions for ${node.grantee.displayName}',
-                                style: modalCtx.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                                style: modalCtx.titleSmall.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               Text(
                                 'Manage granular access overrides',
-                                style: modalCtx.bodySmall.copyWith(color: modalCtx.colors.textSecondary, fontSize: 11),
+                                style: modalCtx.bodySmall.copyWith(
+                                  color: modalCtx.colors.textSecondary,
+                                  fontSize: 11,
+                                ),
                               ),
                             ],
                           ),
@@ -425,48 +521,62 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                     ),
                     const Divider(height: 24),
                     SwitchListTile(
-                      title: const Text('Can View', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Allows opening & viewing the media', style: TextStyle(fontSize: 12)),
+                      title: const Text(
+                        'Can View',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Allows opening & viewing the media',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       value: canView,
                       activeThumbColor: modalCtx.colors.primary,
-                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      activeTrackColor: modalCtx.colors.primary.withValues(
+                        alpha: 0.4,
+                      ),
                       onChanged: (val) {
                         setModalState(() {
                           canView = val;
-                          if (!val) {
-                            canDownload = false;
-                            canShare = false;
-                          }
                         });
                       },
                     ),
                     SwitchListTile(
-                      title: const Text('Can Download', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Allows saving to local device gallery', style: TextStyle(fontSize: 12)),
+                      title: const Text(
+                        'Can Download',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Allows saving to local device gallery',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       value: canDownload,
                       activeThumbColor: modalCtx.colors.primary,
-                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      activeTrackColor: modalCtx.colors.primary.withValues(
+                        alpha: 0.4,
+                      ),
                       onChanged: (val) {
                         setModalState(() {
                           canDownload = val;
-                          if (val) {
-                            canView = true;
-                          }
                         });
                       },
                     ),
                     SwitchListTile(
-                      title: const Text('Can Forward / Share', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Allows forwarding to other contacts', style: TextStyle(fontSize: 12)),
+                      title: const Text(
+                        'Can Forward / Share',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Allows forwarding to other contacts',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       value: canShare,
                       activeThumbColor: modalCtx.colors.primary,
-                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      activeTrackColor: modalCtx.colors.primary.withValues(
+                        alpha: 0.4,
+                      ),
                       onChanged: (val) {
                         setModalState(() {
                           canShare = val;
-                          if (val) {
-                            canView = true;
-                          }
                         });
                       },
                     ),
@@ -476,10 +586,18 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                         backgroundColor: modalCtx.colors.primary,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       onPressed: () => Navigator.pop(modalCtx, true),
-                      child: const Text('Apply Changes', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      child: const Text(
+                        'Apply Changes',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -530,7 +648,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         );
         try {
           getIt<ChatSocketRepository>().sendFileAction(
-            type: canView ? 'media_permissions_updated' : 'media_access_revoked',
+            type: (canView || canDownload || canShare)
+                ? 'media_permissions_updated'
+                : 'media_access_revoked',
             conversationId: '',
             messageId: widget.mediaId,
             fileKey: widget.mediaId,
@@ -655,7 +775,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primary),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: context.colors.primary,
+                  ),
                 )
               else
                 IconButton(
@@ -675,11 +798,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           CommonSpaces.h16,
 
           // Content
-          Flexible(
-            child: SingleChildScrollView(
-              child: _buildBody(context),
-            ),
-          ),
+          Flexible(child: SingleChildScrollView(child: _buildBody(context))),
         ],
       ),
     );
@@ -690,9 +809,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 48),
         child: Center(
-          child: CircularProgressIndicator(
-            color: context.colors.primary,
-          ),
+          child: CircularProgressIndicator(color: context.colors.primary),
         ),
       );
     }
@@ -702,7 +819,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 48),
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Colors.redAccent,
+              size: 48,
+            ),
             CommonSpaces.h12,
             Text(
               'Could not load permissions',
@@ -714,7 +835,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
             CommonSpaces.h6,
             Text(
               _errorMessage!,
-              style: context.bodySmall.copyWith(color: context.colors.textSecondary),
+              style: context.bodySmall.copyWith(
+                color: context.colors.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             CommonSpaces.h16,
@@ -736,23 +859,40 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     if (model == null) return const SizedBox.shrink();
 
     final isDark = context.colors.isDark;
-    final cardBg = isDark ? context.colors.cardBackground : const Color(0xFFF7F9F8);
-    final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE8ECE9);
+    final cardBg = isDark
+        ? context.colors.cardBackground
+        : const Color(0xFFF7F9F8);
+    final borderColor = isDark
+        ? const Color(0xFF2A3630)
+        : const Color(0xFFE8ECE9);
     final permissions = model.permissions;
 
+    final canManageRecipient =
+        model.isOwner || (widget.recipientId != null && widget.recipientId!.isNotEmpty);
     FilePermissions displayPerms = permissions;
     if (model.isOwner) {
+    if (canManageRecipient) {
       if (_ownerRecipientPerms != null) {
         displayPerms = _ownerRecipientPerms!;
       } else if (getIt.isRegistered<StorageService>()) {
         final storage = getIt<StorageService>();
-        final saved = storage.getSenderMediaPermissions(widget.mediaId) ??
-            (widget.messageId != null ? storage.getSenderMediaPermissions(widget.messageId!) : null);
+        final saved =
+            storage.getSenderMediaPermissions(widget.mediaId) ??
+            (widget.messageId != null
+        final saved = (widget.messageId != null
+                ? storage.getSenderMediaPermissions(widget.messageId!)
+                : null);
+                : null) ??
+            (model.isOwner ? storage.getSenderMediaPermissions(widget.mediaId) : null);
         if (saved != null) {
           final v = saved['allowView'] ?? true;
-          final d = (!v) ? false : (saved['allowDownload'] ?? false);
-          final s = (!v) ? false : (saved['allowShare'] ?? false);
-          displayPerms = FilePermissions(canView: v, canDownload: d, canShare: s);
+          final d = saved['allowDownload'] ?? false;
+          final s = saved['allowShare'] ?? false;
+          displayPerms = FilePermissions(
+            canView: v,
+            canDownload: d,
+            canShare: s,
+          );
         }
       }
     }
@@ -771,7 +911,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: model.isOwner
                       ? context.colors.primary.withValues(alpha: 0.12)
@@ -787,16 +930,22 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      model.isOwner ? Icons.verified_user_rounded : Icons.person_outline_rounded,
+                      model.isOwner
+                          ? Icons.verified_user_rounded
+                          : Icons.person_outline_rounded,
                       size: 14,
-                      color: model.isOwner ? context.colors.primary : Colors.blueAccent,
+                      color: model.isOwner
+                          ? context.colors.primary
+                          : Colors.blueAccent,
                     ),
                     CommonSpaces.w4,
                     Text(
                       model.isOwner ? 'Owner' : 'Recipient',
                       style: context.bodySmall.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: model.isOwner ? context.colors.primary : Colors.blueAccent,
+                        color: model.isOwner
+                            ? context.colors.primary
+                            : Colors.blueAccent,
                       ),
                     ),
                   ],
@@ -844,7 +993,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0, left: 2.0),
           child: Text(
-            model.isOwner ? 'RECIPIENT GRANTED PERMISSIONS' : 'YOUR EFFECTIVE PERMISSIONS',
+            model.isOwner
+                ? 'RECIPIENT GRANTED PERMISSIONS'
+                : 'YOUR EFFECTIVE PERMISSIONS',
+            canManageRecipient ? 'RECIPIENT GRANTED PERMISSIONS' : 'YOUR EFFECTIVE PERMISSIONS',
             style: context.bodySmall.copyWith(
               fontSize: 10,
               fontWeight: FontWeight.bold,
@@ -866,10 +1018,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 cardBg: cardBg,
                 borderColor: borderColor,
                 onTap: model.isOwner && !_isActionProcessing
+                onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
-                          currentPerms: displayPerms,
-                          view: !displayPerms.canView,
-                        )
+                        currentPerms: displayPerms,
+                        view: !displayPerms.canView,
+                      )
                     : null,
               ),
             ),
@@ -883,10 +1036,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 cardBg: cardBg,
                 borderColor: borderColor,
                 onTap: model.isOwner && !_isActionProcessing
+                onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
-                          currentPerms: displayPerms,
-                          download: !displayPerms.canDownload,
-                        )
+                        currentPerms: displayPerms,
+                        download: !displayPerms.canDownload,
+                      )
                     : null,
               ),
             ),
@@ -900,10 +1054,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 cardBg: cardBg,
                 borderColor: borderColor,
                 onTap: model.isOwner && !_isActionProcessing
+                onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
-                          currentPerms: displayPerms,
-                          share: !displayPerms.canShare,
-                        )
+                        currentPerms: displayPerms,
+                        share: !displayPerms.canShare,
+                      )
                     : null,
               ),
             ),
@@ -918,11 +1073,17 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
             decoration: BoxDecoration(
               color: Colors.redAccent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: Colors.redAccent.withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.gavel_rounded, color: Colors.redAccent, size: 22),
+                const Icon(
+                  Icons.gavel_rounded,
+                  color: Colors.redAccent,
+                  size: 22,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -930,11 +1091,18 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                     children: [
                       const Text(
                         'Owner Share Controls',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.redAccent),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.redAccent,
+                        ),
                       ),
                       Text(
                         'Turn off all sharing & revoke downstream access instantly',
-                        style: TextStyle(fontSize: 11, color: isDark ? Colors.white70 : Colors.black54),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
                       ),
                     ],
                   ),
@@ -943,11 +1111,19 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.redAccent,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                   onPressed: _isActionProcessing ? null : _revokeAllShares,
-                  child: const Text('Revoke All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: const Text(
+                    'Revoke All',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
@@ -956,7 +1132,13 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         ],
 
         // Full Shared List / Access Lineage Section
-        _buildSharedLineageSection(context, cardBg, borderColor, isDark, model.isOwner),
+        _buildSharedLineageSection(
+          context,
+          cardBg,
+          borderColor,
+          isDark,
+          model.isOwner,
+        ),
         CommonSpaces.h16,
 
         // Done Button
@@ -1024,11 +1206,7 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   color: badgeBg,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: activeColor,
-                ),
+                child: Icon(icon, size: 20, color: activeColor),
               ),
               CommonSpaces.h8,
               Text(
@@ -1107,7 +1285,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                       if (!isWaiting) ...[
                         const SizedBox(height: 2),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: brandGreen.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(4),
@@ -1134,7 +1315,10 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                       },
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: brandGreen.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -1147,7 +1331,9 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _allExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded,
+                              _allExpanded
+                                  ? Icons.unfold_less_rounded
+                                  : Icons.unfold_more_rounded,
                               size: 14,
                               color: brandGreen,
                             ),
@@ -1186,7 +1372,11 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Row(
                     children: [
-                      Icon(Icons.share_outlined, size: 20, color: context.colors.textSecondary),
+                      Icon(
+                        Icons.share_outlined,
+                        size: 20,
+                        color: context.colors.textSecondary,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -1204,21 +1394,23 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: grants
-                      .map((node) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: _AccessTreeNodeWidget(
-                              key: ValueKey(node.grantId),
-                              node: node,
-                              isDark: isDark,
-                              brandGreen: brandGreen,
-                              isOwner: isOwner,
-                              level: 0,
-                              initiallyExpanded: _allExpanded,
-                              expansionVersion: _expansionVersion,
-                              onEdit: _showEditPermissionsModal,
-                              onRevoke: _revokeSingleGrant,
-                            ),
-                          ))
+                      .map(
+                        (node) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: _AccessTreeNodeWidget(
+                            key: ValueKey(node.grantId),
+                            node: node,
+                            isDark: isDark,
+                            brandGreen: brandGreen,
+                            isOwner: isOwner,
+                            level: 0,
+                            initiallyExpanded: _allExpanded,
+                            expansionVersion: _expansionVersion,
+                            onEdit: _showEditPermissionsModal,
+                            onRevoke: _revokeSingleGrant,
+                          ),
+                        ),
+                      )
                       .toList(),
                 ),
             ],
@@ -1281,7 +1473,9 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
   Widget build(BuildContext context) {
     final isActive = widget.node.status.toLowerCase() == 'active';
     final perms = widget.node.effectivePermissions;
-    final itemBg = widget.isDark ? const Color(0xFF1E2830) : const Color(0xFFF0F3F2);
+    final itemBg = widget.isDark
+        ? const Color(0xFF1E2830)
+        : const Color(0xFFF0F3F2);
     final borderColor = widget.isDark ? Colors.white12 : Colors.black12;
     final hasChildren = widget.node.downstreamShares.isNotEmpty;
 
@@ -1294,10 +1488,7 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
           decoration: BoxDecoration(
             color: itemBg,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: borderColor,
-              width: 0.8,
-            ),
+            border: Border.all(color: borderColor, width: 0.8),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1308,7 +1499,10 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: widget.brandGreen.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -1316,10 +1510,18 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.subdirectory_arrow_right_rounded, size: 10, color: widget.brandGreen),
+                            Icon(
+                              Icons.subdirectory_arrow_right_rounded,
+                              size: 10,
+                              color: widget.brandGreen,
+                            ),
                             Text(
                               ' L${widget.level}',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: widget.brandGreen),
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: widget.brandGreen,
+                              ),
                             ),
                           ],
                         ),
@@ -1330,7 +1532,11 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                     backgroundColor: widget.brandGreen.withValues(alpha: 0.15),
                     child: Text(
                       widget.node.grantee.initials,
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: widget.brandGreen),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: widget.brandGreen,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1362,9 +1568,13 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: (isActive ? widget.brandGreen : Colors.redAccent).withValues(alpha: 0.12),
+                      color: (isActive ? widget.brandGreen : Colors.redAccent)
+                          .withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -1379,12 +1589,18 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                   Builder(
                     builder: (ctx) {
                       final myId = getIt<StorageService>().getUserId();
-                      final canManageThisNode = widget.isOwner || (myId != null && widget.node.granter.id == myId);
+                      final canManageThisNode =
+                          widget.isOwner ||
+                          (myId != null && widget.node.granter.id == myId);
                       if (!canManageThisNode) {
                         return const SizedBox.shrink();
                       }
                       return PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
+                        icon: Icon(
+                          Icons.more_vert,
+                          size: 16,
+                          color: context.colors.textSecondary,
+                        ),
                         padding: EdgeInsets.zero,
                         itemBuilder: (ctx) => [
                           const PopupMenuItem(
@@ -1393,7 +1609,10 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                               children: [
                                 Icon(Icons.tune_rounded, size: 16),
                                 SizedBox(width: 8),
-                                Text('Edit Permissions', style: TextStyle(fontSize: 13)),
+                                Text(
+                                  'Edit Permissions',
+                                  style: TextStyle(fontSize: 13),
+                                ),
                               ],
                             ),
                           ),
@@ -1402,9 +1621,19 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                               value: 'revoke',
                               child: Row(
                                 children: [
-                                  Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                                  Icon(
+                                    Icons.block_rounded,
+                                    color: Colors.redAccent,
+                                    size: 16,
+                                  ),
                                   SizedBox(width: 8),
-                                  Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                                  Text(
+                                    'Revoke Access',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1413,7 +1642,10 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                           if (val == 'edit') {
                             widget.onEdit?.call(widget.node);
                           } else if (val == 'revoke') {
-                            widget.onRevoke?.call(widget.node.grantId, widget.node.grantee.displayName);
+                            widget.onRevoke?.call(
+                              widget.node.grantId,
+                              widget.node.grantee.displayName,
+                            );
                           }
                         },
                       );
@@ -1426,17 +1658,36 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
               Builder(
                 builder: (ctx) {
                   final myId = getIt<StorageService>().getUserId();
-                  final canManageThisNode = widget.isOwner || (myId != null && widget.node.granter.id == myId);
+                  final canManageThisNode =
+                      widget.isOwner ||
+                      (myId != null && widget.node.granter.id == myId);
                   return InkWell(
-                    onTap: canManageThisNode ? () => widget.onEdit?.call(widget.node) : null,
+                    onTap: canManageThisNode
+                        ? () => widget.onEdit?.call(widget.node)
+                        : null,
                     borderRadius: BorderRadius.circular(6),
                     child: Wrap(
                       spacing: 6,
                       runSpacing: 4,
                       children: [
-                        _buildPermissionChip(context, 'View', perms.canView, widget.isDark),
-                        _buildPermissionChip(context, 'Download', perms.canDownload, widget.isDark),
-                        _buildPermissionChip(context, 'Share', perms.canShare, widget.isDark),
+                        _buildPermissionChip(
+                          context,
+                          'View',
+                          perms.canView,
+                          widget.isDark,
+                        ),
+                        _buildPermissionChip(
+                          context,
+                          'Download',
+                          perms.canDownload,
+                          widget.isDark,
+                        ),
+                        _buildPermissionChip(
+                          context,
+                          'Share',
+                          perms.canShare,
+                          widget.isDark,
+                        ),
                       ],
                     ),
                   );
@@ -1448,7 +1699,10 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                   onTap: () => setState(() => _isExpanded = !_isExpanded),
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: widget.brandGreen.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(6),
@@ -1460,7 +1714,9 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                              _isExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
                               size: 16,
                               color: widget.brandGreen,
                             ),
@@ -1510,21 +1766,23 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: widget.node.downstreamShares
-                    .map((child) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6.0),
-                          child: _AccessTreeNodeWidget(
-                            key: ValueKey(child.grantId),
-                            node: child,
-                            isDark: widget.isDark,
-                            brandGreen: widget.brandGreen,
-                            isOwner: widget.isOwner,
-                            level: widget.level + 1,
-                            initiallyExpanded: widget.initiallyExpanded,
-                            expansionVersion: widget.expansionVersion,
-                            onEdit: widget.onEdit,
-                            onRevoke: widget.onRevoke,
-                          ),
-                        ))
+                    .map(
+                      (child) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6.0),
+                        child: _AccessTreeNodeWidget(
+                          key: ValueKey(child.grantId),
+                          node: child,
+                          isDark: widget.isDark,
+                          brandGreen: widget.brandGreen,
+                          isOwner: widget.isOwner,
+                          level: widget.level + 1,
+                          initiallyExpanded: widget.initiallyExpanded,
+                          expansionVersion: widget.expansionVersion,
+                          onEdit: widget.onEdit,
+                          onRevoke: widget.onRevoke,
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -1534,7 +1792,12 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
     );
   }
 
-  Widget _buildPermissionChip(BuildContext context, String label, bool allowed, bool isDark) {
+  Widget _buildPermissionChip(
+    BuildContext context,
+    String label,
+    bool allowed,
+    bool isDark,
+  ) {
     final color = allowed ? context.colors.primary : context.colors.error;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

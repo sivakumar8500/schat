@@ -374,7 +374,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   bool get allowDownload {
-    if (!allowView) return false;
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
@@ -400,7 +399,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   bool get allowShare {
-    if (!allowView) return false;
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
@@ -1466,7 +1464,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     final textColor = context.colors.textPrimary;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (!allowView && !isMe) {
+    if (!allowView && !allowDownload && !allowShare && !isMe) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
         child: Row(
@@ -1736,7 +1734,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     // RECIPIENT PRESENTATION (Section 3.1)
     // Tapping the file's actions area opens a modal bottom sheet showing only allowed actions.
-    if (!allowView) {
+    if (!allowView && !allowDownload && !allowShare) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
         child: InkWell(
@@ -1779,14 +1777,18 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // View allowed
+              // View status
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.visibility_outlined,
+                  Icon(
+                    allowView
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
                     size: 12.5,
-                    color: accentGreen,
+                    color: allowView
+                        ? accentGreen
+                        : context.colors.textSecondary.withValues(alpha: 0.5),
                   ),
                   const SizedBox(width: 3),
                   Text(
@@ -1794,7 +1796,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                     style: context.bodySmall.copyWith(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w600,
-                      color: textColor,
+                      color: allowView
+                          ? textColor
+                          : context.colors.textSecondary.withValues(alpha: 0.5),
+                      decoration: allowView
+                          ? null
+                          : TextDecoration.lineThrough,
                     ),
                   ),
                 ],
@@ -3823,15 +3830,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     bool newDownload = download ?? allowDownload;
     bool newShare = share ?? allowShare;
 
-    // View, Download, and Share are independent permissions (Download & Share only require View = true)
-    if (share == true || download == true) {
-      newView = true;
-    } else if (view == false) {
-      newView = false;
-      newDownload = false;
-      newShare = false;
-    }
-
     String? resolvedMediaId =
         SecureAttachmentService.findMediaId(attachmentPath) ??
         SecureAttachmentService.findMediaId(messageId) ??
@@ -3966,7 +3964,9 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (attachmentPath != null && attachmentPath!.isNotEmpty) {
       getIt<ChatSocketRepository>().sendFileAction(
-        type: newView ? 'media_permissions_updated' : 'media_access_revoked',
+        type: (newView || newDownload || newShare)
+            ? 'media_permissions_updated'
+            : 'media_access_revoked',
         conversationId: conversationId,
         messageId: messageId,
         fileKey: attachmentPath!,

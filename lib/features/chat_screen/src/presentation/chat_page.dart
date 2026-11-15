@@ -230,8 +230,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                   (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null)));
       if (saved != null) {
         final v = saved['allowView'] ?? msg.allowView;
-        final d = (!v) ? false : (saved['allowDownload'] ?? msg.allowDownload);
-        final s = (!v) ? false : (saved['allowShare'] ?? msg.allowShare);
+        final d = saved['allowDownload'] ?? msg.allowDownload;
+        final s = saved['allowShare'] ?? msg.allowShare;
         return msg.copyWith(allowView: v, allowDownload: d, allowShare: s);
       }
     } catch (_) {}
@@ -3404,10 +3404,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           ? (val) {
                                               setModalState(() {
                                                 canViewToggle = val;
-                                                if (!val) {
-                                                  canDownloadToggle = false;
-                                                  canShareToggle = false;
-                                                }
                                               });
                                             }
                                           : null,
@@ -3432,9 +3428,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           ? (val) {
                                               setModalState(() {
                                                 canDownloadToggle = val;
-                                                if (val) {
-                                                  canViewToggle = true;
-                                                }
                                               });
                                             }
                                           : null,
@@ -3459,9 +3452,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           ? (val) {
                                               setModalState(() {
                                                 canShareToggle = val;
-                                                if (val) {
-                                                  canViewToggle = true;
-                                                }
                                               });
                                             }
                                           : null,

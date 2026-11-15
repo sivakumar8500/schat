@@ -333,8 +333,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final isFwdMsg = m.isForwarded || (m.forwardedFromMessageId != null && m.forwardedFromMessageId!.isNotEmpty);
     if (isFwdMsg) {
       final view = m.allowView;
-      final download = (!view) ? false : m.allowDownload;
-      final share = (!view) ? false : m.allowShare;
+      final download = m.allowDownload;
+      final share = m.allowShare;
       _storageService.saveSenderMediaPermissions(
         m.id,
         allowView: view,
@@ -356,8 +356,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null);
     if (saved != null) {
       final view = saved['allowView'] ?? m.allowView;
-      final download = (!view) ? false : (saved['allowDownload'] ?? m.allowDownload);
-      final share = (!view) ? false : (saved['allowShare'] ?? m.allowShare);
+      final download = saved['allowDownload'] ?? m.allowDownload;
+      final share = saved['allowShare'] ?? m.allowShare;
       if (download != m.allowDownload || share != m.allowShare || view != m.allowView) {
         _storageService.saveSenderMediaPermissions(
           m.id,
@@ -459,9 +459,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   String? _resolveBestMediaUrl({
     required MessageModel serverMsg,
     MessageModel? cachedMsg,
-    required bool allowView,
+    required bool hasAnyAccess,
   }) {
-    if (!allowView) return null;
+    if (!hasAnyAccess) return null;
 
     // 1. Check if serverMsg has a valid mediaUrl
     if (serverMsg.mediaUrl != null && serverMsg.mediaUrl!.isNotEmpty) {
@@ -742,8 +742,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               if (effectiveView != null || allowDownload != null || allowShare != null) {
                 final existingSaved = _storageService.getSenderMediaPermissions(msgId);
                 final v = effectiveView ?? existingSaved?['allowView'] ?? true;
-                final d = (!v) ? false : (allowDownload ?? existingSaved?['allowDownload'] ?? false);
-                final s = (!v) ? false : (allowShare ?? existingSaved?['allowShare'] ?? false);
+                final d = allowDownload ?? existingSaved?['allowDownload'] ?? false;
+                final s = allowShare ?? existingSaved?['allowShare'] ?? false;
                 _storageService.saveSenderMediaPermissions(
                   msgId,
                   allowView: v,
@@ -762,12 +762,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                   if ((map['id'] ?? '').toString() == msgId) {
                     changed = true;
                     final nextView = effectiveView ?? (map['allowView'] as bool? ?? true);
-                    final nextDownload = (!nextView)
-                        ? false
-                        : (allowDownload ?? (map['allowDownload'] as bool? ?? false));
-                    final nextShare = (!nextView)
-                        ? false
-                        : (allowShare ?? (map['allowShare'] as bool? ?? false));
+                    final nextDownload = allowDownload ?? (map['allowDownload'] as bool? ?? false);
+                    final nextShare = allowShare ?? (map['allowShare'] as bool? ?? false);
                     map['allowView'] = nextView;
                     map['allowDownload'] = nextDownload;
                     map['allowShare'] = nextShare;
@@ -1349,8 +1345,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               final isFwdMsg = m.isForwarded || (m.forwardedFromMessageId != null && m.forwardedFromMessageId!.isNotEmpty);
               if (isFwdMsg) {
                 allowView = m.allowView;
-                allowDownload = (!allowView) ? false : m.allowDownload;
-                allowShare = (!allowView) ? false : m.allowShare;
+                allowDownload = m.allowDownload;
+                allowShare = m.allowShare;
                 _storageService.saveSenderMediaPermissions(
                   m.id,
                   allowView: allowView,
@@ -1364,12 +1360,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                     (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null);
                 if (saved != null) {
                   allowView = saved['allowView'] ?? m.allowView;
-                  allowDownload = (!allowView) ? false : (saved['allowDownload'] ?? m.allowDownload);
-                  allowShare = (!allowView) ? false : (saved['allowShare'] ?? m.allowShare);
+                  allowDownload = saved['allowDownload'] ?? m.allowDownload;
+                  allowShare = saved['allowShare'] ?? m.allowShare;
                 } else {
                   allowView = m.allowView && cached.allowView;
-                  allowDownload = (!allowView) ? false : (cached.allowDownload && m.allowDownload);
-                  allowShare = (!allowView) ? false : (cached.allowShare && m.allowShare);
+                  allowDownload = cached.allowDownload && m.allowDownload;
+                  allowShare = cached.allowShare && m.allowShare;
                 }
               }
             } else {
@@ -1382,14 +1378,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               }
             }
 
+            final hasAnyAccess = isMine || allowView || allowDownload || allowShare;
             final effectiveMediaUrl = _resolveBestMediaUrl(
               serverMsg: m,
               cachedMsg: cached,
-              allowView: allowView,
+              hasAnyAccess: hasAnyAccess,
             );
-            final effectiveContent = (allowView && m.content != '[View Restricted]')
+            final effectiveContent = (hasAnyAccess && m.content != '[View Restricted]')
                 ? m.content
-                : (m.content == '[View Restricted]' ? (allowView ? '' : '[View Restricted]') : m.content);
+                : (m.content == '[View Restricted]' ? (hasAnyAccess ? '' : '[View Restricted]') : m.content);
 
             m = m.copyWith(
               userView: isMine ? 'send' : m.userView,
@@ -1714,8 +1711,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               final isFwdMsg = m.isForwarded || (m.forwardedFromMessageId != null && m.forwardedFromMessageId!.isNotEmpty);
               if (isFwdMsg) {
                 allowView = m.allowView;
-                allowDownload = (!allowView) ? false : m.allowDownload;
-                allowShare = (!allowView) ? false : m.allowShare;
+                allowDownload = m.allowDownload;
+                allowShare = m.allowShare;
                 _storageService.saveSenderMediaPermissions(
                   m.id,
                   allowView: allowView,
@@ -1729,12 +1726,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                     (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null);
                 if (saved != null) {
                   allowView = saved['allowView'] ?? m.allowView;
-                  allowDownload = (!allowView) ? false : (saved['allowDownload'] ?? m.allowDownload);
-                  allowShare = (!allowView) ? false : (saved['allowShare'] ?? m.allowShare);
+                  allowDownload = saved['allowDownload'] ?? m.allowDownload;
+                  allowShare = saved['allowShare'] ?? m.allowShare;
                 } else {
                   allowView = m.allowView && existing.allowView;
-                  allowDownload = (!allowView) ? false : (existing.allowDownload && m.allowDownload);
-                  allowShare = (!allowView) ? false : (existing.allowShare && m.allowShare);
+                  allowDownload = existing.allowDownload && m.allowDownload;
+                  allowShare = existing.allowShare && m.allowShare;
                 }
               }
             }
@@ -1884,8 +1881,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             final isFwdMsg = m.isForwarded || (m.forwardedFromMessageId != null && m.forwardedFromMessageId!.isNotEmpty);
             if (isFwdMsg) {
               allowView = m.allowView;
-              allowDownload = (!allowView) ? false : m.allowDownload;
-              allowShare = (!allowView) ? false : m.allowShare;
+              allowDownload = m.allowDownload;
+              allowShare = m.allowShare;
               _storageService.saveSenderMediaPermissions(
                 m.id,
                 allowView: allowView,
@@ -1899,12 +1896,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                   (cleanUrl != null ? _storageService.getSenderMediaPermissions(cleanUrl) : null);
               if (saved != null) {
                 allowView = saved['allowView'] ?? m.allowView;
-                allowDownload = (!allowView) ? false : (saved['allowDownload'] ?? m.allowDownload);
-                allowShare = (!allowView) ? false : (saved['allowShare'] ?? m.allowShare);
+                allowDownload = saved['allowDownload'] ?? m.allowDownload;
+                allowShare = saved['allowShare'] ?? m.allowShare;
               } else if (cached != null) {
                 allowView = m.allowView && cached.allowView;
-                allowDownload = (!allowView) ? false : (cached.allowDownload && m.allowDownload);
-                allowShare = (!allowView) ? false : (cached.allowShare && m.allowShare);
+                allowDownload = cached.allowDownload && m.allowDownload;
+                allowShare = cached.allowShare && m.allowShare;
               }
             }
           } else if (cached != null) {
@@ -1918,14 +1915,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (cached != null) {
             final keepRead = m.isRead || cached.isRead || m.status == 'read' || cached.status == 'read';
             final keepDelivered = keepRead || m.isDelivered || cached.isDelivered || m.status == 'delivered' || cached.status == 'delivered';
+            final hasAnyAccess = isMine || allowView || allowDownload || allowShare;
             final effectiveMediaUrl = _resolveBestMediaUrl(
               serverMsg: m,
               cachedMsg: cached,
-              allowView: allowView,
+              hasAnyAccess: hasAnyAccess,
             );
-            final effectiveContent = (allowView && m.content != '[View Restricted]')
+            final effectiveContent = (hasAnyAccess && m.content != '[View Restricted]')
                 ? m.content
-                : (m.content == '[View Restricted]' ? (allowView ? '' : '[View Restricted]') : m.content);
+                : (m.content == '[View Restricted]' ? (hasAnyAccess ? '' : '[View Restricted]') : m.content);
 
             messageMap[m.id] = m.copyWith(
               userView: isMine ? 'send' : m.userView,
@@ -2136,8 +2134,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
                       (oldTemp?.mediaUrl != null ? _storageService.getSenderMediaPermissions(oldTemp!.mediaUrl!) : null)));
 
           final allowView = savedPerms?['allowView'] ?? (oldTemp != null ? oldTemp.allowView : newMessage.allowView);
-          final allowDownload = (!allowView) ? false : (savedPerms?['allowDownload'] ?? (oldTemp != null ? oldTemp.allowDownload : newMessage.allowDownload));
-          final allowShare = (!allowView) ? false : (savedPerms?['allowShare'] ?? (oldTemp != null ? oldTemp.allowShare : newMessage.allowShare));
+          final allowDownload = savedPerms?['allowDownload'] ?? (oldTemp != null ? oldTemp.allowDownload : newMessage.allowDownload);
+          final allowShare = savedPerms?['allowShare'] ?? (oldTemp != null ? oldTemp.allowShare : newMessage.allowShare);
 
           if (savedPerms != null &&
               !newMessage.id.startsWith('temp_') &&
@@ -2943,8 +2941,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final savedPerms = _storageService.getSenderMediaPermissions(event.messageId) ??
           (matched != null ? _storageService.getSenderMediaPermissions(matched.id) : null);
       final effView = savedPerms?['allowView'] ?? matched?.allowView ?? true;
-      final effDown = (!effView) ? false : (savedPerms?['allowDownload'] ?? matched?.allowDownload ?? false);
-      final effShare = (!effView) ? false : (savedPerms?['allowShare'] ?? matched?.allowShare ?? false);
+      final effDown = savedPerms?['allowDownload'] ?? matched?.allowDownload ?? false;
+      final effShare = savedPerms?['allowShare'] ?? matched?.allowShare ?? false;
 
       if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
         _storageService.saveSenderMediaPermissions(
@@ -3107,12 +3105,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           // For a message I sent to someone else, a media-level permission event reflects MY upstream grant,
           // NOT what I granted to my recipient. Only cap (intersect) permissions; never upgrade false -> true!
           final updatedView = (isMine && isBroadcastByMediaId) ? (msg.allowView && rawView) : rawView;
-          final effectiveDownload = (!updatedView)
-              ? false
-              : ((isMine && isBroadcastByMediaId) ? (msg.allowDownload && rawDownload) : rawDownload);
-          final effectiveShare = (!updatedView)
-              ? false
-              : ((isMine && isBroadcastByMediaId) ? (msg.allowShare && rawShare) : rawShare);
+          final effectiveDownload = (isMine && isBroadcastByMediaId) ? (msg.allowDownload && rawDownload) : rawDownload;
+          final effectiveShare = (isMine && isBroadcastByMediaId) ? (msg.allowShare && rawShare) : rawShare;
 
           try {
             _storageService.saveSenderMediaPermissions(
@@ -3123,9 +3117,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             );
           } catch (_) {}
 
-          final shouldClearRestricted = updatedView && msg.content == '[View Restricted]';
+          final hasAnyAccess = updatedView || effectiveDownload || effectiveShare;
+          final shouldClearRestricted = hasAnyAccess && msg.content == '[View Restricted]';
           String? newMediaUrl = msg.mediaUrl;
-          if (updatedView && (newMediaUrl == null || newMediaUrl.isEmpty)) {
+          if (hasAnyAccess && (newMediaUrl == null || newMediaUrl.isEmpty)) {
             if (event.fileKey != null && event.fileKey!.isNotEmpty) {
               if (event.fileKey!.startsWith('http')) {
                 newMediaUrl = event.fileKey;
@@ -3187,12 +3182,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
               final rawShare = event.allowShare ?? (event.isRevoked ? false : oldShare);
 
               final updatedView = (isMine && isBroadcastByMediaId) ? (oldView && rawView) : rawView;
-              final effectiveShare = (!updatedView)
-                  ? false
-                  : ((isMine && isBroadcastByMediaId) ? (oldShare && rawShare) : rawShare);
-              final effectiveDownload = (!updatedView)
-                  ? false
-                  : ((isMine && isBroadcastByMediaId) ? (oldDownload && rawDownload) : rawDownload);
+              final effectiveShare = (isMine && isBroadcastByMediaId) ? (oldShare && rawShare) : rawShare;
+              final effectiveDownload = (isMine && isBroadcastByMediaId) ? (oldDownload && rawDownload) : rawDownload;
 
               if (oldShare != effectiveShare || oldDownload != effectiveDownload || oldView != updatedView) {
                 changed = true;

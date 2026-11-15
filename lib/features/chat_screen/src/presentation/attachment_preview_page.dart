@@ -127,7 +127,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   bool _hasEdits = false;
   
   // Security & permissions state
-  final bool _allowView = true;
+  late bool _allowView;
   late bool _allowDownload;
   late bool _allowShare;
   bool _isViewOnce = false;
@@ -140,6 +140,7 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   @override
   void initState() {
     super.initState();
+    _allowView = widget.initialAllowView;
     _allowDownload = widget.initialAllowDownload;
     _allowShare = widget.initialAllowShare;
     _isViewOnce = widget.initialIsViewOnce;
@@ -580,9 +581,11 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     setState(() {
       _isViewOnce = !_isViewOnce;
       if (_isViewOnce) {
+        _allowView = true;
         _allowDownload = false;
         _allowShare = false;
       } else {
+        _allowView = widget.isGroup ? true : widget.initialAllowView;
         _allowDownload = widget.isGroup ? true : widget.initialAllowDownload;
         _allowShare = widget.isGroup ? true : widget.initialAllowShare;
       }
@@ -1532,11 +1535,19 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildPermissionToggle(
-                      icon: CommonIcons.visibility,
+                      icon: (_isViewOnce ? true : _allowView)
+                          ? CommonIcons.visibility
+                          : CommonIcons.visibilityOff,
                       label: 'View',
-                      isActive: _allowView,
+                      isActive: _isViewOnce ? true : _allowView,
                       onTap: () {
-                        context.showInfoNotification('View is enabled by default. You can remove view access after sending.');
+                        if (_isViewOnce) {
+                          context.showInfoNotification('View cannot be disabled for View Once media');
+                          return;
+                        }
+                        setState(() {
+                          _allowView = !_allowView;
+                        });
                       },
                     ),
                     CommonSpaces.w8,

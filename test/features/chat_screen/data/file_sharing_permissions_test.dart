@@ -155,5 +155,57 @@ void main() {
       final bool showShareDetails = isMe && !isGroup && isMedia && message.allowView && !message.isForwarded;
       expect(showShareDetails, isFalse, reason: 'Other share person must not see show share details button');
     });
+
+    test('MessageModel preserves Download-only independently when View is false', () {
+      final json = {
+        'id': 'msg_download_only',
+        'conversation_id': 'conv_1',
+        'sender_id': 'user_a',
+        'type': 'image',
+        'isDeleted': false,
+        'attachment': {
+          'media_id': 'file_dl_only',
+          'url': 'https://s3.example.com/file_dl_only.jpg',
+          'security': {
+            'can_view': false,
+            'can_download': true,
+            'can_share': false,
+          },
+        },
+      };
+
+      final message = MessageModel.fromJson(json);
+
+      expect(message.allowView, isFalse);
+      expect(message.allowDownload, isTrue);
+      expect(message.allowShare, isFalse);
+      expect(message.mediaUrl, equals('https://s3.example.com/file_dl_only.jpg'));
+    });
+
+    test('MessageModel preserves Share-only independently when View is false', () {
+      final json = {
+        'id': 'msg_share_only',
+        'conversation_id': 'conv_1',
+        'sender_id': 'user_a',
+        'type': 'image',
+        'isDeleted': false,
+        'attachment': {
+          'media_id': 'file_sh_only',
+          'url': 'https://s3.example.com/file_sh_only.jpg',
+          'security': {
+            'can_view': false,
+            'can_download': false,
+            'can_share': true,
+          },
+        },
+      };
+
+      final message = MessageModel.fromJson(json);
+
+      expect(message.allowView, isFalse);
+      expect(message.allowDownload, isFalse);
+      expect(message.allowShare, isTrue);
+      expect(message.mediaUrl, equals('https://s3.example.com/file_sh_only.jpg'));
+    });
   });
 }

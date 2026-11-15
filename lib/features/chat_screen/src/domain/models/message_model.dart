@@ -458,11 +458,6 @@ class MessageModel {
       allowShare = false;
     }
 
-    if (!allowView) {
-      allowDownload = false;
-      allowShare = false;
-    }
-
     if (getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
@@ -493,8 +488,8 @@ class MessageModel {
                         (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null)));
             if (saved != null) {
               if (saved['allowView'] != null) allowView = saved['allowView'] == true;
-              if (saved['allowDownload'] != null) allowDownload = (!allowView) ? false : (saved['allowDownload'] == true);
-              if (saved['allowShare'] != null) allowShare = (!allowView) ? false : (saved['allowShare'] == true);
+              if (saved['allowDownload'] != null) allowDownload = saved['allowDownload'] == true;
+              if (saved['allowShare'] != null) allowShare = saved['allowShare'] == true;
             }
           }
         } else if (msgId != null && msgId.isNotEmpty) {
