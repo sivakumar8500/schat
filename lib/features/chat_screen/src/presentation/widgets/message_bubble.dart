@@ -188,7 +188,10 @@ class MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<MessageBubble> {
   String get messageId => widget.messageId;
   String get conversationId => widget.conversationId;
-  bool get isForwarded => widget.isForwarded || (widget.forwardedFromMessageId != null && widget.forwardedFromMessageId!.isNotEmpty);
+  bool get isForwarded =>
+      widget.isForwarded ||
+      (widget.forwardedFromMessageId != null &&
+          widget.forwardedFromMessageId!.isNotEmpty);
   String get message => widget.message;
   String? get senderProfilePictureUrl => widget.senderProfilePictureUrl;
   String get time => widget.time;
@@ -200,9 +203,13 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (widget.isReadOnly) return false;
     if (!isMe) return false;
     if (isForwarded) return false;
-    if (widget.forwardedFromMessageId != null && widget.forwardedFromMessageId!.isNotEmpty) return false;
+    if (widget.forwardedFromMessageId != null &&
+        widget.forwardedFromMessageId!.isNotEmpty)
+      return false;
     if (widget.mediaOwnerId != null && widget.mediaOwnerId!.isNotEmpty) {
-      final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+      final myId = getIt.isRegistered<StorageService>()
+          ? getIt<StorageService>().getUserId()
+          : null;
       if (myId != null && widget.mediaOwnerId != myId) {
         return false;
       }
@@ -214,37 +221,46 @@ class _MessageBubbleState extends State<MessageBubble> {
       if (s3Match != null) {
         final urlUploaderId = s3Match.group(1)!;
         final urlOrigConvId = s3Match.group(2)!;
-        final myId = getIt.isRegistered<StorageService>() ? getIt<StorageService>().getUserId() : null;
+        final myId = getIt.isRegistered<StorageService>()
+            ? getIt<StorageService>().getUserId()
+            : null;
         if (myId != null && myId.isNotEmpty && urlUploaderId != myId) {
           return false;
         }
         if (conversationId.isNotEmpty && urlOrigConvId != conversationId) {
           return false;
         }
-        if (myId != null && myId.isNotEmpty && urlUploaderId == myId && urlOrigConvId == conversationId) {
+        if (myId != null && myId.isNotEmpty && urlUploaderId == myId) {
           return true;
         }
       }
     }
     if (getIt.isRegistered<StorageService>()) {
       final storage = getIt<StorageService>();
-      if (storage.isMediaNotOwnedByMe(messageId)) return false;
-      if (attachmentPath != null && attachmentPath!.isNotEmpty && storage.isMediaNotOwnedByMe(attachmentPath!)) {
-        return false;
+      if (storage.isMediaOwnedByMe(messageId)) return true;
+      if (attachmentPath != null &&
+          attachmentPath!.isNotEmpty &&
+          storage.isMediaOwnedByMe(attachmentPath!)) {
+        return true;
       }
-      if (attachmentName != null && attachmentName!.isNotEmpty && storage.isMediaNotOwnedByMe(attachmentName!)) {
+      if (storage.isMediaNotOwnedByMe(messageId)) return false;
+      if (attachmentPath != null &&
+          attachmentPath!.isNotEmpty &&
+          storage.isMediaNotOwnedByMe(attachmentPath!)) {
         return false;
       }
       final keyToCheck = attachmentPath ?? attachmentName;
       if (keyToCheck != null && keyToCheck.isNotEmpty) {
-        // If this device never uploaded this media and never saved permissions for it, it's not the initial owner!
-        if (!storage.isMediaOwnedByMe(keyToCheck) && !storage.isMediaOwnedByMe(messageId) && storage.getSenderMediaPermissions(messageId) == null) {
+        if (!storage.isMediaOwnedByMe(keyToCheck) &&
+            !storage.isMediaOwnedByMe(messageId) &&
+            storage.getSenderMediaPermissions(messageId) == null) {
           return false;
         }
       }
     }
     return true;
   }
+
   bool get isRead => widget.isRead;
   bool get isDelivered => widget.isDelivered;
   bool get isDeleted => widget.isDeleted;
@@ -279,7 +295,10 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
 
     final cleanQuery = query.trim();
-    final matches = RegExp(RegExp.escape(cleanQuery), caseSensitive: false).allMatches(text);
+    final matches = RegExp(
+      RegExp.escape(cleanQuery),
+      caseSensitive: false,
+    ).allMatches(text);
     if (matches.isEmpty) {
       return [TextSpan(text: text, style: baseStyle)];
     }
@@ -288,7 +307,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     final defaultBg = isDark
         ? const Color(0xFFFFD54F).withValues(alpha: 0.45)
         : const Color(0xFFFFEB3B).withValues(alpha: 0.65);
-    final defaultText = isDark ? const Color(0xFFFFE082) : const Color(0xFF3E2723);
+    final defaultText = isDark
+        ? const Color(0xFFFFE082)
+        : const Color(0xFF3E2723);
 
     final highlightStyle = baseStyle.copyWith(
       backgroundColor: highlightBgColor ?? defaultBg,
@@ -301,39 +322,49 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     for (final match in matches) {
       if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: baseStyle,
-        ));
+        spans.add(
+          TextSpan(
+            text: text.substring(lastEnd, match.start),
+            style: baseStyle,
+          ),
+        );
       }
-      spans.add(TextSpan(
-        text: text.substring(match.start, match.end),
-        style: highlightStyle,
-      ));
+      spans.add(
+        TextSpan(
+          text: text.substring(match.start, match.end),
+          style: highlightStyle,
+        ),
+      );
       lastEnd = match.end;
     }
 
     if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: baseStyle,
-      ));
+      spans.add(TextSpan(text: text.substring(lastEnd), style: baseStyle));
     }
 
     return spans;
   }
+
+  bool get canManageRecipientPermissions =>
+      !widget.isReadOnly && isMe && !isGroup;
+
   bool get allowView {
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
-        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
-        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
-        final saved = storage.getSenderMediaPermissions(messageId) ??
-            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
-            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
-            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
-            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
-            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        final cleanPath = attachmentPath != null
+            ? attachmentPath!.split('?').first
+            : null;
+        final saved =
+            storage.getSenderMediaPermissions(messageId) ??
+            (isForwarded
+                ? null
+                : ((attachmentPath != null
+                        ? storage.getSenderMediaPermissions(attachmentPath!)
+                        : null) ??
+                    (cleanPath != null
+                        ? storage.getSenderMediaPermissions(cleanPath)
+                        : null)));
         if (saved != null && saved['allowView'] != null) {
           return saved['allowView']!;
         }
@@ -347,14 +378,19 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
-        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
-        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
-        final saved = storage.getSenderMediaPermissions(messageId) ??
-            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
-            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
-            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
-            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
-            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        final cleanPath = attachmentPath != null
+            ? attachmentPath!.split('?').first
+            : null;
+        final saved =
+            storage.getSenderMediaPermissions(messageId) ??
+            (isForwarded
+                ? null
+                : ((attachmentPath != null
+                        ? storage.getSenderMediaPermissions(attachmentPath!)
+                        : null) ??
+                    (cleanPath != null
+                        ? storage.getSenderMediaPermissions(cleanPath)
+                        : null)));
         if (saved != null && saved['allowDownload'] != null) {
           return saved['allowDownload']!;
         }
@@ -368,14 +404,19 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();
-        final cleanPath = attachmentPath != null ? attachmentPath!.split('?').first : null;
-        final fileBase = cleanPath != null ? cleanPath.split('/').last : null;
-        final saved = storage.getSenderMediaPermissions(messageId) ??
-            (widget.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(widget.forwardedFromMessageId!) : null) ??
-            (attachmentPath != null ? storage.getSenderMediaPermissions(attachmentPath!) : null) ??
-            (cleanPath != null ? storage.getSenderMediaPermissions(cleanPath) : null) ??
-            (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
-            (attachmentName != null ? storage.getSenderMediaPermissions(attachmentName!) : null);
+        final cleanPath = attachmentPath != null
+            ? attachmentPath!.split('?').first
+            : null;
+        final saved =
+            storage.getSenderMediaPermissions(messageId) ??
+            (isForwarded
+                ? null
+                : ((attachmentPath != null
+                        ? storage.getSenderMediaPermissions(attachmentPath!)
+                        : null) ??
+                    (cleanPath != null
+                        ? storage.getSenderMediaPermissions(cleanPath)
+                        : null)));
         if (saved != null && saved['allowShare'] != null) {
           return saved['allowShare']!;
         }
@@ -383,6 +424,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     return widget.allowShare;
   }
+
   bool get isFileViewed => widget.isFileViewed;
   bool get isFileDownloaded => widget.isFileDownloaded;
   bool get isFileShared => widget.isFileShared;
@@ -399,6 +441,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     return false;
   }
+
   VoidCallback? get onSharePressed => widget.onSharePressed;
   int? get fileSize => widget.fileSize;
   CallMeta? get callMeta => widget.callMeta;
@@ -448,13 +491,15 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildStatusQuoteBox(BuildContext context) {
     final quoteText = _statusQuoteText;
-    final isImage = quoteText.startsWith('📷') ||
+    final isImage =
+        quoteText.startsWith('📷') ||
         quoteText.toLowerCase().contains('media') ||
         quoteText.toLowerCase().contains('photo');
 
     String statusTitle = 'Status';
-    String statusPreview =
-        quoteText.replaceFirst(RegExp(r'^(📷|📝)?\s*Status:\s*'), '').trim();
+    String statusPreview = quoteText
+        .replaceFirst(RegExp(r'^(📷|📝)?\s*Status:\s*'), '')
+        .trim();
     if (statusPreview.isEmpty) statusPreview = 'Status update';
 
     return GestureDetector(
@@ -487,9 +532,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                   Row(
                     children: [
                       Icon(
-                        isImage ? Icons.camera_alt_rounded : Icons.menu_book_rounded,
+                        isImage
+                            ? Icons.camera_alt_rounded
+                            : Icons.menu_book_rounded,
                         size: 13,
-                        color: isMe ? context.colors.primary : const Color(0xFF00A884),
+                        color: isMe
+                            ? context.colors.primary
+                            : const Color(0xFF00A884),
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -497,7 +546,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                         style: context.bodyMedium.copyWith(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
-                          color: isMe ? context.colors.primary : const Color(0xFF00A884),
+                          color: isMe
+                              ? context.colors.primary
+                              : const Color(0xFF00A884),
                         ),
                       ),
                     ],
@@ -519,7 +570,8 @@ class _MessageBubbleState extends State<MessageBubble> {
             Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: (isMe ? context.colors.primary : const Color(0xFF00A884)).withValues(alpha: 0.12),
+                color: (isMe ? context.colors.primary : const Color(0xFF00A884))
+                    .withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -549,21 +601,30 @@ class _MessageBubbleState extends State<MessageBubble> {
         ...results[1] as List<StatusContactModel>,
         ...results[2] as List<StatusContactModel>,
       ];
-      final List<StatusItemModel> myStatuses = results[3] as List<StatusItemModel>;
+      final List<StatusItemModel> myStatuses =
+          results[3] as List<StatusItemModel>;
 
       final targetId = widget.recipientId;
 
       // 1. Search for recipient's status in allContacts
       int contactIndex = -1;
       if (targetId != null && targetId.isNotEmpty) {
-        contactIndex = allContacts.indexWhere((c) => c.contactId.toLowerCase() == targetId.toLowerCase());
+        contactIndex = allContacts.indexWhere(
+          (c) => c.contactId.toLowerCase() == targetId.toLowerCase(),
+        );
       }
 
       // If not found by recipientId, search by senderName
-      if (contactIndex == -1 && widget.senderName != null && widget.senderName!.isNotEmpty) {
-        contactIndex = allContacts.indexWhere((c) =>
-            c.name.toLowerCase() == widget.senderName!.toLowerCase() ||
-            (c.username != null && c.username!.toLowerCase() == widget.senderName!.toLowerCase()));
+      if (contactIndex == -1 &&
+          widget.senderName != null &&
+          widget.senderName!.isNotEmpty) {
+        contactIndex = allContacts.indexWhere(
+          (c) =>
+              c.name.toLowerCase() == widget.senderName!.toLowerCase() ||
+              (c.username != null &&
+                  c.username!.toLowerCase() ==
+                      widget.senderName!.toLowerCase()),
+        );
       }
 
       if (contactIndex != -1) {
@@ -604,15 +665,15 @@ class _MessageBubbleState extends State<MessageBubble> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => StatusViewPage(
-                contacts: allContacts,
-                initialIndex: 0,
-              ),
+              builder: (_) =>
+                  StatusViewPage(contacts: allContacts, initialIndex: 0),
             ),
           );
         }
       } else if (context.mounted) {
-        context.showInfoNotification('Status has expired or is no longer available');
+        context.showInfoNotification(
+          'Status has expired or is no longer available',
+        );
       }
     } catch (e) {
       if (context.mounted) {
@@ -625,7 +686,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool _isDownloading = false;
   double? _downloadProgress;
 
-  static const String _kGoogleMapsApiKey = 'AIzaSyDQ5sYBkse3w-n-QyrlvdTOCIQM86nQVKI';
+  static const String _kGoogleMapsApiKey =
+      'AIzaSyDQ5sYBkse3w-n-QyrlvdTOCIQM86nQVKI';
   static final Map<String, String> _locationAddressCache = {};
 
   Future<String?> _resolveLocationAddress(double lat, double lng) async {
@@ -678,9 +740,21 @@ class _MessageBubbleState extends State<MessageBubble> {
   bool get _isMediaMessage {
     if (isDeleted) return false;
     if (message == '[View Restricted]') return true;
-    if (type == 'image' || type == 'video' || type == 'file' || type == 'audio' || type == 'voice' || type == 'voice_note' || type == 'document' || type == 'call') return true;
-    if ((attachmentPath != null && attachmentPath!.isNotEmpty) || attachmentBytes != null) {
-      if (type != 'call' && type != 'location' && type != 'live_location' && type != 'contact') {
+    if (type == 'image' ||
+        type == 'video' ||
+        type == 'file' ||
+        type == 'audio' ||
+        type == 'voice' ||
+        type == 'voice_note' ||
+        type == 'document' ||
+        type == 'call')
+      return true;
+    if ((attachmentPath != null && attachmentPath!.isNotEmpty) ||
+        attachmentBytes != null) {
+      if (type != 'call' &&
+          type != 'location' &&
+          type != 'live_location' &&
+          type != 'contact') {
         return true;
       }
     }
@@ -712,7 +786,8 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isSystemMessage = type == 'system' ||
+    final bool isSystemMessage =
+        type == 'system' ||
         type == 'group_event' ||
         type == 'notification' ||
         _isGroupEvent(message);
@@ -730,7 +805,10 @@ class _MessageBubbleState extends State<MessageBubble> {
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 4.5,
+              ),
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.72,
               ),
@@ -780,11 +858,15 @@ class _MessageBubbleState extends State<MessageBubble> {
       duration: const Duration(milliseconds: 300),
       color: isSelected
           ? context.colors.primary.withValues(alpha: 0.15)
-          : (isHighlighted ? context.colors.primary.withValues(alpha: 0.25) : context.colors.transparent),
+          : (isHighlighted
+                ? context.colors.primary.withValues(alpha: 0.25)
+                : context.colors.transparent),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
         child: Row(
-          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment: isMe
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (isFailed && isMe) ...[
@@ -793,7 +875,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(CommonIcons.errorOutline, color: context.colors.error, size: 16),
+                    Icon(
+                      CommonIcons.errorOutline,
+                      color: context.colors.error,
+                      size: 16,
+                    ),
                     CommonSpaces.w4,
                     Text(
                       'Resend',
@@ -810,80 +896,118 @@ class _MessageBubbleState extends State<MessageBubble> {
             if (!isMe) ...[
               CircleAvatar(
                 radius: 14,
-                backgroundColor: isGroup && senderName != null && senderName!.trim().isNotEmpty
-                    ? _getSenderColor(senderName!.trim()).withValues(alpha: 0.15)
+                backgroundColor:
+                    isGroup &&
+                        senderName != null &&
+                        senderName!.trim().isNotEmpty
+                    ? _getSenderColor(
+                        senderName!.trim(),
+                      ).withValues(alpha: 0.15)
                     : context.colors.textHint,
-                backgroundImage: (senderProfilePictureUrl != null && senderProfilePictureUrl!.trim().isNotEmpty)
-                    ? CachedNetworkImageProvider(senderProfilePictureUrl!.trim())
+                backgroundImage:
+                    (senderProfilePictureUrl != null &&
+                        senderProfilePictureUrl!.trim().isNotEmpty)
+                    ? CachedNetworkImageProvider(
+                        senderProfilePictureUrl!.trim(),
+                      )
                     : null,
-                child: (senderProfilePictureUrl != null && senderProfilePictureUrl!.trim().isNotEmpty)
+                child:
+                    (senderProfilePictureUrl != null &&
+                        senderProfilePictureUrl!.trim().isNotEmpty)
                     ? null
-                    : (isGroup && senderName != null && senderName!.trim().isNotEmpty
-                        ? Text(
-                            senderName!.trim()[0].toUpperCase(),
-                            style: TextStyle(
-                              color: _getSenderColor(senderName!.trim()),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          )
-                        : Icon(
-                            CommonIcons.person,
-                            size: 16,
-                            color: context.colors.textLight,
-                          )),
+                    : (isGroup &&
+                              senderName != null &&
+                              senderName!.trim().isNotEmpty
+                          ? Text(
+                              senderName!.trim()[0].toUpperCase(),
+                              style: TextStyle(
+                                color: _getSenderColor(senderName!.trim()),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            )
+                          : Icon(
+                              CommonIcons.person,
+                              size: 16,
+                              color: context.colors.textLight,
+                            )),
               ),
               CommonSpaces.w8,
             ],
             Flexible(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: isViewOnce ? MediaQuery.of(context).size.width * 0.72 : (isMedia ? 256 : MediaQuery.of(context).size.width * 0.72),
+                  maxWidth: isViewOnce
+                      ? MediaQuery.of(context).size.width * 0.72
+                      : (isMedia
+                            ? 256
+                            : MediaQuery.of(context).size.width * 0.72),
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: (isMedia && !isViewOnce && type != 'call') ? 256 : null,
+                      width: (isMedia && !isViewOnce && type != 'call')
+                          ? 256
+                          : null,
                       padding: (isMedia && !isViewOnce && type != 'call')
                           ? const EdgeInsets.all(8)
-                          : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          : const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
                       decoration: BoxDecoration(
                         color: isMe
                             ? (isMedia && !isViewOnce && type != 'call'
-                                ? (Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF132B25)
-                                    : context.colors.sentBubble)
-                                : context.colors.sentBubble)
+                                  ? (Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? const Color(0xFF132B25)
+                                        : context.colors.sentBubble)
+                                  : context.colors.sentBubble)
                             : (isMedia && !isViewOnce && type != 'call'
-                                ? (Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF1E2B33)
-                                    : context.colors.lightBackground)
-                                : context.colors.lightBackground),
+                                  ? (Theme.of(context).brightness ==
+                                            Brightness.dark
+                                        ? const Color(0xFF1E2B33)
+                                        : context.colors.lightBackground)
+                                  : context.colors.lightBackground),
                         borderRadius: BorderRadius.only(
                           topLeft: const Radius.circular(18),
                           topRight: const Radius.circular(18),
-                          bottomLeft: isMe ? const Radius.circular(18) : const Radius.circular(4),
-                          bottomRight: isMe ? const Radius.circular(4) : const Radius.circular(18),
+                          bottomLeft: isMe
+                              ? const Radius.circular(18)
+                              : const Radius.circular(4),
+                          bottomRight: isMe
+                              ? const Radius.circular(4)
+                              : const Radius.circular(18),
                         ),
                         border: (isMedia && !isViewOnce && type != 'call')
                             ? Border.all(
-                                color: const Color(0xFF00D084).withValues(alpha: 0.15),
+                                color: const Color(
+                                  0xFF00D084,
+                                ).withValues(alpha: 0.15),
                                 width: 0.8,
                               )
                             : null,
                         boxShadow: [
                           BoxShadow(
-                            color: context.colors.textPrimary.withValues(alpha: 0.05),
+                            color: context.colors.textPrimary.withValues(
+                              alpha: 0.05,
+                            ),
                             blurRadius: 5,
                             offset: const Offset(0, 2),
                           ),
                         ],
                       ),
                       child: Column(
-                        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        crossAxisAlignment: isMe
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
                         children: [
-                          if (isGroup && !isMe && senderName != null && senderName!.trim().isNotEmpty && !isDeleted)
+                          if (isGroup &&
+                              !isMe &&
+                              senderName != null &&
+                              senderName!.trim().isNotEmpty &&
+                              !isDeleted)
                             Padding(
                               padding: EdgeInsets.only(
                                 left: (isMedia && !isViewOnce) ? 4.0 : 0.0,
@@ -909,15 +1033,22 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: isMe
-                                      ? context.colors.sentBubble.withValues(alpha: 0.5)
-                                      : context.colors.lightBackground.withValues(alpha: 0.8),
+                                      ? context.colors.sentBubble.withValues(
+                                          alpha: 0.5,
+                                        )
+                                      : context.colors.lightBackground
+                                            .withValues(alpha: 0.8),
                                   border: Border(
                                     left: BorderSide(
                                       color: isMe
                                           ? context.colors.primary
-                                          : (isGroup && replyMessageSenderName != null
-                                              ? _getSenderColor(replyMessageSenderName!)
-                                              : context.colors.primary),
+                                          : (isGroup &&
+                                                    replyMessageSenderName !=
+                                                        null
+                                                ? _getSenderColor(
+                                                    replyMessageSenderName!,
+                                                  )
+                                                : context.colors.primary),
                                       width: 4,
                                     ),
                                   ),
@@ -931,15 +1062,20 @@ class _MessageBubbleState extends State<MessageBubble> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      replyMessageSenderName ?? (isMe ? 'You' : 'Recipient'),
+                                      replyMessageSenderName ??
+                                          (isMe ? 'You' : 'Recipient'),
                                       style: context.bodyMedium.copyWith(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                         color: isMe
                                             ? context.colors.textPrimary
-                                            : (isGroup && replyMessageSenderName != null
-                                                ? _getSenderColor(replyMessageSenderName!)
-                                                : context.colors.primary),
+                                            : (isGroup &&
+                                                      replyMessageSenderName !=
+                                                          null
+                                                  ? _getSenderColor(
+                                                      replyMessageSenderName!,
+                                                    )
+                                                  : context.colors.primary),
                                       ),
                                     ),
                                     CommonSpaces.h4,
@@ -962,14 +1098,25 @@ class _MessageBubbleState extends State<MessageBubble> {
                             _buildViewOnceContent(context),
                           ] else if (isMedia) ...[
                             if (!isDeleted) _buildAttachment(context),
-                            if (message.isNotEmpty && message != '[View Restricted]' && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && !isDeleted && (!(!allowView && !isMe)))
+                            if (message.isNotEmpty &&
+                                message != '[View Restricted]' &&
+                                (type == 'text' || message != attachmentName) &&
+                                type != 'text' &&
+                                type != 'call' &&
+                                !isDeleted &&
+                                (!(!allowView && !isMe)))
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4.0,
+                                  vertical: 4.0,
+                                ),
                                 child: _buildMessageText(
                                   context,
                                   context.bodyLarge.copyWith(
                                     fontSize: 14,
-                                    color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                    color: isMe
+                                        ? context.colors.textPrimary
+                                        : context.colors.textPrimary,
                                   ),
                                   message,
                                 ),
@@ -977,13 +1124,19 @@ class _MessageBubbleState extends State<MessageBubble> {
                             if (!isDeleted) _buildMediaActionBar(context),
                             if (_isDownloading)
                               Padding(
-                                padding: const EdgeInsets.only(left: 6.0, right: 6.0, top: 4.0, bottom: 2.0),
+                                padding: const EdgeInsets.only(
+                                  left: 6.0,
+                                  right: 6.0,
+                                  top: 4.0,
+                                  bottom: 2.0,
+                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
                                           'Downloading...',
@@ -993,7 +1146,8 @@ class _MessageBubbleState extends State<MessageBubble> {
                                             color: const Color(0xFF00D084),
                                           ),
                                         ),
-                                        if (_downloadProgress != null && _downloadProgress! > 0)
+                                        if (_downloadProgress != null &&
+                                            _downloadProgress! > 0)
                                           Text(
                                             '${(_downloadProgress! * 100).toInt()}%',
                                             style: const TextStyle(
@@ -1010,8 +1164,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                                       child: LinearProgressIndicator(
                                         value: _downloadProgress,
                                         minHeight: 3.5,
-                                        backgroundColor: const Color(0xFF00D084).withValues(alpha: 0.2),
-                                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00D084)),
+                                        backgroundColor: const Color(
+                                          0xFF00D084,
+                                        ).withValues(alpha: 0.2),
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(
+                                              Color(0xFF00D084),
+                                            ),
                                       ),
                                     ),
                                   ],
@@ -1028,8 +1187,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 _buildMessageText(
                                   context,
                                   context.bodyLarge.copyWith(
-                                    fontSize: _isOnlyEmojis(_statusReplyText) ? 26 : 16,
-                                    color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                    fontSize: _isOnlyEmojis(_statusReplyText)
+                                        ? 26
+                                        : 16,
+                                    color: isMe
+                                        ? context.colors.textPrimary
+                                        : context.colors.textPrimary,
                                   ),
                                   _statusReplyText,
                                 ),
@@ -1040,18 +1203,32 @@ class _MessageBubbleState extends State<MessageBubble> {
                                 context,
                                 context.bodyLarge.copyWith(
                                   fontSize: 16,
-                                  color: isMe ? context.colors.textPrimary : context.colors.textPrimary,
+                                  color: isMe
+                                      ? context.colors.textPrimary
+                                      : context.colors.textPrimary,
                                 ),
-                                (type == 'location' || type == 'live_location' || type == 'call') ? '' : message,
+                                (type == 'location' ||
+                                        type == 'live_location' ||
+                                        type == 'call')
+                                    ? ''
+                                    : message,
                               ),
-                              if (message.isNotEmpty && (type == 'text' || message != attachmentName) && type != 'text' && type != 'call' && type != 'live_location' && !isDeleted) CommonSpaces.h6,
+                              if (message.isNotEmpty &&
+                                  (type == 'text' ||
+                                      message != attachmentName) &&
+                                  type != 'text' &&
+                                  type != 'call' &&
+                                  type != 'live_location' &&
+                                  !isDeleted)
+                                CommonSpaces.h6,
                               _buildDefaultTimestampRow(context),
                             ],
                           ],
                         ],
                       ),
                     ),
-                    if (reactions.isNotEmpty && !isDeleted) _buildReactionsBadge(context),
+                    if (reactions.isNotEmpty && !isDeleted)
+                      _buildReactionsBadge(context),
                   ],
                 ),
               ),
@@ -1076,7 +1253,9 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final badgeBg = isDark ? const Color(0xFF233038) : Colors.white;
-    final borderColor = isDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.1);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.1);
 
     return Positioned(
       bottom: -11,
@@ -1102,10 +1281,17 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ...counts.keys.take(3).map((emoji) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                child: Text(emoji, style: const TextStyle(fontSize: 12.5)),
-              )),
+              ...counts.keys
+                  .take(3)
+                  .map(
+                    (emoji) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ),
+                  ),
               if (reactions.length > 1) ...[
                 const SizedBox(width: 3),
                 Text(
@@ -1172,10 +1358,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                     itemCount: reactions.length,
                     itemBuilder: (ctx, i) {
                       final r = reactions[i];
-                      final myId = (context.read<ChatBloc>().state is ChatLoaded)
+                      final myId =
+                          (context.read<ChatBloc>().state is ChatLoaded)
                           ? (context.read<ChatBloc>().state as ChatLoaded).myId
                           : '';
-                      final name = (r.userName != null && r.userName!.isNotEmpty)
+                      final name =
+                          (r.userName != null && r.userName!.isNotEmpty)
                           ? r.userName!
                           : (r.userId == myId ? 'You' : 'User');
                       return Padding(
@@ -1219,7 +1407,9 @@ class _MessageBubbleState extends State<MessageBubble> {
       } else if (type == 'audio' || type == 'voice') {
         labelText = 'Voice message';
       } else if (type == 'file' || type == 'document') {
-        labelText = (attachmentName != null && attachmentName!.isNotEmpty) ? attachmentName! : 'Document';
+        labelText = (attachmentName != null && attachmentName!.isNotEmpty)
+            ? attachmentName!
+            : 'Document';
       } else {
         labelText = 'Photo';
       }
@@ -1282,7 +1472,11 @@ class _MessageBubbleState extends State<MessageBubble> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline, size: 12, color: isDark ? Colors.white60 : Colors.black54),
+            Icon(
+              Icons.lock_outline,
+              size: 12,
+              color: isDark ? Colors.white60 : Colors.black54,
+            ),
             const SizedBox(width: 4),
             Text(
               'Access restricted by sender',
@@ -1304,7 +1498,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           borderRadius: BorderRadius.circular(8),
           onTap: () {
             if (!allowView) {
-              context.showInfoNotification('View permission is restricted by sender');
+              context.showInfoNotification(
+                'View permission is restricted by sender',
+              );
               return;
             }
             _openInAppViewer(context);
@@ -1316,7 +1512,9 @@ class _MessageBubbleState extends State<MessageBubble> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  allowView ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  allowView
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
                   size: 13.5,
                   color: accentGreen,
                 ),
@@ -1336,226 +1534,199 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    const disabledRed = Colors.redAccent;
-    final bool canToggleAsOwner = isTrueOwner;
-    final List<Widget> actionButtons = [];
-
-    // 1. View Action: Owner can always toggle View on/off; Non-owners see View only if allowed
-    if (canToggleAsOwner || allowView) {
-      final isViewActive = allowView;
-      final iconColor = canToggleAsOwner
-          ? (isViewActive ? accentGreen : disabledRed)
-          : (isViewActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = (canToggleAsOwner && !isViewActive) ? disabledRed : textColor;
-
-      actionButtons.add(
-        Expanded(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              if (canToggleAsOwner) {
-                final nextVal = !allowView;
-                _updatePermissions(context, view: nextVal);
-                context.showSuccessNotification(
-                  nextVal ? 'View enabled for recipient' : 'View disabled for recipient',
-                );
-              } else {
-                if (!allowView) {
-                  context.showInfoNotification('View permission is restricted by sender');
-                  return;
-                }
-                _openInAppViewer(context);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isViewActive ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    size: 13.5,
-                    color: iconColor,
-                  ),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        'View',
-                        maxLines: 1,
-                        style: context.bodySmall.copyWith(
-                          color: labelColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 10.0,
-                          decoration: (canToggleAsOwner && !isViewActive) ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 2. Download Action: Owner always sees Download to enable/disable it; Non-owners see Download only if allowed
-    if (canToggleAsOwner || allowDownload) {
-      final isDownloadActive = allowDownload;
-      final iconColor = canToggleAsOwner
-          ? (isDownloadActive ? accentGreen : disabledRed)
-          : (isDownloadActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = (canToggleAsOwner && !isDownloadActive) ? disabledRed : textColor;
-
-      final String downloadText = _isDownloading
-          ? (_downloadProgress != null && _downloadProgress! > 0
-              ? '${(_downloadProgress! * 100).toInt()}%'
-              : 'Downloading...')
-          : 'Download';
-
-      actionButtons.add(
-        Expanded(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              if (canToggleAsOwner) {
-                final nextVal = !allowDownload;
-                _updatePermissions(context, download: nextVal);
-                context.showSuccessNotification(
-                  nextVal ? 'Download enabled for recipient' : 'Download disabled for recipient',
-                );
-              } else {
-                if (!allowDownload) {
-                  context.showInfoNotification('Download permission is locked by sender');
-                  return;
-                }
-                _triggerDownload(context);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isDownloading)
-                    const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.8,
-                        color: accentGreen,
-                      ),
-                    )
-                  else
-                    Icon(
-                      isDownloadActive ? Icons.file_download_outlined : Icons.file_download_off_outlined,
-                      size: 13.5,
-                      color: iconColor,
-                    ),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        downloadText,
-                        maxLines: 1,
-                        style: context.bodySmall.copyWith(
-                          color: _isDownloading ? accentGreen : labelColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 10.0,
-                          decoration: (canToggleAsOwner && !isDownloadActive && !_isDownloading) ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 3. Share Action: Owner always sees Share to enable/disable it; Non-owners see Share only if allowed
-    if (canToggleAsOwner || allowShare) {
-      final isShareActive = allowShare;
-      final iconColor = canToggleAsOwner
-          ? (isShareActive ? accentGreen : disabledRed)
-          : (isShareActive ? accentGreen : context.colors.textSecondary);
-      final labelColor = (canToggleAsOwner && !isShareActive) ? disabledRed : textColor;
-
-      actionButtons.add(
-        Expanded(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              if (canToggleAsOwner) {
-                final nextVal = !allowShare;
-                _updatePermissions(context, share: nextVal);
-                context.showSuccessNotification(
-                  nextVal ? 'Share enabled for recipient' : 'Share disabled for recipient',
-                );
-              } else {
-                if (!allowShare) {
-                  context.showInfoNotification('Share permission is locked by sender');
-                  return;
-                }
-                _triggerShare(context);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.share_outlined,
-                    size: 13,
-                    color: iconColor,
-                  ),
-                  const SizedBox(width: 3),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        'Share',
-                        maxLines: 1,
-                        style: context.bodySmall.copyWith(
-                          color: labelColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 10.0,
-                          decoration: (canToggleAsOwner && !isShareActive) ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    if (actionButtons.isEmpty) {
+    // SENDER / OWNER PRESENTATION (Section 3.1)
+    // - Show three direct buttons in one row immediately below the file: View, Download, Share.
+    // - Do not show a fourth permanent Manage Access button.
+    // - Sender can access the access tree from the Share flow or contextual footer action.
+    if (canManageRecipientPermissions) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
+        padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 2.0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            Icon(Icons.lock_outline, size: 12, color: isDark ? Colors.white60 : Colors.black54),
-            const SizedBox(width: 4),
-            Text(
-              'Access restricted by sender',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontStyle: FontStyle.italic,
-                color: isDark ? Colors.white60 : Colors.black54,
+            // 1. View permission toggle (for recipient)
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  final nextVal = !allowView;
+                  _updatePermissions(context, view: nextVal);
+                  context.showSuccessNotification(
+                    nextVal
+                        ? 'View enabled for recipient'
+                        : 'View disabled for recipient',
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        allowView
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 13.5,
+                        color: allowView
+                            ? accentGreen
+                            : context.colors.textSecondary.withValues(
+                                alpha: 0.5,
+                              ),
+                      ),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          'View',
+                          maxLines: 1,
+                          style: context.bodySmall.copyWith(
+                            color: allowView
+                                ? textColor
+                                : context.colors.textSecondary.withValues(
+                                    alpha: 0.5,
+                                  ),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10.0,
+                            decoration: allowView
+                                ? null
+                                : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // 2. Download permission toggle (for recipient)
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  final nextVal = !allowDownload;
+                  _updatePermissions(context, download: nextVal);
+                  context.showSuccessNotification(
+                    nextVal
+                        ? 'Download enabled for recipient'
+                        : 'Download disabled for recipient',
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isDownloading)
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            color: accentGreen,
+                          ),
+                        )
+                      else
+                        Icon(
+                          allowDownload
+                              ? Icons.file_download_outlined
+                              : Icons.file_download_off_outlined,
+                          size: 13.5,
+                          color: allowDownload
+                              ? accentGreen
+                              : context.colors.textSecondary.withValues(
+                                  alpha: 0.5,
+                                ),
+                        ),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          _isDownloading ? 'Downloading...' : 'Download',
+                          maxLines: 1,
+                          style: context.bodySmall.copyWith(
+                            color: _isDownloading
+                                ? accentGreen
+                                : (allowDownload
+                                      ? textColor
+                                      : context.colors.textSecondary.withValues(
+                                          alpha: 0.5,
+                                        )),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10.0,
+                            decoration: allowDownload
+                                ? null
+                                : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // 3. Share permission toggle (for recipient)
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  final nextVal = !allowShare;
+                  _updatePermissions(context, share: nextVal);
+                  context.showSuccessNotification(
+                    nextVal
+                        ? 'Share enabled for recipient'
+                        : 'Share disabled for recipient',
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        allowShare
+                            ? Icons.share_outlined
+                            : Icons.block_outlined,
+                        size: 13.5,
+                        color: allowShare
+                            ? accentGreen
+                            : context.colors.textSecondary.withValues(
+                                alpha: 0.5,
+                              ),
+                      ),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          'Share',
+                          maxLines: 1,
+                          style: context.bodySmall.copyWith(
+                            color: allowShare
+                                ? textColor
+                                : context.colors.textSecondary.withValues(
+                                    alpha: 0.5,
+                                  ),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 10.0,
+                            decoration: allowShare
+                                ? null
+                                : TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -1563,11 +1734,135 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
+    // RECIPIENT PRESENTATION (Section 3.1)
+    // Tapping the file's actions area opens a modal bottom sheet showing only allowed actions.
+    if (!allowView) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3.0, horizontal: 8.0),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _openRecipientFileActionsBottomSheet(context),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.lock_outline,
+                size: 12,
+                color: isDark ? Colors.white60 : Colors.black54,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Access restricted by sender',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontStyle: FontStyle.italic,
+                  color: isDark ? Colors.white60 : Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0, horizontal: 2.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: actionButtons,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _openRecipientFileActionsBottomSheet(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: accentGreen.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              // View allowed
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.visibility_outlined,
+                    size: 12.5,
+                    color: accentGreen,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'View',
+                    style: context.bodySmall.copyWith(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: textColor,
+                    ),
+                  ),
+                ],
+              ),
+              // Download status
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    allowDownload
+                        ? Icons.file_download_outlined
+                        : Icons.file_download_off_outlined,
+                    size: 12.5,
+                    color: allowDownload
+                        ? accentGreen
+                        : context.colors.textSecondary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Download',
+                    style: context.bodySmall.copyWith(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: allowDownload
+                          ? textColor
+                          : context.colors.textSecondary.withValues(alpha: 0.5),
+                      decoration: allowDownload
+                          ? null
+                          : TextDecoration.lineThrough,
+                    ),
+                  ),
+                ],
+              ),
+              // Share status
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    allowShare ? Icons.share_outlined : Icons.block_outlined,
+                    size: 12.5,
+                    color: allowShare
+                        ? accentGreen
+                        : context.colors.textSecondary.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'Share',
+                    style: context.bodySmall.copyWith(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: allowShare
+                          ? textColor
+                          : context.colors.textSecondary.withValues(alpha: 0.5),
+                      decoration: allowShare
+                          ? null
+                          : TextDecoration.lineThrough,
+                    ),
+                  ),
+                ],
+              ),
+              const Icon(
+                Icons.keyboard_arrow_up_rounded,
+                size: 14,
+                color: accentGreen,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1577,13 +1872,22 @@ class _MessageBubbleState extends State<MessageBubble> {
       return const SizedBox.shrink();
     }
     const accentGreen = Color(0xFF00D084);
-    // Show share details ONLY for initial owner (original creator/sender of media and not in group, not a forwarded/reshared copy) and NEVER in chat transfer / read-only mode
-    final bool showShareDetails = !widget.isReadOnly && isMe && !isGroup && _isMediaMessage && !isForwarded && isTrueOwner;
+    // Show share details for any 1-on-1 sender managing recipient access (and never in read-only mode)
+    final bool showShareDetails =
+        canManageRecipientPermissions &&
+        _isMediaMessage;
 
     return Padding(
-      padding: const EdgeInsets.only(top: 4.0, bottom: 2.0, left: 4.0, right: 4.0),
+      padding: const EdgeInsets.only(
+        top: 4.0,
+        bottom: 2.0,
+        left: 4.0,
+        right: 4.0,
+      ),
       child: Row(
-        mainAxisAlignment: showShareDetails ? MainAxisAlignment.spaceBetween : MainAxisAlignment.end,
+        mainAxisAlignment: showShareDetails
+            ? MainAxisAlignment.spaceBetween
+            : MainAxisAlignment.end,
         children: [
           // Left: Show share details > (ONLY FOR INITIAL SENDER/SHARE PERSON OF MEDIA AND NOT IN GROUP)
           if (showShareDetails)
@@ -1645,10 +1949,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   color: context.colors.textSecondary,
                 ),
               ),
-              if (isMe) ...[
-                CommonSpaces.w4,
-                _buildDeliveryStatus(context),
-              ],
+              if (isMe) ...[CommonSpaces.w4, _buildDeliveryStatus(context)],
             ],
           ),
         ],
@@ -1657,20 +1958,281 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _openShareDetailsBottomSheet(BuildContext context) {
-    String? cachedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
+    String? cachedMediaId =
+        SecureAttachmentService.findMediaId(attachmentPath) ??
+        SecureAttachmentService.findMediaId(widget.messageId) ??
         SecureAttachmentService.findMediaId(attachmentName);
-    if ((cachedMediaId == null || cachedMediaId.isEmpty) && attachmentPath != null) {
-      final match = RegExp(r'/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+(?:\?|$)').firstMatch(attachmentPath!);
+    if ((cachedMediaId == null || cachedMediaId.isEmpty) &&
+        attachmentPath != null) {
+      final match = RegExp(
+        r'(?:chat-media|documents|voice-notes)/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+',
+      ).firstMatch(attachmentPath!);
       if (match != null) {
         cachedMediaId = match.group(1);
       }
     }
-    final idToUse = (cachedMediaId != null && cachedMediaId.isNotEmpty) ? cachedMediaId : widget.messageId;
-    final name = attachmentName ?? (type == 'image' ? 'Image File' : (type == 'video' ? 'Video File' : (type == 'audio' ? 'Audio File' : 'Media Attachment')));
+    final idToUse = (cachedMediaId != null && cachedMediaId.isNotEmpty)
+        ? cachedMediaId
+        : widget.messageId;
+    final name =
+        attachmentName ??
+        (type == 'image'
+            ? 'Image File'
+            : (type == 'video'
+                  ? 'Video File'
+                  : (type == 'audio' ? 'Audio File' : 'Media Attachment')));
     MediaProtectionBottomSheet.show(
       context,
       mediaId: idToUse,
       fileName: name,
+      messageId: widget.messageId,
+      recipientId: widget.recipientId,
+      initialAllowView: allowView,
+      initialAllowDownload: allowDownload,
+      initialAllowShare: allowShare,
+      onPermissionsChanged: (v, d, s) =>
+          _updatePermissions(context, view: v, download: d, share: s),
+    );
+  }
+
+  void _openRecipientFileActionsBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetCtx) {
+        final isDark = Theme.of(sheetCtx).brightness == Brightness.dark;
+        final bg = isDark ? const Color(0xFF1E2830) : Colors.white;
+        final primaryColor = sheetCtx.colors.primary;
+        final disabledColor = sheetCtx.colors.textSecondary.withValues(
+          alpha: 0.5,
+        );
+
+        return Container(
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: SafeArea(
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: sheetCtx.colors.textSecondary.withValues(
+                          alpha: 0.3,
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // File info preview header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          type == 'video'
+                              ? Icons.videocam_rounded
+                              : (type == 'audio'
+                                    ? Icons.audiotrack_rounded
+                                    : (type == 'image'
+                                          ? Icons.image_rounded
+                                          : Icons.insert_drive_file_rounded)),
+                          color: primaryColor,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              attachmentName ??
+                                  (type == 'image'
+                                      ? 'Image File'
+                                      : (type == 'video'
+                                            ? 'Video File'
+                                            : 'File Attachment')),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: sheetCtx.titleMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Recipient Actions & Permissions',
+                              style: sheetCtx.bodySmall.copyWith(
+                                color: sheetCtx.colors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // 1. View Action
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: allowView
+                          ? primaryColor.withValues(alpha: 0.12)
+                          : Colors.redAccent.withValues(alpha: 0.1),
+                      child: Icon(
+                        allowView
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: allowView ? primaryColor : Colors.redAccent,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      'View File',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: allowView
+                            ? sheetCtx.colors.textPrimary
+                            : disabledColor,
+                      ),
+                    ),
+                    subtitle: Text(
+                      allowView
+                          ? 'Open and view media in app'
+                          : 'View restricted by sender',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: allowView
+                            ? sheetCtx.colors.textSecondary
+                            : Colors.redAccent,
+                      ),
+                    ),
+                    trailing: allowView
+                        ? const Icon(Icons.chevron_right, size: 18)
+                        : null,
+                    onTap: allowView
+                        ? () {
+                            Navigator.pop(sheetCtx);
+                            _openInAppViewer(context);
+                          }
+                        : null,
+                  ),
+
+                  // 2. Download Action
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: allowDownload
+                          ? primaryColor.withValues(alpha: 0.12)
+                          : Colors.redAccent.withValues(alpha: 0.1),
+                      child: Icon(
+                        allowDownload
+                            ? Icons.file_download_outlined
+                            : Icons.file_download_off_outlined,
+                        color: allowDownload ? primaryColor : Colors.redAccent,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      'Download File',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: allowDownload
+                            ? sheetCtx.colors.textPrimary
+                            : disabledColor,
+                      ),
+                    ),
+                    subtitle: Text(
+                      allowDownload
+                          ? 'Save file to local storage'
+                          : 'Download restricted by sender',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: allowDownload
+                            ? sheetCtx.colors.textSecondary
+                            : Colors.redAccent,
+                      ),
+                    ),
+                    trailing: allowDownload
+                        ? const Icon(Icons.chevron_right, size: 18)
+                        : null,
+                    onTap: allowDownload
+                        ? () {
+                            Navigator.pop(sheetCtx);
+                            _triggerDownload(context);
+                          }
+                        : null,
+                  ),
+
+                  // 3. Share Action
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: allowShare
+                          ? primaryColor.withValues(alpha: 0.12)
+                          : Colors.redAccent.withValues(alpha: 0.1),
+                      child: Icon(
+                        allowShare
+                            ? Icons.share_outlined
+                            : Icons.block_outlined,
+                        color: allowShare ? primaryColor : Colors.redAccent,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      'Share File',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: allowShare
+                            ? sheetCtx.colors.textPrimary
+                            : disabledColor,
+                      ),
+                    ),
+                    subtitle: Text(
+                      allowShare
+                          ? 'Forward file to authorized contacts'
+                          : 'Sharing restricted by sender',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: allowShare
+                            ? sheetCtx.colors.textSecondary
+                            : Colors.redAccent,
+                      ),
+                    ),
+                    trailing: allowShare
+                        ? const Icon(Icons.chevron_right, size: 18)
+                        : null,
+                    onTap: allowShare
+                        ? () {
+                            Navigator.pop(sheetCtx);
+                            _triggerShare(context);
+                          }
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1746,10 +2308,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 : context.colors.textSecondary,
           ),
         ),
-        if (isMe) ...[
-          CommonSpaces.w4,
-          _buildDeliveryStatus(context),
-        ],
+        if (isMe) ...[CommonSpaces.w4, _buildDeliveryStatus(context)],
       ],
     );
   }
@@ -1760,7 +2319,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     String? fileName,
     required bool viewLocked,
   }) {
-    final bool isEnc = filePath.toLowerCase().endsWith('.enc') ||
+    final bool isEnc =
+        filePath.toLowerCase().endsWith('.enc') ||
         (fileName != null && fileName.toLowerCase().endsWith('.enc')) ||
         SecureAttachmentService.isFileEncryptedSync(filePath);
 
@@ -1807,7 +2367,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         originalFileName: cleanName,
       ),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.hasData) {
           return Image.file(
             snapshot.data!,
             height: 220,
@@ -1816,7 +2377,9 @@ class _MessageBubbleState extends State<MessageBubble> {
             errorBuilder: (_, _, _) => _buildMaskedImagePreview(
               context,
               title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
-              subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
+              subtitle: viewLocked
+                  ? 'Access restricted by sender'
+                  : 'Could not display image file',
               icon: CommonIcons.imageNotSupported,
             ),
           );
@@ -1824,7 +2387,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           return _buildMaskedImagePreview(
             context,
             title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
-            subtitle: viewLocked ? 'Access restricted by sender' : 'Could not display image file',
+            subtitle: viewLocked
+                ? 'Access restricted by sender'
+                : 'Could not display image file',
             icon: CommonIcons.imageNotSupported,
           );
         }
@@ -1838,7 +2403,9 @@ class _MessageBubbleState extends State<MessageBubble> {
               height: 28,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  context.colors.primary,
+                ),
               ),
             ),
           ),
@@ -1848,58 +2415,119 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildAttachment(BuildContext context) {
-    final effectivePath = (attachmentPath != null && attachmentPath!.isNotEmpty)
-        ? attachmentPath!
-        : ((type != 'call' && type != 'location' && type != 'live_location' && type != 'text' && message.isNotEmpty && message != '[View Restricted]') ? message : null);
-
-    final viewLocked = !allowView && !isMe;
-
-    if (effectivePath == null && attachmentBytes == null && type != 'call' && type != 'location' && type != 'live_location') {
-      if (type == 'image' || type == 'video' || message == '[View Restricted]') {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: GestureDetector(
-            onTap: () {
-              if (viewLocked) {
-                context.showInfoNotification('View permission is restricted by sender');
-              }
-            },
-            child: _buildMaskedImagePreview(
-              context,
-              title: viewLocked ? 'Access Revoked' : 'Preview Unavailable',
-              subtitle: viewLocked ? 'Access restricted by sender' : 'Media preview could not be loaded',
-              icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
-            ),
-          ),
-        );
-      }
-      if (type == 'audio' || type == 'voice' || type == 'voice_note') {
-        return _buildLockedAttachmentCard(context, type: type, label: 'Audio Restricted');
-      }
-      if (type == 'file' || type == 'document') {
-        return _buildLockedAttachmentCard(context, type: type, label: 'Document Restricted');
-      }
-      return const SizedBox.shrink();
-    }
-
     if (widget.groupedImages != null && widget.groupedImages!.length > 1) {
       return MultiImageGridBubble(
         images: widget.groupedImages!,
         isMe: isMe,
         contactName: widget.senderName ?? 'Photo',
-        onSharePressed: (allowShare && widget.onSharePressed != null) ? (_) => widget.onSharePressed!() : null,
+        onSharePressed: (allowShare && widget.onSharePressed != null)
+            ? (_) => widget.onSharePressed!()
+            : null,
       );
     }
+
+    final effectivePath = (attachmentPath != null && attachmentPath!.isNotEmpty)
+        ? attachmentPath!
+        : ((type != 'call' &&
+                  type != 'location' &&
+                  type != 'live_location' &&
+                  type != 'text' &&
+                  message.isNotEmpty &&
+                  message != '[View Restricted]')
+              ? message
+              : null);
+
+    final viewLocked = !allowView && !isMe;
+
+    if (effectivePath == null &&
+        attachmentBytes == null &&
+        type != 'call' &&
+        type != 'location' &&
+        type != 'live_location') {
+      if (type == 'image' ||
+          type == 'video' ||
+          message == '[View Restricted]') {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: GestureDetector(
+            onTap: () {
+              if (viewLocked) {
+                context.showInfoNotification(
+                  'View permission is restricted by sender',
+                );
+              }
+            },
+            child: _buildMaskedImagePreview(
+              context,
+              title: viewLocked ? 'Access Revoked' : 'Preview Unavailable',
+              subtitle: viewLocked
+                  ? 'Access restricted by sender'
+                  : 'Media preview could not be loaded',
+              icon: viewLocked
+                  ? CommonIcons.lockOutline
+                  : CommonIcons.brokenImage,
+            ),
+          ),
+        );
+      }
+      if (type == 'audio' || type == 'voice' || type == 'voice_note') {
+        return _buildLockedAttachmentCard(
+          context,
+          type: type,
+          label: 'Audio Restricted',
+        );
+      }
+      if (type == 'file' || type == 'document') {
+        return _buildLockedAttachmentCard(
+          context,
+          type: type,
+          label: 'Document Restricted',
+        );
+      }
+      return const SizedBox.shrink();
+    }
     // Extract extension to ensure text/documents are never rendered as image or audio
-    final String rawBubbleName = attachmentName ?? (effectivePath != null ? effectivePath.split('/').last : '');
-    final String bubbleNameBeforeCaption = rawBubbleName.contains(' · ') ? rawBubbleName.split(' · ').first.trim() : rawBubbleName;
+    final String rawBubbleName =
+        attachmentName ??
+        (effectivePath != null ? effectivePath.split('/').last : '');
+    final String bubbleNameBeforeCaption = rawBubbleName.contains(' · ')
+        ? rawBubbleName.split(' · ').first.trim()
+        : rawBubbleName;
     final String bubbleExt = bubbleNameBeforeCaption.contains('.')
-        ? bubbleNameBeforeCaption.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+        ? bubbleNameBeforeCaption
+              .split('.')
+              .last
+              .trim()
+              .toLowerCase()
+              .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
         : '';
-    final bool isDocumentExtension = ['txt', 'text', 'log', 'md', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml', 'pdf', 'zip', 'rar', '7z', 'tar', 'gz'].contains(bubbleExt);
+    final bool isDocumentExtension = [
+      'txt',
+      'text',
+      'log',
+      'md',
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
+      'ppt',
+      'pptx',
+      'csv',
+      'json',
+      'xml',
+      'pdf',
+      'zip',
+      'rar',
+      '7z',
+      'tar',
+      'gz',
+    ].contains(bubbleExt);
 
     Widget result;
-    if (!isDocumentExtension && (type == 'image' || (type == 'text' && (effectivePath != null || attachmentBytes != null)))) {
+    if (!isDocumentExtension &&
+        (type == 'image' ||
+            (type == 'text' &&
+                (effectivePath != null || attachmentBytes != null)))) {
       Widget imageWidget;
       if (attachmentBytes != null) {
         imageWidget = Image.memory(
@@ -1909,7 +2537,9 @@ class _MessageBubbleState extends State<MessageBubble> {
           fit: BoxFit.cover,
         );
       } else if (effectivePath != null) {
-        final resolvedUrl = SecureAttachmentService.resolveFullUrl(effectivePath);
+        final resolvedUrl = SecureAttachmentService.resolveFullUrl(
+          effectivePath,
+        );
         final isLocalFile = !kIsWeb && File(resolvedUrl).existsSync();
         if (isLocalFile) {
           imageWidget = _buildLocalImageWidget(
@@ -1918,7 +2548,8 @@ class _MessageBubbleState extends State<MessageBubble> {
             fileName: attachmentName,
             viewLocked: viewLocked,
           );
-        } else if (resolvedUrl.startsWith('http://') || resolvedUrl.startsWith('https://')) {
+        } else if (resolvedUrl.startsWith('http://') ||
+            resolvedUrl.startsWith('https://')) {
           imageWidget = CachedNetworkImage(
             imageUrl: resolvedUrl,
             cacheKey: resolvedUrl.split('?').first,
@@ -1935,7 +2566,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                   height: 28,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      context.colors.primary,
+                    ),
                   ),
                 ),
               ),
@@ -1947,7 +2580,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 width: double.infinity,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) {
-                  if (!kIsWeb && attachmentPath != null && File(attachmentPath!).existsSync()) {
+                  if (!kIsWeb &&
+                      attachmentPath != null &&
+                      File(attachmentPath!).existsSync()) {
                     return _buildLocalImageWidget(
                       context,
                       filePath: attachmentPath!,
@@ -1958,8 +2593,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                   return _buildMaskedImagePreview(
                     context,
                     title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
-                    subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image preview',
-                    icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
+                    subtitle: viewLocked
+                        ? 'Access restricted by sender'
+                        : 'Could not load image preview',
+                    icon: viewLocked
+                        ? CommonIcons.lockOutline
+                        : CommonIcons.brokenImage,
                   );
                 },
               );
@@ -1969,22 +2608,30 @@ class _MessageBubbleState extends State<MessageBubble> {
           imageWidget = _buildMaskedImagePreview(
             context,
             title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
-            subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image',
-            icon: viewLocked ? CommonIcons.lockOutline : CommonIcons.brokenImage,
+            subtitle: viewLocked
+                ? 'Access restricted by sender'
+                : 'Could not load image',
+            icon: viewLocked
+                ? CommonIcons.lockOutline
+                : CommonIcons.brokenImage,
           );
         }
       } else {
         imageWidget = _buildMaskedImagePreview(
           context,
           title: viewLocked ? 'Access Revoked' : 'Image Unavailable',
-          subtitle: viewLocked ? 'Access restricted by sender' : 'Could not load image',
+          subtitle: viewLocked
+              ? 'Access restricted by sender'
+              : 'Could not load image',
         );
       }
 
       Widget imageContent = GestureDetector(
         onTap: () {
           if (viewLocked) {
-            context.showInfoNotification('View permission is restricted by sender');
+            context.showInfoNotification(
+              'View permission is restricted by sender',
+            );
             return;
           }
           _openInAppViewer(context);
@@ -2013,7 +2660,9 @@ class _MessageBubbleState extends State<MessageBubble> {
               width: 32,
               height: 32,
               child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  context.colors.pureWhite,
+                ),
                 strokeWidth: 3,
               ),
             ),
@@ -2028,15 +2677,22 @@ class _MessageBubbleState extends State<MessageBubble> {
           child: imageContent,
         ),
       );
-    } else if (!isDocumentExtension && (type == 'audio' || type == 'voice' || type == 'voice_note')) {
+    } else if (!isDocumentExtension &&
+        (type == 'audio' || type == 'voice' || type == 'voice_note')) {
       if (viewLocked) {
-        result = _buildLockedAttachmentCard(context, type: type, label: 'Audio Restricted');
+        result = _buildLockedAttachmentCard(
+          context,
+          type: type,
+          label: 'Audio Restricted',
+        );
       } else {
         result = _AudioWaveformPlayer(
           audioUrl: effectivePath,
           fileName: (attachmentName != null && attachmentName!.isNotEmpty)
               ? attachmentName
-              : (message.isNotEmpty && message != '[View Restricted]' ? message : null),
+              : (message.isNotEmpty && message != '[View Restricted]'
+                    ? message
+                    : null),
           fileSize: fileSize,
           isMe: isMe,
           payloadDuration: duration,
@@ -2068,21 +2724,30 @@ class _MessageBubbleState extends State<MessageBubble> {
       }
     } else if (type == 'file' || type == 'document' || isDocumentExtension) {
       if (viewLocked) {
-        result = _buildLockedAttachmentCard(context, type: type, label: 'Document Restricted');
+        result = _buildLockedAttachmentCard(
+          context,
+          type: type,
+          label: 'Document Restricted',
+        );
       } else {
         result = _buildFileBubbleCard(context);
       }
     } else if (type == 'location' || type == 'live_location' || isLive) {
       final bool isLiveLoc = type == 'live_location' || isLive;
-      final bool isCurrentlyActive = isLiveLoc &&
+      final bool isCurrentlyActive =
+          isLiveLoc &&
           isLiveActive &&
-          (liveExpiresAt == null || liveExpiresAt! > DateTime.now().millisecondsSinceEpoch);
+          (liveExpiresAt == null ||
+              liveExpiresAt! > DateTime.now().millisecondsSinceEpoch);
 
       double lat = latitude ?? 0.0;
       double lng = longitude ?? 0.0;
-      
+
       // Fallback for old messages that might still use attachmentPath
-      if (lat == 0.0 && lng == 0.0 && attachmentPath != null && attachmentPath!.contains(',')) {
+      if (lat == 0.0 &&
+          lng == 0.0 &&
+          attachmentPath != null &&
+          attachmentPath!.contains(',')) {
         final parts = attachmentPath!.split(',');
         if (parts.length == 2) {
           lat = double.tryParse(parts[0]) ?? 0.0;
@@ -2090,9 +2755,15 @@ class _MessageBubbleState extends State<MessageBubble> {
         }
       }
 
-      final String coordKey = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
-      String? displayAddress = (address != null && address!.isNotEmpty) ? address : locationTitle;
-      if (displayAddress == null || displayAddress.isEmpty || displayAddress == 'Location' || displayAddress == 'My Location') {
+      final String coordKey =
+          '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+      String? displayAddress = (address != null && address!.isNotEmpty)
+          ? address
+          : locationTitle;
+      if (displayAddress == null ||
+          displayAddress.isEmpty ||
+          displayAddress == 'Location' ||
+          displayAddress == 'My Location') {
         if (_locationAddressCache.containsKey(coordKey)) {
           displayAddress = _locationAddressCache[coordKey];
         } else if (lat != 0.0 && lng != 0.0) {
@@ -2120,7 +2791,13 @@ class _MessageBubbleState extends State<MessageBubble> {
                 isMe: isMe,
                 isLiveActive: isCurrentlyActive,
                 liveExpiresAt: liveExpiresAt,
-                comment: liveComment ?? (message.isNotEmpty && message != '[View Restricted]' && message != displayAddress ? message : null),
+                comment:
+                    liveComment ??
+                    (message.isNotEmpty &&
+                            message != '[View Restricted]' &&
+                            message != displayAddress
+                        ? message
+                        : null),
                 onStopSharing: widget.onStopLiveLocation,
               ),
             ),
@@ -2129,7 +2806,9 @@ class _MessageBubbleState extends State<MessageBubble> {
         }
 
         if (lat != 0.0 && lng != 0.0) {
-          final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+          final uri = Uri.parse(
+            'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+          );
           try {
             await launchUrl(uri, mode: LaunchMode.externalApplication);
           } catch (e) {
@@ -2143,8 +2822,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       final liveColor = const Color(0xFF25D366);
       final String liveStatusText = isCurrentlyActive
           ? (liveExpiresAt != null
-              ? 'Live until ${DateFormat('h:mm a').format(DateTime.fromMillisecondsSinceEpoch(liveExpiresAt!))}'
-              : 'Live location')
+                ? 'Live until ${DateFormat('h:mm a').format(DateTime.fromMillisecondsSinceEpoch(liveExpiresAt!))}'
+                : 'Live location')
           : 'Live location ended';
 
       result = Padding(
@@ -2192,22 +2871,28 @@ class _MessageBubbleState extends State<MessageBubble> {
                             ),
                           )
                         else
-                          Container(
-                            color: context.colors.lightBackground,
-                          ),
+                          Container(color: context.colors.lightBackground),
                         if (lat == 0.0 && lng == 0.0)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
-                              color: context.colors.scaffoldBackground.withValues(alpha: 0.8),
+                              color: context.colors.scaffoldBackground
+                                  .withValues(alpha: 0.8),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  isLiveLoc ? Icons.sensors : CommonIcons.location,
-                                  color: isLiveLoc ? liveColor : context.colors.error,
+                                  isLiveLoc
+                                      ? Icons.sensors
+                                      : CommonIcons.location,
+                                  color: isLiveLoc
+                                      ? liveColor
+                                      : context.colors.error,
                                   size: 36,
                                 ),
                                 CommonSpaces.h8,
@@ -2226,9 +2911,14 @@ class _MessageBubbleState extends State<MessageBubble> {
                             top: 8,
                             left: 8,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
-                                color: isCurrentlyActive ? liveColor : Colors.black54,
+                                color: isCurrentlyActive
+                                    ? liveColor
+                                    : Colors.black54,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Row(
@@ -2246,7 +2936,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                                     const SizedBox(width: 4),
                                   ],
                                   Text(
-                                    isCurrentlyActive ? 'LIVE LOCATION' : 'LIVE LOCATION ENDED',
+                                    isCurrentlyActive
+                                        ? 'LIVE LOCATION'
+                                        : 'LIVE LOCATION ENDED',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
@@ -2262,13 +2954,17 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                   ),
                   // If live comment exists
-                  if (isLiveLoc && liveComment != null && liveComment!.trim().isNotEmpty)
+                  if (isLiveLoc &&
+                      liveComment != null &&
+                      liveComment!.trim().isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
                       child: Text(
                         liveComment!.trim(),
                         style: TextStyle(
-                          color: isMe ? Colors.white : context.colors.textPrimary,
+                          color: isMe
+                              ? Colors.white
+                              : context.colors.textPrimary,
                           fontSize: 13,
                         ),
                         maxLines: 3,
@@ -2277,28 +2973,40 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                   // Bottom banner
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 10,
+                    ),
                     color: isMe
                         ? Colors.black.withValues(alpha: 0.25)
-                        : context.colors.scaffoldBackground.withValues(alpha: 0.95),
+                        : context.colors.scaffoldBackground.withValues(
+                            alpha: 0.95,
+                          ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Icon(
                           isLiveLoc ? Icons.sensors : CommonIcons.location,
                           size: 16,
-                          color: isLiveLoc ? (isCurrentlyActive ? liveColor : Colors.grey) : context.colors.primary,
+                          color: isLiveLoc
+                              ? (isCurrentlyActive ? liveColor : Colors.grey)
+                              : context.colors.primary,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             isLiveLoc
                                 ? liveStatusText
-                                : ((displayAddress != null && displayAddress.isNotEmpty)
-                                    ? displayAddress
-                                    : (lat != 0.0 ? 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}' : 'Location')),
+                                : ((displayAddress != null &&
+                                          displayAddress.isNotEmpty)
+                                      ? displayAddress
+                                      : (lat != 0.0
+                                            ? 'Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}'
+                                            : 'Location')),
                             style: TextStyle(
-                              color: isMe ? Colors.white : context.colors.textPrimary,
+                              color: isMe
+                                  ? Colors.white
+                                  : context.colors.textPrimary,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -2374,16 +3082,20 @@ class _MessageBubbleState extends State<MessageBubble> {
         return first.replaceAll(RegExp(r'[^\d+]'), '');
       }
 
-      final cleanedPhone = sanitizePhone(phone.isNotEmpty ? phone : displayPhone);
+      final cleanedPhone = sanitizePhone(
+        phone.isNotEmpty ? phone : displayPhone,
+      );
 
       result = GestureDetector(
         onTap: () {
           if (isSchatUser && contactUserId != null) {
             final chatsBloc = getIt<ChatsBloc>();
-            chatsBloc.add(CreateChat(
-              participantId: contactUserId,
-              contactName: displayName,
-            ));
+            chatsBloc.add(
+              CreateChat(
+                participantId: contactUserId,
+                contactName: displayName,
+              ),
+            );
             StreamSubscription? sub;
             sub = chatsBloc.stream.listen((state) {
               state.maybeWhen(
@@ -2462,7 +3174,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       Text(
                         displayPhone,
                         style: context.bodySmall.copyWith(
-                          color: isSchatUser 
+                          color: isSchatUser
                               ? context.colors.textSecondary
                               : context.colors.textHint, // blur/muted color!
                           fontSize: 11,
@@ -2479,7 +3191,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 IconButton(
                   icon: Icon(
                     CommonIcons.phone,
-                    color: isMe ? context.colors.pureWhite : context.colors.primary,
+                    color: isMe
+                        ? context.colors.pureWhite
+                        : context.colors.primary,
                     size: 20,
                   ),
                   onPressed: () {
@@ -2511,7 +3225,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     final statusLower = callMeta?.status.toLowerCase() ?? '';
     final msgLower = message.toLowerCase();
     final isMissed = statusLower == 'missed' || msgLower.contains('missed');
-    final isDeclined = statusLower == 'rejected' ||
+    final isDeclined =
+        statusLower == 'rejected' ||
         statusLower == 'reject' ||
         statusLower == 'busy' ||
         statusLower == 'decline' ||
@@ -2520,7 +3235,9 @@ class _MessageBubbleState extends State<MessageBubble> {
         msgLower.contains('rejected') ||
         msgLower.contains('busy');
     final isErrorState = isMissed || isDeclined;
-    final isVideo = (callMeta?.callType.toLowerCase() == 'video') || msgLower.contains('video');
+    final isVideo =
+        (callMeta?.callType.toLowerCase() == 'video') ||
+        msgLower.contains('video');
     final duration = callMeta?.duration ?? (widget.duration?.toInt() ?? 0);
 
     String title;
@@ -2549,12 +3266,14 @@ class _MessageBubbleState extends State<MessageBubble> {
     final iconBgColor = isErrorState
         ? errorColor.withValues(alpha: 0.15)
         : (isDark
-            ? const Color(0xFF00D084).withValues(alpha: 0.18)
-            : successColor.withValues(alpha: 0.12));
+              ? const Color(0xFF00D084).withValues(alpha: 0.18)
+              : successColor.withValues(alpha: 0.12));
 
     IconData callIcon;
     if (isVideo) {
-      callIcon = isErrorState ? Icons.missed_video_call_rounded : Icons.videocam_rounded;
+      callIcon = isErrorState
+          ? Icons.missed_video_call_rounded
+          : Icons.videocam_rounded;
     } else {
       if (isErrorState) {
         callIcon = Icons.phone_missed_rounded;
@@ -2578,11 +3297,7 @@ class _MessageBubbleState extends State<MessageBubble> {
               color: iconBgColor,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              callIcon,
-              color: iconColor,
-              size: 20,
-            ),
+            child: Icon(callIcon, color: iconColor, size: 20),
           ),
           CommonSpaces.w12,
           Flexible(
@@ -2684,7 +3399,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                           height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF00A884).withValues(alpha: 0.25),
+                            color: const Color(
+                              0xFF00A884,
+                            ).withValues(alpha: 0.25),
                           ),
                         ),
                       ),
@@ -2735,11 +3452,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         width: 1.2,
                       ),
                     ),
-                    child: Icon(
-                      icon,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+                    child: Icon(icon, color: Colors.white, size: 22),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -2771,7 +3484,11 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  Widget _buildLockedAttachmentCard(BuildContext context, {required String type, required String label}) {
+  Widget _buildLockedAttachmentCard(
+    BuildContext context, {
+    required String type,
+    required String label,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -2794,7 +3511,9 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
             child: Icon(
               CommonIcons.lockOutline,
-              color: isMe ? context.colors.pureWhite : context.colors.textSecondary,
+              color: isMe
+                  ? context.colors.pureWhite
+                  : context.colors.textSecondary,
               size: 16,
             ),
           ),
@@ -2856,7 +3575,9 @@ class _MessageBubbleState extends State<MessageBubble> {
             children: [
               _buildCapsuleChip(
                 context: context,
-                icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                icon: allowView
+                    ? CommonIcons.visibility
+                    : CommonIcons.visibilityOff,
                 label: allowView ? 'View' : 'View Locked',
                 backgroundColor: allowView ? activeBg : inactiveBg,
                 textColor: allowView ? activeIcon : inactiveIcon,
@@ -2869,7 +3590,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       );
     }
 
-    final bool canToggleAsOwner = isTrueOwner;
+    final bool canToggleAsOwner = canManageRecipientPermissions;
     if (canToggleAsOwner) {
       final activeBg = context.colors.primary.withValues(alpha: 0.12);
       final activeIcon = context.colors.primary;
@@ -2892,46 +3613,80 @@ class _MessageBubbleState extends State<MessageBubble> {
             children: [
               _buildCapsuleChip(
                 context: context,
-                icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
-                label: allowView ? (isFileViewed ? 'Viewed' : 'View Allowed') : 'View Locked',
-                backgroundColor: allowView ? (isFileViewed ? viewedBg : activeBg) : inactiveBg,
-                textColor: allowView ? (isFileViewed ? viewedIcon : activeIcon) : inactiveIcon,
-                borderColor: allowView ? (isFileViewed ? viewedBorder : activeBorder) : inactiveBorder,
+                icon: allowView
+                    ? CommonIcons.visibility
+                    : CommonIcons.visibilityOff,
+                label: allowView
+                    ? (isFileViewed ? 'Viewed' : 'View Allowed')
+                    : 'View Locked',
+                backgroundColor: allowView
+                    ? (isFileViewed ? viewedBg : activeBg)
+                    : inactiveBg,
+                textColor: allowView
+                    ? (isFileViewed ? viewedIcon : activeIcon)
+                    : inactiveIcon,
+                borderColor: allowView
+                    ? (isFileViewed ? viewedBorder : activeBorder)
+                    : inactiveBorder,
                 onTap: () {
                   final nextVal = !allowView;
                   _updatePermissions(context, view: nextVal);
                   context.showSuccessNotification(
-                    nextVal ? 'View enabled for recipient' : 'View disabled for recipient',
+                    nextVal
+                        ? 'View enabled for recipient'
+                        : 'View disabled for recipient',
                   );
                 },
               ),
               _buildCapsuleChip(
                 context: context,
-                icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
-                label: allowDownload ? (isFileDownloaded ? 'Downloaded' : 'Download Allowed') : 'Download Locked',
-                backgroundColor: allowDownload ? (isFileDownloaded ? viewedBg : activeBg) : inactiveBg,
-                textColor: allowDownload ? (isFileDownloaded ? viewedIcon : activeIcon) : inactiveIcon,
-                borderColor: allowDownload ? (isFileDownloaded ? viewedBorder : activeBorder) : inactiveBorder,
+                icon: allowDownload
+                    ? CommonIcons.download
+                    : CommonIcons.downloadOff,
+                label: allowDownload
+                    ? (isFileDownloaded ? 'Downloaded' : 'Download Allowed')
+                    : 'Download Locked',
+                backgroundColor: allowDownload
+                    ? (isFileDownloaded ? viewedBg : activeBg)
+                    : inactiveBg,
+                textColor: allowDownload
+                    ? (isFileDownloaded ? viewedIcon : activeIcon)
+                    : inactiveIcon,
+                borderColor: allowDownload
+                    ? (isFileDownloaded ? viewedBorder : activeBorder)
+                    : inactiveBorder,
                 onTap: () {
                   final nextVal = !allowDownload;
                   _updatePermissions(context, download: nextVal);
                   context.showSuccessNotification(
-                    nextVal ? 'Download enabled for recipient' : 'Download disabled for recipient',
+                    nextVal
+                        ? 'Download enabled for recipient'
+                        : 'Download disabled for recipient',
                   );
                 },
               ),
               _buildCapsuleChip(
                 context: context,
                 icon: allowShare ? CommonIcons.share : CommonIcons.shareOff,
-                label: allowShare ? (isFileShared ? 'Shared' : 'Share Allowed') : 'Share Locked',
-                backgroundColor: allowShare ? (isFileShared ? viewedBg : activeBg) : inactiveBg,
-                textColor: allowShare ? (isFileShared ? viewedIcon : activeIcon) : inactiveIcon,
-                borderColor: allowShare ? (isFileShared ? viewedBorder : activeBorder) : inactiveBorder,
+                label: allowShare
+                    ? (isFileShared ? 'Shared' : 'Share Allowed')
+                    : 'Share Locked',
+                backgroundColor: allowShare
+                    ? (isFileShared ? viewedBg : activeBg)
+                    : inactiveBg,
+                textColor: allowShare
+                    ? (isFileShared ? viewedIcon : activeIcon)
+                    : inactiveIcon,
+                borderColor: allowShare
+                    ? (isFileShared ? viewedBorder : activeBorder)
+                    : inactiveBorder,
                 onTap: () {
                   final nextVal = !allowShare;
                   _updatePermissions(context, share: nextVal);
                   context.showSuccessNotification(
-                    nextVal ? 'Share enabled for recipient' : 'Share disabled for recipient',
+                    nextVal
+                        ? 'Share enabled for recipient'
+                        : 'Share disabled for recipient',
                   );
                 },
               ),
@@ -2957,25 +3712,33 @@ class _MessageBubbleState extends State<MessageBubble> {
             children: [
               _buildCapsuleChip(
                 context: context,
-                icon: allowView ? CommonIcons.visibility : CommonIcons.visibilityOff,
+                icon: allowView
+                    ? CommonIcons.visibility
+                    : CommonIcons.visibilityOff,
                 label: allowView ? 'View' : 'Access Revoked',
                 backgroundColor: allowView ? activeBg : inactiveBg,
                 textColor: allowView ? activeIcon : inactiveIcon,
                 borderColor: allowView ? activeBorder : inactiveBorder,
                 onTap: allowView
                     ? () => _openInAppViewer(context)
-                    : () => context.showInfoNotification('Access revoked by sender'),
+                    : () => context.showInfoNotification(
+                        'Access revoked by sender',
+                      ),
               ),
               _buildCapsuleChip(
                 context: context,
-                icon: allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
+                icon: allowDownload
+                    ? CommonIcons.download
+                    : CommonIcons.downloadOff,
                 label: allowDownload ? 'Download' : 'Download Restricted',
                 backgroundColor: allowDownload ? activeBg : inactiveBg,
                 textColor: allowDownload ? activeIcon : inactiveIcon,
                 borderColor: allowDownload ? activeBorder : inactiveBorder,
                 onTap: allowDownload
                     ? () => _triggerDownload(context)
-                    : () => context.showInfoNotification('Download restricted by sender'),
+                    : () => context.showInfoNotification(
+                        'Download restricted by sender',
+                      ),
               ),
               _buildCapsuleChip(
                 context: context,
@@ -2986,7 +3749,9 @@ class _MessageBubbleState extends State<MessageBubble> {
                 borderColor: allowShare ? activeBorder : inactiveBorder,
                 onTap: allowShare
                     ? () => _triggerShare(context)
-                    : () => context.showInfoNotification('Forwarding restricted by sender'),
+                    : () => context.showInfoNotification(
+                        'Forwarding restricted by sender',
+                      ),
               ),
             ],
           ),
@@ -3044,80 +3809,158 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  void _updatePermissions(BuildContext context, {bool? share, bool? download, bool? view}) {
-    final newShare = share ?? allowShare;
-    final newDownload = download ?? allowDownload;
-    final newView = view ?? allowView;
+  void _updatePermissions(
+    BuildContext context, {
+    bool? share,
+    bool? download,
+    bool? view,
+  }) {
+    final prevView = allowView;
+    final prevDownload = allowDownload;
+    final prevShare = allowShare;
+
+    bool newView = view ?? allowView;
+    bool newDownload = download ?? allowDownload;
+    bool newShare = share ?? allowShare;
+
+    // View, Download, and Share are independent permissions (Download & Share only require View = true)
+    if (share == true || download == true) {
+      newView = true;
+    } else if (view == false) {
+      newView = false;
+      newDownload = false;
+      newShare = false;
+    }
+
+    String? resolvedMediaId =
+        SecureAttachmentService.findMediaId(attachmentPath) ??
+        SecureAttachmentService.findMediaId(messageId) ??
+        SecureAttachmentService.findMediaId(attachmentName);
+    if ((resolvedMediaId == null || resolvedMediaId.isEmpty) &&
+        attachmentPath != null) {
+      final match = RegExp(
+        r'(?:chat-media|documents|voice-notes)/[0-9a-fA-F-]{36}/[0-9a-fA-F-]{36}/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+',
+      ).firstMatch(attachmentPath!);
+      if (match != null) {
+        resolvedMediaId = match.group(1);
+      }
+    }
 
     try {
       if (getIt.isRegistered<StorageService>()) {
         final storage = getIt<StorageService>();
-        storage.saveSenderMediaPermissions(messageId, allowView: newView, allowDownload: newDownload, allowShare: newShare);
-        if (attachmentPath != null && attachmentPath!.isNotEmpty) {
-          storage.saveSenderMediaPermissions(attachmentPath!, allowView: newView, allowDownload: newDownload, allowShare: newShare);
-        }
-        if (attachmentName != null && attachmentName!.isNotEmpty) {
-          storage.saveSenderMediaPermissions(attachmentName!, allowView: newView, allowDownload: newDownload, allowShare: newShare);
+        storage.saveSenderMediaPermissions(
+          messageId,
+          allowView: newView,
+          allowDownload: newDownload,
+          allowShare: newShare,
+        );
+        if (!isForwarded) {
+          if (attachmentPath != null && attachmentPath!.isNotEmpty) {
+            storage.saveSenderMediaPermissions(
+              attachmentPath!,
+              allowView: newView,
+              allowDownload: newDownload,
+              allowShare: newShare,
+            );
+          }
+          if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+            storage.saveSenderMediaPermissions(
+              resolvedMediaId,
+              allowView: newView,
+              allowDownload: newDownload,
+              allowShare: newShare,
+            );
+          }
         }
       }
     } catch (_) {}
 
     setState(() {});
 
-    context.read<ChatBloc>().add(UpdateAttachmentPermissionsEvent(
-      messageId: messageId,
-      conversationId: conversationId,
-      allowShare: newShare,
-      allowDownload: newDownload,
-      allowView: newView,
-    ));
-    
-    context.read<ChatSocketBloc>().add(SendEditMessage(
-      messageId: messageId,
-      conversationId: conversationId,
-      security: {
-        'isLocked': false,
-        'is_locked': false,
-        'allowShare': newShare,
-        'allow_share': newShare,
-        'allowDownload': newDownload,
-        'allow_download': newDownload,
-        'allowView': newView,
-        'allow_view': newView,
-      },
-    ));
-
-    if (messageId.isNotEmpty) {
-      getIt<ChatRepository>().updateMessageSecurity(
-        messageId,
+    context.read<ChatBloc>().add(
+      UpdateAttachmentPermissionsEvent(
+        messageId: messageId,
+        conversationId: conversationId,
         allowShare: newShare,
         allowDownload: newDownload,
         allowView: newView,
-      ).catchError((e) {
-        debugPrint('Failed to persist security permissions: $e');
-      });
+      ),
+    );
+
+    context.read<ChatSocketBloc>().add(
+      SendEditMessage(
+        messageId: messageId,
+        conversationId: conversationId,
+        security: {
+          'isLocked': false,
+          'is_locked': false,
+          'allowShare': newShare,
+          'allow_share': newShare,
+          'allowDownload': newDownload,
+          'allow_download': newDownload,
+          'allowView': newView,
+          'allow_view': newView,
+        },
+      ),
+    );
+
+    if (messageId.isNotEmpty) {
+      getIt<ChatRepository>()
+          .updateMessageSecurity(
+            messageId,
+            allowShare: newShare,
+            allowDownload: newDownload,
+            allowView: newView,
+          )
+          .catchError((e) {
+            debugPrint('Failed to persist security permissions: $e');
+          });
     }
 
     if (widget.recipientId != null && widget.recipientId!.isNotEmpty) {
-      String? resolvedMediaId = SecureAttachmentService.findMediaId(attachmentPath) ??
-          SecureAttachmentService.findMediaId(attachmentName);
-      if ((resolvedMediaId == null || resolvedMediaId.isEmpty) && attachmentPath != null) {
-        final match = RegExp(r'/([0-9a-fA-F-]{36})\.[a-zA-Z0-9]+(?:\?|$)').firstMatch(attachmentPath!);
-        if (match != null) {
-          resolvedMediaId = match.group(1);
-        }
-      }
-      if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
-        getIt<ChatRepository>().shareMedia(
-          mediaId: resolvedMediaId,
-          granteeId: widget.recipientId!,
-          canView: newView,
-          canDownload: newDownload,
-          canShare: newShare,
-        ).catchError((e) {
-          debugPrint('Failed to update media share grant: $e');
-          return false;
-        });
+      final targetMediaId =
+          (resolvedMediaId != null && resolvedMediaId.isNotEmpty)
+          ? resolvedMediaId
+          : messageId;
+      if (targetMediaId.isNotEmpty) {
+        getIt<ChatRepository>()
+            .shareMedia(
+              mediaId: targetMediaId,
+              granteeId: widget.recipientId!,
+              canView: newView,
+              canDownload: newDownload,
+              canShare: newShare,
+            )
+            .catchError((e) {
+              debugPrint('Failed to update media share grant: $e');
+              try {
+                if (getIt.isRegistered<StorageService>()) {
+                  getIt<StorageService>().saveSenderMediaPermissions(
+                    messageId,
+                    allowView: prevView,
+                    allowDownload: prevDownload,
+                    allowShare: prevShare,
+                  );
+                }
+                if (mounted) {
+                  setState(() {});
+                  context.read<ChatBloc>().add(
+                    UpdateAttachmentPermissionsEvent(
+                      messageId: messageId,
+                      conversationId: conversationId,
+                      allowShare: prevShare,
+                      allowDownload: prevDownload,
+                      allowView: prevView,
+                    ),
+                  );
+                  context.showErrorNotification(
+                    'Cannot grant permission exceeding your own effective access',
+                  );
+                }
+              } catch (_) {}
+              return false;
+            });
       }
     }
 
@@ -3148,7 +3991,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   void _openInAppViewer(BuildContext context) {
     String? path = attachmentPath;
 
-    final bool isDeadLocal = path != null &&
+    final bool isDeadLocal =
+        path != null &&
         !kIsWeb &&
         (path.startsWith('/') || path.startsWith('file://')) &&
         !File(path.replaceAll('file://', '')).existsSync();
@@ -3196,8 +4040,17 @@ class _MessageBubbleState extends State<MessageBubble> {
       try {
         final decoded = jsonDecode(message);
         if (decoded is Map) {
-          final key = (decoded['fileKey'] ?? decoded['file_key'] ?? decoded['url'] ?? decoded['mediaUrl'] ?? decoded['media_url'])?.toString();
-          if ((path == null || path.isEmpty) && key != null && key.isNotEmpty && !key.startsWith('/')) {
+          final key =
+              (decoded['fileKey'] ??
+                      decoded['file_key'] ??
+                      decoded['url'] ??
+                      decoded['mediaUrl'] ??
+                      decoded['media_url'])
+                  ?.toString();
+          if ((path == null || path.isEmpty) &&
+              key != null &&
+              key.isNotEmpty &&
+              !key.startsWith('/')) {
             path = key;
           }
           final mId = (decoded['mediaId'] ?? decoded['media_id'])?.toString();
@@ -3208,18 +4061,22 @@ class _MessageBubbleState extends State<MessageBubble> {
       } catch (_) {}
     }
 
-    mediaIdToUse ??= SecureAttachmentService.findMediaId(path) ??
+    mediaIdToUse ??=
+        SecureAttachmentService.findMediaId(path) ??
         SecureAttachmentService.findMediaId(attachmentPath) ??
         SecureAttachmentService.findMediaId(attachmentName) ??
         SecureAttachmentService.findMediaId(messageId);
 
-    if (mediaIdToUse == null && RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(messageId)) {
+    if (mediaIdToUse == null &&
+        RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(messageId)) {
       mediaIdToUse = messageId;
     }
 
     // 3. If null, check message text fallback
     if (path == null || path.isEmpty) {
-      if (message.isNotEmpty && (message.startsWith('http') || (!message.startsWith('/') && message.contains('.')))) {
+      if (message.isNotEmpty &&
+          (message.startsWith('http') ||
+              (!message.startsWith('/') && message.contains('.')))) {
         path = message;
       }
     }
@@ -3228,7 +4085,9 @@ class _MessageBubbleState extends State<MessageBubble> {
     if ((path == null || path.isEmpty) && attachmentBytes != null) {
       try {
         final tempDir = Directory.systemTemp;
-        final tempFile = File('${tempDir.path}/vo_${DateTime.now().millisecondsSinceEpoch}_${attachmentName ?? 'media'}');
+        final tempFile = File(
+          '${tempDir.path}/vo_${DateTime.now().millisecondsSinceEpoch}_${attachmentName ?? 'media'}',
+        );
         tempFile.writeAsBytesSync(attachmentBytes!);
         path = tempFile.path;
       } catch (e) {
@@ -3237,35 +4096,97 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
 
     if (path == null || path.isEmpty) {
-      debugPrint('Cannot open viewer: attachmentPath, message and attachmentBytes are all empty');
+      debugPrint(
+        'Cannot open viewer: attachmentPath, message and attachmentBytes are all empty',
+      );
       return;
     }
     final String url = SecureAttachmentService.resolveFullUrl(path);
-    final bool isLocalFile = !kIsWeb && (url.startsWith('file://') || File(url.replaceAll('file://', '')).existsSync());
+    final bool isLocalFile =
+        !kIsWeb &&
+        (url.startsWith('file://') ||
+            File(url.replaceAll('file://', '')).existsSync());
 
     var cleanDisplayName = attachmentName ?? 'File';
     while (cleanDisplayName.toLowerCase().endsWith('.enc')) {
-      cleanDisplayName = cleanDisplayName.substring(0, cleanDisplayName.length - 4);
+      cleanDisplayName = cleanDisplayName.substring(
+        0,
+        cleanDisplayName.length - 4,
+      );
     }
     if (cleanDisplayName.isEmpty) cleanDisplayName = 'attachment';
 
-    final String actualName = cleanDisplayName.contains(' · ') ? cleanDisplayName.split(' · ').first.trim() : cleanDisplayName;
+    final String actualName = cleanDisplayName.contains(' · ')
+        ? cleanDisplayName.split(' · ').first.trim()
+        : cleanDisplayName;
     final String cleanExt = actualName.contains('.')
-        ? actualName.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
-        : (path.contains('.') ? path.split('?').first.split('.').last.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '') : '');
+        ? actualName
+              .split('.')
+              .last
+              .trim()
+              .toLowerCase()
+              .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+        : (path.contains('.')
+              ? path
+                    .split('?')
+                    .first
+                    .split('.')
+                    .last
+                    .trim()
+                    .toLowerCase()
+                    .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+              : '');
 
     String effectiveViewerType = type.toLowerCase();
     if (['txt', 'text', 'json', 'csv', 'xml', 'md', 'log'].contains(cleanExt)) {
       effectiveViewerType = 'text';
-    } else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'bmp'].contains(cleanExt)) {
+    } else if ([
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'webp',
+      'svg',
+      'heic',
+      'bmp',
+    ].contains(cleanExt)) {
       effectiveViewerType = 'image';
-    } else if (['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(cleanExt)) {
+    } else if ([
+      'mp4',
+      'webm',
+      'ogg',
+      'avi',
+      'mov',
+      'mkv',
+      '3gp',
+      'flv',
+      'm4v',
+    ].contains(cleanExt)) {
       effectiveViewerType = 'video';
-    } else if (['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus', 'amr', 'wma', 'caf'].contains(cleanExt)) {
+    } else if ([
+      'mp3',
+      'wav',
+      'm4a',
+      'aac',
+      'flac',
+      'opus',
+      'amr',
+      'wma',
+      'caf',
+    ].contains(cleanExt)) {
       effectiveViewerType = 'audio';
     } else if (cleanExt == 'pdf') {
       effectiveViewerType = 'pdf';
-    } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(cleanExt)) {
+    } else if ([
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
+      'ppt',
+      'pptx',
+      'zip',
+      'rar',
+    ].contains(cleanExt)) {
       effectiveViewerType = 'file';
     }
 
@@ -3357,19 +4278,26 @@ class _MessageBubbleState extends State<MessageBubble> {
     String url = path;
 
     // Check backend download url if mediaId is present
-    final resolvedMediaId = SecureAttachmentService.findMediaId(path) ??
+    final resolvedMediaId =
+        SecureAttachmentService.findMediaId(path) ??
         SecureAttachmentService.findMediaId(attachmentName);
     if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
       try {
-        final secureUrl = await getIt<ChatRepository>().getMediaDownloadUrl(resolvedMediaId);
+        final secureUrl = await getIt<ChatRepository>().getMediaDownloadUrl(
+          resolvedMediaId,
+        );
         if (secureUrl != null && secureUrl.isNotEmpty) {
           url = secureUrl;
         }
       } catch (e) {
         final err = e.toString().toLowerCase();
-        if (err.contains('403') || err.contains('permission') || err.contains('forbidden')) {
+        if (err.contains('403') ||
+            err.contains('permission') ||
+            err.contains('forbidden')) {
           if (context.mounted) {
-            context.showErrorNotification('You do not have permission to download this media');
+            context.showErrorNotification(
+              'You do not have permission to download this media',
+            );
           }
           return;
         }
@@ -3446,7 +4374,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
     if (onSharePressed != null) {
       onSharePressed!();
-      
+
       // Notify backend about file share
       if (attachmentPath != null) {
         getIt<ChatSocketRepository>().sendFileAction(
@@ -3466,21 +4394,29 @@ class _MessageBubbleState extends State<MessageBubble> {
       final path = attachmentPath;
       if (path == null || path.isEmpty) return;
       final clean = attachmentName ?? (type == 'video' ? 'video.mp4' : 'file');
-      String? localPath = SecureAttachmentService.findCachedLocalPath(path) ??
-          SecureAttachmentService.findLocalFile(pathOrKey: path, fileName: clean);
+      String? localPath =
+          SecureAttachmentService.findCachedLocalPath(path) ??
+          SecureAttachmentService.findLocalFile(
+            pathOrKey: path,
+            fileName: clean,
+          );
       if (localPath != null && File(localPath).existsSync()) {
-        final isEnc = localPath.toLowerCase().endsWith('.enc') ||
+        final isEnc =
+            localPath.toLowerCase().endsWith('.enc') ||
             (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(localPath));
         if (isEnc) {
-          final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
-            encryptedFilePath: localPath,
-            originalFileName: clean,
-          );
+          final decFile = await getIt<SecureAttachmentService>()
+              .decryptToTemporaryFile(
+                encryptedFilePath: localPath,
+                originalFileName: clean,
+              );
           localPath = decFile.path;
         }
         await Share.shareXFiles([XFile(localPath, name: clean)]);
       } else {
-        context.showInfoNotification('Please download the file first before sharing');
+        context.showInfoNotification(
+          'Please download the file first before sharing',
+        );
       }
     } catch (e) {
       debugPrint('Error sharing file externally: $e');
@@ -3488,26 +4424,47 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildFileBubbleCard(BuildContext context) {
-    final String rawFileName = attachmentName ?? (type == 'video' ? 'Video' : 'File');
+    final String rawFileName =
+        attachmentName ?? (type == 'video' ? 'Video' : 'File');
     var cleanFileName = rawFileName;
     while (cleanFileName.toLowerCase().endsWith('.enc')) {
       cleanFileName = cleanFileName.substring(0, cleanFileName.length - 4);
     }
-    final String fileName = cleanFileName.isNotEmpty ? cleanFileName : rawFileName;
+    final String fileName = cleanFileName.isNotEmpty
+        ? cleanFileName
+        : rawFileName;
     // Extract actual file name before any ' · ' caption separator to prevent long caption poisoning the extension
-    final String nameBeforeCaption = fileName.contains(' · ') ? fileName.split(' · ').first.trim() : fileName;
-    final String rawExt = nameBeforeCaption.contains('.') ? nameBeforeCaption.split('.').last.trim().toLowerCase() : '';
+    final String nameBeforeCaption = fileName.contains(' · ')
+        ? fileName.split(' · ').first.trim()
+        : fileName;
+    final String rawExt = nameBeforeCaption.contains('.')
+        ? nameBeforeCaption.split('.').last.trim().toLowerCase()
+        : '';
     final String extension = rawExt.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-    
+
     Color typeColor;
     String badgeText;
     IconData fileIcon;
 
-    final isVideoExt = ['mp4', 'webm', 'ogg', 'avi', 'mov', 'mkv', '3gp', 'flv', 'm4v'].contains(extension);
+    final isVideoExt = [
+      'mp4',
+      'webm',
+      'ogg',
+      'avi',
+      'mov',
+      'mkv',
+      '3gp',
+      'flv',
+      'm4v',
+    ].contains(extension);
 
     if (type == 'video' || isVideoExt) {
       typeColor = const Color(0xFF1565C0); // Blue for video
-      badgeText = extension.isNotEmpty ? (extension.length > 4 ? extension.substring(0, 4).toUpperCase() : extension.toUpperCase()) : 'VIDEO';
+      badgeText = extension.isNotEmpty
+          ? (extension.length > 4
+                ? extension.substring(0, 4).toUpperCase()
+                : extension.toUpperCase())
+          : 'VIDEO';
       fileIcon = CommonIcons.playCircle;
     } else {
       switch (extension) {
@@ -3567,7 +4524,11 @@ class _MessageBubbleState extends State<MessageBubble> {
           break;
         default:
           typeColor = const Color(0xFF757575); // Grey for other files
-          badgeText = extension.isNotEmpty ? (extension.length > 4 ? extension.substring(0, 4).toUpperCase() : extension.toUpperCase()) : 'FILE';
+          badgeText = extension.isNotEmpty
+              ? (extension.length > 4
+                    ? extension.substring(0, 4).toUpperCase()
+                    : extension.toUpperCase())
+              : 'FILE';
           fileIcon = CommonIcons.document;
           break;
       }
@@ -3629,11 +4590,16 @@ class _MessageBubbleState extends State<MessageBubble> {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(context.colors.pureWhite),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          context.colors.pureWhite,
+                        ),
                       ),
                     )
                   : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 2.0,
+                        vertical: 2.0,
+                      ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
@@ -3720,8 +4686,11 @@ class _MessageBubbleState extends State<MessageBubble> {
     return '$minutes min $remainingSeconds sec';
   }
 
-
-  Widget _buildMessageText(BuildContext context, TextStyle baseStyle, String text) {
+  Widget _buildMessageText(
+    BuildContext context,
+    TextStyle baseStyle,
+    String text,
+  ) {
     if (isDeleted) {
       final Color deletedColor = context.colors.isDark
           ? const Color(0xFFB0B3B8)
@@ -3736,11 +4705,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.block_outlined,
-              size: 15,
-              color: deletedColor,
-            ),
+            Icon(Icons.block_outlined, size: 15, color: deletedColor),
             CommonSpaces.w6,
             Text(
               isMe ? 'You deleted this message' : 'This message was deleted',
@@ -3768,17 +4733,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
     if (matches.isEmpty) {
       final spans = _buildHighlightedSpans(text, searchQuery, baseStyle);
-      if (spans.length == 1 && spans.first is TextSpan && (spans.first as TextSpan).style == baseStyle) {
-        contentWidget = Text(
-          text,
-          style: baseStyle,
-        );
+      if (spans.length == 1 &&
+          spans.first is TextSpan &&
+          (spans.first as TextSpan).style == baseStyle) {
+        contentWidget = Text(text, style: baseStyle);
       } else {
         contentWidget = RichText(
-          text: TextSpan(
-            style: baseStyle,
-            children: spans,
-          ),
+          text: TextSpan(style: baseStyle, children: spans),
         );
       }
     } else {
@@ -3787,77 +4748,103 @@ class _MessageBubbleState extends State<MessageBubble> {
 
       for (final match in matches) {
         if (match.start > lastEnd) {
-          spans.addAll(_buildHighlightedSpans(
-            text.substring(lastEnd, match.start),
-            searchQuery,
-            baseStyle,
-          ));
+          spans.addAll(
+            _buildHighlightedSpans(
+              text.substring(lastEnd, match.start),
+              searchQuery,
+              baseStyle,
+            ),
+          );
         }
 
         final rawToken = text.substring(match.start, match.end);
 
         if (rawToken.startsWith('@')) {
           // @name Mention token -> Render in blue and handle click to show user details
-          final cleanMention = rawToken.replaceAll(RegExp(r'[.,)>\];:!?]+$'), '');
+          final cleanMention = rawToken.replaceAll(
+            RegExp(r'[.,)>\];:!?]+$'),
+            '',
+          );
           final trailingPunctuation = rawToken.substring(cleanMention.length);
           const mentionColor = Color(0xFF1E88E5); // Blue color for @name
 
-          spans.add(TextSpan(
-            text: cleanMention,
-            style: baseStyle.copyWith(
-              color: mentionColor,
-              fontWeight: FontWeight.w600,
+          spans.add(
+            TextSpan(
+              text: cleanMention,
+              style: baseStyle.copyWith(
+                color: mentionColor,
+                fontWeight: FontWeight.w600,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  widget.onMentionTap?.call(cleanMention);
+                },
             ),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () {
-                widget.onMentionTap?.call(cleanMention);
-              },
-          ));
+          );
 
           if (trailingPunctuation.isNotEmpty) {
-            spans.addAll(_buildHighlightedSpans(trailingPunctuation, searchQuery, baseStyle));
+            spans.addAll(
+              _buildHighlightedSpans(
+                trailingPunctuation,
+                searchQuery,
+                baseStyle,
+              ),
+            );
           }
         } else {
           // URL token
           final cleanUrl = rawToken.replaceAll(RegExp(r'[.,)>\];]+$'), '');
           final trailingPunctuation = rawToken.substring(cleanUrl.length);
-          final linkColor = isMe ? context.colors.blueAccent : context.colors.primary;
+          final linkColor = isMe
+              ? context.colors.blueAccent
+              : context.colors.primary;
 
-          spans.add(TextSpan(
-            text: cleanUrl,
-            style: context.bodyMedium.copyWith(
-              color: linkColor,
-              decoration: TextDecoration.underline,
-            ),
-            recognizer: TapGestureRecognizer()
-              ..onTap = () async {
-                var openUrl = cleanUrl;
-                if (openUrl.toLowerCase().startsWith('www.')) {
-                  openUrl = 'https://$openUrl';
-                }
-                final uri = Uri.tryParse(openUrl);
-                if (uri != null) {
-                  try {
-                    final can = await canLaunchUrl(uri);
-                    if (can) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    } else {
+          spans.add(
+            TextSpan(
+              text: cleanUrl,
+              style: context.bodyMedium.copyWith(
+                color: linkColor,
+                decoration: TextDecoration.underline,
+              ),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () async {
+                  var openUrl = cleanUrl;
+                  if (openUrl.toLowerCase().startsWith('www.')) {
+                    openUrl = 'https://$openUrl';
+                  }
+                  final uri = Uri.tryParse(openUrl);
+                  if (uri != null) {
+                    try {
+                      final can = await canLaunchUrl(uri);
+                      if (can) {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      } else {
+                        if (context.mounted) {
+                          context.showErrorNotification('Could not open link');
+                        }
+                      }
+                    } catch (e) {
+                      debugPrint('Error launching url: $e');
                       if (context.mounted) {
-                        context.showErrorNotification('Could not open link');
+                        context.showErrorNotification('Error opening link');
                       }
                     }
-                  } catch (e) {
-                    debugPrint('Error launching url: $e');
-                    if (context.mounted) {
-                      context.showErrorNotification('Error opening link');
-                    }
                   }
-                }
-              },
-          ));
+                },
+            ),
+          );
 
           if (trailingPunctuation.isNotEmpty) {
-            spans.addAll(_buildHighlightedSpans(trailingPunctuation, searchQuery, baseStyle));
+            spans.addAll(
+              _buildHighlightedSpans(
+                trailingPunctuation,
+                searchQuery,
+                baseStyle,
+              ),
+            );
           }
         }
 
@@ -3865,18 +4852,17 @@ class _MessageBubbleState extends State<MessageBubble> {
       }
 
       if (lastEnd < text.length) {
-        spans.addAll(_buildHighlightedSpans(
-          text.substring(lastEnd),
-          searchQuery,
-          baseStyle,
-        ));
+        spans.addAll(
+          _buildHighlightedSpans(
+            text.substring(lastEnd),
+            searchQuery,
+            baseStyle,
+          ),
+        );
       }
 
       contentWidget = RichText(
-        text: TextSpan(
-          style: baseStyle,
-          children: spans,
-        ),
+        text: TextSpan(style: baseStyle, children: spans),
       );
     }
 
@@ -3885,10 +4871,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          LinkPreviewCard(
-            url: firstUrl,
-            isMe: isMe,
-          ),
+          LinkPreviewCard(url: firstUrl, isMe: isMe),
           contentWidget,
         ],
       );
@@ -3976,7 +4959,8 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
   @override
   void didUpdateWidget(_VideoMessagePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.url != oldWidget.url || (oldWidget.isUploading && !widget.isUploading)) {
+    if (widget.url != oldWidget.url ||
+        (oldWidget.isUploading && !widget.isUploading)) {
       if (widget.url != null && widget.url!.isNotEmpty && !widget.isUploading) {
         _initializePlayer();
       }
@@ -3996,7 +4980,9 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
     }
     if (_tempDecryptedFile != null) {
       try {
-        await getIt<SecureAttachmentService>().cleanupTempFile(_tempDecryptedFile);
+        await getIt<SecureAttachmentService>().cleanupTempFile(
+          _tempDecryptedFile,
+        );
       } catch (_) {}
       _tempDecryptedFile = null;
     }
@@ -4008,7 +4994,8 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
 
       String playUrl = isLocal ? cleanPath : url;
       if (!isLocal && !kIsWeb) {
-        final local = SecureAttachmentService.findCachedLocalPath(widget.url) ??
+        final local =
+            SecureAttachmentService.findCachedLocalPath(widget.url) ??
             SecureAttachmentService.findCachedLocalPath(widget.messageId) ??
             SecureAttachmentService.findLocalFile(pathOrKey: widget.url);
         if (local != null && File(local).existsSync()) {
@@ -4017,17 +5004,22 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       }
 
       final bool isPlayLocal = !kIsWeb && File(playUrl).existsSync();
-      if (isPlayLocal && (playUrl.toLowerCase().endsWith('.enc') || (widget.url != null && widget.url!.toLowerCase().endsWith('.enc')) || SecureAttachmentService.isFileEncryptedSync(playUrl))) {
+      if (isPlayLocal &&
+          (playUrl.toLowerCase().endsWith('.enc') ||
+              (widget.url != null &&
+                  widget.url!.toLowerCase().endsWith('.enc')) ||
+              SecureAttachmentService.isFileEncryptedSync(playUrl))) {
         try {
           var cleanName = playUrl.split('/').last;
           while (cleanName.toLowerCase().endsWith('.enc')) {
             cleanName = cleanName.substring(0, cleanName.length - 4);
           }
           if (cleanName.isEmpty) cleanName = 'video_preview.mp4';
-          final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
-            encryptedFilePath: playUrl,
-            originalFileName: cleanName,
-          );
+          final decFile = await getIt<SecureAttachmentService>()
+              .decryptToTemporaryFile(
+                encryptedFilePath: playUrl,
+                originalFileName: cleanName,
+              );
           _tempDecryptedFile = decFile;
           playUrl = decFile.path;
         } catch (e) {
@@ -4035,7 +5027,9 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
         }
       }
 
-      if (!File(playUrl).existsSync() && !playUrl.startsWith('http://') && !playUrl.startsWith('https://')) {
+      if (!File(playUrl).existsSync() &&
+          !playUrl.startsWith('http://') &&
+          !playUrl.startsWith('https://')) {
         final resolved = _resolveUrl(playUrl);
         if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
           playUrl = resolved;
@@ -4059,19 +5053,31 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
       }
     } catch (e) {
       debugPrint('Error initializing video preview: $e, attempting refresh...');
-      final candidateMediaId = SecureAttachmentService.findMediaId(widget.url) ??
+      final candidateMediaId =
+          SecureAttachmentService.findMediaId(widget.url) ??
           SecureAttachmentService.findMediaId(widget.messageId);
-      final effectiveMediaId = (candidateMediaId != null && candidateMediaId.isNotEmpty)
+      final effectiveMediaId =
+          (candidateMediaId != null && candidateMediaId.isNotEmpty)
           ? candidateMediaId
-          : (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(widget.messageId) ? widget.messageId : null);
+          : (RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(widget.messageId)
+                ? widget.messageId
+                : null);
 
       if (effectiveMediaId != null && effectiveMediaId.isNotEmpty) {
         try {
-          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(effectiveMediaId);
-          if (freshUrl != null && freshUrl.isNotEmpty && freshUrl != widget.url) {
+          final freshUrl = await getIt<ChatRepository>().getMediaViewUrl(
+            effectiveMediaId,
+          );
+          if (freshUrl != null &&
+              freshUrl.isNotEmpty &&
+              freshUrl != widget.url) {
             final resolvedFresh = _resolveUrl(freshUrl);
-            final freshController = VideoPlayerController.networkUrl(Uri.parse(resolvedFresh));
-            await freshController.initialize().timeout(const Duration(seconds: 25));
+            final freshController = VideoPlayerController.networkUrl(
+              Uri.parse(resolvedFresh),
+            );
+            await freshController.initialize().timeout(
+              const Duration(seconds: 25),
+            );
             if (mounted) {
               _controller?.dispose();
               _controller = freshController;
@@ -4123,8 +5129,12 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
                   child: FittedBox(
                     fit: BoxFit.cover,
                     child: SizedBox(
-                      width: _controller!.value.size.width > 0 ? _controller!.value.size.width : 220,
-                      height: _controller!.value.size.height > 0 ? _controller!.value.size.height : 180,
+                      width: _controller!.value.size.width > 0
+                          ? _controller!.value.size.width
+                          : 220,
+                      height: _controller!.value.size.height > 0
+                          ? _controller!.value.size.height
+                          : 180,
                       child: VideoPlayer(_controller!),
                     ),
                   ),
@@ -4135,7 +5145,11 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
                       ? Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(CommonIcons.playCircleOutline, color: Colors.white70, size: 48),
+                            Icon(
+                              CommonIcons.playCircleOutline,
+                              color: Colors.white70,
+                              size: 48,
+                            ),
                             const SizedBox(height: 4),
                             Text(
                               'Video',
@@ -4151,7 +5165,9 @@ class _VideoMessagePreviewState extends State<_VideoMessagePreview> {
                           height: 28,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white70,
+                            ),
                           ),
                         ),
                 ),
@@ -4216,15 +5232,45 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   bool _isSourceInitialized = false;
 
   final List<double> _barHeights = [
-    10, 16, 12, 22, 26, 14, 20, 12, 16, 10, 24, 28, 20, 14, 18,
-    12, 20, 24, 10, 14, 18, 22, 16, 12, 20, 14, 10, 16, 12, 20
+    10,
+    16,
+    12,
+    22,
+    26,
+    14,
+    20,
+    12,
+    16,
+    10,
+    24,
+    28,
+    20,
+    14,
+    18,
+    12,
+    20,
+    24,
+    10,
+    14,
+    18,
+    22,
+    16,
+    12,
+    20,
+    14,
+    10,
+    16,
+    12,
+    20,
   ];
 
   @override
   void initState() {
     super.initState();
     if (widget.payloadDuration != null) {
-      _duration = Duration(milliseconds: (widget.payloadDuration! * 1000).round());
+      _duration = Duration(
+        milliseconds: (widget.payloadDuration! * 1000).round(),
+      );
     }
     _setupAudioPlayer();
     _initAudioSource();
@@ -4253,7 +5299,9 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
     });
     _audioPlayer.onPositionChanged.listen((p) {
       if (mounted) {
-        final currentPosition = widget.payloadDuration != null && p > _duration ? _duration : p;
+        final currentPosition = widget.payloadDuration != null && p > _duration
+            ? _duration
+            : p;
         setState(() => _position = currentPosition);
       }
     });
@@ -4312,16 +5360,21 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
         if (!_isSourceInitialized) {
           String playPath = _resolveUrl(widget.audioUrl!);
           if (!kIsWeb && !File(playPath).existsSync()) {
-            final recovered = SecureAttachmentService.findCachedLocalPath(widget.audioUrl) ??
-                SecureAttachmentService.findLocalFile(pathOrKey: widget.audioUrl);
+            final recovered =
+                SecureAttachmentService.findCachedLocalPath(widget.audioUrl) ??
+                SecureAttachmentService.findLocalFile(
+                  pathOrKey: widget.audioUrl,
+                );
             if (recovered != null && File(recovered).existsSync()) {
               playPath = recovered;
             }
           }
           final bool isLocal = !kIsWeb && File(playPath).existsSync();
           if (isLocal) {
-            final bool isEnc = playPath.toLowerCase().endsWith('.enc') ||
-                (widget.audioUrl != null && widget.audioUrl!.toLowerCase().endsWith('.enc')) ||
+            final bool isEnc =
+                playPath.toLowerCase().endsWith('.enc') ||
+                (widget.audioUrl != null &&
+                    widget.audioUrl!.toLowerCase().endsWith('.enc')) ||
                 SecureAttachmentService.isFileEncryptedSync(playPath);
             if (isEnc) {
               try {
@@ -4330,10 +5383,11 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                   cleanName = cleanName.substring(0, cleanName.length - 4);
                 }
                 if (cleanName.isEmpty) cleanName = 'audio_track.mp3';
-                final decFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
-                  encryptedFilePath: playPath,
-                  originalFileName: cleanName,
-                );
+                final decFile = await getIt<SecureAttachmentService>()
+                    .decryptToTemporaryFile(
+                      encryptedFilePath: playPath,
+                      originalFileName: cleanName,
+                    );
                 _tempDecryptedFile = decFile;
                 playPath = decFile.path;
               } catch (e) {
@@ -4364,17 +5418,22 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = isDark ? context.colors.pureWhite : context.colors.textPrimary;
-    final inactiveColor = isDark ? context.colors.pureWhite.withValues(alpha: 0.6) : context.colors.textSecondary;
+    final activeColor = isDark
+        ? context.colors.pureWhite
+        : context.colors.textPrimary;
+    final inactiveColor = isDark
+        ? context.colors.pureWhite.withValues(alpha: 0.6)
+        : context.colors.textSecondary;
     const primaryGreen = Color(0xFF00873C);
     final buttonBg = isDark ? context.colors.primary : primaryGreen;
     const buttonIconColor = Colors.white;
 
-    final double progress = _duration.inMilliseconds > 0 
-        ? _position.inMilliseconds / _duration.inMilliseconds 
+    final double progress = _duration.inMilliseconds > 0
+        ? _position.inMilliseconds / _duration.inMilliseconds
         : 0.0;
 
-    final hasName = widget.fileName != null &&
+    final hasName =
+        widget.fileName != null &&
         widget.fileName!.trim().isNotEmpty &&
         widget.fileName != '[View Restricted]' &&
         !widget.fileName!.startsWith('http');
@@ -4396,7 +5455,11 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
         children: [
           if (hasName && displayName.isNotEmpty) ...[
             Padding(
-              padding: const EdgeInsets.only(bottom: 6.0, left: 2.0, right: 2.0),
+              padding: const EdgeInsets.only(
+                bottom: 6.0,
+                left: 2.0,
+                right: 2.0,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -4450,11 +5513,15 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                           padding: EdgeInsets.all(8.0),
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(buttonIconColor),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              buttonIconColor,
+                            ),
                           ),
                         )
                       : Icon(
-                          _isPlaying ? CommonIcons.pause : CommonIcons.playArrow,
+                          _isPlaying
+                              ? CommonIcons.pause
+                              : CommonIcons.playArrow,
                           color: buttonIconColor,
                           size: 20,
                         ),
@@ -4468,8 +5535,12 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                     final availableWidth = constraints.maxWidth;
                     const barWidth = 2.0;
                     const spacing = 2.0;
-                    final int barsCount = (availableWidth / (barWidth + spacing)).floor().clamp(5, 30);
-                    
+                    final int barsCount =
+                        (availableWidth / (barWidth + spacing)).floor().clamp(
+                          5,
+                          30,
+                        );
+
                     return Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: List.generate(barsCount, (index) {
@@ -4479,9 +5550,13 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
                           width: barWidth,
                           height: _barHeights[index % _barHeights.length],
                           decoration: BoxDecoration(
-                            color: isPlayed 
-                                ? (isDark ? context.colors.primary : primaryGreen) 
-                                : (isDark ? Colors.white30 : const Color(0xFFB0B7C3)),
+                            color: isPlayed
+                                ? (isDark
+                                      ? context.colors.primary
+                                      : primaryGreen)
+                                : (isDark
+                                      ? Colors.white30
+                                      : const Color(0xFFB0B7C3)),
                             borderRadius: BorderRadius.circular(1),
                           ),
                         );
@@ -4495,7 +5570,9 @@ class _AudioWaveformPlayerState extends State<_AudioWaveformPlayer> {
               Text(
                 "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
                 style: context.bodySmall.copyWith(
-                  color: isDark ? context.colors.pureWhite : context.colors.textSecondary,
+                  color: isDark
+                      ? context.colors.pureWhite
+                      : context.colors.textSecondary,
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),

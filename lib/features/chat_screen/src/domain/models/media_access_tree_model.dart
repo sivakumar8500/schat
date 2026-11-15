@@ -38,6 +38,7 @@ class AccessTreeUser {
 
 class AccessTreeNode {
   final String grantId;
+  final String? parentShareId;
   final AccessTreeUser grantee;
   final AccessTreeUser granter;
   final FilePermissions permissions;
@@ -45,10 +46,12 @@ class AccessTreeNode {
   final FilePermissions effectivePermissions;
   final String status;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
   final List<AccessTreeNode> downstreamShares;
 
   AccessTreeNode({
     required this.grantId,
+    this.parentShareId,
     required this.grantee,
     required this.granter,
     required this.permissions,
@@ -56,6 +59,7 @@ class AccessTreeNode {
     required this.effectivePermissions,
     required this.status,
     this.createdAt,
+    this.updatedAt,
     this.downstreamShares = const [],
   });
 
@@ -64,8 +68,13 @@ class AccessTreeNode {
     if (json['created_at'] != null) {
       dt = DateTime.tryParse(json['created_at'].toString());
     }
+    DateTime? udt;
+    if (json['updated_at'] != null) {
+      udt = DateTime.tryParse(json['updated_at'].toString());
+    }
     return AccessTreeNode(
       grantId: (json['grant_id'] ?? json['grantId'] ?? '').toString(),
+      parentShareId: json['parent_share_id']?.toString() ?? json['parent_grant_id']?.toString(),
       grantee: json['grantee'] != null && json['grantee'] is Map<String, dynamic>
           ? AccessTreeUser.fromJson(json['grantee'] as Map<String, dynamic>)
           : AccessTreeUser(id: (json['grantee_id'] ?? json['grantee'] ?? '').toString()),
@@ -85,6 +94,7 @@ class AccessTreeNode {
               : FilePermissions()),
       status: (json['status'] ?? 'active').toString(),
       createdAt: dt,
+      updatedAt: udt,
       downstreamShares: json['downstream_shares'] != null && json['downstream_shares'] is List
           ? (json['downstream_shares'] as List)
               .map((n) => AccessTreeNode.fromJson(n as Map<String, dynamic>))

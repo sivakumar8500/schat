@@ -156,6 +156,15 @@ abstract class ChatRepository {
     required bool canShare,
   });
 
+  /// PATCH /media/{mediaId}/shares/{grantId}/permissions to update a grant's stored permissions.
+  Future<bool> updateMediaSharePermissions({
+    required String mediaId,
+    required String grantId,
+    required bool canView,
+    required bool canDownload,
+    required bool canShare,
+  });
+
   /// DELETE /media/{mediaId}/grants/{grantId} to revoke a share grant and all downstream shares.
   Future<bool> revokeMediaShareGrant({
     required String mediaId,

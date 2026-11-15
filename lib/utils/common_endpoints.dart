@@ -108,6 +108,7 @@ class CommonEndpoints {
   static String mediaShares(String mediaId) => '/media/$mediaId/shares';
   static String shareMedia(String mediaId) => '/media/$mediaId/share';
   static String mediaOwnerOverride(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId/override';
+  static String updateMediaPermissions(String mediaId, String grantId) => '/media/$mediaId/shares/$grantId/permissions';
   static String mediaRevokeGrant(String mediaId, String grantId) => '/media/$mediaId/grants/$grantId';
   static String mediaRevokeShare(String mediaId, String shareId) => '/media/$mediaId/shares/$shareId/revoke';
   static String mediaRevokeAll(String mediaId) => '/media/$mediaId/revoke-all';

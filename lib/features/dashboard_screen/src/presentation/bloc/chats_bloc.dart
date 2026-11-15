@@ -1115,6 +1115,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                   synthesizedAttName = lm.content.trim();
                 }
               }
+              final savedPerms = _storageService.getSenderMediaPermissions(lm.id) ??
+                  (lm.mediaUrl != null ? _storageService.getSenderMediaPermissions(lm.mediaUrl!) : null) ??
+                  (lm.mediaUrl != null ? _storageService.getSenderMediaPermissions(lm.mediaUrl!.split('?').first) : null);
               final msgModel = MessageModel(
                 id: lm.id,
                 conversationId: c.id,
@@ -1130,7 +1133,9 @@ class ChatsBloc extends Bloc<ChatsEvent, ChatsState> {
                 isDeleted: lm.isDeleted,
                 isRead: lm.isRead,
                 isDelivered: lm.isDelivered,
-                allowView: true,
+                allowView: savedPerms?['allowView'] ?? true,
+                allowDownload: savedPerms?['allowDownload'] ?? false,
+                allowShare: savedPerms?['allowShare'] ?? false,
                 createdAt: lm.createdAt,
                 updatedAt: lm.updatedAt,
               );

@@ -46,16 +46,22 @@ class ChatMessageCacheHelper {
         (tempMsg.userView == 'send' && confirmedMsg.userView == 'send');
     if (!sameSender) return false;
 
-    // 1. Same attachmentName
-    if (tempMsg.attachmentName != null &&
-        tempMsg.attachmentName!.isNotEmpty &&
-        confirmedMsg.attachmentName != null &&
-        confirmedMsg.attachmentName!.isNotEmpty &&
-        tempMsg.attachmentName == confirmedMsg.attachmentName) {
-      return true;
+    final dtTemp = parseTimestamp(tempMsg.createdAt);
+    final dtConfirmed = parseTimestamp(confirmedMsg.createdAt);
+
+    // If confirmed message was created significantly before the temp message was initiated,
+    // it belongs to an earlier send session and is NOT a duplicate of this new message.
+    if (dtTemp.millisecondsSinceEpoch > 0 && dtConfirmed.millisecondsSinceEpoch > 0) {
+      if (dtConfirmed.isBefore(dtTemp.subtract(const Duration(seconds: 15)))) {
+        return false;
+      }
+      // Also, confirmed message should not be hours in the future
+      if (dtConfirmed.difference(dtTemp).abs().inMinutes > 10) {
+        return false;
+      }
     }
 
-    // 2. Same media file or matching media URL / fileKey
+    // 1. Same media file or matching media URL / fileKey
     if (tempMsg.mediaUrl != null &&
         tempMsg.mediaUrl!.isNotEmpty &&
         confirmedMsg.mediaUrl != null &&
@@ -73,23 +79,31 @@ class ChatMessageCacheHelper {
       }
     }
 
-    // 3. Same content if non-empty text
+    // 2. Same attachmentName created within 30 seconds
+    if (tempMsg.attachmentName != null &&
+        tempMsg.attachmentName!.isNotEmpty &&
+        confirmedMsg.attachmentName != null &&
+        confirmedMsg.attachmentName!.isNotEmpty &&
+        tempMsg.attachmentName == confirmedMsg.attachmentName) {
+      if (dtTemp.millisecondsSinceEpoch > 0 && dtConfirmed.millisecondsSinceEpoch > 0) {
+        if (dtConfirmed.difference(dtTemp).abs().inSeconds <= 30) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
+
+    // 3. Same content if non-empty text within 60 seconds
     if (tempMsg.content.trim().isNotEmpty &&
         confirmedMsg.content.trim().isNotEmpty &&
         tempMsg.content.trim() == confirmedMsg.content.trim() &&
         tempMsg.mediaType == confirmedMsg.mediaType) {
-      return true;
-    }
-
-    // 4. Same mediaType and created within 3 minutes of each other
-    if (tempMsg.mediaType != null &&
-        tempMsg.mediaType != 'text' &&
-        tempMsg.mediaType == confirmedMsg.mediaType) {
-      final dt1 = parseTimestamp(tempMsg.createdAt);
-      final dt2 = parseTimestamp(confirmedMsg.createdAt);
-      if (dt1.millisecondsSinceEpoch > 0 &&
-          dt2.millisecondsSinceEpoch > 0 &&
-          dt2.difference(dt1).abs().inMinutes <= 3) {
+      if (dtTemp.millisecondsSinceEpoch > 0 && dtConfirmed.millisecondsSinceEpoch > 0) {
+        if (dtConfirmed.difference(dtTemp).abs().inSeconds <= 60) {
+          return true;
+        }
+      } else {
         return true;
       }
     }

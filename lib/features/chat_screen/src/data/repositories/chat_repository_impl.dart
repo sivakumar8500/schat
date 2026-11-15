@@ -1374,6 +1374,31 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<bool> updateMediaSharePermissions({
+    required String mediaId,
+    required String grantId,
+    required bool canView,
+    required bool canDownload,
+    required bool canShare,
+  }) async {
+    final result = await _apiService.patch(
+      CommonEndpoints.updateMediaPermissions(mediaId, grantId),
+      data: {
+        'permissions': {
+          'can_view': canView,
+          'can_download': canDownload,
+          'can_share': canShare,
+        },
+      },
+    );
+
+    return result.when(
+      success: (_) => true,
+      failure: (error, _) => throw Exception(error),
+    );
+  }
+
+  @override
   Future<bool> revokeMediaShareGrant({
     required String mediaId,
     required String grantId,

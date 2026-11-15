@@ -471,45 +471,39 @@ class MessageModel {
         final isSentByMe = myId != null && myId.isNotEmpty && senderIdStr == myId;
         final msgId = (json['id'] ?? json['_id'])?.toString();
         final fwdId = (json['forwardedFromMessageId'] ?? json['forwarded_from_message_id'] ?? json['forwarded_from'] ?? json['forwardedFrom'] ?? json['original_message_id'] ?? json['originalMessageId'])?.toString();
-        final attName = (attachment is Map ? (attachment['fileName'] ?? attachment['name']) : null) ?? json['attachment_name'] ?? json['attachmentName'];
         final cleanUrl = mediaUrl != null ? mediaUrl.split('?').first : null;
-        final fileBase = cleanUrl != null ? cleanUrl.split('/').last : null;
+        final isFwdMsg = json['isForwarded'] == true ||
+            json['is_forwarded'] == true ||
+            (fwdId != null && fwdId.isNotEmpty);
         if (isSentByMe) {
-          final saved = (msgId != null ? storage.getSenderMediaPermissions(msgId) : null) ??
-              (fwdId != null ? storage.getSenderMediaPermissions(fwdId) : null) ??
-              (mediaUrl != null ? storage.getSenderMediaPermissions(mediaUrl) : null) ??
-              (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null) ??
-              (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
-              (attName != null ? storage.getSenderMediaPermissions(attName.toString()) : null);
-          if (saved != null) {
-            if (saved['allowView'] != null) allowView = saved['allowView'] == true;
-            if (saved['allowDownload'] != null) allowDownload = (!allowView) ? false : (saved['allowDownload'] == true);
-            if (saved['allowShare'] != null) allowShare = (!allowView) ? false : (saved['allowShare'] == true);
+          if (isFwdMsg && json['security'] is Map) {
+            if (msgId != null && msgId.isNotEmpty) {
+              storage.saveSenderMediaPermissions(
+                msgId,
+                allowView: allowView,
+                allowDownload: allowDownload,
+                allowShare: allowShare,
+              );
+            }
+          } else {
+            final saved = (msgId != null ? storage.getSenderMediaPermissions(msgId) : null) ??
+                (isFwdMsg
+                    ? null
+                    : ((mediaUrl != null ? storage.getSenderMediaPermissions(mediaUrl) : null) ??
+                        (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null)));
+            if (saved != null) {
+              if (saved['allowView'] != null) allowView = saved['allowView'] == true;
+              if (saved['allowDownload'] != null) allowDownload = (!allowView) ? false : (saved['allowDownload'] == true);
+              if (saved['allowShare'] != null) allowShare = (!allowView) ? false : (saved['allowShare'] == true);
+            }
           }
-        } else if (cleanUrl != null && cleanUrl.isNotEmpty) {
-          // For received messages, sync latest server permissions into StorageService so forwarding respects them
+        } else if (msgId != null && msgId.isNotEmpty) {
           storage.saveSenderMediaPermissions(
-            cleanUrl,
+            msgId,
             allowView: allowView,
             allowDownload: allowDownload,
             allowShare: allowShare,
           );
-          if (fileBase != null && fileBase.isNotEmpty) {
-            storage.saveSenderMediaPermissions(
-              fileBase,
-              allowView: allowView,
-              allowDownload: allowDownload,
-              allowShare: allowShare,
-            );
-          }
-          if (msgId != null && msgId.isNotEmpty) {
-            storage.saveSenderMediaPermissions(
-              msgId,
-              allowView: allowView,
-              allowDownload: allowDownload,
-              allowShare: allowShare,
-            );
-          }
         }
       } catch (_) {}
     }
@@ -583,7 +577,13 @@ class MessageModel {
     CallMeta? callMeta;
     final dynamic rawCallMeta = json['callMeta'] ?? json['call_meta'];
     if (rawCallMeta is Map) {
-      callMeta = CallMeta.fromJson(Map<String, dynamic>.from(rawCallMeta));
+      final hasCallFields = rawCallMeta['callType'] != null ||
+          rawCallMeta['call_type'] != null ||
+          rawCallMeta['status'] != null ||
+          rawCallMeta['duration'] != null;
+      if (hasCallFields || messageType == 'call' || mediaType == 'call') {
+        callMeta = CallMeta.fromJson(Map<String, dynamic>.from(rawCallMeta));
+      }
     } else if (json['callType'] != null || json['call_type'] != null) {
       callMeta = CallMeta.fromJson(json);
     }
@@ -826,6 +826,9 @@ class MessageModel {
         if (rawExpiry is int) return rawExpiry;
         if (rawExpiry is num) return rawExpiry.toInt();
         if (rawExpiry is Map) {
+          if (rawExpiry['isEnabled'] == false || rawExpiry['is_enabled'] == false) {
+            return null;
+          }
           final expAt = rawExpiry['expires_at'] ?? rawExpiry['expireAt'] ?? rawExpiry['expire_at'] ?? rawExpiry['expiry'];
           if (expAt is int) return expAt;
           if (expAt is num) return expAt.toInt();

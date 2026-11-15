@@ -76,10 +76,13 @@ void main() {
     when(() => mockStorageService.getUserId()).thenReturn('user_me');
     when(() => mockStorageService.isChatLocked(any())).thenReturn(false);
     when(() => mockStorageService.getReadReceiptsEnabled()).thenReturn(true);
+    when(() => mockStorageService.markMediaAsOwnedByMe(any())).thenAnswer((_) async {});
+    when(() => mockStorageService.markMediaAsNotOwned(any())).thenAnswer((_) async {});
     when(() => mockChatRepository.getPinnedMessages(any())).thenAnswer((_) async => []);
     when(() => mockChatRepository.getLockedChats()).thenAnswer((_) async => []);
     when(() => mockChatRepository.getActiveScreenPermissions(any())).thenAnswer((_) async => []);
     when(() => mockChatRepository.getPendingScreenPermissions()).thenAnswer((_) async => []);
+    when(() => mockChatRepository.markConversationAsRead(any())).thenAnswer((_) async {});
     when(() => mockContactsRepository.fetchSyncedContacts()).thenAnswer((_) async => ApiResult.success([]));
     when(() => mockProfileRepository.getUserById(any())).thenAnswer(
       (_) async => ApiResult.success(const UserModel(id: 'user_other', username: 'Bob', isOnline: true)),

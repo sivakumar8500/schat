@@ -22,6 +22,7 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_ic
 import 'package:schat/utils/common_notifications.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
+import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
 
 class InAppViewer extends StatefulWidget {
@@ -104,6 +105,8 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
   bool _isLoading = true;
   String? _errorMessage;
   String? _effectiveMediaId;
+  StreamSubscription? _socketSub;
+  bool _isViewRestricted = false;
 
   final TransformationController _transformationController = TransformationController();
   late AnimationController _animationController;
@@ -114,6 +117,12 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    _effectiveMediaId = widget.mediaId;
+    if (_effectiveMediaId == null || _effectiveMediaId!.isEmpty) {
+      _effectiveMediaId = SecureAttachmentService.findMediaId(widget.url) ??
+          SecureAttachmentService.findMediaId(widget.fileName);
+    }
+    _listenToPermissionUpdates();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 260),
@@ -131,6 +140,29 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         }
       });
     }
+  }
+
+  void _listenToPermissionUpdates() {
+    try {
+      _socketSub = getIt<ChatSocketRepository>().onMessage.listen((data) {
+        final type = data['type']?.toString();
+        if (type == 'file_permission_revoked' || type == 'file_permission_updated' || type == 'media_access_revoked') {
+          final fileId = (data['file_id'] ?? data['fileId'] ?? data['media_id'] ?? data['mediaId'])?.toString();
+          if (fileId != null && _effectiveMediaId != null && (fileId == _effectiveMediaId || _effectiveMediaId!.contains(fileId))) {
+            final isRevoked = type == 'file_permission_revoked' || type == 'media_access_revoked';
+            final perms = data['permissions'];
+            final canView = isRevoked ? false : (perms is Map ? (perms['can_view'] ?? perms['canView']) : null);
+            if (canView == false) {
+              if (mounted) {
+                setState(() {
+                  _isViewRestricted = true;
+                });
+              }
+            }
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   void _onTransformationChanged() {
@@ -336,6 +368,7 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    _socketSub?.cancel();
     _animationController.dispose();
     _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
@@ -429,7 +462,40 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     Widget viewerWidget;
 
-    if (_isLoading) {
+    if (_isViewRestricted) {
+      viewerWidget = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, color: Colors.redAccent, size: 64),
+              CommonSpaces.h16,
+              const Text(
+                'Access Restricted',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              CommonSpaces.h8,
+              const Text(
+                'Your view permission for this file has been revoked or modified by the sender.',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              CommonSpaces.h20,
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white24,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Go Back'),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (_isLoading) {
       viewerWidget = const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,

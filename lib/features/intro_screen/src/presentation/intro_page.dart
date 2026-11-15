@@ -20,44 +20,14 @@ class _IntroPageState extends State<IntroPage> {
 
   final List<_SecurityFeature> _features = const [
     _SecurityFeature(
-      title: 'End-to-End\nEncryption',
-      description: 'Only You Can\nAccess.',
-      iconAsset: 'assets/firstscreen/icon_encryption.jpg',
-      fallbackIcon: Icons.security_rounded,
-    ),
-    _SecurityFeature(
-      title: 'Private Calls\n& Messages',
-      description: 'Your Conversations.\nYour Privacy.',
-      iconAsset: 'assets/firstscreen/icon_private_calls.jpg',
-      fallbackIcon: Icons.phone_locked_rounded,
-    ),
-    _SecurityFeature(
-      title: 'Disappearing\nMessages',
-      description: 'Messages That\nDisappear.',
-      iconAsset: 'assets/firstscreen/icon_disappearing.jpg',
-      fallbackIcon: Icons.timer_outlined,
-    ),
-    _SecurityFeature(
-      title: 'Lock\nChats',
-      description: 'Lock Your Chats.\nStay Safe.',
-      iconAsset: 'assets/firstscreen/icon_twostep.jpg',
-      fallbackIcon: Icons.lock_rounded,
-    ),
-    _SecurityFeature(
-      title: 'Status\nPrivacy',
-      description: 'Your Status.\nYour Choice.',
-      iconAsset: 'assets/firstscreen/icon_stealth_mode.jpg',
-      fallbackIcon: Icons.visibility_off_rounded,
-    ),
-    _SecurityFeature(
       title: 'File Sharing\nProtection',
       description: 'Share Securely.\nStay Protected.',
       iconAsset: 'assets/firstscreen/icon_secure_file.jpg',
       fallbackIcon: Icons.folder_shared_rounded,
     ),
     _SecurityFeature(
-      title: 'Screen\nSharing',
-      description: 'Share Your Screen.\nConnect Instantly.',
+      title: 'Screen\Short',
+      description: 'Capture What\nMatters.',
       iconAsset: 'assets/firstscreen/icon_multidevice.jpg',
       fallbackIcon: Icons.screen_share_rounded,
     ),
@@ -68,16 +38,48 @@ class _IntroPageState extends State<IntroPage> {
       fallbackIcon: Icons.fiber_manual_record_rounded,
     ),
     _SecurityFeature(
-      title: 'Secure App\nScreen',
-      description: 'Security on\nEvery Screen.',
-      iconAsset: 'assets/firstscreen/icon_screenshot.jpg',
-      fallbackIcon: Icons.phonelink_lock_rounded,
+      title: 'Private Calls\n& Messages',
+      description: 'Your Conversations.\nYour Privacy.',
+      iconAsset: 'assets/firstscreen/icon_private_calls.jpg',
+      fallbackIcon: Icons.phone_locked_rounded,
+    ),
+    _SecurityFeature(
+      title: 'End-to-End\nEncryption',
+      description: 'Only You Can\nAccess.',
+      iconAsset: 'assets/firstscreen/icon_encryption.jpg',
+      fallbackIcon: Icons.security_rounded,
+    ),
+
+    _SecurityFeature(
+      title: 'Lock\nChats',
+      description: 'Lock Your Chats.\nStay Safe.',
+      iconAsset: 'assets/firstscreen/icon_twostep.jpg',
+      fallbackIcon: Icons.lock_rounded,
     ),
     _SecurityFeature(
       title: 'Scheduled\nMessages',
       description: 'Send at the\nPerfect Time.',
       iconAsset: 'assets/intro_designs/Icons/future_messages.png',
       fallbackIcon: Icons.schedule_send_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Secure App\ Chat',
+      description: 'Security on\Chat Screen.',
+      iconAsset: 'assets/firstscreen/icon_screenshot.jpg',
+      fallbackIcon: Icons.phonelink_lock_rounded,
+    ),
+    _SecurityFeature(
+      title: 'Disappearing\nMessages',
+      description: 'Messages That\nDisappear.',
+      iconAsset: 'assets/firstscreen/icon_disappearing.jpg',
+      fallbackIcon: Icons.timer_outlined,
+    ),
+
+    _SecurityFeature(
+      title: 'Status\nPrivacy',
+      description: 'Your Status.\nYour Choice.',
+      iconAsset: 'assets/firstscreen/icon_stealth_mode.jpg',
+      fallbackIcon: Icons.visibility_off_rounded,
     ),
   ];
 
@@ -147,8 +149,7 @@ class _IntroPageState extends State<IntroPage> {
                     width: double.infinity,
                     fit: BoxFit.fitWidth,
                     alignment: Alignment.topCenter,
-                    errorBuilder: (context, error, stackTrace) =>
-                        Image.asset(
+                    errorBuilder: (context, error, stackTrace) => Image.asset(
                       'assets/firstscreen/intro_hero_cyber.jpg',
                       width: double.infinity,
                       fit: BoxFit.fitWidth,
@@ -218,10 +219,7 @@ class _IntroPageState extends State<IntroPage> {
                 decoration: BoxDecoration(
                   color: _cardBg.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: _cardBorder,
-                    width: 1.2,
-                  ),
+                  border: Border.all(color: _cardBorder, width: 1.2),
                   boxShadow: [
                     BoxShadow(
                       color: _primaryGreen.withValues(alpha: 0.12),
@@ -251,9 +249,7 @@ class _IntroPageState extends State<IntroPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (int i = 0; i < 5; i++)
-                          Expanded(
-                            child: _buildFeatureItem(_features[i]),
-                          ),
+                          Expanded(child: _buildFeatureItem(_features[i])),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -263,9 +259,7 @@ class _IntroPageState extends State<IntroPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (int i = 5; i < 10; i++)
-                          Expanded(
-                            child: _buildFeatureItem(_features[i]),
-                          ),
+                          Expanded(child: _buildFeatureItem(_features[i])),
                       ],
                     ),
                   ],
@@ -409,11 +403,8 @@ class _IntroPageState extends State<IntroPage> {
               child: Image.asset(
                 feature.iconAsset,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  feature.fallbackIcon,
-                  size: 17,
-                  color: _neonGreen,
-                ),
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(feature.fallbackIcon, size: 17, color: _neonGreen),
               ),
             ),
           ),

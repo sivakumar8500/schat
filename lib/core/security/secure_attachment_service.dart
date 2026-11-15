@@ -70,6 +70,15 @@ class SecureAttachmentService {
         stripped = stripped.substring(0, stripped.length - 4);
         _mediaKeyToMediaId[stripped] = mediaId;
       }
+      if (localPath != null && localPath.isNotEmpty) {
+        final cleanLocal = localPath.replaceAll('file://', '').trim();
+        _mediaKeyToMediaId[localPath] = mediaId;
+        _mediaKeyToMediaId[cleanLocal] = mediaId;
+        final localLast = cleanLocal.split('/').last;
+        if (localLast.isNotEmpty) {
+          _mediaKeyToMediaId[localLast] = mediaId;
+        }
+      }
     }
   }
 
@@ -109,7 +118,19 @@ class SecureAttachmentService {
       return noQuery;
     }
 
-    final matches = _uuidRegex.allMatches(noQuery);
+    // Do not extract random iOS image_picker UUIDs as backend mediaId
+    if (baseName.toLowerCase().startsWith('image_picker_')) {
+      return null;
+    }
+
+    // If this is a local filesystem path (e.g., iOS /Devices/<UUID>/.../Application/<UUID>/Documents/...),
+    // only check the filename (baseName) so we never match OS container/simulator UUIDs.
+    final isLocalFsPath = noQuery.startsWith('/') ||
+        noQuery.startsWith('file://') ||
+        noQuery.contains(':\\');
+    final targetForUuidScan = isLocalFsPath ? baseName : noQuery;
+
+    final matches = _uuidRegex.allMatches(targetForUuidScan);
     if (matches.isNotEmpty) {
       return matches.last.group(0);
     }

@@ -52,6 +52,7 @@ import 'package:schat/features/dashboard_screen/src/domain/models/last_message_m
 import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_group_bottom_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/in_app_viewer.dart';
+import 'widgets/media_protection_bottom_sheet.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'package:schat/core/services/live_location_service.dart';
@@ -221,13 +222,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       if (!getIt.isRegistered<StorageService>()) return msg;
       final storage = getIt<StorageService>();
       final cleanUrl = msg.mediaUrl != null ? msg.mediaUrl!.split('?').first : null;
-      final fileBase = cleanUrl != null ? cleanUrl.split('/').last : null;
+      final isFwd = msg.isForwarded || (msg.forwardedFromMessageId != null && msg.forwardedFromMessageId!.isNotEmpty);
       final saved = storage.getSenderMediaPermissions(msg.id) ??
-          (msg.forwardedFromMessageId != null ? storage.getSenderMediaPermissions(msg.forwardedFromMessageId!) : null) ??
-          (msg.mediaUrl != null ? storage.getSenderMediaPermissions(msg.mediaUrl!) : null) ??
-          (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null) ??
-          (fileBase != null ? storage.getSenderMediaPermissions(fileBase) : null) ??
-          (msg.attachmentName != null ? storage.getSenderMediaPermissions(msg.attachmentName!) : null);
+          (isFwd
+              ? null
+              : ((msg.mediaUrl != null ? storage.getSenderMediaPermissions(msg.mediaUrl!) : null) ??
+                  (cleanUrl != null ? storage.getSenderMediaPermissions(cleanUrl) : null)));
       if (saved != null) {
         final v = saved['allowView'] ?? msg.allowView;
         final d = (!v) ? false : (saved['allowDownload'] ?? msg.allowDownload);
@@ -2899,37 +2899,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     final storage = getIt<StorageService>();
     await storage.markMediaAsNotOwned(msg.id);
     if (msg.mediaUrl != null && msg.mediaUrl!.isNotEmpty) {
-      final cleanUrl = msg.mediaUrl!.split('?').first;
-      final fileBase = cleanUrl.split('/').last;
-      await storage.saveSenderMediaPermissions(
-        msg.mediaUrl!,
-        allowView: effectiveView,
-        allowDownload: effectiveDownload,
-        allowShare: effectiveShare,
-      );
-      await storage.saveSenderMediaPermissions(
-        cleanUrl,
-        allowView: effectiveView,
-        allowDownload: effectiveDownload,
-        allowShare: effectiveShare,
-      );
-      if (fileBase.isNotEmpty) {
-        await storage.saveSenderMediaPermissions(
-          fileBase,
-          allowView: effectiveView,
-          allowDownload: effectiveDownload,
-          allowShare: effectiveShare,
-        );
-      }
       await storage.markMediaAsNotOwned(msg.mediaUrl!);
     }
     if (msg.attachmentName != null && msg.attachmentName!.isNotEmpty) {
-      await storage.saveSenderMediaPermissions(
-        msg.attachmentName!,
-        allowView: effectiveView,
-        allowDownload: effectiveDownload,
-        allowShare: effectiveShare,
-      );
       await storage.markMediaAsNotOwned(msg.attachmentName!);
     }
 
@@ -3020,7 +2992,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   void _showForwardBottomSheet(BuildContext context, MessageModel msg) async {
-    if (!msg.allowShare) {
+    final myId = getIt<StorageService>().getUserId() ?? '';
+    final bool isFileOwner = _isMessageFromMe(msg, myId) &&
+        !msg.isForwarded &&
+        (msg.forwardedFromMessageId == null || msg.forwardedFromMessageId!.isEmpty);
+    if (!msg.allowShare && !isFileOwner) {
       context.showErrorNotification('Sharing has been turned off for this file by the owner.');
       return;
     }
@@ -3062,12 +3038,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           bool isSyncing = false;
           String forwardSearchQuery = '';
 
-          bool canViewToggle = true; // Always true
-          bool canDownloadToggle = msg.allowDownload;
-          bool canShareToggle = msg.allowShare;
+          final bool canGrantView = isFileOwner || msg.allowView;
+          final bool canGrantDownload = isFileOwner || msg.allowDownload;
+          final bool canGrantShare = isFileOwner || msg.allowShare;
 
-          final bool isDownloadSwitchEnabled = msg.allowDownload;
-          final bool isShareSwitchEnabled = msg.allowShare;
+          // Recommended least-privilege defaults: View ON when allowed, Download OFF, Share OFF
+          bool canViewToggle = canGrantView;
+          bool canDownloadToggle = false;
+          bool canShareToggle = false;
 
           return StatefulBuilder(
             builder: (context, setModalState) {
@@ -3095,31 +3073,34 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Row(
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                isMediaMessage
-                                    ? 'Share File${msg.attachmentName != null && msg.attachmentName!.isNotEmpty ? ': ${msg.attachmentName}' : ''}'
-                                    : 'Forward Message',
-                                style: context.titleLarge.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: context.colors.textPrimary,
-                                ),
-                              ),
-                              if (selectedUsers.isNotEmpty)
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  '${selectedUsers.length}/5 selected',
-                                  style: context.bodySmall.copyWith(
-                                    color: selectedUsers.length >= 5 
-                                        ? context.colors.error 
-                                        : context.colors.primary,
-                                    fontWeight: FontWeight.w600,
+                                  isMediaMessage
+                                      ? 'Share File${msg.attachmentName != null && msg.attachmentName!.isNotEmpty ? ': ${msg.attachmentName}' : ''}'
+                                      : 'Forward Message',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.titleLarge.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: context.colors.textPrimary,
                                   ),
                                 ),
-                            ],
+                                if (selectedUsers.isNotEmpty)
+                                  Text(
+                                    '${selectedUsers.length}/5 selected',
+                                    style: context.bodySmall.copyWith(
+                                      color: selectedUsers.length >= 5 
+                                          ? context.colors.error 
+                                          : context.colors.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          const Spacer(),
                           IconButton(
                             icon: const Icon(Icons.share_outlined, size: 20),
                             tooltip: 'Share via other apps',
@@ -3328,15 +3309,67 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(Icons.shield_outlined, size: 16, color: context.colors.primary),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Permissions for Recipient:',
-                                  style: context.titleSmall.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: context.colors.textPrimary,
+                                Row(
+                                  children: [
+                                    Icon(Icons.shield_outlined, size: 16, color: context.colors.primary),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Permissions for Recipient:',
+                                      style: context.titleSmall.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: context.colors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () {
+                                    Navigator.pop(bottomSheetCtx);
+                                    String? cachedMediaId = SecureAttachmentService.findMediaId(msg.mediaUrl) ??
+                                        SecureAttachmentService.findMediaId(msg.id) ??
+                                        SecureAttachmentService.findMediaId(msg.attachmentName);
+                                    final idToUse = (cachedMediaId != null && cachedMediaId.isNotEmpty) ? cachedMediaId : msg.id;
+                                    MediaProtectionBottomSheet.show(
+                                      context,
+                                      mediaId: idToUse,
+                                      fileName: msg.attachmentName,
+                                      messageId: msg.id,
+                                      recipientId: widget.recipientId,
+                                      initialAllowView: msg.allowView,
+                                      initialAllowDownload: msg.allowDownload,
+                                      initialAllowShare: msg.allowShare,
+                                      onPermissionsChanged: (v, d, s) {
+                                        _chatBloc.add(UpdateAttachmentPermissionsEvent(
+                                          messageId: msg.id,
+                                          conversationId: widget.conversationId,
+                                          allowShare: s,
+                                          allowDownload: d,
+                                          allowView: v,
+                                        ));
+                                      },
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.account_tree_outlined, size: 14, color: context.colors.primary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Manage Access',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: context.colors.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
@@ -3350,66 +3383,91 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                   color: context.colors.isDark ? const Color(0xFF2A3630) : const Color(0xFFE8ECE9),
                                 ),
                               ),
-                              child: Column(
-                                children: [
-                                  SwitchListTile(
-                                    dense: true,
-                                    title: const Text('Allow View', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                    subtitle: const Text('Always permitted for recipient', style: TextStyle(fontSize: 11)),
-                                    value: canViewToggle,
-                                    activeThumbColor: context.colors.primary,
-                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
-                                    onChanged: null,
-                                  ),
-                                  const Divider(height: 1),
-                                  SwitchListTile(
-                                    dense: true,
-                                    title: const Text('Allow Download', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                    subtitle: Text(
-                                      isDownloadSwitchEnabled
-                                          ? 'Allows saving to local device gallery'
-                                          : 'Download restricted by original sender',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isDownloadSwitchEnabled ? null : context.colors.error,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Column(
+                                  children: [
+                                    SwitchListTile(
+                                      dense: true,
+                                      title: const Text('Allow View', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                      subtitle: Text(
+                                        canGrantView ? 'Permits opening and viewing the file' : 'View restricted by sender',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: canGrantView ? null : context.colors.error,
+                                        ),
                                       ),
+                                      value: canViewToggle,
+                                      activeThumbColor: context.colors.primary,
+                                      activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                      onChanged: canGrantView
+                                          ? (val) {
+                                              setModalState(() {
+                                                canViewToggle = val;
+                                                if (!val) {
+                                                  canDownloadToggle = false;
+                                                  canShareToggle = false;
+                                                }
+                                              });
+                                            }
+                                          : null,
                                     ),
-                                    value: canDownloadToggle,
-                                    activeThumbColor: context.colors.primary,
-                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
-                                    onChanged: isDownloadSwitchEnabled
-                                        ? (val) {
-                                            setModalState(() {
-                                              canDownloadToggle = val;
-                                            });
-                                          }
-                                        : null,
-                                  ),
-                                  const Divider(height: 1),
-                                  SwitchListTile(
-                                    dense: true,
-                                    title: const Text('Allow Re-sharing / Forwarding', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                    subtitle: Text(
-                                      isShareSwitchEnabled
-                                          ? 'Allows forwarding to other contacts'
-                                          : 'Forwarding restricted by original sender',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isShareSwitchEnabled ? null : context.colors.error,
+                                    const Divider(height: 1),
+                                    SwitchListTile(
+                                      dense: true,
+                                      title: const Text('Allow Download', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                      subtitle: Text(
+                                        canGrantDownload
+                                            ? 'Allows saving to local device storage'
+                                            : 'Download restricted by original sender',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: canGrantDownload ? null : context.colors.error,
+                                        ),
                                       ),
+                                      value: canDownloadToggle,
+                                      activeThumbColor: context.colors.primary,
+                                      activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                      onChanged: canGrantDownload
+                                          ? (val) {
+                                              setModalState(() {
+                                                canDownloadToggle = val;
+                                                if (val) {
+                                                  canViewToggle = true;
+                                                }
+                                              });
+                                            }
+                                          : null,
                                     ),
-                                    value: canShareToggle,
-                                    activeThumbColor: context.colors.primary,
-                                    activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
-                                    onChanged: isShareSwitchEnabled
-                                        ? (val) {
-                                            setModalState(() {
-                                              canShareToggle = val;
-                                            });
-                                          }
-                                        : null,
-                                  ),
-                                ],
+                                    const Divider(height: 1),
+                                    SwitchListTile(
+                                      dense: true,
+                                      title: const Text('Allow Re-sharing / Forwarding', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                      subtitle: Text(
+                                        canGrantShare
+                                            ? 'Allows forwarding to other contacts'
+                                            : 'Forwarding restricted by original sender',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: canGrantShare ? null : context.colors.error,
+                                        ),
+                                      ),
+                                      value: canShareToggle,
+                                      activeThumbColor: context.colors.primary,
+                                      activeTrackColor: context.colors.primary.withValues(alpha: 0.4),
+                                      onChanged: canGrantShare
+                                          ? (val) {
+                                              setModalState(() {
+                                                canShareToggle = val;
+                                                if (val) {
+                                                  canViewToggle = true;
+                                                }
+                                              });
+                                            }
+                                          : null,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -3418,13 +3476,34 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                     ],
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: selectedUsers.isEmpty
-                              ? null
-                              : () async {
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () {
+                                contactsSub?.cancel();
+                                Navigator.pop(bottomSheetCtx);
+                              },
+                              child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: context.colors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: selectedUsers.isEmpty
+                                  ? null
+                                  : () async {
                                   Navigator.pop(bottomSheetCtx);
                                   
                                   context.showInfoNotification('Forwarding to ${selectedUsers.length} contacts...');
@@ -3449,57 +3528,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                       final effectiveDownload = isMediaMessage ? canDownloadToggle : msg.allowDownload;
                                       final effectiveShare = isMediaMessage ? canShareToggle : msg.allowShare;
 
-                                      // Save inherited permissions across all keys
-                                      await storage.saveSenderMediaPermissions(
-                                        messageId,
-                                        allowView: effectiveView,
-                                        allowDownload: effectiveDownload,
-                                        allowShare: effectiveShare,
-                                      );
-                                      await storage.markMediaAsNotOwned(messageId);
-                                      if (msg.mediaUrl != null && msg.mediaUrl!.isNotEmpty) {
-                                        final cleanUrl = msg.mediaUrl!.split('?').first;
-                                        final fileBase = cleanUrl.split('/').last;
-                                        await storage.saveSenderMediaPermissions(
-                                          msg.mediaUrl!,
-                                          allowView: effectiveView,
-                                          allowDownload: effectiveDownload,
-                                          allowShare: effectiveShare,
-                                        );
-                                        await storage.saveSenderMediaPermissions(
-                                          cleanUrl,
-                                          allowView: effectiveView,
-                                          allowDownload: effectiveDownload,
-                                          allowShare: effectiveShare,
-                                        );
-                                        if (fileBase.isNotEmpty) {
-                                          await storage.saveSenderMediaPermissions(
-                                            fileBase,
-                                            allowView: effectiveView,
-                                            allowDownload: effectiveDownload,
-                                            allowShare: effectiveShare,
-                                          );
-                                        }
-                                        await storage.markMediaAsNotOwned(msg.mediaUrl!);
-                                        await storage.markMediaAsNotOwned(cleanUrl);
-                                      }
-                                      if (msg.attachmentName != null && msg.attachmentName!.isNotEmpty) {
-                                        await storage.saveSenderMediaPermissions(
-                                          msg.attachmentName!,
-                                          allowView: effectiveView,
-                                          allowDownload: effectiveDownload,
-                                          allowShare: effectiveShare,
-                                        );
-                                        await storage.markMediaAsNotOwned(msg.attachmentName!);
-                                      }
-
                                       // Grant file share permissions on backend first so downstream access tree is maintained
-                                      final resolvedMediaId = SecureAttachmentService.findMediaId(msg.mediaUrl) ??
+                                      String? resolvedMediaId = SecureAttachmentService.findMediaId(msg.mediaUrl) ??
+                                          SecureAttachmentService.findMediaId(msg.id) ??
                                           SecureAttachmentService.findMediaId(msg.attachmentName);
-                                      if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+                                      final targetMediaId = (resolvedMediaId != null && resolvedMediaId.isNotEmpty) ? resolvedMediaId : messageId;
+                                      if (targetMediaId.isNotEmpty) {
                                         try {
                                           await chatRepo.shareMedia(
-                                            mediaId: resolvedMediaId,
+                                            mediaId: targetMediaId,
                                             granteeId: user.id,
                                             canView: effectiveView,
                                             canDownload: effectiveDownload,
@@ -3579,21 +3616,23 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                             }
                                           }
 
-                                          // Broadcast inherited permissions to target conversation over socket
-                                          socketRepo.sendFileAction(
-                                            type: 'media_permissions_updated',
-                                            conversationId: chat.id,
-                                            messageId: newId ?? messageId,
-                                            fileKey: msg.mediaUrl ?? '',
-                                            permissions: {
-                                              'allowView': effectiveView,
-                                              'allowDownload': effectiveDownload,
-                                              'allowShare': effectiveShare,
-                                              'can_view': effectiveView,
-                                              'can_download': effectiveDownload,
-                                              'can_share': effectiveShare,
-                                            },
-                                          );
+                                          // Broadcast inherited permissions to target conversation over socket (by newId only so original message isn't downgraded)
+                                          if (newId != null && newId.isNotEmpty) {
+                                            socketRepo.sendFileAction(
+                                              type: 'media_permissions_updated',
+                                              conversationId: chat.id,
+                                              messageId: newId,
+                                              fileKey: '',
+                                              permissions: {
+                                                'allowView': effectiveView,
+                                                'allowDownload': effectiveDownload,
+                                                'allowShare': effectiveShare,
+                                                'can_view': effectiveView,
+                                                'can_download': effectiveDownload,
+                                                'can_share': effectiveShare,
+                                              },
+                                            );
+                                          }
                                           continue;
                                         } catch (e) {
                                           debugPrint('Forward API failed fallback to socket: $e');
@@ -3619,25 +3658,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                     context.showSuccessNotification('Message forwarded successfully');
                                   }
                                 },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: context.colors.primary,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: context.colors.textHint.withValues(alpha: 0.3),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            selectedUsers.isEmpty 
-                                ? (isMediaMessage ? 'Select Recipient' : 'Select Contacts') 
-                                : (isMediaMessage
-                                    ? 'Send File (${selectedUsers.length})'
-                                    : 'Send to ${selectedUsers.length} Contact${selectedUsers.length > 1 ? 's' : ''}'),
-                            style: context.bodyLarge.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
+                              child: Text(
+                                selectedUsers.isEmpty 
+                                    ? (isMediaMessage ? 'Select Recipient' : 'Select Contacts') 
+                                    : (isMediaMessage
+                                        ? 'Send File (${selectedUsers.length})'
+                                        : 'Send to ${selectedUsers.length} Contact${selectedUsers.length > 1 ? 's' : ''}'),
+                                style: context.bodyLarge.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ],
@@ -4775,9 +4809,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       final effectiveDownload = isViewOnce ? false : allowDownload;
       final effectiveShare = isViewOnce ? false : allowShare;
       storage.saveSenderMediaPermissions(tempId, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
-      storage.saveSenderMediaPermissions(sendName, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
       storage.markMediaAsOwnedByMe(tempId);
-      storage.markMediaAsOwnedByMe(sendName);
       if (sendPath != null && sendPath.isNotEmpty) {
         storage.saveSenderMediaPermissions(sendPath, allowView: allowView, allowDownload: effectiveDownload, allowShare: effectiveShare);
         storage.markMediaAsOwnedByMe(sendPath);
@@ -4961,18 +4993,28 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         fileSize: uploadSize,
       ));
 
+      final extractedMediaId = SecureAttachmentService.findMediaId(fileKey);
       try {
         final storage = getIt<StorageService>();
-        storage.saveSenderMediaPermissions(fileKey, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
-        storage.saveSenderMediaPermissions(uploadName, allowView: allowView, allowDownload: allowDownload, allowShare: allowShare);
+        final effDown = isViewOnce ? false : allowDownload;
+        final effShare = isViewOnce ? false : allowShare;
+        final cleanKey = fileKey.split('?').first;
+        storage.saveSenderMediaPermissions(fileKey, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+        storage.saveSenderMediaPermissions(cleanKey, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+        storage.saveSenderMediaPermissions(tempId, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+        if (extractedMediaId != null && extractedMediaId.isNotEmpty) {
+          storage.saveSenderMediaPermissions(extractedMediaId, allowView: allowView, allowDownload: effDown, allowShare: effShare);
+          storage.markMediaAsOwnedByMe(extractedMediaId);
+        }
         storage.markMediaAsOwnedByMe(fileKey);
-        storage.markMediaAsOwnedByMe(uploadName);
+        storage.markMediaAsOwnedByMe(cleanKey);
+        storage.markMediaAsOwnedByMe(tempId);
       } catch (_) {}
 
       if (uploadPath != null && uploadPath.isNotEmpty && !uploadPath.startsWith('http')) {
-        SecureAttachmentService.cacheMediaMapping(key: fileKey, localPath: uploadPath);
-        SecureAttachmentService.cacheMediaMapping(key: uploadName, localPath: uploadPath);
-        SecureAttachmentService.cacheMediaMapping(key: tempId, localPath: uploadPath);
+        SecureAttachmentService.cacheMediaMapping(key: fileKey, localPath: uploadPath, mediaId: extractedMediaId);
+        SecureAttachmentService.cacheMediaMapping(key: uploadName, localPath: uploadPath, mediaId: extractedMediaId);
+        SecureAttachmentService.cacheMediaMapping(key: tempId, localPath: uploadPath, mediaId: extractedMediaId);
       }
 
       final MessageModel mediaMsg = MessageModel(
@@ -5880,7 +5922,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                                           isFileViewed: msg.isFileViewed,
                                           isFileDownloaded: msg.isFileDownloaded,
                                           isFileShared: msg.isFileShared,
-                                          onSharePressed: (widget.isReadOnly || !msg.allowShare) ? null : () => _showForwardBottomSheet(context, msg),
+                                          onSharePressed: (widget.isReadOnly || (!msg.allowShare && !(isMe && !msg.isForwarded))) ? null : () => _showForwardBottomSheet(context, msg),
                                           fileSize: msg.fileSize,
                                           callMeta: msg.callMeta,
                                           isReadOnly: widget.isReadOnly,
@@ -8201,69 +8243,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
 
   List<_GroupedChatItem> _groupChatMessages(List<MessageModel> rawMessages) {
     final List<_GroupedChatItem> result = [];
-    int i = 0;
-    while (i < rawMessages.length) {
-      final msg = rawMessages[i];
-      final isImage = (msg.mediaType == 'image' || msg.messageType == 'image' || msg.mediaType == 'CHAT_IMAGE' || (msg.mediaUrl != null && msg.mediaUrl!.contains(RegExp(r'\.(jpg|jpeg|png|webp|gif|bmp)', caseSensitive: false)))) &&
-          !msg.isDeleted &&
-          !msg.isDeletedForMe &&
-          !msg.isViewOnce;
-
-      if (isImage) {
-        final List<MessageModel> group = [msg];
-        int j = i + 1;
-        while (j < rawMessages.length) {
-          final nextMsg = rawMessages[j];
-          final isNextImage = (nextMsg.mediaType == 'image' || nextMsg.messageType == 'image' || nextMsg.mediaType == 'CHAT_IMAGE' || (nextMsg.mediaUrl != null && nextMsg.mediaUrl!.contains(RegExp(r'\.(jpg|jpeg|png|webp|gif|bmp)', caseSensitive: false)))) &&
-              !nextMsg.isDeleted &&
-              !nextMsg.isDeletedForMe &&
-              !nextMsg.isViewOnce &&
-              nextMsg.senderId == msg.senderId;
-
-          if (!isNextImage) break;
-
-          final t1 = _parseMessageDate(msg.createdAt);
-          final t2 = _parseMessageDate(nextMsg.createdAt);
-          if (t1 != null && t2 != null && t2.difference(t1).abs().inMinutes > 10) {
-            break;
-          }
-
-          final isDuplicate = group.any((m) =>
-              m.id == nextMsg.id ||
-              ChatMessageCacheHelper.isDuplicateTempMessage(m, nextMsg) ||
-              ChatMessageCacheHelper.isDuplicateTempMessage(nextMsg, m) ||
-              (m.attachmentName != null &&
-                  m.attachmentName!.isNotEmpty &&
-                  nextMsg.attachmentName != null &&
-                  nextMsg.attachmentName!.isNotEmpty &&
-                  m.attachmentName == nextMsg.attachmentName) ||
-              (m.mediaUrl != null &&
-                  m.mediaUrl!.isNotEmpty &&
-                  nextMsg.mediaUrl != null &&
-                  nextMsg.mediaUrl!.isNotEmpty &&
-                  (m.mediaUrl == nextMsg.mediaUrl ||
-                      m.mediaUrl!.split('/').last.split('?').first ==
-                          nextMsg.mediaUrl!.split('/').last.split('?').first)));
-
-          if (!isDuplicate) {
-            group.add(nextMsg);
-          }
-          j++;
-        }
-
-        if (group.length > 1) {
-          final primary = group.firstWhere((m) => m.content.isNotEmpty, orElse: () => group.last);
-          result.add(_GroupedChatItem(
-            primaryMessage: primary,
-            groupedImages: group,
-          ));
-          i = j;
-          continue;
-        }
-      }
-
+    for (final msg in rawMessages) {
       result.add(_GroupedChatItem(primaryMessage: msg));
-      i++;
     }
     return result;
   }

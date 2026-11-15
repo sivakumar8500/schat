@@ -140,8 +140,8 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
   @override
   void initState() {
     super.initState();
-    _allowDownload = widget.isGroup ? true : widget.initialAllowDownload;
-    _allowShare = widget.isGroup ? true : widget.initialAllowShare;
+    _allowDownload = widget.initialAllowDownload;
+    _allowShare = widget.initialAllowShare;
     _isViewOnce = widget.initialIsViewOnce;
 
     final resolvedType = _resolveEffectiveType();

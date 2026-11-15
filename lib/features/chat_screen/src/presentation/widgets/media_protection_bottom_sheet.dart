@@ -4,6 +4,7 @@ import 'package:schat/features/chat_screen/src/domain/models/media_permissions_m
 import 'package:schat/features/chat_screen/src/domain/models/media_access_tree_model.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
@@ -11,21 +12,39 @@ import 'package:schat/utils/common_spaces.dart';
 
 class MediaProtectionBottomSheet extends StatefulWidget {
   final String mediaId;
+  final String? messageId;
+  final String? recipientId;
   final String? fileName;
   final MediaPermissionsModel? initialData;
+  final bool? initialAllowView;
+  final bool? initialAllowDownload;
+  final bool? initialAllowShare;
+  final void Function(bool allowView, bool allowDownload, bool allowShare)? onPermissionsChanged;
 
   const MediaProtectionBottomSheet({
     super.key,
     required this.mediaId,
+    this.messageId,
+    this.recipientId,
     this.fileName,
     this.initialData,
+    this.initialAllowView,
+    this.initialAllowDownload,
+    this.initialAllowShare,
+    this.onPermissionsChanged,
   });
 
   static Future<void> show(
     BuildContext context, {
     required String mediaId,
+    String? messageId,
+    String? recipientId,
     String? fileName,
     MediaPermissionsModel? initialData,
+    bool? initialAllowView,
+    bool? initialAllowDownload,
+    bool? initialAllowShare,
+    void Function(bool allowView, bool allowDownload, bool allowShare)? onPermissionsChanged,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -33,8 +52,14 @@ class MediaProtectionBottomSheet extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => MediaProtectionBottomSheet(
         mediaId: mediaId,
+        messageId: messageId,
+        recipientId: recipientId,
         fileName: fileName,
         initialData: initialData,
+        initialAllowView: initialAllowView,
+        initialAllowDownload: initialAllowDownload,
+        initialAllowShare: initialAllowShare,
+        onPermissionsChanged: onPermissionsChanged,
       ),
     );
   }
@@ -45,7 +70,9 @@ class MediaProtectionBottomSheet extends StatefulWidget {
 
 class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet> {
   MediaPermissionsModel? _permissions;
+  MediaAccessTreeModel? _accessTree;
   Future<MediaAccessTreeModel?>? _accessTreeFuture;
+  FilePermissions? _ownerRecipientPerms;
   bool _isLoading = true;
   bool _isActionProcessing = false;
   bool _allExpanded = true;
@@ -55,13 +82,35 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
   @override
   void initState() {
     super.initState();
+    if (widget.initialAllowView != null ||
+        widget.initialAllowDownload != null ||
+        widget.initialAllowShare != null) {
+      final v = widget.initialAllowView ?? true;
+      final d = (!v) ? false : (widget.initialAllowDownload ?? false);
+      final s = (!v || !d) ? false : (widget.initialAllowShare ?? false);
+      _ownerRecipientPerms = FilePermissions(canView: v, canDownload: d, canShare: s);
+    }
     _loadData();
   }
 
   void _loadData() {
     _accessTreeFuture = getIt<ChatRepository>()
         .getMediaAccessTree(widget.mediaId)
-        .then<MediaAccessTreeModel?>((v) => v)
+        .then<MediaAccessTreeModel?>((v) {
+          if (mounted) {
+            setState(() {
+              _accessTree = v;
+              if (v.accessTree.isNotEmpty) {
+                final activeNode = v.accessTree.firstWhere(
+                  (n) => n.status.toLowerCase() == 'active',
+                  orElse: () => v.accessTree.first,
+                );
+                _ownerRecipientPerms = activeNode.effectivePermissions;
+              }
+            });
+          }
+          return v;
+        })
         .catchError((_) => null);
 
     if (widget.initialData != null && _permissions == null) {
@@ -240,6 +289,92 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     }
   }
 
+  Future<void> _toggleOwnerTopPermission({
+    required FilePermissions currentPerms,
+    bool? view,
+    bool? download,
+    bool? share,
+  }) async {
+    bool newView = view ?? currentPerms.canView;
+    bool newDownload = download ?? currentPerms.canDownload;
+    bool newShare = share ?? currentPerms.canShare;
+
+    if (share == true || download == true) {
+      newView = true;
+    } else if (view == false) {
+      newView = false;
+      newDownload = false;
+      newShare = false;
+    }
+
+    setState(() {
+      _ownerRecipientPerms = FilePermissions(
+        canView: newView,
+        canDownload: newDownload,
+        canShare: newShare,
+      );
+      _isActionProcessing = true;
+    });
+
+    try {
+      if (getIt.isRegistered<StorageService>()) {
+        final storage = getIt<StorageService>();
+        storage.saveSenderMediaPermissions(
+          widget.mediaId,
+          allowView: newView,
+          allowDownload: newDownload,
+          allowShare: newShare,
+        );
+        if (widget.messageId != null && widget.messageId!.isNotEmpty) {
+          storage.saveSenderMediaPermissions(
+            widget.messageId!,
+            allowView: newView,
+            allowDownload: newDownload,
+            allowShare: newShare,
+          );
+        }
+      }
+    } catch (_) {}
+
+    widget.onPermissionsChanged?.call(newView, newDownload, newShare);
+
+    try {
+      final repo = getIt<ChatRepository>();
+      final grants = _accessTree?.accessTree ?? [];
+      if (grants.isNotEmpty) {
+        for (final node in grants) {
+          if (node.status.toLowerCase() == 'active') {
+            await repo.updateMediaSharePermissions(
+              mediaId: widget.mediaId,
+              grantId: node.grantId,
+              canView: newView,
+              canDownload: newDownload,
+              canShare: newShare,
+            );
+          }
+        }
+      } else if (widget.recipientId != null && widget.recipientId!.isNotEmpty) {
+        await repo.shareMedia(
+          mediaId: widget.mediaId,
+          granteeId: widget.recipientId!,
+          canView: newView,
+          canDownload: newDownload,
+          canShare: newShare,
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _isActionProcessing = false;
+          _loadData();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isActionProcessing = false);
+      }
+    }
+  }
+
   Future<void> _showEditPermissionsModal(AccessTreeNode node) async {
     bool canView = node.effectivePermissions.canView;
     bool canDownload = node.effectivePermissions.canDownload;
@@ -252,93 +387,102 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: modalCtx.colors.primary.withValues(alpha: 0.15),
-                        child: Text(
-                          node.grantee.initials,
-                          style: TextStyle(fontWeight: FontWeight.bold, color: modalCtx.colors.primary),
+            return Material(
+              color: Colors.transparent,
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: modalCtx.colors.primary.withValues(alpha: 0.15),
+                          child: Text(
+                            node.grantee.initials,
+                            style: TextStyle(fontWeight: FontWeight.bold, color: modalCtx.colors.primary),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Permissions for ${node.grantee.displayName}',
-                              style: modalCtx.titleSmall.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              'Manage granular access overrides',
-                              style: modalCtx.bodySmall.copyWith(color: modalCtx.colors.textSecondary, fontSize: 11),
-                            ),
-                          ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Permissions for ${node.grantee.displayName}',
+                                style: modalCtx.titleSmall.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                'Manage granular access overrides',
+                                style: modalCtx.bodySmall.copyWith(color: modalCtx.colors.textSecondary, fontSize: 11),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 24),
-                  SwitchListTile(
-                    title: const Text('Can View', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Allows opening & viewing the media', style: TextStyle(fontSize: 12)),
-                    value: canView,
-                    activeThumbColor: modalCtx.colors.primary,
-                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
-                    onChanged: (val) {
-                      setModalState(() {
-                        canView = val;
-                        if (!val) {
-                          canDownload = false;
-                          canShare = false;
-                        }
-                      });
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Can Download', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Allows saving to local device gallery', style: TextStyle(fontSize: 12)),
-                    value: canDownload,
-                    activeThumbColor: modalCtx.colors.primary,
-                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
-                    onChanged: canView
-                        ? (val) {
-                            setModalState(() => canDownload = val);
-                          }
-                        : null,
-                  ),
-                  SwitchListTile(
-                    title: const Text('Can Forward / Share', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Allows forwarding to other contacts', style: TextStyle(fontSize: 12)),
-                    value: canShare,
-                    activeThumbColor: modalCtx.colors.primary,
-                    activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
-                    onChanged: canView
-                        ? (val) {
-                            setModalState(() => canShare = val);
-                          }
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: modalCtx.colors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ],
                     ),
-                    onPressed: () => Navigator.pop(modalCtx, true),
-                    child: const Text('Apply Changes', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                  ),
-                ],
+                    const Divider(height: 24),
+                    SwitchListTile(
+                      title: const Text('Can View', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Allows opening & viewing the media', style: TextStyle(fontSize: 12)),
+                      value: canView,
+                      activeThumbColor: modalCtx.colors.primary,
+                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      onChanged: (val) {
+                        setModalState(() {
+                          canView = val;
+                          if (!val) {
+                            canDownload = false;
+                            canShare = false;
+                          }
+                        });
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Can Download', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Allows saving to local device gallery', style: TextStyle(fontSize: 12)),
+                      value: canDownload,
+                      activeThumbColor: modalCtx.colors.primary,
+                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      onChanged: (val) {
+                        setModalState(() {
+                          canDownload = val;
+                          if (val) {
+                            canView = true;
+                          }
+                        });
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Can Forward / Share', style: TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Allows forwarding to other contacts', style: TextStyle(fontSize: 12)),
+                      value: canShare,
+                      activeThumbColor: modalCtx.colors.primary,
+                      activeTrackColor: modalCtx.colors.primary.withValues(alpha: 0.4),
+                      onChanged: (val) {
+                        setModalState(() {
+                          canShare = val;
+                          if (val) {
+                            canView = true;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: modalCtx.colors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.pop(modalCtx, true),
+                      child: const Text('Apply Changes', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -347,10 +491,37 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     );
 
     if (updated == true) {
-      setState(() => _isActionProcessing = true);
+      setState(() {
+        _ownerRecipientPerms = FilePermissions(
+          canView: canView,
+          canDownload: canDownload,
+          canShare: canShare,
+        );
+        _isActionProcessing = true;
+      });
+      try {
+        if (getIt.isRegistered<StorageService>()) {
+          final storage = getIt<StorageService>();
+          storage.saveSenderMediaPermissions(
+            widget.mediaId,
+            allowView: canView,
+            allowDownload: canDownload,
+            allowShare: canShare,
+          );
+          if (widget.messageId != null && widget.messageId!.isNotEmpty) {
+            storage.saveSenderMediaPermissions(
+              widget.messageId!,
+              allowView: canView,
+              allowDownload: canDownload,
+              allowShare: canShare,
+            );
+          }
+        }
+      } catch (_) {}
+      widget.onPermissionsChanged?.call(canView, canDownload, canShare);
       try {
         final repo = getIt<ChatRepository>();
-        await repo.setMediaOwnerOverride(
+        await repo.updateMediaSharePermissions(
           mediaId: widget.mediaId,
           grantId: node.grantId,
           canView: canView,
@@ -569,6 +740,23 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     final borderColor = isDark ? const Color(0xFF2A3630) : const Color(0xFFE8ECE9);
     final permissions = model.permissions;
 
+    FilePermissions displayPerms = permissions;
+    if (model.isOwner) {
+      if (_ownerRecipientPerms != null) {
+        displayPerms = _ownerRecipientPerms!;
+      } else if (getIt.isRegistered<StorageService>()) {
+        final storage = getIt<StorageService>();
+        final saved = storage.getSenderMediaPermissions(widget.mediaId) ??
+            (widget.messageId != null ? storage.getSenderMediaPermissions(widget.messageId!) : null);
+        if (saved != null) {
+          final v = saved['allowView'] ?? true;
+          final d = (!v) ? false : (saved['allowDownload'] ?? false);
+          final s = (!v) ? false : (saved['allowShare'] ?? false);
+          displayPerms = FilePermissions(canView: v, canDownload: d, canShare: s);
+        }
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -653,6 +841,19 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
         ),
         CommonSpaces.h14,
 
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0, left: 2.0),
+          child: Text(
+            model.isOwner ? 'RECIPIENT GRANTED PERMISSIONS' : 'YOUR EFFECTIVE PERMISSIONS',
+            style: context.bodySmall.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.1,
+              color: context.colors.textSecondary,
+            ),
+          ),
+        ),
+
         // Permission Square Grid (View, Download, Share)
         Row(
           children: [
@@ -660,10 +861,16 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               child: _buildSquarePermissionCard(
                 context,
                 title: 'View',
-                allowed: permissions.canView,
+                allowed: displayPerms.canView,
                 icon: Icons.visibility_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
+                onTap: model.isOwner && !_isActionProcessing
+                    ? () => _toggleOwnerTopPermission(
+                          currentPerms: displayPerms,
+                          view: !displayPerms.canView,
+                        )
+                    : null,
               ),
             ),
             CommonSpaces.w10,
@@ -671,10 +878,16 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               child: _buildSquarePermissionCard(
                 context,
                 title: 'Download',
-                allowed: permissions.canDownload,
+                allowed: displayPerms.canDownload,
                 icon: Icons.download_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
+                onTap: model.isOwner && !_isActionProcessing
+                    ? () => _toggleOwnerTopPermission(
+                          currentPerms: displayPerms,
+                          download: !displayPerms.canDownload,
+                        )
+                    : null,
               ),
             ),
             CommonSpaces.w10,
@@ -682,10 +895,16 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
               child: _buildSquarePermissionCard(
                 context,
                 title: 'Share',
-                allowed: permissions.canShare,
+                allowed: displayPerms.canShare,
                 icon: Icons.share_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
+                onTap: model.isOwner && !_isActionProcessing
+                    ? () => _toggleOwnerTopPermission(
+                          currentPerms: displayPerms,
+                          share: !displayPerms.canShare,
+                        )
+                    : null,
               ),
             ),
           ],
@@ -774,63 +993,71 @@ class _MediaProtectionBottomSheetState extends State<MediaProtectionBottomSheet>
     required IconData icon,
     required Color cardBg,
     required Color borderColor,
+    VoidCallback? onTap,
   }) {
     final activeColor = allowed ? context.colors.primary : context.colors.error;
     final badgeBg = activeColor.withValues(alpha: 0.10);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: cardBg,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: allowed
-              ? context.colors.primary.withValues(alpha: 0.25)
-              : borderColor,
-          width: allowed ? 1.2 : 1.0,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: badgeBg,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: activeColor,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: allowed
+                  ? context.colors.primary.withValues(alpha: 0.25)
+                  : borderColor,
+              width: allowed ? 1.2 : 1.0,
             ),
           ),
-          CommonSpaces.h8,
-          Text(
-            title,
-            style: context.bodySmall.copyWith(
-              fontWeight: FontWeight.w600,
-              color: context.colors.textPrimary,
-            ),
-          ),
-          CommonSpaces.h4,
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: badgeBg,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              allowed ? 'ALLOWED' : 'BLOCKED',
-              style: context.bodySmall.copyWith(
-                fontSize: 9,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.6,
-                color: activeColor,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: activeColor,
+                ),
               ),
-            ),
+              CommonSpaces.h8,
+              Text(
+                title,
+                style: context.bodySmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+              CommonSpaces.h4,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  allowed ? 'ALLOWED' : 'BLOCKED',
+                  style: context.bodySmall.copyWith(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.6,
+                    color: activeColor,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1149,54 +1376,71 @@ class _AccessTreeNodeWidgetState extends State<_AccessTreeNodeWidget> {
                       ),
                     ),
                   ),
-                  if (widget.isOwner) ...[
-                    PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
-                      padding: EdgeInsets.zero,
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(Icons.tune_rounded, size: 16),
-                              SizedBox(width: 8),
-                              Text('Edit Permissions', style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        if (isActive)
+                  Builder(
+                    builder: (ctx) {
+                      final myId = getIt<StorageService>().getUserId();
+                      final canManageThisNode = widget.isOwner || (myId != null && widget.node.granter.id == myId);
+                      if (!canManageThisNode) {
+                        return const SizedBox.shrink();
+                      }
+                      return PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert, size: 16, color: context.colors.textSecondary),
+                        padding: EdgeInsets.zero,
+                        itemBuilder: (ctx) => [
                           const PopupMenuItem(
-                            value: 'revoke',
+                            value: 'edit',
                             child: Row(
                               children: [
-                                Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                                Icon(Icons.tune_rounded, size: 16),
                                 SizedBox(width: 8),
-                                Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                                Text('Edit Permissions', style: TextStyle(fontSize: 13)),
                               ],
                             ),
                           ),
-                      ],
-                      onSelected: (val) {
-                        if (val == 'edit') {
-                          widget.onEdit?.call(widget.node);
-                        } else if (val == 'revoke') {
-                          widget.onRevoke?.call(widget.node.grantId, widget.node.grantee.displayName);
-                        }
-                      },
-                    ),
-                  ],
+                          if (isActive)
+                            const PopupMenuItem(
+                              value: 'revoke',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.block_rounded, color: Colors.redAccent, size: 16),
+                                  SizedBox(width: 8),
+                                  Text('Revoke Access', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                                ],
+                              ),
+                            ),
+                        ],
+                        onSelected: (val) {
+                          if (val == 'edit') {
+                            widget.onEdit?.call(widget.node);
+                          } else if (val == 'revoke') {
+                            widget.onRevoke?.call(widget.node.grantId, widget.node.grantee.displayName);
+                          }
+                        },
+                      );
+                    },
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
-              // Permission Badges wrapped horizontally
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  _buildPermissionChip(context, 'View', perms.canView, widget.isDark),
-                  _buildPermissionChip(context, 'Download', perms.canDownload, widget.isDark),
-                  _buildPermissionChip(context, 'Share', perms.canShare, widget.isDark),
-                ],
+              // Permission Badges wrapped horizontally (tappable by owner/granter to edit)
+              Builder(
+                builder: (ctx) {
+                  final myId = getIt<StorageService>().getUserId();
+                  final canManageThisNode = widget.isOwner || (myId != null && widget.node.granter.id == myId);
+                  return InkWell(
+                    onTap: canManageThisNode ? () => widget.onEdit?.call(widget.node) : null,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _buildPermissionChip(context, 'View', perms.canView, widget.isDark),
+                        _buildPermissionChip(context, 'Download', perms.canDownload, widget.isDark),
+                        _buildPermissionChip(context, 'Share', perms.canShare, widget.isDark),
+                      ],
+                    ),
+                  );
+                },
               ),
               if (hasChildren) ...[
                 const SizedBox(height: 8),
