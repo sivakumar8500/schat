@@ -92,7 +92,6 @@ class _MediaProtectionBottomSheetState
       final v = widget.initialAllowView ?? true;
       final d = widget.initialAllowDownload ?? false;
       final s = widget.initialAllowShare ?? false;
-      final s = (!v) ? false : (widget.initialAllowShare ?? false);
       _ownerRecipientPerms = FilePermissions(
         canView: v,
         canDownload: d,
@@ -396,7 +395,6 @@ class _MediaProtectionBottomSheetState
     try {
       final repo = getIt<ChatRepository>();
       final grants = _accessTree?.accessTree ?? [];
-      if (grants.isNotEmpty) {
       final targetRecipientId = widget.recipientId;
       if (targetRecipientId != null && targetRecipientId.isNotEmpty) {
         final matchingActive = grants
@@ -870,18 +868,13 @@ class _MediaProtectionBottomSheetState
     final canManageRecipient =
         model.isOwner || (widget.recipientId != null && widget.recipientId!.isNotEmpty);
     FilePermissions displayPerms = permissions;
-    if (model.isOwner) {
     if (canManageRecipient) {
       if (_ownerRecipientPerms != null) {
         displayPerms = _ownerRecipientPerms!;
       } else if (getIt.isRegistered<StorageService>()) {
         final storage = getIt<StorageService>();
-        final saved =
-            storage.getSenderMediaPermissions(widget.mediaId) ??
-            (widget.messageId != null
         final saved = (widget.messageId != null
                 ? storage.getSenderMediaPermissions(widget.messageId!)
-                : null);
                 : null) ??
             (model.isOwner ? storage.getSenderMediaPermissions(widget.mediaId) : null);
         if (saved != null) {
@@ -993,9 +986,6 @@ class _MediaProtectionBottomSheetState
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0, left: 2.0),
           child: Text(
-            model.isOwner
-                ? 'RECIPIENT GRANTED PERMISSIONS'
-                : 'YOUR EFFECTIVE PERMISSIONS',
             canManageRecipient ? 'RECIPIENT GRANTED PERMISSIONS' : 'YOUR EFFECTIVE PERMISSIONS',
             style: context.bodySmall.copyWith(
               fontSize: 10,
@@ -1017,7 +1007,6 @@ class _MediaProtectionBottomSheetState
                 icon: Icons.visibility_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
-                onTap: model.isOwner && !_isActionProcessing
                 onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
                         currentPerms: displayPerms,
@@ -1035,7 +1024,6 @@ class _MediaProtectionBottomSheetState
                 icon: Icons.download_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
-                onTap: model.isOwner && !_isActionProcessing
                 onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
                         currentPerms: displayPerms,
@@ -1053,7 +1041,6 @@ class _MediaProtectionBottomSheetState
                 icon: Icons.share_rounded,
                 cardBg: cardBg,
                 borderColor: borderColor,
-                onTap: model.isOwner && !_isActionProcessing
                 onTap: canManageRecipient && !_isActionProcessing
                     ? () => _toggleOwnerTopPermission(
                         currentPerms: displayPerms,
