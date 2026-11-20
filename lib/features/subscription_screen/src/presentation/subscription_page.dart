@@ -1,7 +1,12 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:schat/core/config/payment_config.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/injection.dart';
 import 'package:schat/features/payment_screen/payment_screen.dart';
+import 'package:schat/features/subscription_screen/src/domain/models/coupon_model.dart';
 import 'package:schat/features/subscription_screen/src/domain/models/subscription_plan_model.dart';
 import 'package:schat/features/subscription_screen/src/presentation/bloc/subscription_bloc.dart';
 import 'package:schat/features/subscription_screen/src/presentation/bloc/subscription_event.dart';
@@ -12,8 +17,100 @@ import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/common/widgets/app_home_background.dart';
 
-class SubscriptionPage extends StatelessWidget {
+class SubscriptionPage extends StatefulWidget {
   const SubscriptionPage({super.key});
+
+  @override
+  State<SubscriptionPage> createState() => _SubscriptionPageState();
+}
+
+class _SubscriptionPageState extends State<SubscriptionPage> {
+  late Razorpay _razorpay;
+  final TextEditingController _couponController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    _couponController.dispose();
+    super.dispose();
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) {
+    if (!mounted) return;
+    context.read<SubscriptionBloc>().add(
+      RazorpayPaymentSuccessEvent(
+        orderId: response.orderId ?? '',
+        paymentId: response.paymentId ?? '',
+        signature: response.signature ?? '',
+      ),
+    );
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
+    final detail = response.message != null && response.message!.isNotEmpty
+        ? response.message!
+        : (response.code != null ? 'Payment error code: ${response.code}' : 'Payment cancelled or failed');
+    context.read<SubscriptionBloc>().add(
+      RazorpayPaymentFailedEvent(error: detail),
+    );
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    // External wallet selected
+  }
+
+  void _openRazorpayCheckout(SubscriptionPaymentReady state) {
+    final storage = getIt.isRegistered<StorageService>() ? getIt<StorageService>() : null;
+    final phone = storage?.getPhoneNumber() ?? '';
+
+    // Prefer key_id returned from server order, fallback to client config
+    final keyToUse = (state.order.keyId != null && state.order.keyId!.trim().isNotEmpty)
+        ? state.order.keyId!.trim()
+        : PaymentConfig.razorpayKeyId;
+
+    final Map<String, dynamic> prefill = {};
+    if (phone.isNotEmpty) {
+      final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+      if (clean.length >= 10) {
+        prefill['contact'] = clean;
+      }
+    }
+
+    final options = {
+      'key': keyToUse,
+      'amount': state.order.amount,
+      'name': PaymentConfig.appName,
+      'description': '${state.plan.name} Plan Subscription',
+      'order_id': state.order.id,
+      'currency': state.order.currency,
+      'prefill': prefill,
+      'retry': {
+        'enabled': true,
+        'max_count': 3,
+      },
+      'theme': {
+        'color': '#14B9F1',
+      },
+    };
+
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      if (mounted) {
+        context.showErrorNotification('Failed to launch payment gateway: $e');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +120,9 @@ class SubscriptionPage extends StatelessWidget {
         builder: (context) {
           return BlocConsumer<SubscriptionBloc, SubscriptionState>(
             listener: (context, state) {
-              if (state is SubscriptionSuccess) {
+              if (state is SubscriptionPaymentReady) {
+                _openRazorpayCheckout(state);
+              } else if (state is SubscriptionSuccess) {
                 context.showSuccessNotification('Subscription successful!');
                 Navigator.pushReplacement(
                   context,
@@ -36,21 +135,29 @@ class SubscriptionPage extends StatelessWidget {
               }
             },
             builder: (context, state) {
-              final isLoading = state is SubscriptionLoading ||
-                  state is SubscriptionInitial ||
-                  state is SubscriptionConfirming;
-              final isInitialLoading =
-                  state is SubscriptionLoading || state is SubscriptionInitial;
+              final isInitialLoading = state is SubscriptionLoading || state is SubscriptionInitial;
 
               List<SubscriptionPlanModel> plans = [];
               int selectedPlanIndex = 0;
+              CouponValidationResult? appliedCoupon;
+              List<CouponModel> availableCoupons = [];
+              bool isValidatingCoupon = false;
+              String? couponError;
+              bool isProcessingPayment = false;
 
               if (state is SubscriptionLoaded) {
                 plans = state.plans;
                 selectedPlanIndex = state.selectedIndex;
+                appliedCoupon = state.appliedCoupon;
+                availableCoupons = state.availableCoupons;
+                isValidatingCoupon = state.isValidatingCoupon;
+                couponError = state.couponError;
+                isProcessingPayment = state.isProcessingPayment;
               } else if (state is SubscriptionConfirming) {
                 plans = state.plans;
                 selectedPlanIndex = state.selectedIndex;
+                appliedCoupon = state.appliedCoupon;
+                isProcessingPayment = true;
               }
 
               return Scaffold(
@@ -99,7 +206,7 @@ class SubscriptionPage extends StatelessWidget {
                                 : SingleChildScrollView(
                                     physics: const BouncingScrollPhysics(),
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 24.0,
+                                      horizontal: 20.0,
                                       vertical: 8.0,
                                     ),
                                     child: Column(
@@ -114,7 +221,28 @@ class SubscriptionPage extends StatelessWidget {
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
+                                        CommonSpaces.h16,
+
+                                        // Available Coupon Offers Bar
+                                        if (availableCoupons.isNotEmpty) ...[
+                                          _buildCouponsCarousel(
+                                            context,
+                                            availableCoupons,
+                                            appliedCoupon,
+                                          ),
+                                          CommonSpaces.h16,
+                                        ],
+
+                                        // Coupon Input Card
+                                        _buildCouponInputSection(
+                                          context,
+                                          appliedCoupon,
+                                          isValidatingCoupon,
+                                          couponError,
+                                        ),
                                         CommonSpaces.h24,
+
+                                        // Pricing Cards List
                                         ListView.builder(
                                           shrinkWrap: true,
                                           physics: const NeverScrollableScrollPhysics(),
@@ -126,14 +254,15 @@ class SubscriptionPage extends StatelessWidget {
                                             return Center(
                                               child: ConstrainedBox(
                                                 constraints: const BoxConstraints(
-                                                  maxWidth: 320,
+                                                  maxWidth: 340,
                                                 ),
                                                 child: _buildPricingTableCard(
                                                   context: context,
                                                   plan: plan,
                                                   index: index,
                                                   isSelected: isSelected,
-                                                  isLoading: isLoading && isSelected,
+                                                  isLoading: isProcessingPayment && isSelected,
+                                                  appliedCoupon: isSelected ? appliedCoupon : null,
                                                 ),
                                               ),
                                             );
@@ -157,16 +286,311 @@ class SubscriptionPage extends StatelessWidget {
     );
   }
 
+  /// Horizontal Available Coupons List
+  Widget _buildCouponsCarousel(
+    BuildContext context,
+    List<CouponModel> coupons,
+    CouponValidationResult? appliedCoupon,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.local_offer_rounded, size: 16, color: Color(0xFF14B9F1)),
+            const SizedBox(width: 6),
+            Text(
+              'AVAILABLE OFFERS',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: context.colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 64,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: coupons.length,
+            separatorBuilder: (context, index) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final coupon = coupons[index];
+              final isApplied = appliedCoupon?.code.toUpperCase() == coupon.code.toUpperCase();
+
+              return InkWell(
+                onTap: () {
+                  if (isApplied) {
+                    context.read<SubscriptionBloc>().add(const RemoveCouponEvent());
+                  } else {
+                    _couponController.text = coupon.code;
+                    context.read<SubscriptionBloc>().add(ApplyCouponEvent(couponCode: coupon.code));
+                  }
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isApplied
+                        ? const Color(0xFF14B9F1).withValues(alpha: 0.14)
+                        : context.colors.cardBackground,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isApplied ? const Color(0xFF14B9F1) : context.colors.border,
+                      width: isApplied ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                coupon.code,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xFF14B9F1),
+                                ),
+                              ),
+                              if (isApplied) ...[
+                                const SizedBox(width: 4),
+                                const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF1CB854)),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            coupon.discountType == 'percentage'
+                                ? '${coupon.discountValue.toInt()}% OFF${coupon.maxDiscountAmount != null ? ' up to ₹${coupon.maxDiscountAmount!.toInt()}' : ''}'
+                                : 'Flat ₹${coupon.discountValue.toInt()} OFF',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: context.colors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isApplied ? const Color(0xFFE04848).withValues(alpha: 0.12) : const Color(0xFF14B9F1).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isApplied ? 'REMOVE' : 'APPLY',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: isApplied ? const Color(0xFFE04848) : const Color(0xFF14B9F1),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Coupon code textfield & active applied status card
+  Widget _buildCouponInputSection(
+    BuildContext context,
+    CouponValidationResult? appliedCoupon,
+    bool isValidatingCoupon,
+    String? couponError,
+  ) {
+    if (appliedCoupon != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1CB854).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF1CB854), width: 1.2),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: const BoxDecoration(
+                color: Color(0xFF1CB854),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_rounded, color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'COUPON APPLIED: ${appliedCoupon.code}',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F823B),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Saved ₹${_formatAmount(appliedCoupon.discountAmount)} with ${appliedCoupon.name}',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1F2933),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Color(0xFFD62828), size: 20),
+              tooltip: 'Remove coupon',
+              onPressed: () {
+                _couponController.clear();
+                context.read<SubscriptionBloc>().add(const RemoveCouponEvent());
+              },
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: context.colors.cardBackground,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: couponError != null ? const Color(0xFFD62828) : context.colors.border,
+              width: 1.0,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              const Icon(Icons.confirmation_number_outlined, size: 20, color: Color(0xFF14B9F1)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _couponController,
+                  textCapitalization: TextCapitalization.characters,
+                  style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Enter coupon code (e.g. SPECIAL20)',
+                    hintStyle: TextStyle(
+                      color: context.colors.textSecondary.withValues(alpha: 0.7),
+                      fontSize: 13,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 36,
+                child: ElevatedButton(
+                  onPressed: isValidatingCoupon
+                      ? null
+                      : () {
+                          final code = _couponController.text.trim();
+                          if (code.isNotEmpty) {
+                            context.read<SubscriptionBloc>().add(ApplyCouponEvent(couponCode: code));
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14B9F1),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  child: isValidatingCoupon
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'APPLY',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (couponError != null) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 4.0),
+            child: Text(
+              couponError,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: Color(0xFFD62828),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildPricingTableCard({
     required BuildContext context,
     required SubscriptionPlanModel plan,
     required int index,
     required bool isSelected,
     required bool isLoading,
+    CouponValidationResult? appliedCoupon,
   }) {
-    final style = _getCardStyle(index, plan.name);
+    final style = _getCardStyle(index, plan);
     const double topTabHeight = 44.0;
     const double topTabWidth = 195.0;
+
+    final double originalPrice = plan.price.toDouble();
+    final bool hasDiscount = appliedCoupon != null && appliedCoupon.discountAmount > 0;
+    final double finalPrice = hasDiscount ? appliedCoupon.finalPrice : originalPrice;
+    final double discountAmount = hasDiscount ? appliedCoupon.discountAmount : 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 36),
@@ -217,6 +641,9 @@ class SubscriptionPage extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFFFDFEFF),
               borderRadius: BorderRadius.circular(22),
+              border: isSelected
+                  ? Border.all(color: style.primaryAccent, width: 2.0)
+                  : null,
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFF1F2933).withValues(alpha: 0.14),
@@ -240,7 +667,7 @@ class SubscriptionPage extends StatelessWidget {
                     top: 0,
                     left: 0,
                     right: 0,
-                    height: 125,
+                    height: 140,
                     child: CustomPaint(
                       painter: _TopGlowConePainter(
                         topTabWidth: topTabWidth,
@@ -270,12 +697,50 @@ class SubscriptionPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // Price inside the glowing cone
+                        // Price inside glowing cone (showing original struck-out & final discounted amount)
+                        if (hasDiscount) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '₹${_formatAmount(originalPrice)}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.lineThrough,
+                                  decorationColor: Colors.white,
+                                  decorationThickness: 2,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1CB854),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  appliedCoupon.discountType == 'percentage'
+                                      ? '${appliedCoupon.discountValue.toInt()}% OFF'
+                                      : '-₹${_formatAmount(discountAmount)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                        ],
+
                         Text(
-                          '₹${_formatPrice(plan.price)}',
+                          '₹${_formatAmount(finalPrice)}',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 31,
+                            fontSize: 32,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.5,
                             height: 1.1,
@@ -301,12 +766,12 @@ class SubscriptionPage extends StatelessWidget {
                           ),
                         ),
 
-                        const SizedBox(height: 46),
+                        const SizedBox(height: 38),
 
                         // Features List with Green Check / Red Cross Icons
                         ...style.features.map((feature) {
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 15.0),
+                            padding: const EdgeInsets.only(bottom: 14.0),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
@@ -346,27 +811,30 @@ class SubscriptionPage extends StatelessWidget {
 
                         const SizedBox(height: 14),
 
-                        // Centered Pill Button ("Get Started")
+                        // Action Button ("Pay ₹XX" or "Get Started")
                         SizedBox(
-                          width: 146,
-                          height: 40,
+                          width: 180,
+                          height: 42,
                           child: ElevatedButton(
                             onPressed: isLoading
                                 ? null
                                 : () {
-                                    context.read<SubscriptionBloc>().add(
-                                          SelectPlanEvent(planIndex: index),
-                                        );
-                                    context.read<SubscriptionBloc>().add(
-                                          const ConfirmSubscriptionEvent(),
-                                        );
+                                    final bloc = context.read<SubscriptionBloc>();
+                                    if (!isSelected) {
+                                      bloc.add(SelectPlanEvent(planIndex: index));
+                                    } else {
+                                      bloc.add(const InitiatePaymentEvent());
+                                    }
                                   },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFB3C1CE),
+                              backgroundColor: isSelected
+                                  ? style.primaryAccent
+                                  : const Color(0xFFB3C1CE),
                               foregroundColor: Colors.white,
                               disabledBackgroundColor:
                                   style.primaryAccent.withValues(alpha: 0.7),
-                              elevation: 0,
+                              elevation: isSelected ? 4 : 0,
+                              shadowColor: style.primaryAccent.withValues(alpha: 0.35),
                               padding: EdgeInsets.zero,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(22),
@@ -383,13 +851,17 @@ class SubscriptionPage extends StatelessWidget {
                                       ),
                                     ),
                                   )
-                                : const Text(
-                                    'Get Started',
-                                    style: TextStyle(
+                                : Text(
+                                    isSelected
+                                        ? (finalPrice <= 0
+                                            ? 'Activate Free'
+                                            : 'Pay ₹${_formatAmount(finalPrice)}')
+                                        : 'Select Plan',
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 14,
-                                      letterSpacing: 0.2,
+                                      letterSpacing: 0.3,
                                     ),
                                   ),
                           ),
@@ -406,23 +878,19 @@ class SubscriptionPage extends StatelessWidget {
     );
   }
 
-  String _formatPrice(int price) {
-    if (price >= 1000) {
-      final str = price.toString();
-      return '${str.substring(0, str.length - 3)},${str.substring(str.length - 3)}';
+  String _formatAmount(double amount) {
+    if (amount == amount.truncateToDouble()) {
+      final int intVal = amount.toInt();
+      if (intVal >= 1000) {
+        final str = intVal.toString();
+        return '${str.substring(0, str.length - 3)},${str.substring(str.length - 3)}';
+      }
+      return intVal.toString();
     }
-    return price.toString();
+    return amount.toStringAsFixed(2);
   }
 
-  _PricingCardStyle _getCardStyle(int index, String planName) {
-    final lower = planName.toLowerCase().trim();
-
-    // Palette matching the reference image:
-    // 0: Cyan (Basic)
-    // 1: Indigo-Blue (Business)
-    // 2: Orchid-Purple (Premium)
-    // 3: Emerald-Teal (Professional)
-    // 4: Royal Amber/Coral (Enterprise)
+  _PricingCardStyle _getCardStyle(int index, SubscriptionPlanModel plan) {
     final List<List<Color>> palettes = [
       // Cyan (Basic)
       const [
@@ -436,7 +904,7 @@ class SubscriptionPage extends StatelessWidget {
         Color(0xFF566CD6),
         Color(0xFF5C70CF),
       ],
-      // Purple (Premium)
+      // Purple (Premium / VIP)
       const [
         Color(0xFFA75DD2),
         Color(0xFF9247BE),
@@ -458,80 +926,20 @@ class SubscriptionPage extends StatelessWidget {
 
     final palette = palettes[index % palettes.length];
 
-    if (lower.contains('customer') || lower.contains('basic') || index == 0) {
-      return _PricingCardStyle(
-        lightAccent: palette[0],
-        primaryAccent: palette[1],
-        textAccent: palette[2],
-        features: const [
-          _PlanFeatureItem('Secure chat & calls', true),
-          _PlanFeatureItem('Screenshot restriction', true),
-          _PlanFeatureItem('Screen record restriction', true),
-          _PlanFeatureItem('Hide chat & chat lock', false),
-          _PlanFeatureItem('File share protection', false),
-          _PlanFeatureItem('Multi-device & team controls', false),
-        ],
-      );
-    } else if (lower.contains('standard') ||
-        lower.contains('business') ||
-        index == 1) {
-      return _PricingCardStyle(
-        lightAccent: palette[0],
-        primaryAccent: palette[1],
-        textAccent: palette[2],
-        features: const [
-          _PlanFeatureItem('Secure chat & calls', true),
-          _PlanFeatureItem('Screenshot restriction', true),
-          _PlanFeatureItem('Screen record restriction', true),
-          _PlanFeatureItem('Hide chat & chat lock', true),
-          _PlanFeatureItem('File share protection', false),
-          _PlanFeatureItem('Multi-device & team controls', false),
-        ],
-      );
-    } else if (lower.contains('family') || index == 2) {
-      return _PricingCardStyle(
-        lightAccent: palette[0],
-        primaryAccent: palette[1],
-        textAccent: palette[2],
-        features: const [
-          _PlanFeatureItem('Secure chat & calls', true),
-          _PlanFeatureItem('Screenshot restriction', true),
-          _PlanFeatureItem('Screen record restriction', true),
-          _PlanFeatureItem('Hide chat & chat lock', true),
-          _PlanFeatureItem('File share protection', true),
-          _PlanFeatureItem('Multi-device & team controls', false),
-        ],
-      );
-    } else {
-      return _PricingCardStyle(
-        lightAccent: palette[0],
-        primaryAccent: palette[1],
-        textAccent: palette[2],
-        features: const [
-          _PlanFeatureItem('Secure chat & calls', true),
-          _PlanFeatureItem('Screenshot restriction', true),
-          _PlanFeatureItem('Screen record restriction', true),
-          _PlanFeatureItem('Hide chat & chat lock', true),
-          _PlanFeatureItem('File share protection', true),
-          _PlanFeatureItem('Multi-device & team controls', true),
-        ],
-      );
-    }
+    return _PricingCardStyle(
+      lightAccent: palette[0],
+      primaryAccent: palette[1],
+      textAccent: palette[2],
+      features: plan.effectiveFeatures,
+    );
   }
-}
-
-class _PlanFeatureItem {
-  final String title;
-  final bool included;
-
-  const _PlanFeatureItem(this.title, this.included);
 }
 
 class _PricingCardStyle {
   final Color lightAccent;
   final Color primaryAccent;
   final Color textAccent;
-  final List<_PlanFeatureItem> features;
+  final List<PlanFeatureItem> features;
 
   const _PricingCardStyle({
     required this.lightAccent,

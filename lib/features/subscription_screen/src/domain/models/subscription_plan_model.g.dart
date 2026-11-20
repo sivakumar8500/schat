@@ -6,6 +6,15 @@ part of 'subscription_plan_model.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+_PlanFeatureItem _$PlanFeatureItemFromJson(Map<String, dynamic> json) =>
+    _PlanFeatureItem(
+      title: json['title'] as String,
+      included: json['included'] as bool? ?? true,
+    );
+
+Map<String, dynamic> _$PlanFeatureItemToJson(_PlanFeatureItem instance) =>
+    <String, dynamic>{'title': instance.title, 'included': instance.included};
+
 _SubscriptionPlanModel _$SubscriptionPlanModelFromJson(
   Map<String, dynamic> json,
 ) => _SubscriptionPlanModel(
@@ -15,6 +24,11 @@ _SubscriptionPlanModel _$SubscriptionPlanModelFromJson(
   price: (json['price'] as num).toInt(),
   billingCycle: json['billing_cycle'] as String,
   isActive: json['is_active'] as bool,
+  features:
+      (json['features'] as List<dynamic>?)
+          ?.map((e) => PlanFeatureItem.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
 );
 
 Map<String, dynamic> _$SubscriptionPlanModelToJson(
@@ -26,4 +40,5 @@ Map<String, dynamic> _$SubscriptionPlanModelToJson(
   'price': instance.price,
   'billing_cycle': instance.billingCycle,
   'is_active': instance.isActive,
+  'features': instance.features,
 };

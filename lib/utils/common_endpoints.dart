@@ -29,6 +29,10 @@ class CommonEndpoints {
   // Subscriptions
   static const String getPlans = '/subscriptions/plans';
   static const String enrollSubscription = '/subscriptions/';
+  static const String getCoupons = '/subscriptions/coupons';
+  static const String validateCoupon = '/subscriptions/validate-coupon';
+  static const String createRazorpayOrder = '/subscriptions/razorpay/create-order';
+  static const String verifyRazorpayPayment = '/subscriptions/razorpay/verify';
 
   // Chats
   static const String getChats = '/chats/';

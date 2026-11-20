@@ -53,3 +53,9 @@
 -keepattributes EnclosingMethod
 -keepattributes SourceFile,LineNumberTable
 
+# Razorpay ProGuard Rules
+-dontwarn com.razorpay.**
+-keep class com.razorpay.** { *; }
+-keep interface com.razorpay.** { *; }
+-optimizations !method/inlining/*
+

@@ -4,6 +4,7 @@ import 'package:schat/core/network/api_service.dart';
 import 'package:schat/features/subscription_screen/src/domain/models/subscription_plan_model.dart';
 import 'package:schat/features/subscription_screen/src/domain/models/enroll_subscription_request.dart';
 import 'package:schat/features/subscription_screen/src/domain/models/subscription_model.dart';
+import 'package:schat/features/subscription_screen/src/domain/models/coupon_model.dart';
 import 'package:schat/features/subscription_screen/src/domain/repositories/subscription_repository.dart';
 import 'package:schat/utils/common_endpoints.dart';
 
@@ -94,5 +95,74 @@ class SubscriptionRepositoryImpl implements SubscriptionRepository {
         return ApiResult.success(mockSub);
       },
     );
+  }
+
+  @override
+  Future<ApiResult<List<CouponModel>>> getCoupons() async {
+    final result = await _apiService.get<List<CouponModel>>(
+      CommonEndpoints.getCoupons,
+      mapper: (json) {
+        if (json is List) {
+          return json.map((e) => CouponModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+        return [];
+      },
+    );
+    return result;
+  }
+
+  @override
+  Future<ApiResult<CouponValidationResult>> validateCoupon(String code, String planId) async {
+    final result = await _apiService.post<CouponValidationResult>(
+      CommonEndpoints.validateCoupon,
+      data: {
+        'code': code.trim(),
+        'plan_id': planId,
+      },
+      mapper: (json) => CouponValidationResult.fromJson(json as Map<String, dynamic>),
+    );
+    return result;
+  }
+
+  @override
+  Future<ApiResult<RazorpayOrderModel>> createRazorpayOrder({
+    required String planId,
+    String? couponCode,
+  }) async {
+    final Map<String, dynamic> body = {'plan_id': planId};
+    if (couponCode != null && couponCode.trim().isNotEmpty) {
+      body['coupon_code'] = couponCode.trim();
+    }
+    final result = await _apiService.post<RazorpayOrderModel>(
+      CommonEndpoints.createRazorpayOrder,
+      data: body,
+      mapper: (json) => RazorpayOrderModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result;
+  }
+
+  @override
+  Future<ApiResult<SubscriptionModel>> verifyRazorpayPayment({
+    required String planId,
+    required String orderId,
+    required String paymentId,
+    required String signature,
+    String? couponCode,
+  }) async {
+    final Map<String, dynamic> body = {
+      'plan_id': planId,
+      'razorpay_order_id': orderId,
+      'razorpay_payment_id': paymentId,
+      'razorpay_signature': signature,
+    };
+    if (couponCode != null && couponCode.trim().isNotEmpty) {
+      body['coupon_code'] = couponCode.trim();
+    }
+    final result = await _apiService.post<SubscriptionModel>(
+      CommonEndpoints.verifyRazorpayPayment,
+      data: body,
+      mapper: (json) => SubscriptionModel.fromJson(json as Map<String, dynamic>),
+    );
+    return result;
   }
 }
