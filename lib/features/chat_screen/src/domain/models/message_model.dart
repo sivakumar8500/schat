@@ -830,7 +830,11 @@ class MessageModel {
           if (expAt is String) {
             final parsed = int.tryParse(expAt);
             if (parsed != null) return parsed;
-            final dt = DateTime.tryParse(expAt);
+            String dateStr = expAt.trim();
+            if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
+              dateStr = '${dateStr}Z';
+            }
+            final dt = DateTime.tryParse(dateStr);
             if (dt != null) return dt.toUtc().millisecondsSinceEpoch ~/ 1000;
           }
           return null;
@@ -838,7 +842,11 @@ class MessageModel {
         if (rawExpiry is String) {
           final parsed = int.tryParse(rawExpiry);
           if (parsed != null) return parsed;
-          final dt = DateTime.tryParse(rawExpiry);
+          String dateStr = rawExpiry.trim();
+          if (!dateStr.endsWith('Z') && !dateStr.contains('+')) {
+            dateStr = '${dateStr}Z';
+          }
+          final dt = DateTime.tryParse(dateStr);
           if (dt != null) return dt.toUtc().millisecondsSinceEpoch ~/ 1000;
         }
         return null;

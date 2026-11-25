@@ -928,11 +928,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     }
 
-    // Purge any temporary message that duplicates an existing confirmed message
-    final confirmedMsgs = messageMap.values.where((m) => !m.id.startsWith('temp_')).toList();
+    // Remove stale temporary messages older than 10 minutes
+    final now = DateTime.now();
     messageMap.removeWhere((id, msg) {
       if (!id.startsWith('temp_')) return false;
-      return confirmedMsgs.any((c) => ChatMessageCacheHelper.isDuplicateTempMessage(msg, c));
+      final dt = _parseMessageDate(msg.createdAt);
+      if (dt != null && now.difference(dt).inMinutes > 10) return true;
+      return false;
     });
 
     final pool = messageMap.values.toList()
@@ -4491,9 +4493,15 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       final timer = state.disappearingTimer;
       if (timer != null && timer != 0) {
         if (timer > 0) {
+          final expiresAt = (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer;
           return {
+            'isEnabled': true,
+            'is_enabled': true,
+            'expireType': '${timer}s',
+            'expire_type': '${timer}s',
             'timer_seconds': timer,
-            'expires_at': (DateTime.now().millisecondsSinceEpoch ~/ 1000) + timer,
+            'expires_at': expiresAt,
+            'expireAt': expiresAt,
           };
         } else if (timer < 0) {
           final secondsFromMidnight = (-timer) - 1;
@@ -4506,8 +4514,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           }
           final expiresAt = nextCutoff.millisecondsSinceEpoch ~/ 1000;
           return {
+            'isEnabled': true,
+            'is_enabled': true,
+            'expireType': 'daily',
+            'expire_type': 'daily',
             'timer_seconds': timer,
             'expires_at': expiresAt,
+            'expireAt': expiresAt,
           };
         }
       }
@@ -9527,10 +9540,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
           "maxViews": 1,
           "viewedBy": [],
           "isOpened": false,
-          "openedAt": null,
-          "allowDownload": false,
-          "allowShare": false,
-          "allowView": true
+          "openedAt": null
         },
         "expiry": {
           "isEnabled": false,

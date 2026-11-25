@@ -18,10 +18,12 @@ import 'package:schat/utils/common_spaces.dart';
 
 class TargetConversationsPage extends StatefulWidget {
   final ChatViewUserModel targetUser;
+  final String? sharedAccessToken;
 
   const TargetConversationsPage({
     super.key,
     required this.targetUser,
+    this.sharedAccessToken,
   });
 
   @override
@@ -41,6 +43,7 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
           LoadTargetConversations(
             targetUserId: widget.targetUser.id,
             targetUser: widget.targetUser,
+            sharedAccessToken: widget.sharedAccessToken,
           ),
         );
   }
@@ -58,6 +61,7 @@ class _TargetConversationsPageState extends State<TargetConversationsPage> {
           LoadTargetConversations(
             targetUserId: widget.targetUser.id,
             targetUser: widget.targetUser,
+            sharedAccessToken: widget.sharedAccessToken,
           ),
         );
     await Future.delayed(const Duration(milliseconds: 650));

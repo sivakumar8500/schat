@@ -9,7 +9,13 @@ class GetTargetConversationsUseCase {
 
   GetTargetConversationsUseCase(this._repository);
 
-  Future<ApiResult<List<ChatModel>>> execute({required String targetUserId}) {
-    return _repository.getTargetConversations(targetUserId: targetUserId);
+  Future<ApiResult<List<ChatModel>>> execute({
+    required String targetUserId,
+    String? sharedAccessToken,
+  }) {
+    return _repository.getTargetConversations(
+      targetUserId: targetUserId,
+      sharedAccessToken: sharedAccessToken,
+    );
   }
 }

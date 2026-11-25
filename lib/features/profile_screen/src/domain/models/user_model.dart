@@ -87,6 +87,13 @@ Map<String, dynamic> _normalizeUserJson(Map<String, dynamic> json) {
   normalizedJson['is_blocked_by_me'] = baseJson['is_blocked_by_me'] ?? baseJson['isBlockedByMe'] ?? false;
   normalizedJson['is_blocked_by_other'] = baseJson['is_blocked_by_other'] ?? baseJson['isBlockedByOther'] ?? false;
   
+  normalizedJson['is_subscribed'] = baseJson['is_subscribed'] ?? baseJson['isSubscribed'] ?? false;
+  if (baseJson.containsKey('subscription_type') && baseJson['subscription_type'] != null) {
+    normalizedJson['subscription_type'] = baseJson['subscription_type'].toString();
+  } else if (baseJson.containsKey('subscriptionType') && baseJson['subscriptionType'] != null) {
+    normalizedJson['subscription_type'] = baseJson['subscriptionType'].toString();
+  }
+  
   if (baseJson.containsKey('read_receipts_enabled') && baseJson['read_receipts_enabled'] != null) {
     normalizedJson['read_receipts_enabled'] = baseJson['read_receipts_enabled'] == true;
   } else if (baseJson.containsKey('readReceiptsEnabled') && baseJson['readReceiptsEnabled'] != null) {

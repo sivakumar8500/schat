@@ -592,11 +592,55 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     final double finalPrice = hasDiscount ? appliedCoupon.finalPrice : originalPrice;
     final double discountAmount = hasDiscount ? appliedCoupon.discountAmount : 0.0;
 
+    final storage = getIt.isRegistered<StorageService>() ? getIt<StorageService>() : null;
+    final userPlanName = storage?.getSubscriptionType()?.toLowerCase().trim();
+    final isSubscribedUser = storage?.getIsSubscribed() ?? false;
+    final bool isCurrentPlan = isSubscribedUser &&
+        userPlanName != null &&
+        userPlanName.isNotEmpty &&
+        (plan.name.toLowerCase().trim() == userPlanName ||
+            userPlanName.contains(plan.name.toLowerCase().trim()) ||
+            plan.name.toLowerCase().trim().contains(userPlanName));
+
     return Container(
       margin: const EdgeInsets.only(bottom: 36),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Current active plan badge if user is subscribed to this plan
+          if (isCurrentPlan)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1CB854),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF1CB854).withValues(alpha: 0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 13),
+                  SizedBox(width: 4),
+                  Text(
+                    'CURRENT ACTIVE PLAN',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Protruding Top Header Tab (BASIC / BUSINESS / PREMIUM style)
           Container(
             width: topTabWidth,
@@ -855,8 +899,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                     isSelected
                                         ? (finalPrice <= 0
                                             ? 'Activate Free'
-                                            : 'Pay ₹${_formatAmount(finalPrice)}')
-                                        : 'Select Plan',
+                                            : (isCurrentPlan
+                                                ? 'Renew (₹${_formatAmount(finalPrice)})'
+                                                : 'Pay ₹${_formatAmount(finalPrice)}'))
+                                        : (isCurrentPlan ? 'Active Plan ✓' : 'Select Plan'),
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700,

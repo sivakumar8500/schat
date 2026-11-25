@@ -240,7 +240,18 @@ class ChatTransferBloc extends Bloc<ChatTransferEvent, ChatTransferState> {
       newlyReceivedRequest: null,
     ));
 
-    final result = await _getTargetConversationsUseCase.execute(targetUserId: event.targetUserId);
+    String? token = event.sharedAccessToken;
+    if (token == null || token.isEmpty) {
+      final req = state.requests.where((r) =>
+          (r.receiverId == event.targetUserId || r.receiver?.id == event.targetUserId) &&
+          r.status == 'accepted').firstOrNull;
+      token = req?.sharedAccessToken;
+    }
+
+    final result = await _getTargetConversationsUseCase.execute(
+      targetUserId: event.targetUserId,
+      sharedAccessToken: token,
+    );
     result.when(
       success: (conversations) {
         final sortedConversations = List<ChatModel>.from(conversations)

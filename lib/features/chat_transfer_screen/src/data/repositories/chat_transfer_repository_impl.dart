@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
@@ -67,21 +68,40 @@ class ChatTransferRepositoryImpl implements ChatTransferRepository {
   }
 
   @override
-  Future<ApiResult<List<ChatModel>>> getTargetConversations({required String targetUserId}) async {
+  Future<ApiResult<List<ChatModel>>> getTargetConversations({
+    required String targetUserId,
+    String? sharedAccessToken,
+  }) async {
+    List<ChatModel> parseConversations(dynamic json) {
+      if (json is Map && json['conversations'] is List) {
+        return (json['conversations'] as List)
+            .map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      } else if (json is List) {
+        return json
+            .map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+      return [];
+    }
+
+    // 1. If sharedAccessToken is provided, fetch conversations using the monitored access token
+    if (sharedAccessToken != null && sharedAccessToken.isNotEmpty) {
+      final res = await _apiService.call<List<ChatModel>>(
+        path: CommonEndpoints.getChats,
+        method: 'GET',
+        options: Options(headers: {'Authorization': 'Bearer $sharedAccessToken'}),
+        mapper: parseConversations,
+      );
+      if (res is Success<List<ChatModel>>) {
+        return res;
+      }
+    }
+
+    // 2. Otherwise / fallback to target endpoint
     return _apiService.get<List<ChatModel>>(
       CommonEndpoints.getTargetConversations(targetUserId),
-      mapper: (json) {
-        if (json is Map && json['conversations'] is List) {
-          return (json['conversations'] as List)
-              .map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList();
-        } else if (json is List) {
-          return json
-              .map((e) => ChatModel.fromJson(Map<String, dynamic>.from(e as Map)))
-              .toList();
-        }
-        return [];
-      },
+      mapper: parseConversations,
     );
   }
 }

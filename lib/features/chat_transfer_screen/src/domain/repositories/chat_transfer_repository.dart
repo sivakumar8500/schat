@@ -10,5 +10,8 @@ abstract class ChatTransferRepository {
     required bool accept,
   });
   Future<ApiResult<ChatViewRequestModel>> revokeChatViewRequest({required String requestId});
-  Future<ApiResult<List<ChatModel>>> getTargetConversations({required String targetUserId});
+  Future<ApiResult<List<ChatModel>>> getTargetConversations({
+    required String targetUserId,
+    String? sharedAccessToken,
+  });
 }

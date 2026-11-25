@@ -94,13 +94,13 @@ class ChatMessageCacheHelper {
       }
     }
 
-    // 3. Same content if non-empty text within 60 seconds
+    // 3. Same content if non-empty text within 15 seconds
     if (tempMsg.content.trim().isNotEmpty &&
         confirmedMsg.content.trim().isNotEmpty &&
         tempMsg.content.trim() == confirmedMsg.content.trim() &&
         tempMsg.mediaType == confirmedMsg.mediaType) {
       if (dtTemp.millisecondsSinceEpoch > 0 && dtConfirmed.millisecondsSinceEpoch > 0) {
-        if (dtConfirmed.difference(dtTemp).abs().inSeconds <= 60) {
+        if (dtConfirmed.difference(dtTemp).abs().inSeconds <= 15) {
           return true;
         }
       } else {
@@ -143,14 +143,10 @@ class ChatMessageCacheHelper {
           }
         }
 
-        // Deduplicate temp messages: remove any temp message superseded by a confirmed message or older than 10 mins
-        final confirmedMsgs = map.values.where((m) => !m.id.startsWith('temp_')).toList();
+        // Deduplicate temp messages: remove stale temporary messages older than 10 mins
         final now = DateTime.now();
         map.removeWhere((id, msg) {
           if (!id.startsWith('temp_')) return false;
-          if (confirmedMsgs.any((c) => isDuplicateTempMessage(msg, c))) {
-            return true;
-          }
           final dt = parseTimestamp(msg.createdAt);
           if (dt.millisecondsSinceEpoch > 0 && now.difference(dt).inMinutes > 10) {
             return true;
@@ -210,16 +206,11 @@ class ChatMessageCacheHelper {
         }
       }
 
-      // Purge any temporary message in map that duplicates an incoming confirmed message or is stale (>10 min)
-      final confirmed = messages.where((m) => !m.id.startsWith('temp_')).toList();
+      // Purge any stale temporary messages (>10 min)
       final now = DateTime.now();
       map.removeWhere((id, item) {
         if (!id.startsWith('temp_')) return false;
         try {
-          final tempMsg = MessageModel.fromJson(item);
-          if (confirmed.any((c) => isDuplicateTempMessage(tempMsg, c))) {
-            return true;
-          }
           final dt = parseTimestamp((item['createdAt'] ?? item['created_at'])?.toString());
           if (dt.millisecondsSinceEpoch > 0 && now.difference(dt).inMinutes > 10) {
             return true;
@@ -285,10 +276,10 @@ class ChatMessageCacheHelper {
       if (existingIdx != -1) {
         list[existingIdx] = jsonMsg;
       } else {
-        // If newMessage is confirmed, check if it replaces an existing temp message in list
+        // If newMessage is confirmed, check if it replaces an existing temp message in list (FIFO: oldest first)
         int tempIdx = -1;
         if (!newMessage.id.startsWith('temp_')) {
-          for (int i = list.length - 1; i >= 0; i--) {
+          for (int i = 0; i < list.length; i++) {
             final item = list[i];
             if (item is Map) {
               final id = (item['id'] ?? item['_id'])?.toString() ?? '';
@@ -310,22 +301,6 @@ class ChatMessageCacheHelper {
         } else {
           list.add(jsonMsg);
         }
-      }
-
-      // Purge any remaining duplicate temp messages in list
-      if (!newMessage.id.startsWith('temp_')) {
-        list.removeWhere((item) {
-          if (item is Map) {
-            final id = (item['id'] ?? item['_id'])?.toString() ?? '';
-            if (id.startsWith('temp_')) {
-              try {
-                final tempMsg = MessageModel.fromJson(Map<String, dynamic>.from(item));
-                return isDuplicateTempMessage(tempMsg, newMessage);
-              } catch (_) {}
-            }
-          }
-          return false;
-        });
       }
 
       await box.put(conversationId, list);

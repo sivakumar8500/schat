@@ -370,7 +370,10 @@ class _ChatTransferViewState extends State<_ChatTransferView> with SingleTickerP
                     MaterialPageRoute(
                       builder: (_) => BlocProvider.value(
                         value: context.read<ChatTransferBloc>(),
-                        child: TargetConversationsPage(targetUser: targetUser),
+                        child: TargetConversationsPage(
+                          targetUser: targetUser,
+                          sharedAccessToken: req.sharedAccessToken,
+                        ),
                       ),
                     ),
                   );

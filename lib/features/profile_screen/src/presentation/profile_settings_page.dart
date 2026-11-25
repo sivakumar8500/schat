@@ -84,6 +84,8 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
   bool _readReceiptsEnabled = true;
   bool _lastSeenEnabled = true;
   bool _notificationsEnabled = true;
+  bool _isSubscribed = false;
+  String? _subscriptionType;
   String _appVersion = "v1.0.0 (6)";
   String _cacheSizeString = 'Calculating...';
 
@@ -99,6 +101,8 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
     _readReceiptsEnabled = getIt<StorageService>().getReadReceiptsEnabled();
     _lastSeenEnabled = getIt<StorageService>().getLastSeenEnabled();
     _notificationsEnabled = getIt<StorageService>().getNotificationsEnabled();
+    _isSubscribed = getIt<StorageService>().getIsSubscribed();
+    _subscriptionType = getIt<StorageService>().getSubscriptionType();
 
     final cachedCallTone = getIt<StorageService>().getCallRingtoneName();
     if (cachedCallTone != null && cachedCallTone.isNotEmpty) {
@@ -400,6 +404,10 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             _currentAbout = state.user?.about ?? "Hey there! I am using S-CHAT.";
             _currentEmail = getIt<StorageService>().getEmail() ?? "";
             if (state.user != null) {
+              _isSubscribed = state.user!.isSubscribed;
+              _subscriptionType = state.user!.subscriptionType;
+              getIt<StorageService>().saveIsSubscribed(state.user!.isSubscribed);
+              getIt<StorageService>().saveSubscriptionType(state.user!.subscriptionType);
               _readReceiptsEnabled = state.user!.readReceiptsEnabled;
               _lastSeenEnabled = state.user!.lastSeenEnabled;
               _notificationsEnabled = state.user!.notificationsEnabled;
@@ -461,12 +469,52 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                             _buildSettingRow(
                               context: context,
                               icon: Icons.workspace_premium_rounded,
-                              title: 'Upgrade Your Plan',
-                              subtitle: 'Explore plans, pricing & membership benefits',
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+                              title: _isSubscribed
+                                  ? 'Current Plan: ${_subscriptionType ?? "Active"}'
+                                  : 'Upgrade Your Plan',
+                              subtitle: _isSubscribed
+                                  ? 'Manage your active subscription & benefits'
+                                  : 'Explore plans, pricing & membership benefits',
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: _isSubscribed ? const Color(0xFFE8F5E9) : context.colors.lightBackground,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _isSubscribed
+                                            ? const Color(0xFF00873C).withValues(alpha: 0.3)
+                                            : context.colors.border,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _isSubscribed ? (_subscriptionType ?? 'Active') : 'Free',
+                                      style: TextStyle(
+                                        color: _isSubscribed ? const Color(0xFF00873C) : context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: context.colors.textHint,
+                                    size: 22,
+                                  ),
+                                ],
                               ),
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const SubscriptionPage()),
+                                );
+                                if (context.mounted) {
+                                  context.read<ProfileBloc>().add(const LoadProfileEvent());
+                                }
+                              },
                             ),
                             _buildSettingRow(
                               context: context,
@@ -1074,21 +1122,33 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
 
   Widget _buildUpgradePlanBanner(BuildContext context) {
     final isDark = context.colors.isDark;
+    final hasActivePlan = _isSubscribed || (_subscriptionType != null && _subscriptionType!.isNotEmpty && _subscriptionType!.toLowerCase() != 'basic' && _subscriptionType!.toLowerCase() != 'free');
+    final planName = _subscriptionType ?? (hasActivePlan ? 'VIP' : 'Free');
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-                  const Color(0xFF133825),
-                  const Color(0xFF092015),
-                ]
-              : [
-                  const Color(0xFF00873C),
-                  const Color(0xFF005C2B),
-                ],
+          colors: hasActivePlan
+              ? (isDark
+                  ? [
+                      const Color(0xFF1E3A2F),
+                      const Color(0xFF0F241C),
+                    ]
+                  : [
+                      const Color(0xFF007A33),
+                      const Color(0xFF004D21),
+                    ])
+              : (isDark
+                  ? [
+                      const Color(0xFF133825),
+                      const Color(0xFF092015),
+                    ]
+                  : [
+                      const Color(0xFF00873C),
+                      const Color(0xFF005C2B),
+                    ]),
         ),
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
@@ -1099,9 +1159,11 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
           ),
         ],
         border: Border.all(
-          color: isDark
-              ? const Color(0xFF00B350).withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.25),
+          color: hasActivePlan
+              ? const Color(0xFFFFD54F).withValues(alpha: isDark ? 0.45 : 0.4)
+              : (isDark
+                  ? const Color(0xFF00B350).withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.25)),
           width: 1.2,
         ),
       ),
@@ -1109,11 +1171,14 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
-          onTap: () {
-            Navigator.push(
+          onTap: () async {
+            await Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const SubscriptionPage()),
             );
+            if (context.mounted) {
+              context.read<ProfileBloc>().add(const LoadProfileEvent());
+            }
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1155,9 +1220,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Flexible(
-                            child: const Text(
-                              'Upgrade Your Plan',
-                              style: TextStyle(
+                            child: Text(
+                              hasActivePlan ? 'Current Plan: $planName' : 'Upgrade Your Plan',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -1171,13 +1236,13 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFD54F),
+                              color: hasActivePlan ? const Color(0xFF1CB854) : const Color(0xFFFFD54F),
                               borderRadius: BorderRadius.circular(5),
                             ),
-                            child: const Text(
-                              'PRO',
+                            child: Text(
+                              hasActivePlan ? 'ACTIVE' : 'FREE',
                               style: TextStyle(
-                                color: Color(0xFF332000),
+                                color: hasActivePlan ? Colors.white : const Color(0xFF332000),
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: 0.5,
@@ -1188,7 +1253,9 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Unlock unlimited chats, calls & features',
+                        hasActivePlan
+                            ? 'Full access to all $planName security & privacy features'
+                            : 'Unlock unlimited chats, calls & premium features',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.85),
                           fontSize: 11.5,
@@ -1215,19 +1282,19 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Upgrade',
-                        style: TextStyle(
+                        hasActivePlan ? 'Manage' : 'Upgrade',
+                        style: const TextStyle(
                           color: Color(0xFF00873C),
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
                       ),
-                      SizedBox(width: 3),
-                      Icon(
+                      const SizedBox(width: 3),
+                      const Icon(
                         Icons.arrow_forward_rounded,
                         size: 13,
                         color: Color(0xFF00873C),

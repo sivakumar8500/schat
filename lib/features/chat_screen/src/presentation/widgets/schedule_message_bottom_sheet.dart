@@ -949,9 +949,6 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 "maxViews": 1,
                 "viewedBy": [],
                 "isOpened": false,
-                "allowDownload": false,
-                "allowShare": false,
-                "allowView": true,
               },
               "expiry": {
                 "isEnabled": false,

@@ -27,6 +27,9 @@ class StorageService {
   static const String _mutedChatsKey = 'muted_chats_list';
   static const String _lockedChatsKey = 'locked_chats_list';
   static const String _hiddenChatsKey = 'hidden_chats_list';
+  static const String _isSubscribedKey = 'is_subscribed';
+  static const String _subscriptionTypeKey = 'subscription_type';
+  static const String _subscriptionExpiresAtKey = 'subscription_expires_at';
 
   final SharedPreferences _prefs;
 
@@ -104,6 +107,9 @@ class StorageService {
     await _prefs.remove(_emailKey);
     await _prefs.remove(_hasSyncedContactsKey);
     await _prefs.remove(_defaultDisappearingTimerKey);
+    await _prefs.remove(_isSubscribedKey);
+    await _prefs.remove(_subscriptionTypeKey);
+    await _prefs.remove(_subscriptionExpiresAtKey);
   }
 
   bool hasToken() {
@@ -121,6 +127,38 @@ class StorageService {
 
   String? getEmail() {
     return _prefs.getString(_emailKey);
+  }
+
+  Future<void> saveIsSubscribed(bool isSubscribed) async {
+    await _prefs.setBool(_isSubscribedKey, isSubscribed);
+  }
+
+  bool getIsSubscribed() {
+    return _prefs.getBool(_isSubscribedKey) ?? false;
+  }
+
+  Future<void> saveSubscriptionType(String? subscriptionType) async {
+    if (subscriptionType != null && subscriptionType.isNotEmpty) {
+      await _prefs.setString(_subscriptionTypeKey, subscriptionType);
+    } else {
+      await _prefs.remove(_subscriptionTypeKey);
+    }
+  }
+
+  String? getSubscriptionType() {
+    return _prefs.getString(_subscriptionTypeKey);
+  }
+
+  Future<void> saveSubscriptionExpiresAt(String? expiresAt) async {
+    if (expiresAt != null && expiresAt.isNotEmpty) {
+      await _prefs.setString(_subscriptionExpiresAtKey, expiresAt);
+    } else {
+      await _prefs.remove(_subscriptionExpiresAtKey);
+    }
+  }
+
+  String? getSubscriptionExpiresAt() {
+    return _prefs.getString(_subscriptionExpiresAtKey);
   }
 
   String getOrGenerateDeviceId() {

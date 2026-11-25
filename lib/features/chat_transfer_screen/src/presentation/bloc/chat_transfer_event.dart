@@ -31,9 +31,11 @@ class RevokeChatTransferRequest extends ChatTransferEvent {
 class LoadTargetConversations extends ChatTransferEvent {
   final String targetUserId;
   final ChatViewUserModel? targetUser;
+  final String? sharedAccessToken;
   const LoadTargetConversations({
     required this.targetUserId,
     this.targetUser,
+    this.sharedAccessToken,
   });
 }
 

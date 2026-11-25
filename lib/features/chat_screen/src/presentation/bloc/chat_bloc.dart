@@ -147,7 +147,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _onCheckExpiredMessages(CheckExpiredMessagesEvent event, Emitter<ChatState> emit) {
     if (state is ChatLoaded) {
       final currentState = state as ChatLoaded;
-      if (currentState.disappearingTimer == null || currentState.disappearingTimer == 0) {
+      final timer = currentState.disappearingTimer;
+      if (timer == null || timer == 0) {
         return;
       }
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -155,6 +156,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final filteredMessages = currentState.messages.where((msg) {
         if (msg.expiry != null && msg.expiry! > 0) {
           if (now >= msg.expiry!) {
+            if (timer > 0) {
+              final dt = _parseTimestamp(msg.createdAt);
+              if (dt.millisecondsSinceEpoch > 0) {
+                final ageSeconds = DateTime.now().difference(dt).inSeconds;
+                if (ageSeconds < timer) {
+                  return true; // Still within timer window, do not expire
+                }
+              }
+            }
             hasExpired = true;
             return false;
           }
@@ -196,20 +206,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   List<MessageModel> _filterExpiredMessages(List<MessageModel> messages, [int? activeTimer]) {
     final timer = activeTimer ?? (state is ChatLoaded ? (state as ChatLoaded).disappearingTimer : null);
-    final confirmed = messages.where((m) => !m.id.startsWith('temp_')).toList();
     
-    // Purge any temp messages that duplicate a confirmed message
-    var filtered = messages.where((msg) {
-      if (msg.id.startsWith('temp_')) {
-        if (confirmed.any((c) => ChatMessageCacheHelper.isDuplicateTempMessage(msg, c))) {
-          return false;
-        }
-      }
-      return true;
-    }).toList();
-
     // Deduplicate consecutive/clustered call messages from same call session
-    filtered = _deduplicateCallMessages(filtered);
+    var filtered = _deduplicateCallMessages(messages);
 
     if (timer == null || timer == 0) {
       return filtered;
@@ -217,7 +216,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     return filtered.where((msg) {
       if (msg.expiry != null && msg.expiry! > 0) {
-        return now < msg.expiry!;
+        if (now >= msg.expiry!) {
+          // Double check with creation date so freshly sent messages (within timer) never prematurely disappear
+          if (timer > 0) {
+            final dt = _parseTimestamp(msg.createdAt);
+            if (dt.millisecondsSinceEpoch > 0) {
+              final ageSeconds = DateTime.now().difference(dt).inSeconds;
+              if (ageSeconds < timer) {
+                return true;
+              }
+            }
+          }
+          return false;
+        }
       }
       return true;
     }).toList();
@@ -1803,7 +1814,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           }
         }
       }
-      final finalMessages = finalMap.values.toList()
+      var finalMessages = finalMap.values.toList()
         ..sort((a, b) {
           final dtA = _parseTimestamp(a.createdAt);
           final dtB = _parseTimestamp(b.createdAt);
@@ -1811,6 +1822,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           if (cmp != 0) return cmp;
           return a.id.compareTo(b.id);
         });
+
+      finalMessages = _filterExpiredMessages(finalMessages, emitTarget.disappearingTimer);
+      if (emitTarget.disappearingTimer == null || emitTarget.disappearingTimer == 0) {
+        finalMessages = finalMessages.map((m) => m.copyWith(expiry: 0)).toList();
+      }
 
       _saveToCache(event.conversationId, finalMessages);
 
@@ -2105,14 +2121,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           debugPrint('DEBUG: Message is from me (userView=$userView), updating temp message with real ID');
           final updatedMessages = List<MessageModel>.from(currentState.messages);
 
-          int index = updatedMessages.lastIndexWhere((msg) =>
+          int index = updatedMessages.indexWhere((msg) =>
               msg.id.startsWith('temp_') &&
               (ChatMessageCacheHelper.isDuplicateTempMessage(msg, newMessage) ||
                (msg.content.isNotEmpty && msg.content == newMessage.content) ||
                (msg.mediaUrl != null && newMessage.mediaUrl != null && msg.mediaUrl == newMessage.mediaUrl) ||
                (msg.attachmentName != null && newMessage.attachmentName != null && msg.attachmentName == newMessage.attachmentName)));
           if (index == -1) {
-            index = updatedMessages.lastIndexWhere((msg) => msg.id.startsWith('temp_'));
+            index = updatedMessages.indexWhere((msg) => msg.id.startsWith('temp_'));
           }
 
           final oldTemp = (index != -1) ? updatedMessages[index] : null;
@@ -2253,12 +2269,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           } else {
             updatedMessages.add(confirmedMessage);
           }
-
-          // Purge any remaining duplicate temp messages in updatedMessages
-          updatedMessages.removeWhere((m) =>
-              m.id != confirmedMessage.id &&
-              m.id.startsWith('temp_') &&
-              ChatMessageCacheHelper.isDuplicateTempMessage(m, confirmedMessage));
 
           // Ensure no duplicate IDs in list
           final seenIds = <String>{};

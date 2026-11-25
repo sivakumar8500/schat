@@ -33,6 +33,8 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUsername(user.username);
         _storageService.saveProfilePic(user.profilePictureUrl);
         _storageService.saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
+        _storageService.saveIsSubscribed(user.isSubscribed);
+        _storageService.saveSubscriptionType(user.subscriptionType);
         return ApiResult.success(user);
       },
       failure: (message, statusCode) {
@@ -94,6 +96,8 @@ class ProfileRepositoryImpl implements ProfileRepository {
         _storageService.saveUsername(user.username);
         _storageService.saveProfilePic(user.profilePictureUrl);
         _storageService.saveDefaultDisappearingTimer(user.defaultDisappearingTimer);
+        _storageService.saveIsSubscribed(user.isSubscribed);
+        _storageService.saveSubscriptionType(user.subscriptionType);
         if (request.readReceiptsEnabled != null) {
           _storageService.saveReadReceiptsEnabled(request.readReceiptsEnabled!);
         }
