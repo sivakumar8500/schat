@@ -368,7 +368,7 @@ class SecureAttachmentService {
       if (clean.toLowerCase().endsWith('.enc')) return true;
       final len = f.lengthSync();
       if (len < 16) return false;
-      final bytes = f.openSync().readSync(32);
+      final bytes = f.openSync().readSync(len < 512 ? len : 512);
       return !isPlaintextFile(bytes, clean.split('/').last);
     } catch (_) {
       return false;
@@ -387,7 +387,7 @@ class SecureAttachmentService {
     if (bytes.length < 4) return false;
     final lower = safeName.toLowerCase();
 
-    // Check magic bytes directly regardless of file name/extension
+    // 1. Check magic bytes directly regardless of file name/extension
     // PDF: %PDF
     if (bytes.length >= 4 && bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
       return true;
@@ -428,12 +428,55 @@ class SecureAttachmentService {
     if (bytes.length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B && bytes[2] == 0x03 && bytes[3] == 0x04) {
       return true;
     }
+    // Composite Document / OLE2 (legacy .doc, .xls, .ppt): 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1
+    if (bytes.length >= 8 &&
+        bytes[0] == 0xD0 && bytes[1] == 0xCF && bytes[2] == 0x11 && bytes[3] == 0xE0 &&
+        bytes[4] == 0xA1 && bytes[5] == 0xB1 && bytes[6] == 0x1A && bytes[7] == 0xE1) {
+      return true;
+    }
+    // RTF: {\rtf
+    if (bytes.length >= 5 && bytes[0] == 0x7B && bytes[1] == 0x5C && bytes[2] == 0x72 && bytes[3] == 0x74 && bytes[4] == 0x66) {
+      return true;
+    }
     // Matroska / WebM: 0x1A 0x45 0xDF 0xA3
     if (bytes.length >= 4 && bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3) {
       return true;
     }
 
-    // Extension-matched checks
+    // 2. Extension-matched text checks
+    final textExtensions = [
+      '.txt', '.text', '.csv', '.tsv', '.json', '.xml', '.html', '.htm',
+      '.md', '.markdown', '.log', '.yaml', '.yml', '.ini', '.conf', '.cfg',
+      '.css', '.js', '.ts', '.dart', '.c', '.cpp', '.h', '.py', '.java',
+      '.sh', '.bat', '.sql', '.env', '.doc', '.xls', '.ppt',
+    ];
+    for (final ext in textExtensions) {
+      if (lower.endsWith(ext)) {
+        final sample = bytes.length > 512 ? bytes.sublist(0, 512) : bytes;
+        if (!sample.contains(0x00)) return true;
+        if (lower.endsWith('.doc') || lower.endsWith('.xls') || lower.endsWith('.ppt')) {
+          if (bytes.length >= 4 && bytes[0] == 0xD0 && bytes[1] == 0xCF) return true;
+        }
+      }
+    }
+
+    // 3. General text inspection (no null bytes and >= 95% printable / UTF-8)
+    if (!lower.endsWith('.enc')) {
+      final sample = bytes.length > 512 ? bytes.sublist(0, 512) : bytes;
+      if (!sample.contains(0x00)) {
+        int printable = 0;
+        for (final b in sample) {
+          if (b == 0x09 || b == 0x0A || b == 0x0D || (b >= 0x20 && b <= 0x7E) || b >= 0x80) {
+            printable++;
+          }
+        }
+        if (sample.isNotEmpty && (printable / sample.length) >= 0.95) {
+          return true;
+        }
+      }
+    }
+
+    // Extension-matched checks for audio/video/images
     if (lower.endsWith('.mp3')) {
       if (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) return true;
       if (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) return true;
@@ -1092,13 +1135,14 @@ class SecureAttachmentService {
       );
     }
 
-    // 3. Decrypt bytes if encrypted
+    // 3. Decrypt bytes ONLY if file explicitly has .enc extension or is extensionless non-plaintext
     Uint8List normalBytes = rawBytes;
     final bool hasEncExtension = fileName.toLowerCase().endsWith('.enc') ||
         (filePath != null && filePath.toLowerCase().endsWith('.enc'));
 
     if (rawBytes.length >= 16) {
-      final bool shouldAttemptDecryption = hasEncExtension || !_isPlaintextFile(rawBytes, cleanName);
+      final bool shouldAttemptDecryption = hasEncExtension ||
+          (!cleanName.contains('.') && !_isPlaintextFile(rawBytes, cleanName));
       if (shouldAttemptDecryption) {
         final ivBytes = rawBytes.sublist(0, 16);
         final cipherBytes = rawBytes.sublist(16);
@@ -1122,9 +1166,13 @@ class SecureAttachmentService {
                 iv: iv,
               );
               if (res.isNotEmpty && !_isErrorResponse(Uint8List.fromList(res))) {
-                normalBytes = Uint8List.fromList(res);
-                debugPrint('SecureAttachmentService: Successfully decrypted .enc file "$fileName" -> ${normalBytes.length} bytes');
-                break;
+                final decryptedBytes = Uint8List.fromList(res);
+                // Verify decrypted output looks like real media or text
+                if (hasEncExtension || _isPlaintextFile(decryptedBytes, cleanName)) {
+                  normalBytes = decryptedBytes;
+                  debugPrint('SecureAttachmentService: Successfully decrypted .enc file "$fileName" -> ${normalBytes.length} bytes');
+                  break;
+                }
               }
             } catch (_) {}
           }

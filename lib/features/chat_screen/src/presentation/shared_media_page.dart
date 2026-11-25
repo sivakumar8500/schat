@@ -148,6 +148,10 @@ class _SharedMediaPageState extends State<SharedMediaPage> with SingleTickerProv
       type = 'audio';
     } else if (mimeLower.contains('pdf') || nameLower.endsWith('.pdf') || urlLower.contains('.pdf')) {
       type = 'pdf';
+    } else if (mimeLower.contains('word') || nameLower.endsWith('.doc') || nameLower.endsWith('.docx') || urlLower.contains('.doc') || urlLower.contains('.docx')) {
+      type = 'word';
+    } else if (mimeLower.contains('excel') || mimeLower.contains('spreadsheet') || nameLower.endsWith('.xls') || nameLower.endsWith('.xlsx') || urlLower.contains('.xls') || urlLower.contains('.xlsx')) {
+      type = 'excel';
     }
 
     InAppViewer.show(

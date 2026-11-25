@@ -4783,8 +4783,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     int sendSize = size;
 
     final bool isSendEnc = sendName.toLowerCase().endsWith('.enc') ||
-        (sendPath != null && sendPath.isNotEmpty && (sendPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(sendPath)))) ||
-        (sendBytes != null && sendBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(sendBytes, sendName));
+        (sendPath != null && sendPath.isNotEmpty && sendPath.toLowerCase().endsWith('.enc'));
 
     if (isSendEnc) {
       try {
@@ -4903,8 +4902,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     int uploadSize = size;
 
     final bool isUploadEnc = uploadName.toLowerCase().endsWith('.enc') ||
-        (uploadPath != null && uploadPath.isNotEmpty && (uploadPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(uploadPath)))) ||
-        (uploadBytes != null && uploadBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(uploadBytes, uploadName));
+        (uploadPath != null && uploadPath.isNotEmpty && uploadPath.toLowerCase().endsWith('.enc'));
 
     if (isUploadEnc) {
       try {
@@ -8751,8 +8749,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         // Automatically decrypt encrypted .enc files selected from storage/downloads
         bool wasDecrypted = false;
         final bool isEnc = file.name.toLowerCase().endsWith('.enc') ||
-            (file.path != null && (file.path!.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(file.path!)))) ||
-            (file.bytes != null && file.bytes!.length >= 16 && !SecureAttachmentService.isPlaintextFile(file.bytes!, file.name));
+            (file.path != null && file.path!.toLowerCase().endsWith('.enc'));
 
         String fileType = explicitType ?? (type == FileType.audio
             ? 'audio'
@@ -8867,8 +8864,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         for (int i = 0; i < result.files.length; i++) {
           PlatformFile file = result.files[i];
           final bool isEnc = file.name.toLowerCase().endsWith('.enc') ||
-              (file.path != null && (file.path!.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(file.path!)))) ||
-              (file.bytes != null && file.bytes!.length >= 16 && !SecureAttachmentService.isPlaintextFile(file.bytes!, file.name));
+              (file.path != null && file.path!.toLowerCase().endsWith('.enc'));
 
           String fileType = explicitType ?? (type == FileType.audio
               ? 'audio'
@@ -8979,8 +8975,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
             int itemSize = item.size;
 
             final bool isItemEnc = itemName.toLowerCase().endsWith('.enc') ||
-                (itemPath != null && itemPath.isNotEmpty && (itemPath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(itemPath)))) ||
-                (itemBytes != null && itemBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(itemBytes, itemName));
+                (itemPath != null && itemPath.isNotEmpty && itemPath.toLowerCase().endsWith('.enc'));
 
             if (isItemEnc) {
               try {

@@ -264,8 +264,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
       // Automatically remove encryption and normalize .enc files to standard format before upload
       final bool isEncrypted = resolvedFileName.toLowerCase().endsWith('.enc') ||
-          (resolvedFilePath.isNotEmpty && (resolvedFilePath.toLowerCase().endsWith('.enc') || (!kIsWeb && SecureAttachmentService.isFileEncryptedSync(resolvedFilePath)))) ||
-          (resolvedFileBytes != null && resolvedFileBytes.length >= 16 && !SecureAttachmentService.isPlaintextFile(resolvedFileBytes, resolvedFileName));
+          (resolvedFilePath.isNotEmpty && resolvedFilePath.toLowerCase().endsWith('.enc'));
 
       if (isEncrypted) {
         try {

@@ -169,7 +169,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     if (['mp4', 'mov', 'webm', 'mkv', 'avi', '3gp'].contains(ext)) return 'video';
     if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'opus', 'flac', 'caf', 'amr', 'wma'].contains(ext)) return 'audio';
     if (ext == 'pdf') return 'pdf';
-    if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].contains(ext)) return 'file';
+    if (ext == 'doc' || ext == 'docx') return 'word';
+    if (ext == 'xls' || ext == 'xlsx') return 'excel';
+    if (['ppt', 'pptx'].contains(ext)) return 'file';
     return fallback;
   }
 

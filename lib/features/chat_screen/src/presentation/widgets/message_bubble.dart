@@ -4177,11 +4177,11 @@ class _MessageBubbleState extends State<MessageBubble> {
       effectiveViewerType = 'audio';
     } else if (cleanExt == 'pdf') {
       effectiveViewerType = 'pdf';
+    } else if (cleanExt == 'doc' || cleanExt == 'docx') {
+      effectiveViewerType = 'word';
+    } else if (cleanExt == 'xls' || cleanExt == 'xlsx') {
+      effectiveViewerType = 'excel';
     } else if ([
-      'doc',
-      'docx',
-      'xls',
-      'xlsx',
       'ppt',
       'pptx',
       'zip',

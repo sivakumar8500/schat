@@ -19,6 +19,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_word_viewer.dart';
+import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_excel_viewer.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:schat/features/chat_screen/src/domain/repositories/chat_repository.dart';
@@ -597,7 +599,11 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         effectiveType = 'audio';
       } else if (lowerExt == 'pdf') {
         effectiveType = 'pdf';
-      } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar'].contains(lowerExt)) {
+      } else if (lowerExt == 'doc' || lowerExt == 'docx') {
+        effectiveType = 'word';
+      } else if (lowerExt == 'xls' || lowerExt == 'xlsx') {
+        effectiveType = 'excel';
+      } else if (['ppt', 'pptx', 'zip', 'rar'].contains(lowerExt)) {
         effectiveType = 'file';
       } else if (lowerExt == 'ogg') {
         effectiveType = effectiveType == 'video' ? 'video' : 'audio';
@@ -709,6 +715,40 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
         final isLocalFile = !kIsWeb && File(activePath).existsSync();
         if (isLocalFile) {
           viewerWidget = _InAppPdfViewer(
+            filePath: activePath,
+            fileName: widget.fileName,
+          );
+        } else {
+          viewerWidget = _MobileDocumentViewer(
+            url: activePath,
+            fileName: widget.fileName,
+            allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            allowShare: widget.isReadOnly ? false : widget.allowShare,
+            isReadOnly: widget.isReadOnly,
+            onDownloadPressed: widget.onDownloadPressed,
+          );
+        }
+      } else if (effectiveType == 'word') {
+        final isLocalFile = !kIsWeb && File(activePath).existsSync();
+        if (isLocalFile) {
+          viewerWidget = InAppWordViewer(
+            filePath: activePath,
+            fileName: widget.fileName,
+          );
+        } else {
+          viewerWidget = _MobileDocumentViewer(
+            url: activePath,
+            fileName: widget.fileName,
+            allowDownload: widget.isReadOnly ? false : widget.allowDownload,
+            allowShare: widget.isReadOnly ? false : widget.allowShare,
+            isReadOnly: widget.isReadOnly,
+            onDownloadPressed: widget.onDownloadPressed,
+          );
+        }
+      } else if (effectiveType == 'excel') {
+        final isLocalFile = !kIsWeb && File(activePath).existsSync();
+        if (isLocalFile) {
+          viewerWidget = InAppExcelViewer(
             filePath: activePath,
             fileName: widget.fileName,
           );
@@ -946,6 +986,19 @@ class _MobileDocumentViewerState extends State<_MobileDocumentViewer> {
       final isExcel = ext == 'xls' || ext == 'xlsx';
       final isPpt = ext == 'ppt' || ext == 'pptx';
       final isZip = ext == 'zip' || ext == 'rar' || ext == '7z' || ext == 'tar' || ext == 'gz';
+
+      if (isWord && isLocal && File(cleanPath).existsSync()) {
+        return InAppWordViewer(
+          filePath: cleanPath,
+          fileName: clean,
+        );
+      }
+      if (isExcel && isLocal && File(cleanPath).existsSync()) {
+        return InAppExcelViewer(
+          filePath: cleanPath,
+          fileName: clean,
+        );
+      }
 
       final icon = isPdf
           ? Icons.picture_as_pdf
