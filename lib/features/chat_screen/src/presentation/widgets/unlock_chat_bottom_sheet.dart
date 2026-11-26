@@ -220,12 +220,14 @@ class _UnlockChatBottomSheetState extends State<UnlockChatBottomSheet> {
                   obscureText: _obscurePassword,
                   obscuringCharacter: '*',
                   keyboardType: TextInputType.text,
+                  autocorrect: false,
+                  enableSuggestions: true,
                   style: TextStyle(
                     fontSize: 16,
                     color: context.colors.textPrimary,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'Enter Secret Code (text, emojis, pin)',
+                    hintText: 'Enter Secret Code (single char, emoji, or PIN)',
                     hintStyle: TextStyle(
                       color: context.colors.textHint,
                       fontSize: 14,

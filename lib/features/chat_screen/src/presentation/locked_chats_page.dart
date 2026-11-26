@@ -424,6 +424,22 @@ class _LockedChatsPageState extends State<LockedChatsPage> {
                 ],
               ),
             ),
+            CommonSpaces.w8,
+            IconButton(
+              icon: Icon(Icons.lock_open_rounded, color: primaryColor, size: 22),
+              tooltip: 'Unlock chat',
+              onPressed: () async {
+                final changed = await ChatLockBottomSheet.show(
+                  context,
+                  conversationId: item.id,
+                  contactName: name,
+                  isCurrentlyLocked: true,
+                );
+                if (changed == true && mounted) {
+                  _fetchLockedChats();
+                }
+              },
+            ),
           ],
         ),
       ),

@@ -246,7 +246,11 @@ class ChatRepositoryImpl implements ChatRepository {
     bool allowView = true,
     bool allowDownload = false,
     bool allowShare = false,
+    CancelToken? cancelToken,
   }) async {
+    if (cancelToken?.isCancelled == true) {
+      throw Exception('Upload cancelled');
+    }
     try {
       if (!kIsWeb) {
         await WakelockPlus.enable();
@@ -408,6 +412,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
       // Helper for direct multipart upload fallback on port 8000
       performDirectMultipartUpload = () async {
+        if (cancelToken?.isCancelled == true) return null;
         debugPrint('ChatRepository.uploadMedia: Attempting direct multipart upload fallback to ${CommonEndpoints.directUpload}...');
         try {
           MultipartFile multipartFile;
@@ -439,6 +444,7 @@ class ChatRepositoryImpl implements ChatRepository {
             path: CommonEndpoints.directUpload,
             method: 'POST',
             data: formData,
+            cancelToken: cancelToken,
             options: Options(
               sendTimeout: const Duration(minutes: 5),
               receiveTimeout: const Duration(minutes: 5),
@@ -496,11 +502,13 @@ class ChatRepositoryImpl implements ChatRepository {
       Exception? lastRequestError;
 
       for (int attempt = 1; attempt <= 3; attempt++) {
+        if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
         try {
           final requestResult = await _apiService.call<Map<String, dynamic>>(
             path: CommonEndpoints.requestUpload,
             method: 'POST',
             data: requestData,
+            cancelToken: cancelToken,
             options: Options(
               sendTimeout: const Duration(minutes: 2),
               receiveTimeout: const Duration(minutes: 2),
@@ -514,6 +522,7 @@ class ChatRepositoryImpl implements ChatRepository {
           );
           if (uploadMeta != null) break;
         } catch (e) {
+          if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
           lastRequestError = Exception(e.toString());
           debugPrint('Upload request attempt $attempt failed: $e');
           final errStr = e.toString();
@@ -628,6 +637,7 @@ class ChatRepositoryImpl implements ChatRepository {
       );
 
       for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
+        if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
         try {
           final Stream<List<int>> uploadStream = bytes != null
               ? Stream.fromIterable(<List<int>>[bytes])
@@ -636,6 +646,7 @@ class ChatRepositoryImpl implements ChatRepository {
           final uploadResponse = await uploadDio.put(
             uploadUrl,
             data: uploadStream,
+            cancelToken: cancelToken,
             options: Options(
               headers: {
                 'Content-Type': finalUploadMime,
@@ -643,6 +654,7 @@ class ChatRepositoryImpl implements ChatRepository {
               },
             ),
             onSendProgress: (sent, total) {
+              if (cancelToken?.isCancelled == true) return;
               if (total > 0 && onProgress != null) {
                 // Map upload progress into 5% -> 90% range
                 final uploadFraction = (sent / total).clamp(0.0, 1.0);
@@ -660,6 +672,7 @@ class ChatRepositoryImpl implements ChatRepository {
             throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
           }
         } catch (e) {
+          if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
           lastUploadError = Exception(e.toString());
           debugPrint('S3 upload attempt $uploadAttempt failed: $e');
           if (uploadAttempt < 3) {
@@ -679,11 +692,13 @@ class ChatRepositoryImpl implements ChatRepository {
       Exception? lastCompleteError;
 
       for (int completeAttempt = 1; completeAttempt <= 3; completeAttempt++) {
+        if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
         try {
           final completeResult = await _apiService.call<Map<String, dynamic>>(
             path: CommonEndpoints.completeUpload(mediaId),
             method: 'POST',
             data: {'sha256_checksum': null},
+            cancelToken: cancelToken,
             options: Options(
               sendTimeout: const Duration(minutes: 2),
               receiveTimeout: const Duration(minutes: 2),
@@ -701,6 +716,7 @@ class ChatRepositoryImpl implements ChatRepository {
           );
           if (completedObjectKey != null) break;
         } catch (e) {
+          if (cancelToken?.isCancelled == true) throw Exception('Upload cancelled');
           lastCompleteError = Exception(e.toString());
           debugPrint('Complete upload attempt $completeAttempt failed: $e');
           if (completeAttempt < 3) {

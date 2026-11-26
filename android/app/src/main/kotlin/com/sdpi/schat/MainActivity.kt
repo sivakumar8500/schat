@@ -978,99 +978,22 @@ class MainActivity : FlutterActivity() {
                 return null
             }
 
-            // 3. Save to Download/Schat and Movies/Schat
+            // 3. Save to Movies/Schat
             val timeStampStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val fileName = "Schat_ScreenRecord_$timeStampStr.mp4"
             var savedAbsolutePath: String? = null
             var copied = false
 
-            // Ensure destination directories exist
-            val downloadSchatDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Schat")
+            // Ensure destination directory exists
             val movieSchatDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Schat")
             try {
-                if (!downloadSchatDir.exists()) downloadSchatDir.mkdirs()
                 if (!movieSchatDir.exists()) movieSchatDir.mkdirs()
             } catch (_: Exception) {}
 
-            val destDownloadFile = File(downloadSchatDir, fileName)
             val destMovieFile = File(movieSchatDir, fileName)
 
-            // Step A: Write to destination file in Download/Schat
-            try {
-                destDownloadFile.outputStream().use { outStream ->
-                    if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
-                        latestFile.inputStream().use { inStream ->
-                            inStream.copyTo(outStream)
-                        }
-                    } else if (latestUri != null) {
-                        contentResolver.openInputStream(latestUri)?.use { inStream ->
-                            inStream.copyTo(outStream)
-                        }
-                    }
-                    outStream.flush()
-                }
-
-                if (destDownloadFile.exists() && destDownloadFile.length() > 4096L) {
-                    savedAbsolutePath = destDownloadFile.absolutePath
-                    copied = true
-                    android.util.Log.d("ScreenProtection", "Direct copy to Download/Schat succeeded: $savedAbsolutePath (${destDownloadFile.length()} bytes)")
-
-                    // Mirror copy to Movies/Schat
-                    try {
-                        destDownloadFile.copyTo(destMovieFile, overwrite = true)
-                        android.util.Log.d("ScreenProtection", "Mirrored copy to Movies/Schat: ${destMovieFile.absolutePath}")
-                    } catch (e: Exception) {
-                        android.util.Log.w("ScreenProtection", "Mirror to Movies/Schat failed: ${e.message}")
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("ScreenProtection", "Direct copy to Download/Schat failed: ${e.message}")
-            }
-
-            // Step B: MediaStore Scoped Storage (for Android 10+ so it appears in Downloads & Gallery)
+            // Step A: For Android 10+ (API 29+), use MediaStore.Video in Movies/Schat
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Insert into MediaStore.Downloads
-                try {
-                    val contentValues = android.content.ContentValues().apply {
-                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                        put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
-                        put(MediaStore.Downloads.RELATIVE_PATH, "Download/Schat")
-                        put(MediaStore.Downloads.IS_PENDING, 1)
-                    }
-                    val destUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    if (destUri != null) {
-                        var bytesCopied = 0L
-                        contentResolver.openOutputStream(destUri)?.use { outputStream ->
-                            if (destDownloadFile.exists() && destDownloadFile.length() > 4096L) {
-                                destDownloadFile.inputStream().use { inp ->
-                                    bytesCopied = inp.copyTo(outputStream)
-                                }
-                            } else if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
-                                latestFile.inputStream().use { inp ->
-                                    bytesCopied = inp.copyTo(outputStream)
-                                }
-                            } else if (latestUri != null) {
-                                contentResolver.openInputStream(latestUri)?.use { inp ->
-                                    bytesCopied = inp.copyTo(outputStream)
-                                }
-                            }
-                            outputStream.flush()
-                        }
-                        if (bytesCopied > 4096L) {
-                            contentValues.clear()
-                            contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
-                            contentResolver.update(destUri, contentValues, null, null)
-                            copied = true
-                            android.util.Log.d("ScreenProtection", "MediaStore.Downloads indexed ($bytesCopied bytes)")
-                        } else {
-                            contentResolver.delete(destUri, null, null)
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("ScreenProtection", "Error in MediaStore.Downloads copy: ${e.message}")
-                }
-
-                // Insert into MediaStore.Video in Movies/Schat (for Gallery apps)
                 try {
                     val movieValues = android.content.ContentValues().apply {
                         put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
@@ -1081,8 +1004,8 @@ class MainActivity : FlutterActivity() {
                     val movieUri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, movieValues)
                     if (movieUri != null) {
                         contentResolver.openOutputStream(movieUri)?.use { outputStream ->
-                            if (destDownloadFile.exists() && destDownloadFile.length() > 4096L) {
-                                destDownloadFile.inputStream().use { inp ->
+                            if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
+                                latestFile.inputStream().use { inp ->
                                     inp.copyTo(outputStream)
                                 }
                             } else if (latestUri != null) {
@@ -1096,30 +1019,53 @@ class MainActivity : FlutterActivity() {
                         movieValues.put(MediaStore.Video.Media.IS_PENDING, 0)
                         contentResolver.update(movieUri, movieValues, null, null)
                         copied = true
-                        android.util.Log.d("ScreenProtection", "MediaStore.Video Movies/Schat indexed")
+                        savedAbsolutePath = destMovieFile.absolutePath
+                        android.util.Log.d("ScreenProtection", "MediaStore.Video Movies/Schat indexed: $savedAbsolutePath")
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("ScreenProtection", "Mirror into MediaStore Movies/Schat error: ${e.message}")
+                    android.util.Log.w("ScreenProtection", "MediaStore Movies/Schat error: ${e.message}")
                 }
             }
 
-            // Step C: Trigger MediaScanner so gallery, photos, and file pickers see the files immediately
-            val scanPaths = mutableListOf<String>()
-            if (destDownloadFile.exists()) scanPaths.add(destDownloadFile.absolutePath)
-            if (destMovieFile.exists()) scanPaths.add(destMovieFile.absolutePath)
+            // Step B: Direct file copy fallback for pre-Android 10 or if MediaStore didn't copy
+            if (!copied) {
+                try {
+                    destMovieFile.outputStream().use { outStream ->
+                        if (latestFile != null && latestFile.exists() && latestFile.canRead()) {
+                            latestFile.inputStream().use { inStream ->
+                                inStream.copyTo(outStream)
+                            }
+                        } else if (latestUri != null) {
+                            contentResolver.openInputStream(latestUri)?.use { inStream ->
+                                inStream.copyTo(outStream)
+                            }
+                        }
+                        outStream.flush()
+                    }
 
-            if (scanPaths.isNotEmpty()) {
-                MediaScannerConnection.scanFile(
-                    applicationContext,
-                    scanPaths.toTypedArray(),
-                    arrayOf("video/mp4", "video/mp4"),
-                    null
-                )
-                android.util.Log.d("ScreenProtection", "MediaScanner triggered for: $scanPaths")
+                    if (destMovieFile.exists() && destMovieFile.length() > 4096L) {
+                        savedAbsolutePath = destMovieFile.absolutePath
+                        copied = true
+                        android.util.Log.d("ScreenProtection", "Direct copy to Movies/Schat succeeded: $savedAbsolutePath (${destMovieFile.length()} bytes)")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ScreenProtection", "Direct copy to Movies/Schat failed: ${e.message}")
+                }
             }
 
-            if (copied || destDownloadFile.exists()) {
-                return destDownloadFile.absolutePath
+            // Step C: Trigger MediaScanner so gallery, photos, and file pickers see the file immediately
+            if (destMovieFile.exists()) {
+                MediaScannerConnection.scanFile(
+                    applicationContext,
+                    arrayOf(destMovieFile.absolutePath),
+                    arrayOf("video/mp4"),
+                    null
+                )
+                android.util.Log.d("ScreenProtection", "MediaScanner triggered for: ${destMovieFile.absolutePath}")
+            }
+
+            if (copied || destMovieFile.exists()) {
+                return destMovieFile.absolutePath
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1164,27 +1110,6 @@ class MainActivity : FlutterActivity() {
                             arrayOf("image/png"),
                             null
                         )
-                    }
-
-                    // Also save directly to Download/Schat so it appears under Downloads/Schat
-                    try {
-                        val downloadFolder = File("/storage/emulated/0/Download/Schat")
-                        if (!downloadFolder.exists()) {
-                            downloadFolder.mkdirs()
-                        }
-                        val downloadFile = File(downloadFolder, fileName)
-                        downloadFile.outputStream().use { fos ->
-                            fos.write(bytes)
-                            fos.flush()
-                        }
-                        MediaScannerConnection.scanFile(
-                            applicationContext,
-                            arrayOf(downloadFile.absolutePath),
-                            arrayOf("image/png"),
-                            null
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
                     }
 
                     return destPath

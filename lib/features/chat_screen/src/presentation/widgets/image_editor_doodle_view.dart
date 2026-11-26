@@ -468,16 +468,30 @@ class _ImageEditorDoodleViewState extends State<ImageEditorDoodleView> {
 
   Widget _buildStrokeChip(String title, double width) {
     final isSelected = _strokeWidth == width;
-    return ChoiceChip(
-      label: Text(title),
-      selected: isSelected,
-      onSelected: (_) => setState(() => _strokeWidth = width),
-      selectedColor: const Color(0xFF00873C),
-      backgroundColor: Colors.white12,
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.white : Colors.white70,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        fontSize: 12,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: GestureDetector(
+        onTap: () => setState(() => _strokeWidth = width),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF00873C) : const Color(0xFF262626),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF00873C) : Colors.white24,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white70,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 12,
+            ),
+          ),
+        ),
       ),
     );
   }

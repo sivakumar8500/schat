@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
@@ -69,6 +70,27 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   double _uploadProgress = 0.0;
   String _uploadStatusText = '';
   int _uploadPercentage = 0;
+  CancelToken? _uploadCancelToken;
+  bool _isUploadCancelled = false;
+
+  void _cancelUpload() {
+    if (_isSubmitting) {
+      _isUploadCancelled = true;
+      try {
+        _uploadCancelToken?.cancel('Upload cancelled by user');
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+          _uploadProgress = 0.0;
+          _uploadPercentage = 0;
+          _uploadStatusText = '';
+          _errorMessage = null;
+        });
+        context.showErrorNotification('Upload cancelled');
+      }
+    }
+  }
 
   // Tab 2: Scheduled Messages List State
   List<ScheduledMessageModel> _scheduledMessages = [];
@@ -198,6 +220,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
   @override
   void dispose() {
+    try {
+      _uploadCancelToken?.cancel('Disposed');
+    } catch (_) {}
     _tabController.dispose();
     _messageController.dispose();
     super.dispose();
@@ -493,6 +518,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
     // If editing existing scheduled message
     if (_editingMessage != null) {
+      _uploadCancelToken = CancelToken();
+      _isUploadCancelled = false;
       setState(() {
         _isSubmitting = true;
         _uploadProgress = 0.0;
@@ -577,7 +604,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               allowView: true,
               allowDownload: false,
               allowShare: false,
+              cancelToken: _uploadCancelToken,
               onProgress: (p) {
+                if (_isUploadCancelled) return;
                 if (mounted) {
                   setState(() {
                     _uploadProgress = p;
@@ -587,6 +616,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 }
               },
             );
+
+            if (_isUploadCancelled) return;
 
             if (mounted) {
               setState(() {
@@ -711,7 +742,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           }
         }
       } catch (e) {
-        if (mounted) {
+        if (_isUploadCancelled || e.toString().toLowerCase().contains('cancel')) {
+          debugPrint('Upload cancelled by user, suppressing error banner');
+        } else if (mounted) {
           setState(() {
             _errorMessage = 'Failed to update scheduled message: $e';
           });
@@ -741,6 +774,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
     } else {
       // Direct API schedule if no callback provided
       if (widget.conversationId != null) {
+        _uploadCancelToken = CancelToken();
+        _isUploadCancelled = false;
         setState(() {
           _isSubmitting = true;
           _uploadProgress = 0.0;
@@ -824,7 +859,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                 allowView: true,
                 allowDownload: false,
                 allowShare: false,
+                cancelToken: _uploadCancelToken,
                 onProgress: (p) {
+                  if (_isUploadCancelled) return;
                   if (mounted) {
                     setState(() {
                       _uploadProgress = p;
@@ -834,6 +871,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   }
                 },
               );
+
+              if (_isUploadCancelled) return;
 
               if (mounted) {
                 setState(() {
@@ -972,7 +1011,9 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             }
           }
         } catch (e) {
-          if (mounted) {
+          if (_isUploadCancelled || e.toString().toLowerCase().contains('cancel')) {
+            debugPrint('Upload cancelled by user, suppressing error banner');
+          } else if (mounted) {
             setState(() {
               _errorMessage = 'Failed to schedule: $e';
             });
@@ -1137,16 +1178,24 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   Widget build(BuildContext context) {
     final isDark = context.colors.isDark;
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.88,
-      decoration: BoxDecoration(
-        color: context.colors.scaffoldBackground,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          children: [
+    return PopScope(
+      canPop: !_isSubmitting,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSubmitting) {
+          _cancelUpload();
+          Navigator.pop(context);
+        }
+      },
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBackground,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
             // Top Drag Handle
             Padding(
               padding: const EdgeInsets.only(top: 12, bottom: 8),
@@ -1204,7 +1253,12 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   ),
                   IconButton(
                     icon: Icon(CommonIcons.close, color: context.colors.textSecondary),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      if (_isSubmitting) {
+                        _cancelUpload();
+                      }
+                      Navigator.pop(context);
+                    },
                   ),
                 ],
               ),
@@ -1281,6 +1335,7 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -1631,6 +1686,30 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
             if (_isSubmitting) ...[
               _buildUploadProgressCard(context),
               CommonSpaces.h12,
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _cancelUpload,
+                  icon: const Icon(Icons.close_rounded, color: Colors.red, size: 20),
+                  label: Text(
+                    'Cancel Upload',
+                    style: context.titleSmall.copyWith(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red, width: 1.5),
+                    backgroundColor: Colors.red.withValues(alpha: 0.05),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                ),
+              ),
+              CommonSpaces.h12,
             ],
 
             // Submit Button
@@ -1766,6 +1845,22 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
                   ),
                 ),
               ),
+              CommonSpaces.w8,
+              GestureDetector(
+                onTap: _cancelUpload,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.red,
+                    size: 18,
+                  ),
+                ),
+              ),
             ],
           ),
           CommonSpaces.h10,
@@ -1777,6 +1872,42 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               backgroundColor: context.colors.primary.withValues(alpha: 0.15),
               valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
             ),
+          ),
+          CommonSpaces.h8,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Uploading in progress...',
+                style: context.bodySmall.copyWith(
+                  color: context.colors.textSecondary,
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              InkWell(
+                onTap: _cancelUpload,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cancel_outlined, size: 14, color: Colors.red),
+                      CommonSpaces.w4,
+                      Text(
+                        'Cancel',
+                        style: context.bodySmall.copyWith(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

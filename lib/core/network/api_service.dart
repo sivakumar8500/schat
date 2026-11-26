@@ -14,6 +14,7 @@ class ApiService {
     dynamic data,
     Map<String, dynamic>? queryParameters,
     Options? options,
+    CancelToken? cancelToken,
     T Function(dynamic)? mapper,
   }) async {
     try {
@@ -21,6 +22,7 @@ class ApiService {
         path,
         data: data,
         queryParameters: queryParameters,
+        cancelToken: cancelToken,
         options: (options ?? Options()).copyWith(method: method),
       );
 

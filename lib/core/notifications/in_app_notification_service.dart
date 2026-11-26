@@ -9,6 +9,8 @@ import 'package:schat/features/chat_screen/src/presentation/widgets/incoming_scr
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/main.dart';
+import 'package:schat/utils/common_notifications.dart';
+import 'package:schat/core/notifications/push_notification_service.dart';
 
 @lazySingleton
 class InAppNotificationService {
@@ -129,6 +131,57 @@ class InAppNotificationService {
       return;
     }
 
+    // Handle in_app_notification event dispatched directly by backend for online users
+    if (type == 'in_app_notification') {
+      final notifData = data['data'] is Map ? Map<String, dynamic>.from(data['data']) : <String, dynamic>{};
+      final convId = (data['conversation_id'] ?? notifData['conversationId'] ?? notifData['conversation_id'])?.toString().trim();
+      final senderId = (data['sender_id'] ?? notifData['senderId'] ?? notifData['sender_id'])?.toString().trim();
+      final myId = (_storageService.getUserId() ?? '').trim();
+
+      if (senderId == null || senderId.isEmpty || (myId.isNotEmpty && senderId == myId)) return;
+      if (isChatActive(conversationId: convId, senderId: senderId)) return;
+      if (!_storageService.getNotificationsEnabled()) return;
+      if (convId != null && (_storageService.isChatMuted(convId) || _storageService.isChatHidden(convId))) return;
+
+      final title = (data['title'] ?? notifData['title'] ?? notifData['sender_name'] ?? 'New message').toString();
+      final body = (data['body'] ?? notifData['body'] ?? notifData['content'] ?? 'New message received').toString();
+      final profilePic = (notifData['profile_picture_url'] ?? notifData['avatar'])?.toString();
+      final isGroup = notifData['is_group'] == true || notifData['is_group'] == 'true' || notifData['isGroup'] == true || notifData['isGroup'] == 'true';
+      final isLocked = notifData['is_locked'] == true || notifData['is_locked'] == 'true' || notifData['isLocked'] == true || notifData['isLocked'] == 'true' || (convId != null && _storageService.isChatLocked(convId));
+
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        InAppNotificationBannerManager.show(
+          context: context,
+          senderName: isLocked ? 'New message for schat user' : title,
+          messageText: isLocked ? 'New message' : body,
+          profilePictureUrl: isLocked ? null : profilePic,
+          onTap: () {
+            if (convId != null && convId.isNotEmpty) {
+              if (isLocked) {
+                getIt<PushNotificationService>().promptUnlockAndNavigate(
+                  convId,
+                  title,
+                  senderId,
+                  isGroup: isGroup,
+                  profilePic: profilePic,
+                );
+              } else {
+                getIt<PushNotificationService>().navigateToConversation(
+                  convId,
+                  title,
+                  senderId,
+                  isGroup: isGroup,
+                  profilePic: profilePic,
+                );
+              }
+            }
+          },
+        );
+      }
+      return;
+    }
+
     if (type != 'new_message' && type != 'message') return;
 
     final message = data['message'] ?? (data.containsKey('id') ? data : null);
@@ -197,9 +250,48 @@ class InAppNotificationService {
       return;
     }
 
-    // Foreground message notification is handled via system push notification (PushNotificationService),
-    // so in-app banner is disabled to avoid duplicate notifications.
-    return;
+    final title = (message['sender_name'] ?? message['senderName'] ?? message['title'] ?? data['sender_name'] ?? 'New Message').toString();
+    final bodyContent = message['content'];
+    String body = 'New message received';
+    if (bodyContent is Map && bodyContent['text'] != null) {
+      body = bodyContent['text'].toString();
+    } else if (bodyContent is String && bodyContent.isNotEmpty) {
+      body = bodyContent;
+    } else if (message['text'] != null) {
+      body = message['text'].toString();
+    } else if (message['message_type'] != null) {
+      body = 'Sent a ${message['message_type']}';
+    }
+
+    final isLocked = convId != null && _storageService.isChatLocked(convId);
+    final context = navigatorKey.currentContext;
+    if (context != null) {
+      InAppNotificationBannerManager.show(
+        context: context,
+        senderName: isLocked ? 'New message for schat user' : title,
+        messageText: isLocked ? 'New message' : body,
+        profilePictureUrl: isLocked ? null : (message['sender_profile_pic'] ?? message['avatar'])?.toString(),
+        onTap: () {
+          if (convId != null && convId.isNotEmpty) {
+            if (isLocked) {
+              getIt<PushNotificationService>().promptUnlockAndNavigate(
+                convId,
+                title,
+                senderId,
+                isGroup: message['is_group'] == true,
+              );
+            } else {
+              getIt<PushNotificationService>().navigateToConversation(
+                convId,
+                title,
+                senderId,
+                isGroup: message['is_group'] == true,
+              );
+            }
+          }
+        },
+      );
+    }
   }
 
   void showIncomingScreenPermissionBottomSheet(ScreenPermissionModel request) {

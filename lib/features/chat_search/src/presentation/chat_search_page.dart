@@ -68,7 +68,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
   void _debounceServerSearch(String query) {
     _debounceTimer?.cancel();
     final cleanQuery = query.trim();
-    if (cleanQuery.length < 3) {
+    if (cleanQuery.isEmpty) {
       setState(() {
         _isSearchingServer = false;
         _serverSearchResponse = null;
@@ -83,7 +83,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
 
   Future<void> _executeServerSearch(String query) async {
     final cleanQuery = query.trim();
-    if (!mounted || cleanQuery.length < 3) return;
+    if (!mounted || cleanQuery.isEmpty) return;
 
     setState(() {
       _isSearchingServer = true;
@@ -107,7 +107,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
 
       result.when(
         success: (response) {
-          if (mounted && _searchQuery == query) {
+          if (mounted && _searchQuery.trim().toLowerCase() == query.trim().toLowerCase()) {
             if (response.isSecretCodeMatch || response.lockedChats.isNotEmpty) {
               // Immediately clear search bar so password is not visible after opening chats
               _searchController.clear();
@@ -277,6 +277,13 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                     child: TextField(
                       controller: _searchController,
                       autofocus: true,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (val) {
+                        final clean = val.trim();
+                        if (clean.isNotEmpty) {
+                          _executeServerSearch(clean);
+                        }
+                      },
                       style: TextStyle(
                         color: context.colors.textPrimary,
                         fontSize: 16,
@@ -294,6 +301,18 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
                       ),
                     ),
                   ),
+                  if (_isSearchingServer)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6.0),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF00873C),
+                        ),
+                      ),
+                    ),
                   if (_searchQuery.isNotEmpty)
                     GestureDetector(
                       onTap: () {
@@ -337,7 +356,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               setState(() {
                 _selectedFilter = filter['key'] as String;
               });
-              if (_searchQuery.trim().length >= 3) {
+              if (_searchQuery.trim().isNotEmpty) {
                 _executeServerSearch(_searchQuery);
               }
             },
@@ -647,7 +666,7 @@ class _ChatSearchPageState extends State<ChatSearchPage> {
               isGroup: msg.isGroup,
               groupName: msg.conversationName,
               recipient: RecipientModel(
-                id: msg.senderId,
+                id: msg.senderId == myId ? '' : msg.senderId,
                 contactName: msg.conversationName,
                 profilePictureUrl: msg.conversationPictureUrl,
               ),

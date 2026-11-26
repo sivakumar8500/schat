@@ -133,9 +133,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ShareReceiverService().init();
-    try {
-      getIt<PushNotificationService>().clearAllNotifications();
-    } catch (_) {}
   }
 
   /// Reconnect the WebSocket when the app comes back to the foreground.
@@ -147,9 +144,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final repo = getIt<ChatSocketRepository>();
       repo.onAppResumed();
-      try {
-        getIt<PushNotificationService>().clearAllNotifications();
-      } catch (_) {}
       try {
         if (getIt.isRegistered<ChatsBloc>()) {
           getIt<ChatsBloc>().resetAllTypingIndicators();

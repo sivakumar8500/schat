@@ -308,10 +308,11 @@ class SearchMessageItem {
       fileName: fileName,
       fileSize: fileSize,
       matchSnippet: json['matchSnippet']?.toString() ?? json['match_snippet']?.toString(),
-      extractedUrls: (json['extractedUrls'] ?? json['extracted_urls'] as List<dynamic>?)
+      extractedUrls: ((json['extractedUrls'] ?? json['extracted_urls']) as List<dynamic>?)
               ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+              .toList()
+              .cast<String>() ??
+          const <String>[],
       createdAt: json['createdAt'] is num
           ? (json['createdAt'] as num).toInt()
           : (json['created_at'] is num ? (json['created_at'] as num).toInt() : 0),

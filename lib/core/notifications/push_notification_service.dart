@@ -81,12 +81,7 @@ class PushNotificationService {
     final androidPlugin = _localNotifications
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      // 1. Delete legacy channel to ensure new vibration waveform takes effect
-      try {
-        await androidPlugin.deleteNotificationChannel(channelId: 'schat_general_channel');
-      } catch (_) {}
-
-      // 2. Create updated message channel with vibration pattern
+      // 1. Create primary message channel with vibration pattern
       final channel = AndroidNotificationChannel(
         messageChannelId,
         messageChannelName,
@@ -99,7 +94,7 @@ class PushNotificationService {
       );
       await androidPlugin.createNotificationChannel(channel);
 
-      // Recreate legacy channel as fallback with vibration pattern as well
+      // 2. Create fallback general channel as well to guarantee notifications arrive even if sent to legacy ID
       final legacyChannel = AndroidNotificationChannel(
         'schat_general_channel',
         'General Notifications',
@@ -147,7 +142,6 @@ class PushNotificationService {
     }
 
     _initialized = true;
-    await clearAllNotifications();
   }
 
   Future<void> registerToken() async {
@@ -548,7 +542,7 @@ class PushNotificationService {
 
     if (convId != null && convId.isNotEmpty) {
       if (isLocked) {
-        _promptUnlockAndNavigate(
+        promptUnlockAndNavigate(
           convId,
           senderName,
           senderId,
@@ -557,7 +551,7 @@ class PushNotificationService {
           targetMessageId: messageId,
         );
       } else {
-        _navigateToConversation(
+        navigateToConversation(
           convId,
           senderName,
           senderId,
@@ -733,7 +727,7 @@ class PushNotificationService {
     };
   }
 
-  Future<void> _promptUnlockAndNavigate(
+  Future<void> promptUnlockAndNavigate(
     String convId,
     String contactName,
     String recipientId, {
@@ -745,7 +739,7 @@ class PushNotificationService {
     if (navContext == null) {
       debugPrint('PushNotificationService: Navigator context is null, retrying unlock prompt after frame');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _promptUnlockAndNavigate(
+        promptUnlockAndNavigate(
           convId,
           contactName,
           recipientId,
@@ -776,7 +770,7 @@ class PushNotificationService {
     );
 
     if (unlocked) {
-      _navigateToConversation(
+      navigateToConversation(
         convId,
         resolvedName,
         resolvedRecipientId,
@@ -788,7 +782,7 @@ class PushNotificationService {
     }
   }
 
-  void _navigateToConversation(
+  void navigateToConversation(
     String convId,
     String contactName,
     String recipientId, {

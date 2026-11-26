@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/chat_media_model.dart';
 import 'package:schat/features/chat_screen/src/domain/models/message_shares_model.dart';
@@ -26,6 +27,7 @@ abstract class ChatRepository {
     bool allowView = true,
     bool allowDownload = false,
     bool allowShare = false,
+    CancelToken? cancelToken,
   });
   Future<List<ChatMediaModel>> getConversationMedia(String conversationId, {int? limit});
   Future<List<MessageModel>> searchMessagesInChat(String conversationId, String query);

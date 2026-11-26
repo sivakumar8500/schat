@@ -354,10 +354,10 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
                   controller: _passwordController,
                   focusNode: _passwordFocus,
                   hintText: _isChangingPassword
-                      ? 'New Secret Code'
+                      ? 'New Secret Code (single char, emoji, or PIN)'
                       : !_hasPassword
-                          ? 'Set Secret Code'
-                          : 'Enter Secret Code',
+                          ? 'Set Secret Code (single char, emoji, or PIN)'
+                          : 'Enter Secret Code (single char, emoji, or PIN)',
                   prefixIcon: Icons.key_rounded,
                   obscureText: _obscurePassword,
                   onToggleObscure: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -538,6 +538,8 @@ class _ChatLockBottomSheetState extends State<ChatLockBottomSheet> {
         obscureText: obscureText,
         obscuringCharacter: '*',
         keyboardType: TextInputType.text,
+        autocorrect: false,
+        enableSuggestions: true,
         textInputAction: TextInputAction.done,
         style: TextStyle(
           color: context.colors.textPrimary,

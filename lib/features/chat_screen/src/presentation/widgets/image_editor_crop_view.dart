@@ -708,15 +708,36 @@ class _ImageEditorCropViewState extends State<ImageEditorCropView> {
     final isSelected = _targetAspectRatio == ratio;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(title),
-        selected: isSelected,
-        onSelected: (_) => _setAspectRatio(ratio),
-        selectedColor: Colors.white,
-        backgroundColor: Colors.white12,
-        labelStyle: context.bodySmall.copyWith(
-          color: isSelected ? Colors.black : Colors.white,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      child: GestureDetector(
+        onTap: () => _setAspectRatio(ratio),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : const Color(0xFF262626),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? Colors.white : Colors.white24,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isSelected) ...[
+                const Icon(Icons.check, size: 15, color: Colors.black),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                title,
+                style: TextStyle(
+                  color: isSelected ? Colors.black : Colors.white,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
