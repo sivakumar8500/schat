@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_result.dart';
 import 'package:schat/core/network/api_service.dart';
@@ -63,7 +64,17 @@ class SubscriptionRepositoryImpl implements SubscriptionRepository {
       CommonEndpoints.getPlans,
       mapper: (json) {
         if (json is List) {
-          return json.map((e) => SubscriptionPlanModel.fromJson(e as Map<String, dynamic>)).toList();
+          final plans = <SubscriptionPlanModel>[];
+          for (final item in json) {
+            try {
+              if (item is Map) {
+                plans.add(SubscriptionPlanModel.fromJson(Map<String, dynamic>.from(item)));
+              }
+            } catch (e) {
+              debugPrint('Error parsing subscription plan: $e');
+            }
+          }
+          return plans;
         }
         return [];
       },

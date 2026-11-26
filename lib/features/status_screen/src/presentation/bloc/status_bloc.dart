@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:schat/features/chat_socket_screen/src/domain/chat_socket_repository.dart';
 import 'package:schat/features/status_screen/src/domain/repositories/status_repository.dart';
@@ -9,14 +11,17 @@ import 'status_state.dart';
 
 class StatusBloc extends Bloc<StatusEvent, StatusState> {
   final StatusRepository _repository;
-  final ChatSocketRepository _socketRepository;
+  final ChatSocketRepository? _socketRepository;
   StreamSubscription? _socketSubscription;
 
   StatusBloc({
     StatusRepository? repository,
     ChatSocketRepository? socketRepository,
   })  : _repository = repository ?? getIt<StatusRepository>(),
-        _socketRepository = socketRepository ?? getIt<ChatSocketRepository>(),
+        _socketRepository = socketRepository ??
+            (getIt.isRegistered<ChatSocketRepository>()
+                ? getIt<ChatSocketRepository>()
+                : null),
         super(const StatusInitial()) {
     on<LoadStatusUpdatesEvent>(_onLoadStatusUpdates);
     on<UploadTextStatusEvent>(_onUploadTextStatus);
@@ -42,6 +47,7 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
   }
 
   void _listenToSocket() {
+    if (_socketRepository == null) return;
     _socketSubscription = _socketRepository.onMessage.listen((data) {
       if (data is Map) {
         final type = data['type']?.toString();
@@ -312,6 +318,17 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         }
       }
 
+      int sizeBytes = event.bytes?.length ?? 0;
+      if (sizeBytes == 0 && event.path != null && !kIsWeb) {
+        try {
+          final f = File(event.path!);
+          if (f.existsSync()) {
+            sizeBytes = f.lengthSync();
+          }
+        } catch (_) {}
+      }
+      if (sizeBytes == 0) sizeBytes = 1024;
+
       await _repository.createStatus(
         statusType: inferredType,
         textContent: event.caption,
@@ -320,7 +337,7 @@ class StatusBloc extends Bloc<StatusEvent, StatusState> {
         fileName: fileName,
         mimeType: inferredMime,
         textColor: event.textColor,
-        fileSizeBytes: event.bytes?.length ?? 1024,
+        fileSizeBytes: sizeBytes,
         privacyType: resolvedPrivacy.type,
         privacyUserIds: resolvedPrivacy.userIds,
         onProgress: (p) => add(UpdateUploadProgressEvent(p)),

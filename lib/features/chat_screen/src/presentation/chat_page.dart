@@ -57,6 +57,7 @@ import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'package:schat/core/services/live_location_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
 import 'widgets/chat_lock_bottom_sheet.dart';
 import 'package:collection/collection.dart';
@@ -407,6 +408,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     // Listen for native/system screenshots (hardware keys, 3-finger swipe, etc.)
     // Hardware and gesture screenshots are blocked. Screenshot permission can ONLY be used via the "Take it" button.
     _screenshotSubscription = getIt<ScreenProtectionService>().onScreenshot.listen((_) {
+      if (_isTakingScreenshot) return;
       final state = _chatBloc.state;
       if (state is ChatLoaded) {
         final activeScreenshotPerm = state.firstActiveScreenshotPermission ??
@@ -475,7 +477,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
         final sessionAge = DateTime.now().millisecondsSinceEpoch - _lastRecordingSessionStartMs!;
         if (sessionAge < 180000) {
           debugPrint('ScreenProtection: System screen recording stopped after session! Triggering save to Schat folder...');
-          _triggerSaveScreenRecordingToSchat(_lastRecordingSessionStartMs!);
+          _triggerSaveScreenRecordingToSchat(_lastRecordingSessionStartMs!, force: true);
         }
       }
     });
@@ -3921,6 +3923,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     _screenRecordCountdownTimer = null;
     _screenRecordPrepTimer?.cancel();
     _screenRecordPrepTimer = null;
+    _screenRecordSaveRetryTimer?.cancel();
+    _screenRecordSaveRetryTimer = null;
     _isScreenRecordingActive = false;
     _isScreenRecordingPaused = false;
     _isSystemRecordingStarted = false;
@@ -5539,9 +5543,9 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
               getIt<ScreenProtectionService>().enableProtection();
 
               final targetId = activeScreenshotPerm?.id ?? 'screenshot_active';
-              // Handle screenshot permission safety auto-lock timer (60s)
-              if (_screenshotAutoExpireTimer == null || _activeScreenshotPermissionId != targetId) {
+              if (_activeScreenshotPermissionId != targetId) {
                 _screenshotAutoExpireTimer?.cancel();
+                _screenshotAutoExpireTimer = null;
                 _activeScreenshotPermissionId = targetId;
                 _localRemainingScreenshots = state.totalRemainingScreenshots > 0
                     ? state.totalRemainingScreenshots
@@ -5549,16 +5553,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
                 _localTotalAllowedScreenshots = state.totalAllowedScreenshots > 0
                     ? state.totalAllowedScreenshots
                     : (activeScreenshotPerm?.allowedCount ?? 1);
-                _screenshotAutoExpireTimer = Timer(const Duration(seconds: 60), () {
-                  if (mounted) {
-                    _localRemainingScreenshots = 0;
-                    getIt<ScreenProtectionService>().enableProtection();
-                    context.showInfoNotification('Screenshot permission window expired. Protection re-enabled.');
-                    if (activeScreenshotPerm != null) {
-                      _chatBloc.add(ConsumeScreenPermissionEvent(requestId: activeScreenshotPerm.id));
-                    }
-                  }
-                });
               }
             } else if (_localRemainingScreenshots != null && _localRemainingScreenshots! <= 0) {
               getIt<ScreenProtectionService>().enableProtection();
@@ -9893,6 +9887,21 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
   }
 
   void _startScreenRecording(ScreenPermissionModel perm) async {
+    if (Platform.isAndroid) {
+      try {
+        final hasVideos = await Permission.videos.isGranted;
+        if (!hasVideos) {
+          await Permission.videos.request();
+        }
+        final hasStorage = await Permission.storage.isGranted;
+        if (!hasStorage) {
+          await Permission.storage.request();
+        }
+      } catch (e) {
+        debugPrint('ScreenProtection: Error requesting storage/video permissions: $e');
+      }
+    }
+
     final totalSec = perm.durationSeconds ?? 30;
 
     final existingSession = getIt<ScreenProtectionService>().activeRecordingSession;
@@ -10082,9 +10091,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
     }
   }
 
-  void _triggerSaveScreenRecordingToSchat(int sessionStartMs) {
-    if (_isSavingScreenRecording) return;
+  Timer? _screenRecordSaveRetryTimer;
+
+  void _triggerSaveScreenRecordingToSchat(int sessionStartMs, {bool force = false}) {
+    if (_isSavingScreenRecording && !force) return;
     _isSavingScreenRecording = true;
+    _screenRecordSaveRetryTimer?.cancel();
 
     void attemptSave(int attempt) async {
       final saved = await getIt<ScreenProtectionService>().saveLatestScreenRecordingToSchat(
@@ -10093,17 +10105,20 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       if (saved != null && saved.isNotEmpty) {
         _isSavingScreenRecording = false;
         _lastRecordingSessionStartMs = null;
+        _screenRecordSaveRetryTimer?.cancel();
+        _screenRecordSaveRetryTimer = null;
         if (mounted) {
           _handleRecordedVideoSaved(saved);
         }
-      } else if (attempt < 8) {
+      } else if (attempt < 15) {
         // Retry with progressive intervals to give phone's media recorder time to finalize the MP4 file
-        final delaySec = attempt <= 3 ? (attempt * 2) : 3;
-        Future.delayed(Duration(seconds: delaySec), () {
+        final delaySec = attempt <= 3 ? 2 : (attempt <= 7 ? 2 : 3);
+        _screenRecordSaveRetryTimer = Timer(Duration(seconds: delaySec), () {
           attemptSave(attempt + 1);
         });
       } else {
         _isSavingScreenRecording = false;
+        _screenRecordSaveRetryTimer = null;
         if (mounted) {
           context.showInfoNotification(
             'Recording finished. Saved in your Schat folder (Download/Schat or Movies/Schat).',
@@ -10112,7 +10127,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver, RouteA
       }
     }
 
-    Future.delayed(const Duration(milliseconds: 1500), () => attemptSave(1));
+    _screenRecordSaveRetryTimer = Timer(
+      Duration(milliseconds: force ? 500 : 1500),
+      () => attemptSave(1),
+    );
   }
 
   /// Takes an authentic in-app screenshot using RepaintBoundary and saves it directly to Pictures/Schat

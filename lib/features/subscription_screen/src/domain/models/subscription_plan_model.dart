@@ -10,7 +10,12 @@ abstract class PlanFeatureItem with _$PlanFeatureItem {
     @Default(true) bool included,
   }) = _PlanFeatureItem;
 
-  factory PlanFeatureItem.fromJson(Map<String, dynamic> json) => _$PlanFeatureItemFromJson(json);
+  factory PlanFeatureItem.fromJson(Map<String, dynamic> json) {
+    final title = (json['title'] ?? json['name'] ?? json['feature'] ?? '').toString();
+    final dynamic inc = json['included'] ?? json['is_included'];
+    final bool included = inc == null ? true : (inc == true || inc == 1 || inc == 'true');
+    return PlanFeatureItem(title: title, included: included);
+  }
 }
 
 @freezed
@@ -25,7 +30,46 @@ abstract class SubscriptionPlanModel with _$SubscriptionPlanModel {
     @Default([]) List<PlanFeatureItem> features,
   }) = _SubscriptionPlanModel;
 
-  factory SubscriptionPlanModel.fromJson(Map<String, dynamic> json) => _$SubscriptionPlanModelFromJson(json);
+  factory SubscriptionPlanModel.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString();
+    final name = (json['name'] ?? '').toString();
+    final description = (json['description'] ?? json['desc'] ?? '').toString();
+    final priceRaw = json['price'];
+    final int price;
+    if (priceRaw is num) {
+      price = priceRaw.round();
+    } else if (priceRaw != null) {
+      price = (num.tryParse(priceRaw.toString()) ?? 0).round();
+    } else {
+      price = 0;
+    }
+    final billingCycle = (json['billing_cycle'] ?? json['billingCycle'] ?? 'monthly').toString();
+    final isActive = json['is_active'] == null || json['is_active'] == true || json['isActive'] == true || json['is_active'] == 1;
+
+    final List<PlanFeatureItem> featuresList = [];
+    final rawFeatures = json['features'];
+    if (rawFeatures is List) {
+      for (final item in rawFeatures) {
+        if (item is Map<String, dynamic>) {
+          featuresList.add(PlanFeatureItem.fromJson(item));
+        } else if (item is Map) {
+          featuresList.add(PlanFeatureItem.fromJson(Map<String, dynamic>.from(item)));
+        } else if (item is String && item.trim().isNotEmpty) {
+          featuresList.add(PlanFeatureItem(title: item.trim(), included: true));
+        }
+      }
+    }
+
+    return SubscriptionPlanModel(
+      id: id,
+      name: name,
+      description: description,
+      price: price,
+      billingCycle: billingCycle,
+      isActive: isActive,
+      features: featuresList,
+    );
+  }
 }
 
 extension SubscriptionPlanModelX on SubscriptionPlanModel {

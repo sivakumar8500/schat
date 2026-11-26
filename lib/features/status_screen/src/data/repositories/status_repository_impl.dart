@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:injectable/injectable.dart';
 import 'package:schat/core/network/api_service.dart';
@@ -127,66 +128,163 @@ class StatusRepositoryImpl implements StatusRepository {
         pathLower.endsWith('.mp3') ||
         pathLower.endsWith('.aac') ||
         pathLower.endsWith('.wav') ||
+        pathLower.endsWith('.ogg') ||
         nameLower.endsWith('.m4a') ||
         nameLower.endsWith('.mp3') ||
         nameLower.endsWith('.aac') ||
-        nameLower.endsWith('.wav');
+        nameLower.endsWith('.wav') ||
+        nameLower.endsWith('.ogg');
     final isVideo = !isAudio &&
         (statusType == 'video' ||
             mimeLower.contains('video') ||
             pathLower.endsWith('.mp4') ||
             pathLower.endsWith('.mov') ||
+            pathLower.endsWith('.webm') ||
+            pathLower.endsWith('.avi') ||
+            pathLower.endsWith('.mkv') ||
             nameLower.endsWith('.mp4') ||
-            nameLower.endsWith('.mov'));
+            nameLower.endsWith('.mov') ||
+            nameLower.endsWith('.webm') ||
+            nameLower.endsWith('.avi') ||
+            nameLower.endsWith('.mkv'));
 
     // Handle file upload if provided
     if ((filePath != null && filePath.isNotEmpty) || fileBytes != null) {
       try {
         Uint8List? bytes;
+        int uploadContentLength = fileSizeBytes ?? 0;
+        File? uploadLocalFile;
+
         if (fileBytes != null) {
           bytes = fileBytes is Uint8List
               ? fileBytes
               : Uint8List.fromList(List<int>.from(fileBytes as Iterable));
+          uploadContentLength = bytes.length;
         } else if (filePath != null) {
           final file = File(filePath);
           if (await file.exists()) {
-            bytes = await file.readAsBytes();
+            uploadLocalFile = file;
+            uploadContentLength = await file.length();
+            if (uploadContentLength <= 25 * 1024 * 1024) {
+              bytes = await file.readAsBytes();
+            }
           }
         }
 
-        if (bytes == null || bytes.isEmpty) {
+        if (uploadContentLength <= 0 && (bytes == null || bytes.isEmpty)) {
           throw Exception('Failed to read status media file or empty bytes');
         }
 
-        final size = bytes.length;
+        final ext = (fileName != null && fileName.contains('.'))
+            ? fileName.split('.').last.toLowerCase()
+            : (filePath != null && filePath.contains('.')
+                ? filePath.split('.').last.toLowerCase()
+                : (isVideo ? 'mp4' : (isAudio ? 'm4a' : 'jpg')));
+
         final inferredFileName = fileName ??
             (filePath != null
                 ? filePath.split('/').last
                 : (isVideo
-                    ? 'video.mp4'
-                    : (isAudio ? 'voice_status.m4a' : 'media.jpg')));
-        String inferredMime = mimeType ??
-            (isVideo ? 'video/mp4' : (isAudio ? 'audio/mp4' : 'image/jpeg'));
+                    ? 'video.$ext'
+                    : (isAudio ? 'voice_status.$ext' : 'media.$ext')));
 
+        String inferredMime = mimeType ?? '';
         if (isVideo) {
-          inferredMime = 'video/mp4';
+          if (ext == 'mov' || ext == 'quicktime') {
+            inferredMime = 'video/quicktime';
+          } else if (ext == 'webm') {
+            inferredMime = 'video/webm';
+          } else {
+            inferredMime = 'video/mp4';
+          }
         } else if (isAudio) {
-          if (inferredMime.contains('m4a') ||
-              inferredMime.isEmpty ||
-              inferredMime == 'application/octet-stream') {
+          if (ext == 'wav') {
+            inferredMime = 'audio/wav';
+          } else if (ext == 'aac') {
+            inferredMime = 'audio/aac';
+          } else if (ext == 'ogg') {
+            inferredMime = 'audio/ogg';
+          } else if (ext == 'mp3') {
+            inferredMime = 'audio/mpeg';
+          } else {
             inferredMime = 'audio/mp4';
           }
+        } else {
+          if (ext == 'png') {
+            inferredMime = 'image/png';
+          } else if (ext == 'webp') {
+            inferredMime = 'image/webp';
+          } else if (ext == 'gif') {
+            inferredMime = 'image/gif';
+          } else {
+            inferredMime = 'image/jpeg';
+          }
         }
+
         final mediaType =
             isVideo ? 'CHAT_VIDEO' : (isAudio ? 'VOICE_NOTE' : 'CHAT_IMAGE');
 
         onProgress?.call(0.05);
 
+        // Helper for direct multipart upload fallback
+        Future<String?> performDirectMultipartUpload() async {
+          try {
+            MultipartFile multipartFile;
+            if (bytes != null && bytes.isNotEmpty) {
+              multipartFile = MultipartFile.fromBytes(
+                bytes,
+                filename: inferredFileName,
+              );
+            } else if (!kIsWeb && filePath != null && File(filePath).existsSync()) {
+              multipartFile = await MultipartFile.fromFile(
+                filePath,
+                filename: inferredFileName,
+              );
+            } else {
+              return null;
+            }
+
+            final formDataMap = <String, dynamic>{
+              'file': multipartFile,
+              'media_type': mediaType,
+            };
+            final formData = FormData.fromMap(formDataMap);
+
+            final directResult = await _apiService.call<Map<String, dynamic>>(
+              path: CommonEndpoints.directUpload,
+              method: 'POST',
+              data: formData,
+              options: Options(
+                sendTimeout: const Duration(minutes: 5),
+                receiveTimeout: const Duration(minutes: 5),
+              ),
+              mapper: (data) => Map<String, dynamic>.from(data as Map),
+            );
+
+            final directId = directResult.when(
+              success: (data) {
+                final directMediaId = data['id']?.toString() ?? '';
+                onProgress?.call(0.95);
+                debugPrint('Status direct upload succeeded -> mediaId: $directMediaId');
+                return directMediaId.isNotEmpty ? directMediaId : null;
+              },
+              failure: (error, statusCode) {
+                debugPrint('Status direct upload failed: $error (status $statusCode)');
+                return null;
+              },
+            );
+            return directId;
+          } catch (e) {
+            debugPrint('Status direct upload exception: $e');
+            return null;
+          }
+        }
+
         // Step 1: Request upload URL with retries
         final requestData = {
           'media_type': mediaType,
           'mime_type': inferredMime,
-          'file_size_bytes': size,
+          'file_size_bytes': uploadContentLength,
           'filename': inferredFileName,
         };
 
@@ -214,6 +312,16 @@ class StatusRepositoryImpl implements StatusRepository {
           } catch (e) {
             lastRequestError = Exception(e.toString());
             debugPrint('Status upload request attempt $attempt failed: $e');
+            final errStr = e.toString();
+            if (errStr.contains('Invalid video MIME type') || errStr.contains('MIME type')) {
+              if (isVideo) {
+                requestData['mime_type'] = 'video/mp4';
+              } else if (isAudio) {
+                requestData['mime_type'] = 'audio/mp4';
+              } else {
+                requestData['mime_type'] = 'image/jpeg';
+              }
+            }
             if (attempt < 3) {
               await Future.delayed(Duration(milliseconds: 500 * attempt));
             }
@@ -221,114 +329,144 @@ class StatusRepositoryImpl implements StatusRepository {
         }
 
         if (uploadMeta == null) {
-          throw lastRequestError ?? Exception('Failed to request upload URL after retries');
-        }
+          final fallbackMediaId = await performDirectMultipartUpload();
+          if (fallbackMediaId != null) {
+            finalMediaId = fallbackMediaId;
+          } else {
+            throw lastRequestError ?? Exception('Failed to request upload URL after retries');
+          }
+        } else {
+          final mediaId = uploadMeta['media_id']?.toString() ?? '';
+          String uploadUrl = uploadMeta['upload_url']?.toString() ?? '';
 
-        final mediaId = uploadMeta['media_id']?.toString() ?? '';
-        String uploadUrl = uploadMeta['upload_url']?.toString() ?? '';
-
-        if (uploadUrl.contains('minio')) {
-          try {
-            final serverUri = Uri.parse(CommonEndpoints.baseUrl);
-            if (serverUri.host.isNotEmpty) {
-              uploadUrl = uploadUrl.replaceAll('minio', serverUri.host);
+          if (uploadUrl.startsWith('/') || uploadUrl.contains('/media/upload')) {
+            // Backend returned fallback endpoint
+            final fallbackMediaId = await performDirectMultipartUpload();
+            if (fallbackMediaId != null) {
+              finalMediaId = fallbackMediaId;
+            } else {
+              throw Exception('Direct fallback upload failed for status media');
             }
-          } catch (_) {}
-        }
-
-        if (mediaId.isEmpty || uploadUrl.isEmpty) {
-          throw Exception('Invalid metadata received from request-upload');
-        }
-
-        onProgress?.call(0.15);
-
-        // Step 2: Upload file binary directly with timeout, retries, and live progress reporting
-        bool s3Success = false;
-        Exception? lastUploadError;
-        final uploadDio = Dio(
-          BaseOptions(
-            connectTimeout: const Duration(minutes: 2),
-            sendTimeout: const Duration(minutes: 10),
-            receiveTimeout: const Duration(minutes: 2),
-          ),
-        );
-
-        for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
-          try {
-            final uploadResponse = await uploadDio.put(
-              uploadUrl,
-              data: Stream.fromIterable(<List<int>>[bytes]),
-              options: Options(
-                headers: {
-                  'Content-Type': inferredMime,
-                  'Content-Length': bytes.length.toString(),
-                },
-              ),
-              onSendProgress: (sent, total) {
-                if (total > 0 && onProgress != null) {
-                  // Map upload progress into 15% -> 90% range
-                  final uploadFraction = (sent / total).clamp(0.0, 1.0);
-                  final overallProgress = 0.15 + (uploadFraction * 0.75);
-                  onProgress(overallProgress);
+          } else {
+            if (uploadUrl.contains('minio') || uploadUrl.contains('localhost') || uploadUrl.contains('127.0.0.1')) {
+              try {
+                final serverUri = Uri.parse(CommonEndpoints.baseUrl);
+                final host = serverUri.host;
+                if (host.isNotEmpty) {
+                  final parsedUpload = Uri.parse(uploadUrl);
+                  if (parsedUpload.host == 'minio' || parsedUpload.host == 'localhost' || parsedUpload.host == '127.0.0.1') {
+                    uploadUrl = parsedUpload.replace(host: host).toString();
+                  } else if (uploadUrl.contains('minio')) {
+                    uploadUrl = uploadUrl.replaceAll('minio', host);
+                  }
                 }
-              },
+              } catch (_) {}
+            }
+
+            if (mediaId.isEmpty || uploadUrl.isEmpty) {
+              throw Exception('Invalid metadata received from request-upload');
+            }
+
+            onProgress?.call(0.15);
+
+            // Step 2: Upload file binary directly with timeout, retries, and live progress reporting
+            bool s3Success = false;
+            Exception? lastUploadError;
+            final uploadDio = Dio(
+              BaseOptions(
+                connectTimeout: const Duration(minutes: 5),
+                sendTimeout: const Duration(minutes: 15),
+                receiveTimeout: const Duration(minutes: 5),
+              ),
             );
 
-              if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201) {
-                s3Success = true;
-                onProgress?.call(0.92);
-                break;
+            for (int uploadAttempt = 1; uploadAttempt <= 3; uploadAttempt++) {
+              try {
+                final Stream<List<int>> uploadStream = bytes != null
+                    ? Stream.fromIterable(<List<int>>[bytes])
+                    : uploadLocalFile!.openRead();
+
+                final uploadResponse = await uploadDio.put(
+                  uploadUrl,
+                  data: uploadStream,
+                  options: Options(
+                    headers: {
+                      'Content-Type': requestData['mime_type']?.toString() ?? inferredMime,
+                      'Content-Length': uploadContentLength.toString(),
+                    },
+                  ),
+                  onSendProgress: (sent, total) {
+                    if (total > 0 && onProgress != null) {
+                      final uploadFraction = (sent / total).clamp(0.0, 1.0);
+                      final overallProgress = 0.15 + (uploadFraction * 0.75);
+                      onProgress(overallProgress);
+                    }
+                  },
+                );
+
+                if (uploadResponse.statusCode == 200 || uploadResponse.statusCode == 201 || uploadResponse.statusCode == 204) {
+                  s3Success = true;
+                  onProgress?.call(0.92);
+                  break;
+                } else {
+                  throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
+                }
+              } catch (e) {
+                lastUploadError = Exception(e.toString());
+                debugPrint('Status S3 upload attempt $uploadAttempt failed: $e');
+                if (uploadAttempt < 3) {
+                  await Future.delayed(Duration(milliseconds: 1000 * uploadAttempt));
+                }
+              }
+            }
+
+            if (!s3Success) {
+              final fallbackMediaId = await performDirectMultipartUpload();
+              if (fallbackMediaId != null) {
+                finalMediaId = fallbackMediaId;
               } else {
-                throw Exception('S3 upload failed with status code: ${uploadResponse.statusCode}');
+                throw lastUploadError ?? Exception('S3 upload failed after retries');
               }
-            } catch (e) {
-              lastUploadError = Exception(e.toString());
-              debugPrint('Status S3 upload attempt $uploadAttempt failed: $e');
-              if (uploadAttempt < 3) {
-                await Future.delayed(Duration(milliseconds: 1000 * uploadAttempt));
+            } else {
+              // Step 3: Complete upload with retries
+              bool completedOk = false;
+              for (int completeAttempt = 1; completeAttempt <= 3; completeAttempt++) {
+                try {
+                  final completeResult = await _apiService.call<Map<String, dynamic>>(
+                    path: CommonEndpoints.completeUpload(mediaId),
+                    method: 'POST',
+                    data: {'sha256_checksum': null},
+                    options: Options(
+                      sendTimeout: const Duration(minutes: 2),
+                      receiveTimeout: const Duration(minutes: 2),
+                    ),
+                    mapper: (data) => Map<String, dynamic>.from(data as Map),
+                  );
+
+                  completedOk = completeResult.when(
+                    success: (_) => true,
+                    failure: (error, statusCode) => false,
+                  );
+                  if (completedOk) break;
+                } catch (e) {
+                  debugPrint('Status complete upload attempt $completeAttempt failed: $e');
+                  if (completeAttempt < 3) {
+                    await Future.delayed(Duration(milliseconds: 800 * completeAttempt));
+                  }
+                }
               }
+
+              debugPrint('========\nstatus mediaId: $mediaId\n========');
+              finalMediaId = mediaId;
+              onProgress?.call(0.97);
             }
           }
-
-          if (!s3Success) {
-            throw lastUploadError ?? Exception('S3 upload failed after retries');
-          }
-
-          // Step 3: Complete upload with retries
-          for (int completeAttempt = 1; completeAttempt <= 3; completeAttempt++) {
-            try {
-              final completeResult = await _apiService.call<Map<String, dynamic>>(
-                path: CommonEndpoints.completeUpload(mediaId),
-                method: 'POST',
-                data: {'sha256_checksum': null},
-                options: Options(
-                  sendTimeout: const Duration(minutes: 2),
-                  receiveTimeout: const Duration(minutes: 2),
-                ),
-                mapper: (data) => Map<String, dynamic>.from(data as Map),
-              );
-
-              final isCompleted = completeResult.when(
-                success: (_) => true,
-                failure: (error, statusCode) => false,
-              );
-              if (isCompleted) break;
-            } catch (e) {
-              debugPrint('Status complete upload attempt $completeAttempt failed: $e');
-              if (completeAttempt < 3) {
-                await Future.delayed(Duration(milliseconds: 800 * completeAttempt));
-              }
-            }
-          }
-
-          debugPrint('========\nstatus mediaId: $mediaId\n========');
-          finalMediaId = mediaId;
-          onProgress?.call(0.97);
-        } catch (e) {
-          debugPrint('Error uploading status media: $e');
-          rethrow;
         }
+      } catch (e) {
+        debugPrint('Error uploading status media: $e');
+        rethrow;
       }
+    }
 
     // Create the actual status
     final createPayload = <String, dynamic>{
@@ -354,15 +492,21 @@ class StatusRepositoryImpl implements StatusRepository {
       createPayload['privacyType'] = privacyType;
       createPayload['privacy_type'] = privacyType;
     }
-    if (privacyUserIds != null) {
-      createPayload['privacyUserIds'] = privacyUserIds;
-      createPayload['privacy_user_ids'] = privacyUserIds;
-      createPayload['includedUserIds'] = privacyUserIds;
-      createPayload['included_user_ids'] = privacyUserIds;
-      createPayload['excludedUserIds'] = privacyUserIds;
-      createPayload['excluded_user_ids'] = privacyUserIds;
-      createPayload['contactIds'] = privacyUserIds;
-      createPayload['contact_ids'] = privacyUserIds;
+    if (privacyUserIds != null && privacyUserIds.isNotEmpty) {
+      final sanitizedUids = privacyUserIds
+          .where((id) => id.trim().isNotEmpty && RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(id.trim()))
+          .map((id) => id.trim())
+          .toList();
+      if (sanitizedUids.isNotEmpty) {
+        createPayload['privacyUserIds'] = sanitizedUids;
+        createPayload['privacy_user_ids'] = sanitizedUids;
+        createPayload['includedUserIds'] = sanitizedUids;
+        createPayload['included_user_ids'] = sanitizedUids;
+        createPayload['excludedUserIds'] = sanitizedUids;
+        createPayload['excluded_user_ids'] = sanitizedUids;
+        createPayload['contactIds'] = sanitizedUids;
+        createPayload['contact_ids'] = sanitizedUids;
+      }
     }
 
     var result = await _apiService.post(

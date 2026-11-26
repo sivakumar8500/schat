@@ -18,6 +18,9 @@ void main() {
       GetIt.I.unregister<StatusRepository>();
     }
     GetIt.I.registerSingleton<StatusRepository>(mockStatusRepository);
+
+    when(() => mockStatusRepository.getMyStatuses()).thenAnswer((_) async => []);
+    when(() => mockStatusRepository.getStatusPrivacy()).thenAnswer((_) async => const StatusPrivacyModel(privacyType: 'contacts'));
   });
 
   Widget createWidgetUnderTest() {

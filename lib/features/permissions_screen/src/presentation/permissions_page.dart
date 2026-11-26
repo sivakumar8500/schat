@@ -93,10 +93,9 @@ class _PermissionsPageState extends State<PermissionsPage> with WidgetsBindingOb
     if (_storageGranted) return;
 
     if (Platform.isAndroid) {
-      final pStatus = await Permission.photos.request();
-      if (!pStatus.isGranted) {
-        await Permission.storage.request();
-      }
+      await Permission.photos.request();
+      await Permission.videos.request();
+      await Permission.storage.request();
     } else {
       await Permission.photos.request();
     }

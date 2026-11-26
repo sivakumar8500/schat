@@ -104,6 +104,7 @@ class CommonEndpoints {
 
   // Media Upload & Permissions
   static const String requestUpload = '/media/request-upload';
+  static const String directUpload = '/media/upload';
   static String completeUpload(String mediaId) => '/media/$mediaId/complete';
   static String getConversationMedia(String conversationId) => '/chats/$conversationId/media';
   static String mediaPermissions(String mediaId) => '/media/$mediaId/permissions';

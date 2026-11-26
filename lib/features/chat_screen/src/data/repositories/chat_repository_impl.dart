@@ -253,6 +253,8 @@ class ChatRepositoryImpl implements ChatRepository {
       }
     } catch (_) {}
 
+    Future<String?> Function()? performDirectMultipartUpload;
+
     try {
       onProgress?.call(0.05);
       String resolvedFilePath = filePath;
@@ -404,6 +406,91 @@ class ChatRepositoryImpl implements ChatRepository {
         requestData['conversation_id'] = conversationId;
       }
 
+      // Helper for direct multipart upload fallback on port 8000
+      performDirectMultipartUpload = () async {
+        debugPrint('ChatRepository.uploadMedia: Attempting direct multipart upload fallback to ${CommonEndpoints.directUpload}...');
+        try {
+          MultipartFile multipartFile;
+          if (resolvedFileBytes != null && resolvedFileBytes.isNotEmpty) {
+            multipartFile = MultipartFile.fromBytes(
+              resolvedFileBytes,
+              filename: resolvedFileName,
+            );
+          } else if (!kIsWeb && resolvedFilePath.isNotEmpty && File(resolvedFilePath).existsSync()) {
+            multipartFile = await MultipartFile.fromFile(
+              resolvedFilePath,
+              filename: resolvedFileName,
+            );
+          } else {
+            return null;
+          }
+
+          final formDataMap = <String, dynamic>{
+            'file': multipartFile,
+            'media_type': resolvedMediaType,
+          };
+          if (conversationId.isNotEmpty) {
+            formDataMap['conversation_id'] = conversationId;
+          }
+
+          final formData = FormData.fromMap(formDataMap);
+
+          final directResult = await _apiService.call<Map<String, dynamic>>(
+            path: CommonEndpoints.directUpload,
+            method: 'POST',
+            data: formData,
+            options: Options(
+              sendTimeout: const Duration(minutes: 5),
+              receiveTimeout: const Duration(minutes: 5),
+            ),
+            mapper: (data) => Map<String, dynamic>.from(data as Map),
+          );
+
+          final resultKey = directResult.when(
+            success: (data) {
+              final directMediaId = data['id']?.toString() ?? '';
+              final directObjectKey = data['url']?.toString() ?? data['object_key']?.toString() ?? directMediaId;
+              onProgress?.call(1.0);
+              debugPrint('ChatRepository.uploadMedia: Direct upload succeeded -> mediaId: $directMediaId, key: $directObjectKey');
+              
+              if (directMediaId.isNotEmpty && directObjectKey.isNotEmpty) {
+                SecureAttachmentService.cacheMediaMapping(key: directObjectKey, localPath: resolvedFilePath, mediaId: directMediaId);
+                SecureAttachmentService.cacheMediaMapping(key: resolvedFileName, localPath: resolvedFilePath, mediaId: directMediaId);
+                SecureAttachmentService.cacheMediaMapping(key: directObjectKey.split('/').last, localPath: resolvedFilePath, mediaId: directMediaId);
+                if (getIt.isRegistered<StorageService>()) {
+                  final storage = getIt<StorageService>();
+                  storage.markMediaAsOwnedByMe(directMediaId);
+                  storage.markMediaAsOwnedByMe(directObjectKey);
+                  storage.markMediaAsOwnedByMe(resolvedFileName);
+                  storage.markMediaAsOwnedByMe(directObjectKey.split('/').last);
+                }
+              }
+              if (directMediaId.isNotEmpty && recipientId != null && recipientId.trim().isNotEmpty) {
+                shareMedia(
+                  mediaId: directMediaId,
+                  granteeId: recipientId.trim(),
+                  canView: allowView,
+                  canDownload: allowDownload,
+                  canShare: allowShare,
+                ).catchError((e) {
+                  debugPrint('Error auto-granting direct media share: $e');
+                  return false;
+                });
+              }
+              return directObjectKey;
+            },
+            failure: (error, statusCode) {
+              debugPrint('ChatRepository.uploadMedia: Direct upload failed: $error (status $statusCode)');
+              return null;
+            },
+          );
+          return resultKey;
+        } catch (e) {
+          debugPrint('ChatRepository.uploadMedia: Direct upload exception: $e');
+          return null;
+        }
+      };
+
       // 1. Request upload metadata with retries
       Map<String, dynamic>? uploadMeta;
       Exception? lastRequestError;
@@ -456,6 +543,8 @@ class ChatRepositoryImpl implements ChatRepository {
       }
 
       if (uploadMeta == null) {
+        final fallbackKey = await performDirectMultipartUpload();
+        if (fallbackKey != null) return fallbackKey;
         throw lastRequestError ?? Exception('Failed to request upload URL after retries');
       }
 
@@ -580,6 +669,8 @@ class ChatRepositoryImpl implements ChatRepository {
       }
 
       if (!s3Success) {
+        final fallbackKey = await performDirectMultipartUpload();
+        if (fallbackKey != null) return fallbackKey;
         throw lastUploadError ?? Exception('S3 upload failed after retries');
       }
 
@@ -619,6 +710,8 @@ class ChatRepositoryImpl implements ChatRepository {
       }
 
       if (completedObjectKey == null) {
+        final fallbackKey = await performDirectMultipartUpload();
+        if (fallbackKey != null) return fallbackKey;
         throw lastCompleteError ?? Exception('Failed to complete upload after retries');
       }
 
@@ -660,6 +753,12 @@ class ChatRepositoryImpl implements ChatRepository {
       return completedObjectKey;
     } catch (e) {
       debugPrint('Error in uploadMedia: $e');
+      try {
+        if (performDirectMultipartUpload != null) {
+          final fallbackKey = await performDirectMultipartUpload();
+          if (fallbackKey != null) return fallbackKey;
+        }
+      } catch (_) {}
       rethrow;
     } finally {
       try {
