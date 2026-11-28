@@ -145,10 +145,14 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     _allowShare = widget.initialAllowShare;
     _isViewOnce = widget.initialIsViewOnce;
 
+    _initActiveAttachment();
+  }
+
+  void _initActiveAttachment() {
     final resolvedType = _resolveEffectiveType();
 
     if (resolvedType == 'image') {
-      if (_activeInitialBytes != null) {
+      if (_activeInitialBytes != null && SecureAttachmentService.isPlaintextFile(_activeInitialBytes!, _activeName)) {
         _currentBytes = _activeInitialBytes;
         _originalBytes = _activeInitialBytes;
       }
@@ -161,6 +165,42 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
       _initPdf();
     } else if (resolvedType == 'text') {
       _initTextPreview();
+    } else {
+      _initGenericFile();
+    }
+  }
+
+  Future<void> _initGenericFile() async {
+    try {
+      final path = await _resolveTempFilePath();
+      if (path != null && !kIsWeb && File(path).existsSync()) {
+        final bytes = await File(path).readAsBytes();
+        if (mounted) {
+          setState(() {
+            _currentBytes = bytes;
+            _originalBytes = bytes;
+          });
+        } else {
+          _currentBytes = bytes;
+          _originalBytes = bytes;
+        }
+
+        final detectedExt = SecureAttachmentService.detectExtensionFromBytes(bytes);
+        if (detectedExt.isNotEmpty) {
+          final detectedType = SecureAttachmentService.getMediaTypeForExtension(detectedExt);
+          if (detectedType == 'image') {
+            if (mounted) setState(() {});
+          } else if (detectedType == 'video') {
+            _initVideo();
+          } else if (detectedType == 'audio') {
+            _initAudio();
+          } else if (detectedExt == 'pdf') {
+            _initPdf();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('AttachmentPreviewPage: Error initializing generic file: $e');
     }
   }
 
@@ -173,26 +213,17 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
 
     setState(() {
       _selectedIndex = index;
-      _currentBytes = _activeInitialBytes;
-      _originalBytes = _activeInitialBytes;
+      _currentBytes = (_activeInitialBytes != null && SecureAttachmentService.isPlaintextFile(_activeInitialBytes!, _activeName))
+          ? _activeInitialBytes
+          : null;
+      _originalBytes = _currentBytes;
       _hasEdits = false;
       _isVideoInitialized = false;
       _isAudioInitialized = false;
       _isPdfReady = false;
     });
 
-    final resolvedType = _resolveEffectiveType();
-    if (resolvedType == 'image') {
-      _initImageBytes();
-    } else if (resolvedType == 'video') {
-      _initVideo();
-    } else if (resolvedType == 'audio') {
-      _initAudio();
-    } else if (resolvedType == 'pdf') {
-      _initPdf();
-    } else if (resolvedType == 'text') {
-      _initTextPreview();
-    }
+    _initActiveAttachment();
   }
 
   String _resolveEffectiveType() {
@@ -208,9 +239,11 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
         Uint8List? probe;
         if (_currentBytes != null && _currentBytes!.isNotEmpty) {
           probe = _currentBytes;
-        } else if (_activeInitialBytes != null && _activeInitialBytes!.isNotEmpty) {
+        } else if (_resolvedActivePath != null && !kIsWeb && File(_resolvedActivePath!).existsSync()) {
+          probe = File(_resolvedActivePath!).openSync().readSync(32);
+        } else if (_activeInitialBytes != null && _activeInitialBytes!.isNotEmpty && SecureAttachmentService.isPlaintextFile(_activeInitialBytes!, _activeName)) {
           probe = _activeInitialBytes;
-        } else if (_activePath != null && !kIsWeb && File(_activePath!).existsSync()) {
+        } else if (_activePath != null && !kIsWeb && File(_activePath!).existsSync() && !SecureAttachmentService.isFileEncryptedSync(_activePath!)) {
           probe = File(_activePath!).openSync().readSync(32);
         }
         if (probe != null && probe.isNotEmpty) {
@@ -287,7 +320,28 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
             } catch (_) {}
             return decFile.path;
           } catch (e) {
-            debugPrint('Error decrypting .enc in _resolveTempFilePath: $e');
+            debugPrint('Error decrypting .enc in _resolveTempFilePath, attempting prepareNormalFileForUpload: $e');
+            try {
+              final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+                filePath: _activePath,
+                fileName: cleanName,
+              );
+              final decFile = File(normal.filePath);
+              _tempFilesToCleanup.add(decFile);
+              _resolvedActivePath = decFile.path;
+              if (mounted) {
+                setState(() {
+                  _currentBytes = normal.bytes;
+                  _originalBytes = normal.bytes;
+                });
+              } else {
+                _currentBytes = normal.bytes;
+                _originalBytes = normal.bytes;
+              }
+              return decFile.path;
+            } catch (err2) {
+              debugPrint('Error fallback decrypting in _resolveTempFilePath: $err2');
+            }
             _resolvedActivePath = _activePath;
             return _activePath;
           }
@@ -301,12 +355,33 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
     try {
       final bytes = _currentBytes ?? _activeInitialBytes;
       if (bytes != null && bytes.isNotEmpty) {
+        Uint8List resolvedBytes = bytes;
+        if (!SecureAttachmentService.isPlaintextFile(bytes, cleanName)) {
+          try {
+            final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+              filePath: _activePath,
+              fileBytes: bytes,
+              fileName: cleanName,
+            );
+            resolvedBytes = normal.bytes;
+            cleanName = normal.fileName;
+          } catch (_) {}
+        }
         final tempDir = await getTemporaryDirectory();
         final ext = cleanName.contains('.') ? cleanName.split('.').last : 'tmp';
         final tempFile = File('${tempDir.path}/schat_prev_${DateTime.now().millisecondsSinceEpoch}.$ext');
-        await tempFile.writeAsBytes(bytes);
+        await tempFile.writeAsBytes(resolvedBytes);
         _tempFilesToCleanup.add(tempFile);
         _resolvedActivePath = tempFile.path;
+        if (mounted) {
+          setState(() {
+            _currentBytes = resolvedBytes;
+            _originalBytes = resolvedBytes;
+          });
+        } else {
+          _currentBytes = resolvedBytes;
+          _originalBytes = resolvedBytes;
+        }
         return tempFile.path;
       }
     } catch (e) {
@@ -617,20 +692,25 @@ class _AttachmentPreviewPageState extends State<AttachmentPreviewPage> {
         } catch (_) {}
       }
     }
-    sendBytes ??= _activeInitialBytes;
-
-    final String msgType;
-    if (effectiveType == 'image') {
-      msgType = 'image';
-    } else if (effectiveType == 'video') {
-      msgType = 'video';
-    } else if (effectiveType == 'audio') {
-      msgType = 'audio';
-    } else if (effectiveType == 'location') {
-      msgType = 'location';
-    } else {
-      msgType = 'file';
+    if (sendBytes == null && _activeInitialBytes != null && SecureAttachmentService.isPlaintextFile(_activeInitialBytes!, cleanName)) {
+      sendBytes = _activeInitialBytes;
     }
+
+    String msgType = effectiveType;
+    if (sendBytes != null && sendBytes.isNotEmpty) {
+      final detectedExt = SecureAttachmentService.detectExtensionFromBytes(sendBytes);
+      if (detectedExt.isNotEmpty) {
+        if (!cleanName.contains('.')) {
+          cleanName = '$cleanName.$detectedExt';
+        }
+        final detectedType = SecureAttachmentService.getMediaTypeForExtension(detectedExt);
+        if (msgType == 'file' || msgType == 'document') {
+          msgType = detectedType;
+        }
+      }
+    }
+
+    if (msgType == 'document') msgType = 'file';
 
     Navigator.pop(context, {
       'send': true,

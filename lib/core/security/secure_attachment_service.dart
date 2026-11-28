@@ -161,12 +161,13 @@ class SecureAttachmentService {
       if (name == null || name.trim().isEmpty) return;
       var clean = name.trim().split('?').first.trim();
       var c = clean.split('/').last;
-      if (c.isNotEmpty && !nameCandidates.contains(c)) nameCandidates.add(c);
       var stripped = c;
       while (stripped.toLowerCase().endsWith('.enc')) {
         stripped = stripped.substring(0, stripped.length - 4);
-        if (stripped.isNotEmpty && !nameCandidates.contains(stripped)) nameCandidates.add(stripped);
       }
+      // Prefer unencrypted stripped candidate first
+      if (stripped.isNotEmpty && !nameCandidates.contains(stripped)) nameCandidates.add(stripped);
+      if (c.isNotEmpty && !nameCandidates.contains(c)) nameCandidates.add(c);
       if (!c.toLowerCase().endsWith('.enc') && !nameCandidates.contains('$c.enc')) {
         nameCandidates.add('$c.enc');
       }
@@ -297,12 +298,6 @@ class SecureAttachmentService {
     final userId = _storageService.getUserId() ?? 'guest_user';
     final deviceId = _storageService.getOrGenerateDeviceId();
     final rawSeed = 'schat_sec_attachment_${userId}_$deviceId';
-    final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
-    return enc.Key(Uint8List.fromList(keyBytes));
-  }
-
-  enc.Key _getFallbackKeyCommon() {
-    const rawSeed = 'schat_sec_attachment_common_key';
     final keyBytes = sha256.convert(utf8.encode(rawSeed)).bytes;
     return enc.Key(Uint8List.fromList(keyBytes));
   }
@@ -627,32 +622,45 @@ class SecureAttachmentService {
         snippet.startsWith('{"statuscode":');
   }
 
-  /// Verifies whether an encrypted cached file is actually an encrypted error response.
+  /// Verifies whether an encrypted cached file is actually an encrypted error response or cannot be decrypted.
   Future<bool> _isCorruptEncryptedFile(File file) async {
     try {
       final bytes = await file.readAsBytes();
       if (bytes.length < 16) return true;
       if (_isErrorResponse(bytes)) return true;
 
+      // If bytes are already unencrypted plaintext media/documents, it is not corrupt
+      final cleanName = file.path.split('/').last;
+      if (_isPlaintextFile(bytes, cleanName)) {
+        return false;
+      }
+
       final iv = enc.IV(bytes.sublist(0, 16));
       final cipherBytes = bytes.sublist(16);
       if (cipherBytes.isEmpty) return true;
 
-      final key = _getEncryptionKey();
-      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
-      try {
-        final decrypted = encrypter.decryptBytes(enc.Encrypted(cipherBytes), iv: iv);
-        return _isErrorResponse(Uint8List.fromList(decrypted));
-      } catch (_) {
-        final fallbackKey = _getFallbackKeyCommon();
-        final encrypterFallback = enc.Encrypter(enc.AES(fallbackKey, mode: enc.AESMode.cbc));
+      final List<enc.Key> candidateKeys = _getAllCandidateKeys();
+      for (final key in candidateKeys) {
         try {
-          final decrypted = encrypterFallback.decryptBytes(enc.Encrypted(cipherBytes), iv: iv);
-          return _isErrorResponse(Uint8List.fromList(decrypted));
+          final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
+          Uint8List cBytes = cipherBytes;
+          if (cBytes.length % 16 != 0) {
+            final trimLen = cBytes.length - (cBytes.length % 16);
+            if (trimLen >= 16) {
+              cBytes = cBytes.sublist(0, trimLen);
+            }
+          }
+          final decrypted = encrypter.decryptBytes(enc.Encrypted(Uint8List.fromList(cBytes)), iv: iv);
+          if (decrypted.isNotEmpty) {
+            return _isErrorResponse(Uint8List.fromList(decrypted));
+          }
         } catch (_) {}
       }
-    } catch (_) {}
-    return false;
+      // If none of the candidate keys could decrypt it, it is corrupt or from an invalid key
+      return true;
+    } catch (_) {
+      return true;
+    }
   }
 
   /// Persists a local file to persistent app storage so it survives OS cache purges (e.g. iOS /tmp cleanup).
@@ -897,7 +905,7 @@ class SecureAttachmentService {
         return finalTempFile;
       }
 
-      // 4. If decryption failed or not encrypted with those keys, extract as clean file without .enc
+      // 4. If decryption failed and content is not plaintext, purge corrupt cache and throw
       if (_isErrorResponse(allBytes)) {
         debugPrint('SecureAttachmentService: Raw content is an error response, purging corrupt cache ${encFile.path}');
         try {
@@ -906,9 +914,20 @@ class SecureAttachmentService {
         throw Exception('Cached file was a server error response and has been purged');
       }
 
-      await tempFile.writeAsBytes(allBytes, flush: true);
-      debugPrint('SecureAttachmentService: Extracted raw file with clean extension -> ${tempFile.path}');
-      return tempFile;
+      if (_isPlaintextFile(allBytes, safeName)) {
+        await tempFile.writeAsBytes(allBytes, flush: true);
+        debugPrint('SecureAttachmentService: Extracted raw file as plaintext -> ${tempFile.path}');
+        return tempFile;
+      }
+
+      // If file has .enc extension or is stored in schat private storage, purge the un-decryptable cache
+      if (encFile.path.endsWith('.enc') || encFile.path.contains('schat') || encFile.path.contains('Schat')) {
+        try {
+          await encFile.delete();
+          debugPrint('SecureAttachmentService: Purged un-decryptable cached file ${encFile.path}');
+        } catch (_) {}
+      }
+      throw Exception('Failed to decrypt attachment with available keys: corrupt or encrypted with unknown key');
     } catch (e) {
       debugPrint('SecureAttachmentService: Error decrypting to temporary file: $e');
       rethrow;
@@ -1142,7 +1161,7 @@ class SecureAttachmentService {
 
     if (rawBytes.length >= 16) {
       final bool shouldAttemptDecryption = hasEncExtension ||
-          (!cleanName.contains('.') && !_isPlaintextFile(rawBytes, cleanName));
+          !_isPlaintextFile(rawBytes, cleanName);
       if (shouldAttemptDecryption) {
         final ivBytes = rawBytes.sublist(0, 16);
         final cipherBytes = rawBytes.sublist(16);
@@ -1176,6 +1195,10 @@ class SecureAttachmentService {
               }
             } catch (_) {}
           }
+        }
+
+        if (normalBytes == rawBytes && !_isPlaintextFile(normalBytes, cleanName)) {
+          throw Exception('Failed to decrypt attachment "$fileName" for upload: file is encrypted with unknown key or corrupted');
         }
       }
     }

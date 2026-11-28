@@ -5894,7 +5894,11 @@ class _ChatPageState extends State<ChatPage>
         sendName.toLowerCase().endsWith('.enc') ||
         (sendPath != null &&
             sendPath.isNotEmpty &&
-            sendPath.toLowerCase().endsWith('.enc'));
+            (sendPath.toLowerCase().endsWith('.enc') ||
+                SecureAttachmentService.isFileEncryptedSync(sendPath))) ||
+        (sendBytes != null &&
+            sendBytes.isNotEmpty &&
+            !SecureAttachmentService.isPlaintextFile(sendBytes, sendName));
 
     if (isSendEnc) {
       try {
@@ -6046,7 +6050,11 @@ class _ChatPageState extends State<ChatPage>
         uploadName.toLowerCase().endsWith('.enc') ||
         (uploadPath != null &&
             uploadPath.isNotEmpty &&
-            uploadPath.toLowerCase().endsWith('.enc'));
+            (uploadPath.toLowerCase().endsWith('.enc') ||
+                SecureAttachmentService.isFileEncryptedSync(uploadPath))) ||
+        (uploadBytes != null &&
+            uploadBytes.isNotEmpty &&
+            !SecureAttachmentService.isPlaintextFile(uploadBytes, uploadName));
 
     if (isUploadEnc) {
       try {
@@ -10355,9 +10363,35 @@ class _ChatPageState extends State<ChatPage>
         '3gp',
         'm4v',
       }.contains(ext);
-      final fileType = isVideo ? 'video' : 'image';
+      String fileType = isVideo ? 'video' : 'image';
+      String resolvedPath = file.path;
+      String resolvedName = name;
+      Uint8List resolvedBytes = bytes;
+      int resolvedSize = size;
 
-      if (isVideo && size > 1024 * 1024 * 1024) {
+      final bool isEnc = resolvedName.toLowerCase().endsWith('.enc') ||
+          (file.path.isNotEmpty && (file.path.toLowerCase().endsWith('.enc') || SecureAttachmentService.isFileEncryptedSync(file.path))) ||
+          !SecureAttachmentService.isPlaintextFile(bytes, resolvedName);
+      if (isEnc) {
+        try {
+          final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+            filePath: file.path,
+            fileBytes: bytes,
+            fileName: resolvedName,
+            explicitMediaType: fileType,
+          );
+          resolvedPath = normal.filePath;
+          resolvedName = normal.fileName;
+          resolvedBytes = normal.bytes;
+          resolvedSize = normal.fileSizeBytes;
+          fileType = normal.mediaType;
+          debugPrint('ChatPage._pickImage: Auto-decrypted media -> $resolvedName ($fileType, $resolvedSize bytes)');
+        } catch (e) {
+          debugPrint('ChatPage._pickImage: Error auto-decrypting picked image/media: $e');
+        }
+      }
+
+      if (fileType == 'video' && resolvedSize > 1024 * 1024 * 1024) {
         if (mounted) context.showErrorNotification('Video file exceeds 1 GB limit.');
         return;
       }
@@ -10365,9 +10399,9 @@ class _ChatPageState extends State<ChatPage>
       final persistentPath = kIsWeb
           ? null
           : await getIt<SecureAttachmentService>().saveToPersistentStorage(
-              originalPath: file.path,
-              fileName: name,
-              bytes: bytes,
+              originalPath: resolvedPath,
+              fileName: resolvedName,
+              bytes: resolvedBytes,
             );
       if (!mounted) return;
 
@@ -10375,11 +10409,11 @@ class _ChatPageState extends State<ChatPage>
         context,
         MaterialPageRoute(
           builder: (context) => AttachmentPreviewPage(
-            path: persistentPath ?? (kIsWeb ? null : file.path),
-            bytes: bytes,
-            name: name,
+            path: persistentPath ?? (kIsWeb ? null : resolvedPath),
+            bytes: resolvedBytes,
+            name: resolvedName,
             type: fileType,
-            size: size,
+            size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
             initialAllowDownload: false,
@@ -10446,12 +10480,40 @@ class _ChatPageState extends State<ChatPage>
       final Uint8List bytes = await file.readAsBytes();
       if (!mounted) return;
 
+      String resolvedPath = file.path;
+      String resolvedName = name;
+      Uint8List resolvedBytes = bytes;
+      int resolvedSize = size;
+      String fileType = isVideo ? 'video' : 'image';
+
+      final bool isEnc = resolvedName.toLowerCase().endsWith('.enc') ||
+          (file.path.isNotEmpty && (file.path.toLowerCase().endsWith('.enc') || SecureAttachmentService.isFileEncryptedSync(file.path))) ||
+          !SecureAttachmentService.isPlaintextFile(bytes, resolvedName);
+      if (isEnc) {
+        try {
+          final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+            filePath: file.path,
+            fileBytes: bytes,
+            fileName: resolvedName,
+            explicitMediaType: fileType,
+          );
+          resolvedPath = normal.filePath;
+          resolvedName = normal.fileName;
+          resolvedBytes = normal.bytes;
+          resolvedSize = normal.fileSizeBytes;
+          fileType = normal.mediaType;
+          debugPrint('ChatPage._handleSelectedMediaFile: Auto-decrypted media -> $resolvedName ($fileType, $resolvedSize bytes)');
+        } catch (e) {
+          debugPrint('ChatPage._handleSelectedMediaFile: Error auto-decrypting media: $e');
+        }
+      }
+
       final persistentPath = kIsWeb
           ? null
           : await getIt<SecureAttachmentService>().saveToPersistentStorage(
-              originalPath: file.path,
-              fileName: name,
-              bytes: bytes,
+              originalPath: resolvedPath,
+              fileName: resolvedName,
+              bytes: resolvedBytes,
             );
       if (!mounted) return;
 
@@ -10460,10 +10522,10 @@ class _ChatPageState extends State<ChatPage>
         MaterialPageRoute(
           builder: (context) => AttachmentPreviewPage(
             path: persistentPath,
-            bytes: bytes,
-            name: name,
-            type: isVideo ? 'video' : 'image',
-            size: size,
+            bytes: resolvedBytes,
+            name: resolvedName,
+            type: fileType,
+            size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
             initialAllowDownload: false,
@@ -10534,12 +10596,40 @@ class _ChatPageState extends State<ChatPage>
       }
       if (!mounted) return;
 
+      String resolvedPath = video.path;
+      String resolvedName = name;
+      Uint8List? resolvedBytes = bytes;
+      int resolvedSize = size;
+      String fileType = 'video';
+
+      final bool isEnc = resolvedName.toLowerCase().endsWith('.enc') ||
+          (video.path.isNotEmpty && (video.path.toLowerCase().endsWith('.enc') || SecureAttachmentService.isFileEncryptedSync(video.path))) ||
+          (bytes != null && bytes.isNotEmpty && !SecureAttachmentService.isPlaintextFile(bytes, resolvedName));
+      if (isEnc) {
+        try {
+          final normal = await getIt<SecureAttachmentService>().prepareNormalFileForUpload(
+            filePath: video.path,
+            fileBytes: bytes,
+            fileName: resolvedName,
+            explicitMediaType: 'video',
+          );
+          resolvedPath = normal.filePath;
+          resolvedName = normal.fileName;
+          resolvedBytes = normal.bytes;
+          resolvedSize = normal.fileSizeBytes;
+          fileType = normal.mediaType;
+          debugPrint('ChatPage._pickVideo: Auto-decrypted video -> $resolvedName ($fileType, $resolvedSize bytes)');
+        } catch (e) {
+          debugPrint('ChatPage._pickVideo: Error auto-decrypting picked video: $e');
+        }
+      }
+
       // Copy video to persistent app storage immediately so it survives OS /tmp cache purges!
       final persistentPath = await getIt<SecureAttachmentService>()
           .saveToPersistentStorage(
-            originalPath: video.path,
-            fileName: name,
-            bytes: bytes,
+            originalPath: resolvedPath,
+            fileName: resolvedName,
+            bytes: resolvedBytes,
           );
 
       final result = await Navigator.push(
@@ -10547,10 +10637,10 @@ class _ChatPageState extends State<ChatPage>
         MaterialPageRoute(
           builder: (context) => AttachmentPreviewPage(
             path: persistentPath,
-            bytes: bytes,
-            name: name,
-            type: 'video',
-            size: size,
+            bytes: resolvedBytes,
+            name: resolvedName,
+            type: fileType,
+            size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
             initialAllowDownload: false,
@@ -10656,7 +10746,8 @@ class _ChatPageState extends State<ChatPage>
         bool wasDecrypted = false;
         final bool isEnc =
             file.name.toLowerCase().endsWith('.enc') ||
-            (file.path != null && file.path!.toLowerCase().endsWith('.enc'));
+            (file.path != null && (file.path!.toLowerCase().endsWith('.enc') || SecureAttachmentService.isFileEncryptedSync(file.path!))) ||
+            (file.bytes != null && file.bytes!.isNotEmpty && !SecureAttachmentService.isPlaintextFile(file.bytes!, file.name));
 
         String fileType =
             explicitType ??

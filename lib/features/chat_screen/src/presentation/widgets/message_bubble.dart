@@ -4095,13 +4095,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     mediaIdToUse ??=
         SecureAttachmentService.findMediaId(path) ??
         SecureAttachmentService.findMediaId(attachmentPath) ??
-        SecureAttachmentService.findMediaId(attachmentName) ??
-        SecureAttachmentService.findMediaId(messageId);
-
-    if (mediaIdToUse == null &&
-        RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(messageId)) {
-      mediaIdToUse = messageId;
-    }
+        SecureAttachmentService.findMediaId(attachmentName);
 
     // 3. If null, check message text fallback
     if (path == null || path.isEmpty) {

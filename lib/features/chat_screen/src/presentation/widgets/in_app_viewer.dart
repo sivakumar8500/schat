@@ -262,18 +262,27 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
             cleanName = cleanName.substring(0, cleanName.length - 4);
           }
           if (cleanName.isEmpty) cleanName = 'attachment';
-          final tempFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
-            encryptedFilePath: targetLocalPath,
-            originalFileName: cleanName,
-          );
-          if (mounted) {
-            setState(() {
-              _decryptedTempFile = tempFile;
-              _tempFileToCleanup = tempFile;
-              _isLoading = false;
-            });
+          try {
+            final tempFile = await getIt<SecureAttachmentService>().decryptToTemporaryFile(
+              encryptedFilePath: targetLocalPath,
+              originalFileName: cleanName,
+            );
+            if (mounted) {
+              setState(() {
+                _decryptedTempFile = tempFile;
+                _tempFileToCleanup = tempFile;
+                _isLoading = false;
+              });
+            }
+            return;
+          } catch (decErr) {
+            debugPrint('InAppViewer: Local encrypted file failed to decrypt ($decErr), purging corrupt file and falling back to server view URL');
+            try {
+              final badFile = File(targetLocalPath);
+              if (badFile.existsSync()) await badFile.delete();
+            } catch (_) {}
+            // Fall through to remote URL download below
           }
-          return;
         } else {
           if (mounted) {
             setState(() {
