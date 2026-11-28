@@ -27,9 +27,6 @@ import 'package:schat/features/security_scanner/presentation/pages/scan_result_s
 import 'package:schat/features/tones/data/models/tone_model.dart';
 import 'package:schat/features/tones/presentation/tone_picker_screen.dart';
 import 'package:schat/features/tones/services/tone_api_service.dart';
-import 'package:schat/features/chat_screen/src/presentation/widgets/chat_lock_bottom_sheet.dart';
-import 'package:schat/features/chat_screen/src/presentation/widgets/forgot_chat_lock_bottom_sheet.dart';
-import 'package:schat/features/chat_screen/src/presentation/locked_chats_page.dart';
 import 'package:schat/common/widgets/animated_tagline.dart';
 import 'package:schat/common/widgets/app_home_background.dart';
 import 'package:schat/core/services/in_app_update_service.dart';
@@ -542,13 +539,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
                               title: 'Sync Contacts',
                               subtitle: 'Refresh address book on server',
                               onTap: () => Navigator.pop(context, 'sync'),
-                            ),
-                            _buildSettingRow(
-                              context: context,
-                              icon: Icons.lock_reset_rounded,
-                              title: 'Chat Lock & Secret Code',
-                              subtitle: 'Manage, change or reset secret code with OTP',
-                              onTap: () => _showChatLockSettingsSheet(context),
                             ),
                             _buildSettingRow(
                               context: context,
@@ -1421,169 +1411,6 @@ class _ProfileSettingsPageContentState extends State<_ProfileSettingsPageContent
             color: context.colors.textHint,
             size: 22,
           ),
-    );
-  }
-
-  void _showChatLockSettingsSheet(BuildContext context) {
-    final colors = context.colors;
-    final primaryColor = const Color(0xFF00873C);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => Container(
-        decoration: BoxDecoration(
-          color: colors.cardBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textHint.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            CommonSpaces.h16,
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.lock_rounded, color: primaryColor, size: 22),
-                ),
-                CommonSpaces.w12,
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Chat Lock & Secret Code',
-                        style: context.titleMedium.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        'Manage your secret code to keep conversations secure',
-                        style: context.bodySmall.copyWith(color: colors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            CommonSpaces.h20,
-
-            // Option 1: Forgot Secret Code (OTP Reset)
-            ListTile(
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                ForgotChatLockBottomSheet.show(context);
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: primaryColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.lock_reset_rounded, color: primaryColor, size: 20),
-              ),
-              title: Text(
-                'Forgot Secret Code / Password',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: colors.textPrimary,
-                ),
-              ),
-              subtitle: Text(
-                'Reset your secret code using OTP sent to registered mobile',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
-              ),
-              trailing: Icon(Icons.chevron_right_rounded, color: colors.textHint),
-            ),
-            const Divider(height: 16),
-
-            // Option 2: Change / Set Secret Code
-            ListTile(
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                ChatLockBottomSheet.show(
-                  context,
-                  conversationId: '',
-                  contactName: 'Settings',
-                  isCurrentlyLocked: false,
-                );
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.password_rounded, color: Colors.blue, size: 20),
-              ),
-              title: Text(
-                'Change Secret Code',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: colors.textPrimary,
-                ),
-              ),
-              subtitle: Text(
-                'Change existing secret code with emojis, numbers, or text',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
-              ),
-              trailing: Icon(Icons.chevron_right_rounded, color: colors.textHint),
-            ),
-            const Divider(height: 16),
-
-            // Option 3: View Locked Chats
-            ListTile(
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LockedChatsPage()),
-                );
-              },
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.folder_special_rounded, color: Colors.amber, size: 20),
-              ),
-              title: Text(
-                'View Locked Chats',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: colors.textPrimary,
-                ),
-              ),
-              subtitle: Text(
-                'View all conversations currently locked in your account',
-                style: TextStyle(fontSize: 12, color: colors.textSecondary),
-              ),
-              trailing: Icon(Icons.chevron_right_rounded, color: colors.textHint),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
