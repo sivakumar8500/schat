@@ -308,7 +308,9 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
       }
       _effectiveMediaId = effectiveMediaId;
 
-      final bool isRawUnsignedS3 = resolvedUrl.contains('amazonaws.com') &&
+      final bool isRawUnsignedS3 = (resolvedUrl.contains('amazonaws.com') ||
+              resolvedUrl.contains(':9000') ||
+              resolvedUrl.contains('/qlyncs-doc/')) &&
           !resolvedUrl.contains('X-Amz-Signature') &&
           !resolvedUrl.contains('X-Amz-Credential');
 

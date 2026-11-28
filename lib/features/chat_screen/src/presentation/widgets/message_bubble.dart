@@ -350,6 +350,12 @@ class _MessageBubbleState extends State<MessageBubble> {
       !widget.isReadOnly && isMe && !isGroup;
 
   bool get allowView {
+    if (isGroup && !isMe) {
+      if (message == '[View Restricted]' || widget.isViewOnceOpened) {
+        return false;
+      }
+      return widget.allowView;
+    }
     if (isMe && getIt.isRegistered<StorageService>()) {
       try {
         final storage = getIt<StorageService>();

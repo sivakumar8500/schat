@@ -312,8 +312,8 @@ class _ChatPageState extends State<ChatPage>
     _effectiveContactName = widget.contactName;
     _effectiveProfilePic = widget.profilePictureUrl;
     _effectiveIsGroup = widget.isGroup;
-    _attachmentAllowShare = false;
-    _attachmentAllowDownload = false;
+    _attachmentAllowShare = widget.isGroup;
+    _attachmentAllowDownload = widget.isGroup;
     _attachmentAllowView = true;
     _resolveConversationDetails();
 
@@ -10416,8 +10416,8 @@ class _ChatPageState extends State<ChatPage>
             size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
-            initialAllowDownload: false,
-            initialAllowShare: false,
+            initialAllowDownload: widget.isGroup,
+            initialAllowShare: widget.isGroup,
           ),
         ),
       );
@@ -10528,8 +10528,8 @@ class _ChatPageState extends State<ChatPage>
             size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
-            initialAllowDownload: false,
-            initialAllowShare: false,
+            initialAllowDownload: widget.isGroup,
+            initialAllowShare: widget.isGroup,
           ),
         ),
       );
@@ -10643,8 +10643,8 @@ class _ChatPageState extends State<ChatPage>
             size: resolvedSize,
             contactName: widget.contactName,
             isGroup: widget.isGroup,
-            initialAllowDownload: false,
-            initialAllowShare: false,
+            initialAllowDownload: widget.isGroup,
+            initialAllowShare: widget.isGroup,
           ),
         ),
       );
@@ -10866,8 +10866,8 @@ class _ChatPageState extends State<ChatPage>
               size: file.size,
               contactName: widget.contactName,
               isGroup: widget.isGroup,
-              initialAllowDownload: false,
-              initialAllowShare: false,
+              initialAllowDownload: widget.isGroup,
+              initialAllowShare: widget.isGroup,
             ),
           ),
         );
@@ -11374,8 +11374,8 @@ class _ChatPageState extends State<ChatPage>
           mimeType: mimeType ?? _getMimeType(filePathToUpload, messageTypeStr),
           fileSizeBytes: fileSize,
           allowView: true,
-          allowDownload: false,
-          allowShare: false,
+          allowDownload: widget.isGroup,
+          allowShare: widget.isGroup,
         );
 
         if (attachment.existsSync()) {
@@ -11429,64 +11429,66 @@ class _ChatPageState extends State<ChatPage>
             mediaId: resolvedMediaId,
             granteeId: targetRecipient,
             canView: true,
-            canDownload: false,
-            canShare: false,
+            canDownload: widget.isGroup,
+            canShare: widget.isGroup,
           );
         } catch (_) {}
       }
 
       try {
         final storage = getIt<StorageService>();
+        final effDownload = widget.isGroup;
+        final effShare = widget.isGroup;
         if (fileKey != null && fileKey.isNotEmpty) {
           await storage.saveSenderMediaPermissions(
             fileKey,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
           await storage.saveSenderMediaPermissions(
             fileKey.split('?').first,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
           await storage.saveSenderMediaPermissions(
             fileKey.split('?').first.split('/').last,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
         }
         if (fileName != null && fileName.isNotEmpty) {
           await storage.saveSenderMediaPermissions(
             fileName,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
         }
         if (mediaId != null && mediaId.isNotEmpty) {
           await storage.saveSenderMediaPermissions(
             mediaId,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
         }
         if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
           await storage.saveSenderMediaPermissions(
             resolvedMediaId,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
         }
         if (attachment != null && attachment.path.isNotEmpty) {
           await storage.saveSenderMediaPermissions(
             attachment.path,
             allowView: true,
-            allowDownload: false,
-            allowShare: false,
+            allowDownload: effDownload,
+            allowShare: effShare,
           );
         }
       } catch (_) {}
@@ -11521,8 +11523,8 @@ class _ChatPageState extends State<ChatPage>
         "security": {
           "isLocked": false,
           "accessUsers": [],
-          "allowDownload": false,
-          "allowShare": false,
+          "allowDownload": widget.isGroup,
+          "allowShare": widget.isGroup,
           "allowView": true,
         },
         "viewControl": {

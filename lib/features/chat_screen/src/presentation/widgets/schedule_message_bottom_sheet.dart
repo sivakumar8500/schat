@@ -99,6 +99,17 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
   ScheduledMessageModel? _editingMessage;
   static final Map<String, String> _scheduledLocalPathCache = {};
 
+  bool get _isGroup {
+    if (getIt.isRegistered<ChatsBloc>()) {
+      final chatsState = getIt<ChatsBloc>().state;
+      if (chatsState is ChatsLoaded && widget.conversationId != null) {
+        final chat = chatsState.chats.firstWhereOrNull((c) => c.id == widget.conversationId);
+        if (chat != null) return chat.isGroup;
+      }
+    }
+    return false;
+  }
+
   String get _effectiveRecipientId {
     if (widget.recipientId != null && widget.recipientId!.trim().isNotEmpty) {
       return widget.recipientId!.trim();
@@ -933,22 +944,24 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
 
             try {
               final storage = getIt<StorageService>();
+              final effDownload = _isGroup;
+              final effShare = _isGroup;
               if (fileKey != null && fileKey.isNotEmpty) {
-                await storage.saveSenderMediaPermissions(fileKey, allowView: true, allowDownload: false, allowShare: false);
-                await storage.saveSenderMediaPermissions(fileKey.split('?').first, allowView: true, allowDownload: false, allowShare: false);
-                await storage.saveSenderMediaPermissions(fileKey.split('?').first.split('/').last, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(fileKey, allowView: true, allowDownload: effDownload, allowShare: effShare);
+                await storage.saveSenderMediaPermissions(fileKey.split('?').first, allowView: true, allowDownload: effDownload, allowShare: effShare);
+                await storage.saveSenderMediaPermissions(fileKey.split('?').first.split('/').last, allowView: true, allowDownload: effDownload, allowShare: effShare);
               }
               if (fileName != null && fileName.isNotEmpty) {
-                await storage.saveSenderMediaPermissions(fileName, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(fileName, allowView: true, allowDownload: effDownload, allowShare: effShare);
               }
               if (mediaId != null && mediaId.isNotEmpty) {
-                await storage.saveSenderMediaPermissions(mediaId, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(mediaId, allowView: true, allowDownload: effDownload, allowShare: effShare);
               }
               if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
-                await storage.saveSenderMediaPermissions(resolvedMediaId, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(resolvedMediaId, allowView: true, allowDownload: effDownload, allowShare: effShare);
               }
               if (_attachedFile != null && _attachedFile!.path.isNotEmpty) {
-                await storage.saveSenderMediaPermissions(_attachedFile!.path, allowView: true, allowDownload: false, allowShare: false);
+                await storage.saveSenderMediaPermissions(_attachedFile!.path, allowView: true, allowDownload: effDownload, allowShare: effShare);
               }
             } catch (_) {}
 
@@ -981,8 +994,8 @@ class _ScheduleMessageBottomSheetState extends State<ScheduleMessageBottomSheet>
               "security": {
                 "isLocked": false,
                 "accessUsers": [],
-                "allowDownload": false,
-                "allowShare": false,
+                "allowDownload": _isGroup,
+                "allowShare": _isGroup,
                 "allowView": true,
               },
               "viewControl": {
