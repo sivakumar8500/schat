@@ -108,7 +108,8 @@ class ShareReceiverService {
       }
     }
 
-    _pendingMediaItems = mediaItems;
+    // Enforce single file sharing at a time
+    _pendingMediaItems = mediaItems.isNotEmpty ? [mediaItems.first] : [];
     _pendingSharedText = sharedText;
 
     await checkAndPresentPendingShare();

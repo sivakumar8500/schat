@@ -18,7 +18,9 @@ import 'package:schat/features/dashboard_screen/src/presentation/dashboard_page.
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_state.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
+import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/utils/common_colors.dart';
+import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_spaces.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 
@@ -89,6 +91,10 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
   List<ShareTarget> _recentChats = [];
   List<ShareTarget> _contacts = [];
   final List<ShareTarget> _selectedTargets = [];
+
+  final bool _allowView = true;
+  bool _allowDownload = false;
+  bool _allowShare = false;
   
   bool _isLoading = true;
   bool _isSending = false;
@@ -281,6 +287,7 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
   }
 
   Future<void> _handleSend() async {
+    if (_isSending) return;
     if (_selectedTargets.length < _minSelection) {
       _showToast('Please select at least 1 contact or group to share', isWarning: true);
       return;
@@ -316,9 +323,11 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
 
       final primaryConvId = conversationIds.first;
 
-      // 2. Upload and dispatch each media item
-      if (widget.mediaItems.isNotEmpty) {
-        for (final item in widget.mediaItems) {
+      // 2. Upload and dispatch media item (single file enforcement)
+      final bool isSocketConnected = socketRepo.isConnected;
+      final mediaItemsToProcess = widget.mediaItems.isNotEmpty ? [widget.mediaItems.first] : <SharedMediaItem>[];
+      if (mediaItemsToProcess.isNotEmpty) {
+        for (final item in mediaItemsToProcess) {
           String itemName = item.name;
           String itemPath = item.path;
           String itemType = item.type;
@@ -386,9 +395,9 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
                 mimeType: _getMimeType(itemName, itemType),
                 fileSizeBytes: itemSize > 0 ? itemSize : (File(itemPath).existsSync() ? File(itemPath).lengthSync() : 1024),
                 fileBytes: itemBytes,
-                allowView: true,
-                allowDownload: true,
-                allowShare: true,
+                allowView: _allowView,
+                allowDownload: _allowDownload,
+                allowShare: _allowShare,
               );
             } catch (uploadErr) {
               debugPrint('Upload error during share: $uploadErr');
@@ -406,117 +415,153 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
                   await chatRepo.shareMedia(
                     mediaId: resolvedMediaId,
                     granteeId: recId,
-                    canView: true,
-                    canDownload: true,
-                    canShare: true,
+                    canView: _allowView,
+                    canDownload: _allowDownload,
+                    canShare: _allowShare,
                   );
                 } catch (_) {}
               }
             }
           }
 
+          // Cache permissions locally for sender
+          if (fileKey != null && fileKey.isNotEmpty) {
+            final storage = getIt<StorageService>();
+            storage.saveSenderMediaPermissions(
+              fileKey,
+              allowView: _allowView,
+              allowDownload: _allowDownload,
+              allowShare: _allowShare,
+            );
+            storage.markMediaAsOwnedByMe(fileKey);
+            final cleanUrl = fileKey.split('?').first;
+            if (cleanUrl != fileKey) {
+              storage.saveSenderMediaPermissions(
+                cleanUrl,
+                allowView: _allowView,
+                allowDownload: _allowDownload,
+                allowShare: _allowShare,
+              );
+            }
+            if (resolvedMediaId != null && resolvedMediaId.isNotEmpty) {
+              storage.saveSenderMediaPermissions(
+                resolvedMediaId,
+                allowView: _allowView,
+                allowDownload: _allowDownload,
+                allowShare: _allowShare,
+              );
+              storage.markMediaAsOwnedByMe(resolvedMediaId);
+            }
+          }
+
           final msgType = itemType == 'voice_note' ? 'audio' : itemType;
 
           for (final convId in conversationIds) {
-            socketRepo.sendMessage(
-              conversationId: convId,
-              type: msgType,
-              text: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
-              fileKey: fileKey,
-              fileName: itemName,
-              fileSize: itemSize,
-              mimeType: _getMimeType(itemName, itemType),
-              security: const {
-                'allowShare': true,
-                'allowDownload': true,
-                'allowView': true,
-              },
-              viewControl: const {
-                'type': 'normal',
-                'maxViews': 1,
-                'isViewOnce': false,
-                'allowShare': true,
-                'allowDownload': true,
-                'allowView': true,
-              },
-            );
-
-            // Guaranteed persistence via REST API
-            final MessageModel msgToSend = MessageModel(
-              id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
-              conversationId: convId,
-              senderId: '',
-              content: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
-              mediaUrl: fileKey,
-              mediaType: msgType,
-              messageType: msgType,
-              attachmentName: itemName,
-              fileSize: itemSize,
-              allowShare: true,
-              allowDownload: true,
-              allowView: true,
-              isViewOnce: false,
-              maxViews: 1,
-              isDeleted: false,
-              createdAt: DateTime.now().toIso8601String(),
-              updatedAt: DateTime.now().toIso8601String(),
-            );
-            try {
-              chatRepo.sendMessageAndGetResult(msgToSend);
-            } catch (_) {}
+            if (isSocketConnected) {
+              socketRepo.sendMessage(
+                conversationId: convId,
+                type: msgType,
+                text: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
+                fileKey: fileKey,
+                fileName: itemName,
+                fileSize: itemSize,
+                mimeType: _getMimeType(itemName, itemType),
+                security: {
+                  'allowShare': _allowShare,
+                  'allowDownload': _allowDownload,
+                  'allowView': _allowView,
+                },
+                viewControl: {
+                  'type': 'normal',
+                  'maxViews': 1,
+                  'isViewOnce': false,
+                  'allowShare': _allowShare,
+                  'allowDownload': _allowDownload,
+                  'allowView': _allowView,
+                },
+              );
+            } else {
+              // REST API fallback ONLY when socket is disconnected
+              final MessageModel msgToSend = MessageModel(
+                id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+                conversationId: convId,
+                senderId: '',
+                content: caption.isNotEmpty ? caption : (itemType == 'image' ? '' : itemName),
+                mediaUrl: fileKey,
+                mediaType: msgType,
+                messageType: msgType,
+                attachmentName: itemName,
+                fileSize: itemSize,
+                allowShare: _allowShare,
+                allowDownload: _allowDownload,
+                allowView: _allowView,
+                isViewOnce: false,
+                maxViews: 1,
+                isDeleted: false,
+                createdAt: DateTime.now().toIso8601String(),
+                updatedAt: DateTime.now().toIso8601String(),
+              );
+              try {
+                await chatRepo.sendMessageAndGetResult(msgToSend);
+              } catch (_) {}
+            }
           }
         }
       } else if (widget.sharedText != null && widget.sharedText!.isNotEmpty) {
         // Shared text only
         final textToSend = caption.isNotEmpty ? '$caption\n\n${widget.sharedText!}' : widget.sharedText!;
         for (final convId in conversationIds) {
-          socketRepo.sendMessage(
-            conversationId: convId,
-            type: 'text',
-            text: textToSend,
-          );
-
-          final MessageModel msgToSend = MessageModel(
-            id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
-            conversationId: convId,
-            senderId: '',
-            content: textToSend,
-            messageType: 'text',
-            allowShare: true,
-            allowDownload: true,
-            allowView: true,
-            isDeleted: false,
-            createdAt: DateTime.now().toIso8601String(),
-            updatedAt: DateTime.now().toIso8601String(),
-          );
-          try {
-            chatRepo.sendMessageAndGetResult(msgToSend);
-          } catch (_) {}
+          if (isSocketConnected) {
+            socketRepo.sendMessage(
+              conversationId: convId,
+              type: 'text',
+              text: textToSend,
+            );
+          } else {
+            final MessageModel msgToSend = MessageModel(
+              id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+              conversationId: convId,
+              senderId: '',
+              content: textToSend,
+              messageType: 'text',
+              allowShare: true,
+              allowDownload: true,
+              allowView: true,
+              isDeleted: false,
+              createdAt: DateTime.now().toIso8601String(),
+              updatedAt: DateTime.now().toIso8601String(),
+            );
+            try {
+              await chatRepo.sendMessageAndGetResult(msgToSend);
+            } catch (_) {}
+          }
         }
       } else if (caption.isNotEmpty) {
         for (final convId in conversationIds) {
-          socketRepo.sendMessage(
-            conversationId: convId,
-            type: 'text',
-            text: caption,
-          );
-
-          final MessageModel msgToSend = MessageModel(
-            id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
-            conversationId: convId,
-            senderId: '',
-            content: caption,
-            messageType: 'text',
-            allowShare: true,
-            allowDownload: true,
-            allowView: true,
-            isDeleted: false,
-            createdAt: DateTime.now().toIso8601String(),
-            updatedAt: DateTime.now().toIso8601String(),
-          );
-          try {
-            chatRepo.sendMessageAndGetResult(msgToSend);
-          } catch (_) {}
+          if (isSocketConnected) {
+            socketRepo.sendMessage(
+              conversationId: convId,
+              type: 'text',
+              text: caption,
+            );
+          } else {
+            final MessageModel msgToSend = MessageModel(
+              id: 'temp_${DateTime.now().millisecondsSinceEpoch}_${convId.hashCode}',
+              conversationId: convId,
+              senderId: '',
+              content: caption,
+              messageType: 'text',
+              allowShare: true,
+              allowDownload: true,
+              allowView: true,
+              isDeleted: false,
+              createdAt: DateTime.now().toIso8601String(),
+              updatedAt: DateTime.now().toIso8601String(),
+            );
+            try {
+              await chatRepo.sendMessageAndGetResult(msgToSend);
+            } catch (_) {}
+          }
         }
       }
 
@@ -842,7 +887,92 @@ class _ShareForwardTargetPageState extends State<ShareForwardTargetPage> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             ),
           ),
+
+          // Protection Controls (View, Download, Share)
+          if (widget.mediaItems.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 2),
+              child: Row(
+                children: [
+                  _buildPermissionToggle(
+                    icon: Icons.visibility_rounded,
+                    label: 'View',
+                    isActive: _allowView,
+                    onTap: () {
+                      // View is enabled by default
+                    },
+                  ),
+                  CommonSpaces.w8,
+                  _buildPermissionToggle(
+                    icon: _allowDownload ? CommonIcons.download : CommonIcons.downloadOff,
+                    label: 'Download',
+                    isActive: _allowDownload,
+                    onTap: () {
+                      setState(() {
+                        _allowDownload = !_allowDownload;
+                      });
+                    },
+                  ),
+                  CommonSpaces.w8,
+                  _buildPermissionToggle(
+                    icon: _allowShare ? CommonIcons.share : CommonIcons.shareOff,
+                    label: 'Share',
+                    isActive: _allowShare,
+                    onTap: () {
+                      setState(() {
+                        _allowShare = !_allowShare;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionToggle({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive
+              ? context.colors.primary.withValues(alpha: 0.12)
+              : context.colors.textHint.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive
+                ? context.colors.primary.withValues(alpha: 0.4)
+                : context.colors.textHint.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isActive ? context.colors.primary : context.colors.textSecondary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: context.bodySmall.copyWith(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                color: isActive ? context.colors.primary : context.colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
