@@ -11,6 +11,7 @@ class DisconnectSocket extends ChatSocketEvent {
 }
 
 class SendMessage extends ChatSocketEvent {
+  final String? messageId;
   final String conversationId;
   final String type;
   final String? text;
@@ -32,6 +33,7 @@ class SendMessage extends ChatSocketEvent {
   final Map<String, dynamic>? liveMeta;
 
   const SendMessage({
+    this.messageId,
     required this.conversationId,
     required this.type,
     this.text,

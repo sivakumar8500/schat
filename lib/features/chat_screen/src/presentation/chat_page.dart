@@ -57,6 +57,7 @@ import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'package:schat/core/services/live_location_service.dart';
 import 'package:schat/features/chat_screen/src/domain/models/screen_permission_model.dart';
+import 'package:uuid/uuid.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'widgets/request_screen_permission_bottom_sheet.dart';
 import 'widgets/chat_lock_bottom_sheet.dart';
@@ -10861,7 +10862,7 @@ class _ChatPageState extends State<ChatPage>
   }) {
     final int expiresAt =
         DateTime.now().millisecondsSinceEpoch + (durationSeconds * 1000);
-    final String tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final String messageId = const Uuid().v4();
 
     _chatBloc.add(
       SendMessageEvent(
@@ -10871,7 +10872,7 @@ class _ChatPageState extends State<ChatPage>
         latitude: lat,
         longitude: lng,
         title: address,
-        messageId: tempId,
+        messageId: messageId,
         isLive: true,
         isLiveActive: true,
         liveDurationSeconds: durationSeconds,
@@ -10882,6 +10883,7 @@ class _ChatPageState extends State<ChatPage>
 
     context.read<ChatSocketBloc>().add(
       SendMessage(
+        messageId: messageId,
         conversationId: widget.conversationId,
         type: 'live_location',
         text: comment ?? '',
@@ -10900,7 +10902,7 @@ class _ChatPageState extends State<ChatPage>
 
     LiveLocationService.instance.startLiveSharing(
       conversationId: widget.conversationId,
-      messageId: tempId,
+      messageId: messageId,
       durationSeconds: durationSeconds,
       initialLatitude: lat,
       initialLongitude: lng,
@@ -10909,7 +10911,7 @@ class _ChatPageState extends State<ChatPage>
         _chatBloc.add(
           UpdateLiveLocationEvent(
             conversationId: widget.conversationId,
-            messageId: tempId,
+            messageId: messageId,
             latitude: currentLat,
             longitude: currentLng,
           ),
@@ -10919,7 +10921,7 @@ class _ChatPageState extends State<ChatPage>
         _chatBloc.add(
           StopLiveLocationEvent(
             conversationId: widget.conversationId,
-            messageId: tempId,
+            messageId: messageId,
           ),
         );
       },

@@ -59,7 +59,7 @@ class _LiveLocationViewerPageState extends State<LiveLocationViewerPage> {
 
     // If active, listen to session updates from LiveLocationService
     _sessionSub = LiveLocationService.instance.sessionStream.listen((session) {
-      if (session.messageId == widget.messageId && mounted) {
+      if ((session.messageId == widget.messageId || session.conversationId == widget.conversationId) && mounted) {
         setState(() {
           _currentLat = session.currentLatitude;
           _currentLng = session.currentLongitude;

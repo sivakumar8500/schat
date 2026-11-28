@@ -19,6 +19,7 @@ import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
+import 'package:schat/core/services/live_location_service.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/call_screen/src/presentation/bloc/call_webrtc_bloc.dart';
 import 'chat_event.dart';
@@ -592,10 +593,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           final lat = double.tryParse((cleanData['latitude'] ?? cleanData['lat'])?.toString() ?? '');
           final lng = double.tryParse((cleanData['longitude'] ?? cleanData['lng'])?.toString() ?? '');
           final addr = cleanData['address']?.toString();
-          if (_isSameConversation(convId, _conversationId) && msgId != null && lat != null && lng != null) {
-            add(UpdateLiveLocationEvent(
-              messageId: msgId,
+          if (_isSameConversation(convId, _conversationId) && lat != null && lng != null) {
+            final effectiveMsgId = msgId ?? '';
+            LiveLocationService.instance.onRemoteLocationUpdate(
               conversationId: convId!,
+              messageId: effectiveMsgId,
+              latitude: lat,
+              longitude: lng,
+              address: addr,
+            );
+            add(UpdateLiveLocationEvent(
+              messageId: effectiveMsgId,
+              conversationId: convId,
               latitude: lat,
               longitude: lng,
               address: addr,
@@ -604,10 +613,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         } else if (type == 'live_location_stop' || type == 'stop_live_location') {
           final convId = (cleanData['conversationId'] ?? cleanData['conversation_id'])?.toString();
           final msgId = (cleanData['messageId'] ?? cleanData['message_id'] ?? cleanData['id'])?.toString();
-          if (_isSameConversation(convId, _conversationId) && msgId != null) {
+          if (_isSameConversation(convId, _conversationId)) {
+            final effectiveMsgId = msgId ?? '';
+            LiveLocationService.instance.onRemoteLocationStop(convId!, effectiveMsgId);
             add(StopLiveLocationEvent(
-              messageId: msgId,
-              conversationId: convId!,
+              messageId: effectiveMsgId,
+              conversationId: convId,
             ));
           }
         } else if (type == 'chat_cleared' || type == 'clear_chat') {
@@ -2062,7 +2073,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded) {
       final updatedMessages = List<MessageModel>.from(currentState.messages);
-      final idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      int idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      if (idx == -1) {
+        idx = updatedMessages.lastIndexWhere((m) => m.isLive && m.isLiveActive);
+      }
       if (idx != -1) {
         final existing = updatedMessages[idx];
         updatedMessages[idx] = existing.copyWith(
@@ -2080,7 +2094,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final currentState = state;
     if (currentState is ChatLoaded) {
       final updatedMessages = List<MessageModel>.from(currentState.messages);
-      final idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      int idx = updatedMessages.indexWhere((m) => m.id == event.messageId);
+      if (idx == -1) {
+        idx = updatedMessages.lastIndexWhere((m) => m.isLive && m.isLiveActive);
+      }
       if (idx != -1) {
         final existing = updatedMessages[idx];
         updatedMessages[idx] = existing.copyWith(

@@ -256,4 +256,47 @@ class LiveLocationService {
       stopLiveSharing(targetConvId!, messageId);
     }
   }
+
+  void onRemoteLocationUpdate({
+    required String conversationId,
+    required String messageId,
+    required double latitude,
+    required double longitude,
+    String? address,
+    bool isLiveActive = true,
+  }) {
+    var session = _activeSessions[conversationId];
+    if (session == null) {
+      session = LiveLocationSession(
+        conversationId: conversationId,
+        messageId: messageId,
+        durationSeconds: 0,
+        expiresAt: DateTime.now().millisecondsSinceEpoch + 86400000,
+        currentLatitude: latitude,
+        currentLongitude: longitude,
+        currentAddress: address,
+      );
+      _activeSessions[conversationId] = session;
+    } else {
+      session.currentLatitude = latitude;
+      session.currentLongitude = longitude;
+      if (address != null && address.isNotEmpty) {
+        session.currentAddress = address;
+      }
+      session.isActive = isLiveActive;
+      session.lastUpdated = DateTime.now();
+    }
+    _sessionUpdatedController.add(session);
+  }
+
+  void onRemoteLocationStop(String conversationId, [String? messageId]) {
+    final session = _activeSessions[conversationId];
+    if (session != null) {
+      session.isActive = false;
+      _sessionUpdatedController.add(session);
+    }
+    if (messageId != null && messageId.isNotEmpty) {
+      _sessionEndedController.add(messageId);
+    }
+  }
 }

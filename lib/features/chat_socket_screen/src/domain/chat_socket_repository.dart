@@ -28,6 +28,7 @@ abstract class ChatSocketRepository {
   Stream<SocketEventLog> get onEventLog;
   void emit(String event, dynamic data);
   void sendMessage({
+    String? messageId,
     required String conversationId,
     required String type,
     String? text,
@@ -356,6 +357,7 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
 
   @override
   void sendMessage({
+    String? messageId,
     required String conversationId,
     required String type,
     String? text,
@@ -469,10 +471,17 @@ class ChatSocketRepositoryImpl implements ChatSocketRepository {
     } : null;
 
     final Map<String, dynamic> payload = {
+      "action": "send_message",
       "type": payloadType,
       "conversationId": conversationId,
       "conversation_id": conversationId,
     };
+
+    if (messageId != null && messageId.isNotEmpty) {
+      payload['id'] = messageId;
+      payload['message_id'] = messageId;
+      payload['messageId'] = messageId;
+    }
 
     if (content.isNotEmpty) payload['content'] = content;
     if (replyMessageId != null) {
