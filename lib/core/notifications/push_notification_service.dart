@@ -18,6 +18,7 @@ import 'package:schat/utils/common_endpoints.dart';
 import 'package:schat/injection.dart';
 import 'package:schat/core/notifications/in_app_notification_service.dart';
 import 'package:schat/core/notifications/call_notification_service.dart';
+import 'package:schat/core/services/background_download_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/unlock_chat_bottom_sheet.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_state.dart';
@@ -106,6 +107,18 @@ class PushNotificationService {
         showBadge: true,
       );
       await androidPlugin.createNotificationChannel(legacyChannel);
+
+      // 3. Create dedicated low-importance channel for file download progress
+      final downloadChannel = AndroidNotificationChannel(
+        BackgroundDownloadService.channelId,
+        BackgroundDownloadService.channelName,
+        description: 'Notifications for file download progress and completion',
+        importance: Importance.low,
+        playSound: false,
+        enableVibration: false,
+        showBadge: false,
+      );
+      await androidPlugin.createNotificationChannel(downloadChannel);
 
       await androidPlugin.requestNotificationsPermission();
     }
@@ -326,6 +339,9 @@ class PushNotificationService {
   Future<void> clearAllNotifications() async {
     try {
       await _localNotifications.cancelAll();
+      if (BackgroundDownloadService.instance.hasActiveDownloads) {
+        BackgroundDownloadService.instance.repostActiveNotifications();
+      }
       debugPrint('PushNotificationService: Cleared all app notifications from system notification bar');
     } catch (e) {
       debugPrint('PushNotificationService: Error clearing all notifications: $e');
@@ -345,6 +361,19 @@ class PushNotificationService {
         action == 'answer_call' || action == 'accept_call' || action == 'accept') {
       CallNotificationService.onLocalNotificationResponse(response);
       return;
+    }
+
+    if (response.payload != null && response.payload!.isNotEmpty) {
+      try {
+        final data = jsonDecode(response.payload!);
+        if (data is Map) {
+          final type = (data['type'] ?? '').toString().toLowerCase();
+          if (type == 'download_progress' || type == 'download_complete' || type == 'download_failed') {
+            debugPrint('PushNotificationService: Download notification tapped ($type), ignoring chat navigation');
+            return;
+          }
+        }
+      } catch (_) {}
     }
 
     clearAllNotifications();

@@ -271,6 +271,14 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "bytes and fileName cannot be null", null)
                     }
                 }
+                "acquireDownloadWakeLock" -> {
+                    acquireDownloadWakeLock()
+                    result.success(true)
+                }
+                "releaseDownloadWakeLock" -> {
+                    releaseDownloadWakeLock()
+                    result.success(true)
+                }
                 "startInAppRecording" -> {
                     // Do not show MediaProjection dialog / screen share popup
                     result.success(true)
@@ -1214,7 +1222,41 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private var downloadWakeLock: android.os.PowerManager.WakeLock? = null
+
+    private fun acquireDownloadWakeLock() {
+        try {
+            if (downloadWakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                downloadWakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "schat:DownloadWakeLock")
+                downloadWakeLock?.setReferenceCounted(false)
+            }
+            if (downloadWakeLock?.isHeld == false) {
+                downloadWakeLock?.acquire(20 * 60 * 1000L) // 20 minutes timeout
+                android.util.Log.d("MainActivity", "Acquired download PARTIAL_WAKE_LOCK")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error acquiring download wakeLock: $e")
+        }
+    }
+
+    private fun releaseDownloadWakeLock() {
+        try {
+            if (downloadWakeLock?.isHeld == true) {
+                downloadWakeLock?.release()
+                android.util.Log.d("MainActivity", "Released download PARTIAL_WAKE_LOCK")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error releasing download wakeLock: $e")
+        }
+    }
+
     override fun onDestroy() {
+        try {
+            releaseDownloadWakeLock()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             (screenCaptureCallback as? ScreenCaptureCallback)?.let {
                 try {

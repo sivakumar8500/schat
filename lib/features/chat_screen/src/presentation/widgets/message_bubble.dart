@@ -34,6 +34,7 @@ import 'package:schat/utils/common_icons.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_notifications.dart';
 import 'package:schat/core/services/link_metadata_service.dart';
+import 'package:schat/core/services/background_download_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/link_preview_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -683,6 +684,36 @@ class _MessageBubbleState extends State<MessageBubble> {
   List<MessageReaction> get reactions => widget.reactions;
   bool _isDownloading = false;
   double? _downloadProgress;
+  StreamSubscription<DownloadTaskInfo>? _downloadTaskSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final url = SecureAttachmentService.resolveFullUrl(attachmentPath ?? '');
+    if (url.isNotEmpty) {
+      final task = BackgroundDownloadService.instance.getTask(url);
+      if (task != null && task.isDownloading) {
+        _isDownloading = true;
+        _downloadProgress = task.progress;
+      }
+      _downloadTaskSub = BackgroundDownloadService.instance.taskStream.listen((task) {
+        if (task.url == url || (attachmentName != null && task.fileName == attachmentName)) {
+          if (mounted) {
+            setState(() {
+              _isDownloading = task.isDownloading;
+              _downloadProgress = task.isDownloading ? task.progress : null;
+            });
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _downloadTaskSub?.cancel();
+    super.dispose();
+  }
 
   static const String _kGoogleMapsApiKey =
       'AIzaSyDQ5sYBkse3w-n-QyrlvdTOCIQM86nQVKI';

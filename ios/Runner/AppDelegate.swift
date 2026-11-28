@@ -12,6 +12,7 @@ import CallKit
   private var pipSourceView: UIView?
   private var pipChannel: FlutterMethodChannel?
   private var phoneCallChannel: FlutterMethodChannel?
+  private var bgTaskId: UIBackgroundTaskIdentifier = .invalid
   private let callObserver = CXCallObserver()
 
   override func application(
@@ -71,9 +72,11 @@ import CallKit
     if let registrar = self.registrar(forPlugin: "com.sdpi.schat/pip") {
       setupPipChannel(messenger: registrar.messenger())
       setupPhoneCallChannel(messenger: registrar.messenger())
+      setupBackgroundTaskChannel(messenger: registrar.messenger())
     } else if let controller = window?.rootViewController as? FlutterViewController {
       setupPipChannel(messenger: controller.binaryMessenger)
       setupPhoneCallChannel(messenger: controller.binaryMessenger)
+      setupBackgroundTaskChannel(messenger: controller.binaryMessenger)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -147,6 +150,36 @@ import CallKit
       switch call.method {
       case "isPhoneCallActive":
         result(self.isSystemPhoneCallActive())
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func setupBackgroundTaskChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "com.sdpi.schat/background_tasks", binaryMessenger: messenger)
+    channel.setMethodCallHandler { [weak self] (call, result) in
+      guard let self = self else { return }
+      switch call.method {
+      case "beginBackgroundTask":
+        if self.bgTaskId != .invalid {
+          UIApplication.shared.endBackgroundTask(self.bgTaskId)
+          self.bgTaskId = .invalid
+        }
+        self.bgTaskId = UIApplication.shared.beginBackgroundTask(withName: "SchatDownloadTask") {
+          print("AppDelegate: Background download task expired by iOS")
+          if self.bgTaskId != .invalid {
+            UIApplication.shared.endBackgroundTask(self.bgTaskId)
+            self.bgTaskId = .invalid
+          }
+        }
+        result(self.bgTaskId.rawValue)
+      case "endBackgroundTask":
+        if self.bgTaskId != .invalid {
+          UIApplication.shared.endBackgroundTask(self.bgTaskId)
+          self.bgTaskId = .invalid
+        }
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }

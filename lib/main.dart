@@ -33,6 +33,7 @@ import 'package:schat/features/status_screen/src/presentation/bloc/status_event.
 import 'package:schat/core/services/phone_call_state_service.dart';
 import 'package:schat/core/services/share_receiver_service.dart';
 import 'package:schat/core/services/app_cache_service.dart';
+import 'package:schat/core/services/background_download_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
@@ -98,6 +99,9 @@ Future<void> main() async {
     // Initialize PushNotificationService
     await getIt<PushNotificationService>().initialize();
     await getIt<PushNotificationService>().registerToken();
+
+    // Initialize BackgroundDownloadService
+    await BackgroundDownloadService.instance.initialize();
 
     // Initialize ScreenProtectionService
     await getIt<ScreenProtectionService>().initialize();
