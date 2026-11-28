@@ -9,6 +9,7 @@ import 'package:schat/injection.dart';
 import 'package:schat/utils/common_colors.dart';
 import 'package:schat/utils/common_fontstyles.dart';
 import 'package:schat/utils/common_spaces.dart';
+import 'package:schat/common/widgets/upgrade_plan_bottom_sheet.dart';
 
 class MediaProtectionBottomSheet extends StatefulWidget {
   final String mediaId;
@@ -48,6 +49,15 @@ class MediaProtectionBottomSheet extends StatefulWidget {
     void Function(bool allowView, bool allowDownload, bool allowShare)?
     onPermissionsChanged,
   }) {
+    if (getIt.isRegistered<StorageService>() &&
+        !getIt<StorageService>().isPaidPlan()) {
+      return UpgradePlanBottomSheet.show(
+        context,
+        featureName: 'Shared File Logs',
+        description:
+            'Upgrade your plan to view detailed file share logs, lineage tracking, and recipient access history.',
+      );
+    }
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,

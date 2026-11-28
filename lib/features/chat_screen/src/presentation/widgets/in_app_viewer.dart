@@ -18,6 +18,8 @@ import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
+import 'package:schat/core/storage/storage_service.dart';
+import 'package:schat/common/widgets/upgrade_plan_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_word_viewer.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_excel_viewer.dart';
@@ -840,6 +842,16 @@ class _InAppViewerState extends State<InAppViewer> with SingleTickerProviderStat
                     icon: const Icon(Icons.shield_outlined, color: Colors.white),
                     tooltip: 'Security & Protection',
                     onPressed: () {
+                      if (getIt.isRegistered<StorageService>() &&
+                          !getIt<StorageService>().isPaidPlan()) {
+                        UpgradePlanBottomSheet.show(
+                          context,
+                          featureName: 'Shared File Logs',
+                          description:
+                              'Upgrade your plan to view detailed file share logs, lineage tracking, and recipient access history.',
+                        );
+                        return;
+                      }
                       final idToUse = (widget.mediaId != null && widget.mediaId!.isNotEmpty)
                           ? widget.mediaId!
                           : '3fa85f64-5717-4562-b3fc-2c963f66afa6';

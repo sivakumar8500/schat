@@ -32,6 +32,7 @@ import 'package:schat/core/storage/chat_message_cache_helper.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_bloc.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/chats_event.dart';
 import 'package:schat/common/widgets/common_loading_overlay.dart';
+import 'package:schat/common/widgets/upgrade_plan_bottom_sheet.dart';
 import 'package:fast_contacts/fast_contacts.dart';
 import 'package:schat/features/dashboard_screen/src/domain/repositories/contacts_repository.dart';
 import 'package:schat/features/dashboard_screen/src/presentation/bloc/contacts_bloc.dart';
@@ -1380,6 +1381,17 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: () {
+                        if (getIt.isRegistered<StorageService>() &&
+                            !getIt<StorageService>().isPaidPlan()) {
+                          Navigator.pop(sheetCtx);
+                          UpgradePlanBottomSheet.show(
+                            context,
+                            featureName: 'Clear Chat',
+                            description:
+                                'Upgrade your plan to clear chat history. Free plan users cannot clear chat messages.',
+                          );
+                          return;
+                        }
                         Navigator.pop(sheetCtx);
                         context.read<ChatBloc>().add(ClearChatEvent(
                           conversationId: widget.conversationId,
@@ -1443,6 +1455,17 @@ class _ContactProfilePageState extends State<ContactProfilePage> {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () {
+                        if (getIt.isRegistered<StorageService>() &&
+                            !getIt<StorageService>().isPaidPlan()) {
+                          Navigator.pop(sheetCtx);
+                          UpgradePlanBottomSheet.show(
+                            context,
+                            featureName: 'Clear for Everyone',
+                            description:
+                                'Upgrade your plan to clear messages for all participants. Free plan users cannot clear messages for everyone.',
+                          );
+                          return;
+                        }
                         Navigator.pop(sheetCtx);
                         context.read<ChatBloc>().add(ClearChatEvent(
                           conversationId: widget.conversationId,

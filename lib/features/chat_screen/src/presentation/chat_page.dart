@@ -53,6 +53,7 @@ import 'package:schat/features/dashboard_screen/src/presentation/widgets/create_
 import 'widgets/message_bubble.dart';
 import 'widgets/in_app_viewer.dart';
 import 'widgets/media_protection_bottom_sheet.dart';
+import 'package:schat/common/widgets/upgrade_plan_bottom_sheet.dart';
 import 'widgets/schedule_message_bottom_sheet.dart';
 import 'widgets/location_share_bottom_sheet.dart';
 import 'package:schat/core/services/live_location_service.dart';
@@ -4125,6 +4126,16 @@ class _ChatPageState extends State<ChatPage>
                                               cachedMediaId.isNotEmpty)
                                           ? cachedMediaId
                                           : msg.id;
+                                      if (getIt.isRegistered<StorageService>() &&
+                                          !getIt<StorageService>().isPaidPlan()) {
+                                        UpgradePlanBottomSheet.show(
+                                          context,
+                                          featureName: 'Shared File Logs',
+                                          description:
+                                              'Upgrade your plan to view detailed file share logs, lineage tracking, and recipient access history.',
+                                        );
+                                        return;
+                                      }
                                       MediaProtectionBottomSheet.show(
                                         context,
                                         mediaId: idToUse,
@@ -4774,6 +4785,17 @@ class _ChatPageState extends State<ChatPage>
                   ),
                 ),
                 onPressed: () {
+                  if (getIt.isRegistered<StorageService>() &&
+                      !getIt<StorageService>().isPaidPlan()) {
+                    Navigator.pop(dialogCtx);
+                    UpgradePlanBottomSheet.show(
+                      context,
+                      featureName: 'Delete for Everyone',
+                      description:
+                          'Upgrade your plan to delete messages for everyone. Free plan users cannot delete messages for everyone.',
+                    );
+                    return;
+                  }
                   Navigator.pop(dialogCtx);
                   final ids = messages.map((m) => m.id).toList();
                   _chatBloc.add(
@@ -13055,6 +13077,17 @@ class _ChatPageState extends State<ChatPage>
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: () {
+                        if (getIt.isRegistered<StorageService>() &&
+                            !getIt<StorageService>().isPaidPlan()) {
+                          Navigator.pop(sheetCtx);
+                          UpgradePlanBottomSheet.show(
+                            context,
+                            featureName: 'Clear Chat',
+                            description:
+                                'Upgrade your plan to clear chat history. Free plan users cannot clear chat messages.',
+                          );
+                          return;
+                        }
                         Navigator.pop(sheetCtx);
                         _chatBloc.add(
                           ClearChatEvent(
@@ -13125,6 +13158,17 @@ class _ChatPageState extends State<ChatPage>
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () {
+                        if (getIt.isRegistered<StorageService>() &&
+                            !getIt<StorageService>().isPaidPlan()) {
+                          Navigator.pop(sheetCtx);
+                          UpgradePlanBottomSheet.show(
+                            context,
+                            featureName: 'Clear for Everyone',
+                            description:
+                                'Upgrade your plan to clear messages for all participants. Free plan users cannot clear messages for everyone.',
+                          );
+                          return;
+                        }
                         Navigator.pop(sheetCtx);
                         _chatBloc.add(
                           ClearChatEvent(

@@ -25,6 +25,7 @@ import 'package:schat/core/storage/storage_service.dart';
 import 'package:schat/core/security/secure_attachment_service.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/in_app_viewer.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/media_protection_bottom_sheet.dart';
+import 'package:schat/common/widgets/upgrade_plan_bottom_sheet.dart';
 import 'package:schat/features/chat_screen/src/presentation/widgets/view_once_icon_widget.dart';
 import 'package:schat/utils/download_helper/download_helper.dart';
 import 'package:schat/utils/common_endpoints.dart';
@@ -2002,6 +2003,17 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   void _openShareDetailsBottomSheet(BuildContext context) {
+    if (getIt.isRegistered<StorageService>() &&
+        !getIt<StorageService>().isPaidPlan()) {
+      UpgradePlanBottomSheet.show(
+        context,
+        featureName: 'Shared File Logs',
+        description:
+            'Upgrade your plan to view detailed file share logs, lineage tracking, and recipient access history.',
+      );
+      return;
+    }
+
     String? cachedMediaId =
         SecureAttachmentService.findMediaId(attachmentPath) ??
         SecureAttachmentService.findMediaId(widget.messageId) ??

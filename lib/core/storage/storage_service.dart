@@ -149,6 +149,13 @@ class StorageService {
     return _prefs.getString(_subscriptionTypeKey);
   }
 
+  bool isPaidPlan() {
+    final type = getSubscriptionType()?.toLowerCase().trim();
+    if (type == null || type.isEmpty) return false;
+    if (type == 'free' || type == 'standard free' || type == 'none') return false;
+    return true;
+  }
+
   Future<void> saveSubscriptionExpiresAt(String? expiresAt) async {
     if (expiresAt != null && expiresAt.isNotEmpty) {
       await _prefs.setString(_subscriptionExpiresAtKey, expiresAt);
